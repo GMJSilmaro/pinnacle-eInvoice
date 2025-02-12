@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link href="/assets/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f8f9fa;
+        }
+        .maintenance-container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 600px;
+        }
+        .maintenance-icon {
+            font-size: 5rem;
+            color: #ffc107;
+            margin-bottom: 1rem;
+            animation: spin 4s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .maintenance-title {
+            font-size: 2rem;
+            color: #343a40;
+            margin-bottom: 1rem;
+        }
+        .maintenance-message {
+            color: #6c757d;
+            margin-bottom: 2rem;
+        }
+        .maintenance-footer {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="maintenance-container">
+        <i class="fas fa-cog maintenance-icon"></i>
+        <h1 class="maintenance-title">{{ title }}</h1>
+        <p class="maintenance-message">{{ message }}</p>
+        <div class="maintenance-footer">
+            <p>We apologize for the inconvenience. Our team is working to improve your experience.</p>
+            <p>Please try again later.</p>
+            <p class="mt-3">
+                <a href="/login" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Login
+                </a>
+            </p>
+        </div>
+    </div>
+</body>
+</html> 

@@ -1,0 +1,80 @@
+/* BQE Tooltip Styles */
+.tooltip-content {
+    font-size: 0.875rem;
+}
+
+.tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.25rem 0;
+}
+
+.tooltip-row i {
+    font-size: 1rem;
+    color: #64748b;
+    opacity: 0.8;
+}
+
+.tooltip-row .text-success {
+    color: #10b981 !important;
+}
+
+.tooltip-row .text-warning {
+    color: #f59e0b !important;
+}
+
+.tooltip-row .text-danger {
+    color: #ef4444 !important;
+}
+
+.tooltip {
+    --bs-tooltip-bg: #fff;
+    --bs-tooltip-color: #475569;
+    --bs-tooltip-opacity: 1;
+    z-index: 9999 !important;
+}
+
+.tooltip .tooltip-inner {
+    background: #fff;
+    color: #475569;
+    border: 1px solid rgba(0,0,0,0.1);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    padding: 0.75rem 1rem;
+    max-width: 300px;
+}
+
+.tooltip .arrow::before {
+    border-bottom-color: rgba(0,0,0,0.1);
+}
+
+.tooltip .arrow::after {
+    content: '';
+    position: absolute;
+    left: 1px;
+    bottom: 1px;
+    border-width: 0 7px 7px 7px;
+    border-style: solid;
+    border-color: transparent transparent #fff transparent;
+}
+
+/* Add cursor pointer to tooltip triggers */
+[data-bs-toggle="tooltip"] {
+    cursor: pointer;
+}
+
+/* Optional: Add a subtle transition for better UX */
+[data-bs-toggle="tooltip"]:hover {
+    opacity: 0.9;
+    transition: opacity 0.2s ease;
+}
+
+/* Add cursor pointer to BQE auth button */
+#bqeAuthBtn {
+    cursor: pointer;
+}
+
+/* Add cursor pointer to info text */
+.welcome-content p {
+    cursor: pointer;
+} 

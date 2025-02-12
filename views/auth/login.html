@@ -1,0 +1,993 @@
+{% extends "auth/auth.layout.html" %}
+
+{% block head %}
+<style>
+.auth-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 0;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    clip-path: polygon(0 0, 100% 0, 100% 35%, 0 65%);
+    opacity: 0.1;
+    z-index: 0;
+}
+
+.auth-wrapper::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.auth-card {
+    max-width: 400px;
+    width: 100%;
+    margin: auto;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    position: relative;
+    z-index: 1;
+    transition: all 0.3s ease;
+}
+
+
+.logo img {
+    max-height: 120px;
+    width: auto;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+}
+
+.form-control {
+    height: 48px;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    box-shadow: var(--input-shadow);
+}
+
+.input-group-text {
+    border-radius: 8px 0 0 8px;
+  
+    background: var(--input-bg);
+}
+
+.btn-primary {
+    height: 48px;
+    background: var(--primary-gradient);
+    border: none;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.form-check-input:checked {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.credits {
+    margin-top: 2rem;
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--text-color);
+    opacity: 0.8;
+}
+
+.credits a {
+    color: #6B73FF;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.credits a:hover {
+    color: #000DFF;
+}
+
+/* Loading animation */
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spinner-border {
+    animation: rotate 1s linear infinite;
+}
+
+/* Form validation styling */
+.was-validated .form-control:valid {
+    border-color: #198754;
+    background-image: none;
+}
+
+.was-validated .form-control:invalid {
+    border-color: #dc3545;
+    background-image: none;
+}
+
+.invalid-feedback {
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1050;
+    opacity: 0;
+    will-change: opacity;
+    transition: opacity 0.15s ease-out;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+}
+
+.modal-overlay.visible {
+    opacity: 1;
+}
+
+.modal-container {
+    background: white;
+    border-radius: 24px !important;
+    padding: 2rem !important;
+    max-width: 90%;
+    width: 360px !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+    transform: scale(0.95);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.modal-overlay.visible .modal-container {
+    transform: scale(1);
+    opacity: 1;
+}
+
+.modal-header {
+    text-align: left !important;
+    margin-bottom: 1.5rem !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+    position: relative;
+}
+
+.modal-header::before {
+    content: '';
+    position: absolute;
+    top: -2rem;
+    left: -2rem;
+    right: -2rem;
+    height: 8rem;
+    background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+    border-radius: 24px 24px 50% 50%;
+    z-index: -1;
+}
+
+.modal-header .bi-info-circle {
+    font-size: 1.75rem !important;
+    color: #4F46E5 !important;
+    margin-top: 0.2rem !important;
+    filter: drop-shadow(0 2px 4px rgba(79, 70, 229, 0.2));
+}
+
+.modal-title {
+    font-size: 1.375rem !important;
+    font-weight: 600 !important;
+    color: #1F2937 !important;
+    line-height: 1.2 !important;
+    margin-bottom: 0.375rem !important;
+}
+
+.modal-header p {
+    font-size: 0.9375rem !important;
+    color: #6B7280 !important;
+    margin: 0 !important;
+}
+
+.modal-body {
+    padding: 0 !important;
+    margin: 0 -0.5rem !important;
+}
+
+.modal-body .space-y-3 > div {
+    padding: 0.75rem 0.5rem !important;
+    font-size: 0.9375rem !important;
+    color: #374151 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 1rem !important;
+    border-radius: 12px !important;
+    transition: all 0.2s ease-in-out !important;
+    cursor: pointer !important;
+}
+
+.modal-body .space-y-3 > div:hover {
+    background: #F9FAFB !important;
+    transform: translateX(4px) !important;
+}
+
+.modal-body i {
+    font-size: 1.25rem !important;
+    width: 2rem !important;
+    height: 2rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+/* Enhanced icon styles */
+.modal-body i.bi-file-earmark-text { 
+    color: #3B82F6 !important;
+    background: #EFF6FF !important;
+}
+.modal-body i.bi-shield-check { 
+    color: #10B981 !important;
+    background: #ECFDF5 !important;
+} 
+.modal-body i.bi-globe { 
+    color: #3B82F6 !important;
+    background: #EFF6FF !important;
+}
+.modal-body i.bi-fingerprint { 
+    color: #8B5CF6 !important;
+    background: #F5F3FF !important;
+}
+.modal-body i.bi-people { 
+    color: #F59E0B !important;
+    background: #FFFBEB !important;
+}
+.modal-body i.bi-clock-history { 
+    color: #ff00ae !important;
+    background: #fdecf5 !important;
+}
+.modal-body i.bi-megaphone-fill { 
+    color: #7f0707 !important;
+    background: #fdecf5 !important;
+}
+.modal-body .space-y-3 > div:hover i {
+    transform: scale(1.1) !important;
+}
+
+.modal-footer {
+    margin-top: 1.5rem !important;
+    padding-top: 1.5rem !important;
+    border-top: 1px solid #E5E7EB !important;
+}
+
+.modal-btn-primary {
+    width: 100% !important;
+    background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%) !important;
+    color: white !important;
+    font-weight: 500 !important;
+    font-size: 0.9375rem !important;
+    padding: 0.75rem 1rem !important;
+    border-radius: 12px !important;
+    transition: all 0.3s ease !important;
+    border: none !important;
+    box-shadow: 0 2px 4px rgba(79, 70, 229, 0.1) !important;
+}
+
+.modal-btn-primary:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2) !important;
+    background: linear-gradient(135deg, #4338CA 0%, #3730A3 100%) !important;
+}
+
+/* Divider line style */
+.modal-body .space-y-3 > div:not(:last-child) {
+    border-bottom: 1px solid #F3F4F6 !important;
+}
+
+/* Smooth entrance animation for list items */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.modal-body .space-y-3 > div {
+    animation: slideIn 0.3s ease-out forwards;
+}
+
+.modal-body .space-y-3 > div:nth-child(1) { animation-delay: 0.1s; }
+.modal-body .space-y-3 > div:nth-child(2) { animation-delay: 0.2s; }
+.modal-body .space-y-3 > div:nth-child(3) { animation-delay: 0.3s; }
+.modal-body .space-y-3 > div:nth-child(4) { animation-delay: 0.4s; }
+
+/* Session Error Modal specific styles */
+.modal-header.session-error {
+    text-align: center !important;
+    margin-bottom: 2rem !important;
+    display: block !important;
+    padding-top: 1rem !important;
+}
+
+.modal-header.session-error::before {
+    content: '';
+    position: absolute;
+    top: -2rem;
+    left: -2rem;
+    right: -2rem;
+    height: 7rem;
+    background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+    border-radius: 24px 24px 50% 50%;
+    z-index: -1;
+}
+
+.session-error .warning-icon {
+    width: 48px;
+    height: 48px;
+    background: #FEF3F2;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+}
+
+.session-error .warning-icon i {
+    font-size: 24px;
+    color: #DC2626;
+}
+
+.session-error .modal-title {
+    color: #1F2937;
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.session-error-body {
+    text-align: center;
+    color: #6B7280;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+}
+
+.session-error-footer {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 2rem;
+}
+
+.session-error-footer .modal-btn {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+}
+
+.session-error-footer .modal-btn-secondary {
+    background: #F3F4F6;
+    color: #374151;
+    border: none;
+}
+
+.session-error-footer .modal-btn-secondary:hover {
+    background: #E5E7EB;
+    transform: translateY(-1px);
+}
+
+.session-error-footer .modal-btn-primary {
+    background: #4F46E5;
+    color: white;
+    border: none;
+}
+
+.session-error-footer .modal-btn-primary:hover {
+    background: #4338CA;
+    transform: translateY(-1px);
+}
+
+.modal-help {
+    text-align: center;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #E5E7EB;
+}
+
+.modal-help a {
+    color: #4F46E5;
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.modal-help a:hover {
+    color: #4338CA;
+    text-decoration: underline;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+.animate-shimmer {
+    background: linear-gradient(
+        90deg,
+        rgba(255,255,255, 0) 0%,
+        rgba(255,255,255, 0.4) 50%,
+        rgba(255,255,255, 0) 100%
+    );
+    background-size: 1000px 100%;
+    animation: shimmer 8s infinite linear;
+}
+
+.phase-info-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px;
+    background: #fff;
+    border: 1px solid #E5E7EB;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #6366F1;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1rem;
+}
+
+.phase-info-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+    border-color: #6366F1;
+}
+
+.phase-info-btn .status-dot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 6px;
+    height: 6px;
+}
+
+.phase-info-btn .status-dot::before,
+.phase-info-btn .status-dot::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.phase-info-btn .status-dot::before {
+    width: 18px;
+    height: 18px;
+    background-color: rgba(99, 102, 241, 0.15);
+    animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.phase-info-btn .status-dot::after {
+    width: 6px;
+    height: 6px;
+    background-color: #6366F1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
+@keyframes ping {
+    75%, 100% {
+        transform: translate(-50%, -50%) scale(2);
+        opacity: 0;
+    }
+}
+
+@keyframes shine {
+    0% { left: -100%; }
+    50%, 100% { left: 100%; }
+}
+</style>
+<link rel="stylesheet" href="/assets/css/modal.css">
+{% endblock %}
+{% block content %}
+<div class="auth-wrapper">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-5 col-lg-5">
+              <div class="text-center mb-1 fade-in">
+                <div class="text-center mb-1 fade-in">
+                  <img src="/Images/PXCLogo.svg" alt="Pixelcare Consulting Logo" width="465" height="136">
+                </div>
+              </div>
+                <div class="auth-card fade-in" style="animation-delay: 0.2s">
+                    <div class="card-body p-4">
+                        <div class="divider-text">
+                          <h4 class="text-center mb-3">Login to Pinnacle</h4>
+                          <p class="text-center text-muted small mb-4">LHDN-compliant e-Invoice solution for Malaysian enterprises</p>
+                          <div class="text-center">
+                            <button 
+                            type="button"
+                            id="phaseInfoBtn"
+                            class="phase-info-btn">
+                            <span class="status-dot"></span>
+                            <span>Phase 1 Implementation Ready</span>
+                        </button>
+                          </div>
+                        </div>
+                        <form id="loginForm" action="/auth/login" method="POST" class="needs-validation" novalidate>
+                            <div class="mb-4">
+                                <label for="username" class="form-label">Username</label>
+                                <div class="input-group has-validation">
+                                    <span class="input-group-text">
+                                        <i class="bi bi-person"></i>
+                                    </span>
+                                    <input type="text" 
+                                           class="form-control" 
+                                           id="username" 
+                                           name="username" 
+                                           required 
+                                           autocomplete="username"
+                                           minlength="3"
+                                           placeholder="Enter your username">
+                                    <div class="invalid-feedback">Please enter a valid username.</div>
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <label for="password" class="form-label">Password</label>
+                                <div class="input-group has-validation">
+                                    <span class="input-group-text">
+                                        <i class="bi bi-lock"></i>
+                                    </span>
+                                    <input type="password" 
+                                           class="form-control" 
+                                           id="password" 
+                                           name="password" 
+                                           required 
+                                           autocomplete="current-password"
+                                           minlength="6"
+                                           placeholder="Enter your password">
+                                    <button class="btn btn-outline-secondary" 
+                                            type="button" 
+                                            id="togglePassword" 
+                                            aria-label="Toggle password visibility">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <div class="invalid-feedback">Please enter your password.</div>
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="form-check">
+                                        <input type="checkbox" 
+                                               class="form-check-input" 
+                                               id="rememberMe" 
+                                               name="remember" 
+                                               value="true">
+                                        <label class="form-check-label" for="rememberMe">Remember me</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100" id="loginButton">
+                                <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+                                <span class="btn-text">Sign In</span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="credits fade-in" style="animation-delay: 0.4s">
+                    Designed by <a href="https://pixelcareconsulting.com/"  rel="noopener">Pixelcare Consulting</a>
+                    <p class="mt-2 mb-0 text-muted">Version 1.0.0 2025.0207.0513.004</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Phase Info Modal -->
+<div class="modal-overlay" id="phaseInfoModal" style="display: none;">
+    <div class="modal-container">
+        <div class="modal-header">
+            <i class="bi bi-info-circle"></i>
+            <div>
+                <h4 class="modal-title">Phase 1</h4>
+                <p>Welcome to our e-Invoice implementation!</p>
+            </div>
+        </div>
+        <div class="modal-body">
+            <div class="space-y-3">
+                <div class="flex items-center">
+                    <i class="bi bi-globe"></i>
+                    <span>e-Invoice Generation with PDF Viewer and QR Code Ready</span>
+                </div>
+                <div class="flex items-center">
+                    <i class="bi bi-shield-check"></i>
+                    <span>LHDN Compliance Features</span>
+                </div>
+                <div class="flex items-center">
+                    <i class="bi bi-fingerprint"></i>
+                    <span>Secure Authentication System</span>
+                </div>
+                <div class="flex items-center">
+                    <i class="bi bi-people"></i>
+                    <span>User Management</span>
+                </div>
+                <div class="flex items-center">
+                    <i class="bi bi-file-earmark-text"></i>
+                    <span>Custom ERP Integration</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary w-100" data-action="close">Got it!</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Get DOM elements with null checks
+    const loginForm = document.getElementById('loginForm');
+    const loginButton = document.getElementById('loginButton');
+    const spinner = loginButton?.querySelector('.spinner-border');
+    const buttonText = loginButton?.querySelector('.btn-text');
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('password');
+
+    // Only proceed with form setup if required elements exist
+    if (!loginForm || !loginButton || !passwordInput) {
+        console.error('Required login form elements not found');
+        return;
+    }
+
+    let remainingAttempts = 5;
+
+    // Password visibility toggle
+    if (togglePassword) {
+        togglePassword.addEventListener('click', function() {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            const icon = this.querySelector('i');
+            if (icon) {
+                icon.className = `bi bi-${type === 'password' ? 'eye' : 'eye-slash'}`;
+            }
+        });
+    }
+
+    // Form validation and submission
+    loginForm.addEventListener('submit', async function(event) {
+        event.preventDefault();
+
+        // Reset previous validation
+        this.classList.remove('was-validated');
+        
+        // Check form validity
+        if (!this.checkValidity()) {
+            event.stopPropagation();
+            this.classList.add('was-validated');
+            return;
+        }
+
+        // Show loading state
+        if (spinner && buttonText) {
+            loginButton.disabled = true;
+            spinner.classList.remove('d-none');
+            buttonText.textContent = 'Signing in...';
+        }
+
+        try {
+            const formData = new FormData(this);
+            const data = {
+                username: formData.get('username')?.trim(),
+                password: formData.get('password'),
+                remember: formData.get('remember') === 'true'
+            };
+
+            if (!data.username || !data.password) {
+                throw new Error('Username and password are required');
+            }
+
+            const response = await fetch(this.action, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(data),
+                credentials: 'same-origin'
+            });
+
+            const result = await response.json();
+
+            if (result.sessionExists) {
+                // Show the session modal dynamically
+                showSessionModal();
+                return;
+            }
+
+            if (response.ok && result.success) {
+                remainingAttempts = 5;
+                
+                await Swal.fire({
+                    icon: 'success',
+                    title: 'Welcome Back!',
+                    text: `Welcome back, ${result.user.fullName || result.user.username}!`,
+                    timer: 1500,
+                    showConfirmButton: false,
+                    customClass: {
+                        popup: 'animate__animated animate__fadeInUp'
+                    }
+                });
+                
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1500);
+            } else {
+                if (result.remainingAttempts !== undefined) {
+                    remainingAttempts = result.remainingAttempts;
+                }
+
+                switch (response.status) {
+                    case 403:
+                        await Swal.fire({
+                            icon: 'error',
+                            title: 'Account Locked',
+                            text: 'Too many failed login attempts. Please try again later.',
+                            footer: '<a href="/help">Need help?</a>',
+                            customClass: {
+                                popup: 'animate__animated animate__fadeInDown'
+                            }
+                        });
+                        loginButton.disabled = true;
+                        break;
+                    
+                    case 401:
+                        let text = result.message || 'Invalid username or password';
+                        if (remainingAttempts > 0) {
+                            text += `\nYou have ${remainingAttempts} login ${remainingAttempts === 1 ? 'attempt' : 'attempts'} remaining.`;
+                        }
+                        await Swal.fire({
+                            icon: 'error',
+                            title: 'Login Failed',
+                            text: text,
+                            footer: remainingAttempts <= 2 ? '<a href="/help">Need help?</a>' : null,
+                            customClass: {
+                                popup: 'animate__animated animate__fadeInDown'
+                            }
+                        });
+                        break;
+                    
+                    default:
+                        await Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: result.message || 'An error occurred while trying to log in',
+                            footer: '<a href="/help">Need help?</a>',
+                            customClass: {
+                                popup: 'animate__animated animate__fadeInDown'
+                            }
+                        });
+                }
+
+                passwordInput.value = '';
+                passwordInput.focus();
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            await Swal.fire({
+                icon: 'error',
+                title: 'Connection Error',
+                text: 'Unable to connect to the server. Please check your internet connection and try again.',
+                footer: '<a href="/help">Need help?</a>',
+                customClass: {
+                    popup: 'animate__animated animate__fadeInDown'
+                }
+            });
+        } finally {
+            if (spinner && buttonText) {
+                loginButton.disabled = false;
+                spinner.classList.add('d-none');
+                buttonText.textContent = 'Sign In';
+            }
+        }
+    });
+
+    // Function to show session modal dynamically
+    function showSessionModal() {
+        const modalHTML = `
+            <div class="modal-overlay" id="sessionErrorModal">
+                <div class="modal-container">
+                    <div class="modal-header session-error">
+                        <div class="warning-icon">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
+                        <h4 class="modal-title">Active Session Detected</h4>
+                        <p>This user is already logged in from another session.</p>
+                    </div>
+                    <div class="modal-body session-error-body">
+                        <p>Please log out from other sessions before attempting to log in again.</p>
+                    </div>
+                    <div class="session-error-footer">
+                        <button class="btn btn-secondary w-100" data-action="cancel">Cancel</button>
+                        <button class="btn btn-primary w-100" data-action="confirm">Go to Logout</button>
+                    </div>
+                    <div class="modal-help">
+                        <a href="/help/session-management">Need help with sessions?</a>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const modal = document.getElementById('sessionErrorModal');
+        
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+        
+        // Force reflow
+        modal.offsetHeight;
+        
+        // Add visible class after a frame
+        requestAnimationFrame(() => {
+            modal.classList.add('visible');
+        });
+        
+        // Add event listeners
+        setupModalListeners(modal);
+    }
+
+    // Function to setup modal listeners
+    function setupModalListeners(modal) {
+        if (!modal) return;
+
+        const confirmBtn = modal.querySelector('[data-action="confirm"]');
+        const cancelBtn = modal.querySelector('[data-action="cancel"]');
+
+        confirmBtn?.addEventListener('click', () => {
+            closeModalWithAnimation(() => {
+                window.location.href = '/auth/logout';
+            });
+        });
+
+        cancelBtn?.addEventListener('click', () => {
+            closeModalWithAnimation();
+        });
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeModalWithAnimation();
+            }
+        });
+
+        // Add keyboard listeners
+        document.addEventListener('keydown', function modalKeyHandler(e) {
+            if (!modal) {
+                document.removeEventListener('keydown', modalKeyHandler);
+                return;
+            }
+
+            if (e.key === 'Escape') {
+                closeModalWithAnimation();
+            } else if (e.key === 'Enter' && document.activeElement.tagName !== 'BUTTON') {
+                confirmBtn?.click();
+            }
+        });
+    }
+
+    // Function to handle modal closing animation
+    function closeModalWithAnimation(callback) {
+        const modal = document.getElementById('sessionErrorModal');
+        if (!modal) return;
+
+        modal.classList.remove('visible');
+        modal.classList.add('modal-closing');
+        
+        setTimeout(() => {
+            if (callback) {
+                callback();
+            }
+            modal.remove();
+            document.body.style.overflow = '';
+        }, 150); // Match the transition duration
+    }
+
+    // Initialize modal if it exists on page load
+    const initialModal = document.getElementById('sessionErrorModal');
+    if (initialModal) {
+        // Force reflow
+        initialModal.offsetHeight;
+        
+        // Add visible class after a frame
+        requestAnimationFrame(() => {
+            initialModal.classList.add('visible');
+        });
+        setupModalListeners(initialModal);
+    }
+
+    // Phase Info Modal Functionality
+    const phaseInfoBtn = document.getElementById('phaseInfoBtn');
+    const phaseInfoModal = document.getElementById('phaseInfoModal');
+
+    if (phaseInfoBtn && phaseInfoModal) {
+        phaseInfoBtn.addEventListener('click', () => {
+            phaseInfoModal.style.display = 'flex';
+            // Force reflow
+            phaseInfoModal.offsetHeight;
+            requestAnimationFrame(() => {
+                phaseInfoModal.classList.add('visible');
+            });
+        });
+
+        // Close modal when clicking outside or on close button
+        phaseInfoModal.addEventListener('click', (e) => {
+            if (e.target === phaseInfoModal || e.target.closest('[data-action="close"]')) {
+                closePhaseModal();
+            }
+        });
+
+        // Close on ESC key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && phaseInfoModal.classList.contains('visible')) {
+                closePhaseModal();
+            }
+        });
+    }
+
+    function closePhaseModal() {
+        const modal = document.getElementById('phaseInfoModal');
+        if (!modal) return;
+
+        modal.classList.remove('visible');
+        modal.classList.add('modal-closing');
+        
+        setTimeout(() => {
+            modal.classList.remove('modal-closing');
+            modal.style.display = 'none';
+        }, 150);
+    }
+});
+</script>
+{% endblock %}

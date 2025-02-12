@@ -1,0 +1,110 @@
+<!-- ======= Header ======= -->
+<link rel="stylesheet" href="/assets/css/header.css">
+
+<header class="pinnacle-header">
+  <div class="pinnacle-header__container">
+    <div class="pinnacle-header__wrapper">
+      <!-- Left Section: Logo + Navigation -->
+      <div class="pinnacle-header__logo-section">
+        <!-- Logo -->
+        <a href="/dashboard" style="display: flex; align-items: center; text-decoration: none;">
+          <img src="/assets/img/logo4.png" alt="E-Invoice Portal Logo" class="pinnacle-header__logo">
+        </a>
+
+        <!-- Navigation Menu -->
+        <nav class="pinnacle-header__nav">
+          <ul class="pinnacle-header__nav-list">
+            <li>
+              <a href="/dashboard" class="pinnacle-header__nav-link nav-item-link" id="nav-dashboard">
+                <i class="bi bi-grid-1x2"></i>
+                Dashboard
+              </a>
+            </li>
+            <li>
+              <a href="/outbound" class="pinnacle-header__nav-link nav-item-link" id="nav-outbound">
+                <i class="bi bi-send"></i>
+                Outbound
+              </a>
+            </li>
+            <!-- Inbound -->
+             <li>
+              <a href="/inbound" class="pinnacle-header__nav-link nav-item-link" id="nav-inbound">
+                <i class="bi bi-download"></i>
+                Inbound
+              </a>
+             </li>
+          </ul>
+        </nav>
+      </div>
+
+      <!-- Right Section: Actions + Profile -->
+      <div class="pinnacle-header__actions">
+        <!-- Profile Section -->
+        <div class="pinnacle-header__profile">
+          <button class="pinnacle-header__profile-btn">
+            <img src="/assets/img/noimage.png" alt="Profile" class="pinnacle-header__profile-img profile-logo">
+            <div class="pinnacle-header__profile-info">
+              <div style="display: flex; align-items: center;">
+                <span class="pinnacle-header__profile-name profile-username">Loading...</span>
+                <span class="pinnacle-header__profile-badge admin-badge admin-only">Admin</span>
+              </div>
+            
+            </div>
+            <i class="bi bi-chevron-down pinnacle-header__profile-arrow"></i>
+          </button>
+
+          <!-- Enhanced Dropdown Menu -->
+          <div class="pinnacle-header__dropdown">
+            <div class="pinnacle-header__dropdown-header">
+              <h4 class="pinnacle-header__dropdown-title">Account Settings</h4>
+              <p class="pinnacle-header__dropdown-subtitle">Manage your account preferences</p>
+            </div>
+            
+            <a href="/profile" class="pinnacle-header__dropdown-item admin-only">
+              <i class="bi bi-building"></i>
+              <span>Company Profile</span>
+            </a>
+
+            <!-- <a href="/users" class="pinnacle-header__dropdown-item admin-only">
+              <i class="bi bi-people"></i>
+              <span>User Management</span>
+            </a> -->
+      
+            <a href="/company/profile/:companyName" class="pinnacle-header__dropdown-item normal-user-only">
+              <i class="bi bi-building"></i>
+              <span>Company Profile</span>
+            </a>
+
+            <a href="/settings/user/profile/:id" class="pinnacle-header__dropdown-item normal-user-only">
+              <i class="bi bi-gear"></i>
+              <span>Settings</span>
+            </a>
+
+            <div class="pinnacle-header__dropdown-divider"></div>
+            <a href="/dashboard/audit-trail" class="pinnacle-header__dropdown-item admin-only">
+              <i class="bi bi-file-earmark-text"></i>
+              <span>Audit Logs</span>
+            </a>
+
+            <a href="/settings/user/admin/profile/{{ user.id }}" class="pinnacle-header__dropdown-item admin-only">
+              <i class="bi bi-person"></i>
+              <span>Settings</span>
+            </a>
+
+            <a href="/help" class="pinnacle-header__dropdown-item">
+              <i class="bi bi-question-circle"></i>
+              <span>Help & Support</span>
+            </a>
+            
+            <div class="pinnacle-header__dropdown-divider"></div>
+            
+            <a href="/auth/logout" class="pinnacle-header__dropdown-item pinnacle-header__dropdown-item--danger">
+              <i class="bi bi-box-arrow-right"></i>
+              <span>Sign Out</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>

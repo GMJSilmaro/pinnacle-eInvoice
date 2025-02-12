@@ -1,0 +1,24 @@
+{
+  "watch": [
+    "server.js",
+    "utils/*.js",
+    "routes/*.js",
+    "config/*.js"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    "node_modules/*",
+    "public/*",
+    "logs/*",
+    "*.log",
+    "generated/*",
+    "temp/*",
+    "excel/*",
+    "output/*"
+  ],
+  "env": {
+    "NODE_ENV": "development",
+    "EXCEL_DEBUG": "false"
+  },
+  "delay": "1000"
+} 

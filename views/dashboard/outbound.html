@@ -1,0 +1,359 @@
+{% extends 'layout.html' %}
+
+{% block head %}
+
+<title>Outbound - eInvoice Portal</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<link href="/assets/css/components/outbound-invoice-modal.css" rel="stylesheet">
+
+<link href="/assets/css/pages/outbound/card.css" rel="stylesheet">
+<link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
+<link href="/assets/css/pages/profile.css" rel="stylesheet">
+
+<!-- Scripts with correct order -->
+<script src="/assets/js/shared/utils.js"></script>
+
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4 px-lg-5">
+    <!-- Welcome Card - Full width -->
+    <div class="profile-welcome-section">
+        <!-- Welcome Card - Full width -->
+        <div class="profile-welcome-card">
+            <div class="d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center">
+                <div class="welcome-icon">
+                <i class="bi bi-box-arrow-in-right"></i>
+                </div>
+                <div class="welcome-content">
+                    <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">Outbound</h3>
+                            <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" 
+                            title="<div class='tooltip-content'>
+                                        <div class='tooltip-row'>
+                                        <i class='bi bi-info-circle'></i>
+                                        <span><b>Outbound Overview:</b></span>
+                                        </div>
+                                        <div class='tooltip-row'>
+                                        <i class='bi bi-1-circle'></i>
+                                        <span>Monitor outbound document submissions</span>
+                                        </div>
+                                        <div class='tooltip-row'>
+                                        <i class='bi bi-2-circle'></i>
+                                        <span>Verify document validation status</span>
+                                        </div>
+                                        <div class='tooltip-row'> 
+                                        <i class='bi bi-3-circle'></i>
+                                        <span>Address any submission errors</span>
+                                        </div>
+                                        <div class='tooltip-row'>
+                                        <i class='bi bi-4-circle'></i>
+                                        <span>Keep track of submission timelines</span>
+                                        </div>
+                                    </div>">
+                    Manage and track your outbound document submissions, including validation and submission status.
+                </p>
+                </div>
+            </div>
+            <div class="d-flex align-items-start">
+                <!-- Existing datetime section -->
+                <div class="welcome-datetime text-end">
+                <div class="current-time">
+                    <i class="bi bi-clock"></i>
+                    <span id="currentTime">00:00:00 AM</span>
+                </div>
+                <div class="current-date">
+                    <i class="bi bi-calendar3"></i>
+                    <span id="currentDate">Loading...</span>
+                </div>
+            </div>
+            </div>
+        </div>
+        </div>
+  
+    <!-- Content Section - With margins -->
+    <div class="content-section">
+      <!-- Cards Section -->
+      <div class="cards-container">
+        <!-- Invoices Card -->
+        <div class="info-card total-invoice-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-file-earmark-text"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-primary loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-invoice-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">INVOICES</span>
+        </div>
+
+        <!-- Submitted Card -->
+        <div class="info-card total-submitted-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-check2-circle"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-success loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-submitted-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">SUBMITTED</span>
+        </div>
+
+        <!-- Rejected Card -->
+        <div class="info-card total-rejected-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-file-earmark-excel-fill"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-danger loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-rejected-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">REJECTED</span>
+        </div>
+
+        <!-- Cancelled Card -->
+        <div class="info-card total-cancelled-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-warning loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-cancelled-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">CANCELLED</span>
+        </div>
+
+        <!-- Pending Card -->
+        <div class="info-card total-pending-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-warning loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-pending-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">PENDING</span>
+        </div>
+    </div>
+
+      <!-- Table Container -->
+      <div class="table-section">
+        <div class="outbound-table-container">
+            <table id="invoiceTable" class="outbound-table">
+                <thead>
+                    <tr>
+                        <th class="outbound-checkbox-column">
+                            <div class="outbound-checkbox-header">
+                                <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                            </div>
+                        </th>
+                        <th class="outbound-invoice-column">INVOICE NO.</th>
+                        <th class="outbound-supplier-column">SUPPLIER</th>
+                        <th class="outbound-buyer-column">BUYER</th>
+                        <th class="outbound-date-column">UPLOAD DATE</th>
+                        <th class="outbound-status-column">STATUS</th>
+                        <th class="outbound-source-column">SOURCE</th>
+                        <th class="outbound-action-column">ACTION</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Table body will be populated by DataTables -->
+                </tbody>
+            </table>
+
+            <!-- Loading Overlay -->
+            <div id="tableLoadingOverlay" class="outbound-loading-overlay d-none">
+                <div class="outbound-loading-content">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Fetching invoices...</p>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+        
+
+
+  </div>
+  
+</div>
+
+
+<!-- Modal for Validation Results -->
+<div class="modal fade lhdn-validation-modal" id="validationResultsModal" tabindex="-1" aria-labelledby="validationResultsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="validationResultsModalLabel">
+          <i class="bi bi-shield-check"></i>
+          Validation Results
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="lhdn-validation-content">
+          <div class="lhdn-validation-steps" id="validationResults">
+            <!-- Validation results will be populated here -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Validation Error Modal -->
+<div class="modal fade lhdn-validation-modal" id="validationErrorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-shield-x"></i>
+                    Validation Error
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="lhdn-validation-content">
+                    <div class="lhdn-validation-steps" id="validationErrorList">
+                        <!-- Validation errors will be populated here -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Document Upload Progress Modal -->
+<!-- <div class="modal fade" id="documentUploadModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content upload-modal">
+            <div class="upload-modal-content">
+                <div class="upload-header">
+                    <div class="upload-icon">
+                        <i class="bi bi-cloud-arrow-up"></i>
+                    </div>
+                    <h5>Submitting Document to LHDN</h5>
+                    <p class="text-muted">Please wait while we process your request</p>
+                </div>
+                <div class="upload-progress">
+                    <div class="upload-step-wrapper">
+                        <div class="upload-steps">
+                            <div class="upload-step" id="upload-step1">
+                                <div class="step-icon">
+                                    <i class="bi bi-file-earmark-check"></i>
+                                </div>
+                                <div class="step-content">
+                                    <span class="step-label">Validating Document</span>
+                                    <span class="step-status">Waiting...</span>
+                                </div>
+                            </div>
+                            <div class="upload-step" id="upload-step2">
+                                <div class="step-icon">
+                                    <i class="bi bi-arrow-up-circle"></i>
+                                </div>
+                                <div class="step-content">
+                                    <span class="step-label">Uploading to LHDN</span>
+                                    <span class="step-status">Waiting...</span>
+                                </div>
+                            </div>
+                            <div class="upload-step" id="upload-step3">
+                                <div class="step-icon">
+                                    <i class="bi bi-check-circle"></i>
+                                </div>
+                                <div class="step-content">
+                                    <span class="step-label">Processing</span>
+                                    <span class="step-status">Waiting...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="upload-message" class="upload-message"></div>
+            </div>
+        </div>
+    </div>
+</div> -->
+
+<!-- Alert Template -->
+<template id="alertTemplate">
+    <div class="custom-alert">
+        <i class="alert-icon"></i>
+        <div class="alert-content">
+            <div class="alert-title"></div>
+            <div class="alert-message"></div>
+        </div>
+        <button class="close-btn" onclick="this.parentElement.remove()">×</button>
+    </div>
+</template>
+
+{% endblock %} 
+{% block scripts %}
+<script src="/assets/js/modules/excel/outbound-excel.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<!-- Initialize tooltips -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Example usage of alerts
+    // Success alert
+    window.showSuccessAlert = function(message) {
+        showAlert('success', 'Success', message);
+    };
+
+    // Error alert
+    window.showErrorAlert = function(message) {
+        showAlert('error', 'Error', message);
+    };
+
+    // Warning alert
+    window.showWarningAlert = function(message) {
+        showAlert('warning', 'Warning', message);
+    };
+
+    // Example of showing validation errors
+    window.showValidationErrorModal = function(errors) {
+        showValidationErrors(errors);
+    };
+});
+</script>
+{% endblock %} 

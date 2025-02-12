@@ -1,0 +1,402 @@
+{% extends 'layout.html' %}
+
+{% block head %}
+
+<title>Inbound - eInvoice Portal</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+
+<link href="/assets/css/pages/inbound/card.css" rel="stylesheet">
+
+<link href="/assets/css/pages/profile.css" rel="stylesheet">
+
+<link href="/assets/css/pages/inbound/validation-modal.css" rel="stylesheet">
+<link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
+
+<!-- Template Main CSS Files -->
+<link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
+
+<!-- Scripts with correct order -->
+<script src="/assets/js/shared/utils.js"></script>
+<script src="/assets/js/config/validation-translations.js"></script>
+
+
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4 px-lg-5">
+    <!-- Welcome Card - Full width -->
+    <div class="profile-welcome-section">
+<!-- Welcome Card - Full width -->
+<div class="profile-welcome-card">
+    <div class="d-flex align-items-center justify-content-between">
+      <div class="d-flex align-items-center">
+        <div class="welcome-icon">
+          <i class="bi bi-box-arrow-in-left"></i>
+        </div>
+        <div class="welcome-content">
+            <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">
+                Inbound
+              </h3>
+                    <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" 
+                      title="<div class='tooltip-content'>
+                                <div class='tooltip-row'>
+                                  <i class='bi bi-info-circle'></i>
+                                  <span><b>LHDN Response Information:</b></span>
+                                </div>
+                                <div class='tooltip-row'>
+                                  <i class='bi bi-1-circle'></i>
+                                  <span>View submission results from LHDN</span>
+                                </div>
+                                <div class='tooltip-row'>
+                                  <i class='bi bi-2-circle'></i>
+                                  <span>Check validation results</span>
+                                </div>
+                                <div class='tooltip-row'> 
+                                  <i class='bi bi-3-circle'></i>
+                                  <span>Review any error messages</span>
+                                </div>
+                                <div class='tooltip-row'>
+                                  <i class='bi bi-4-circle'></i>
+                                  <span>Track submission timestamps</span>
+                                </div>
+                              </div>">
+            View and manage your inbound responses from LHDN. Track the status and results of your IRBM submissions here.
+          </p>
+        </div>
+      </div>
+      <div class="d-flex align-items-start">
+        <!-- Existing datetime section -->
+        <div class="welcome-datetime text-end">
+          <div class="current-time">
+              <i class="bi bi-clock"></i>
+              <span id="currentTime">00:00:00 AM</span>
+          </div>
+          <div class="current-date">
+              <i class="bi bi-calendar3"></i>
+              <span id="currentDate">Loading...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+  
+    <!-- Content Section - With margins -->
+    <div class="content-section">
+      <!-- Cards Section -->
+      <div class="cards-container">
+          <!-- Invoices Card -->
+          <div class="info-card invoices-card">
+              <div class="card-info">
+                  <div class="card-icon position-relative">
+                      <i class="bi bi-file-earmark-text"></i>
+                  </div>
+                  <div class="count-info">
+                      <div class="spinner-border text-primary loading-spinner" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                      </div>
+                      <h6 class="total-invoice-value" style="display: none;">0</h6>
+                      <span class="text-muted">Total</span>
+                  </div>
+              </div>
+              <span class="card-title-new">INVOICES</span>
+          </div>
+
+          <!-- Valid Card -->
+          <div class="info-card valid-card">
+              <div class="card-info">
+                  <div class="card-icon position-relative">
+                      <i class="bi bi-check2-circle"></i>
+                  </div>
+                  <div class="count-info">
+                      <div class="spinner-border text-success loading-spinner" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                      </div>
+                      <h6 class="total-valid-value" style="display: none;">0</h6>
+                      <span class="text-muted">Total</span>
+                  </div>
+              </div>
+              <span class="card-title-new">VALID</span>
+          </div>
+
+          <!-- Invalid Card -->
+          <div class="info-card invalid-card">
+              <div class="card-info">
+                  <div class="card-icon position-relative">
+                      <i class="bi bi-file-earmark-excel-fill"></i>
+                  </div>
+                  <div class="count-info">
+                      <div class="spinner-border text-warning loading-spinner" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                      </div>
+                      <h6 class="total-invalid-value" style="display: none;">0</h6>
+                      <span class="text-muted">Total</span>
+                  </div>
+              </div>
+              <span class="card-title-new">INVALID</span>
+          </div>
+
+          <!-- Rejected Card -->
+          <div class="info-card rejected-card">
+              <div class="card-info">
+                  <div class="card-icon position-relative">
+                      <i class="bi bi-file-earmark-excel"></i>
+                  </div>
+                  <div class="count-info">
+                      <div class="spinner-border text-danger loading-spinner" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                      </div>
+                      <h6 class="total-rejected-value" style="display: none;">0</h6>
+                      <span class="text-muted">Total</span>
+                  </div>
+              </div>
+              <span class="card-title-new">REJECTED</span>
+          </div>
+
+          <!-- Cancelled Card -->
+          <div class="info-card cancelled-card">
+              <div class="card-info">
+                  <div class="card-icon position-relative">
+                      <i class="bi bi-exclamation-triangle-fill"></i>
+                  </div>
+                  <div class="count-info">
+                      <div class="spinner-border text-warning loading-spinner" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                      </div>
+                      <h6 class="total-cancel-value" style="display: none;">0</h6>
+                      <span class="text-muted">Total</span>
+                  </div>
+              </div>
+              <span class="card-title-new">CANCELLED</span>
+          </div>
+
+          <!-- Queue Card -->
+          <div class="info-card queue-card">
+              <div class="card-info">
+                  <div class="card-icon position-relative">
+                      <i class="bi bi-exclamation-circle-fill"></i>
+                  </div>
+                  <div class="count-info">
+                      <div class="spinner-border text-dark loading-spinner" role="status">
+                          <span class="visually-hidden">Loading...</span>
+                      </div>
+                      <h6 class="total-queue-value" style="display: none;">0</h6>
+                      <span class="text-muted">Total</span>
+                  </div>
+              </div>
+              <span class="card-title-new">QUEUE</span>
+          </div>
+      </div>
+
+      <!-- Table Section -->
+    <!-- <div class="table-card">
+        <div class="card-body p-0">
+            <div class="d-flex justify-content-between align-items-center p-3">
+                <div class="d-flex align-items-center">
+                    <div class="table-length me-2"></div>
+                    <button id="refreshLHDNData" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
+                    </button>
+                </div>
+                <div class="table-filter"></div>
+            </div>
+            <div class="table-responsive">
+                <table id="invoiceTable" class="table">
+                    <thead>
+                        <tr>
+                                <th class="inbound-checkbox-column">
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input" id="selectAll">
+                                </div>
+
+                            </th>
+                            <th class="inbound-uuid-column">UUID</th>
+                            <th class="inbound-invoice-column">INVOICE NO.</th>
+                            <th class="inbound-type-column">TYPE</th>
+                            <th class="inbound-supplier-column">SUPPLIER</th>
+                            <th class="inbound-buyer-column">RECEIVER</th>
+                            <th class="inbound-issue-date-column">ISSUE DATE</th>
+                            <th class="inbound-received-date-column">RECEIVED DATE</th>
+                            <th class="inbound-status-column">STATUS</th>
+                            <th class="inbound-source-column">SOURCE</th>
+                            <th class="inbound-amount-column">TOTAL SALES</th>
+                            <th class="inbound-action-column">ACTION</th>
+
+                        </tr>
+                    </thead>
+                </table>
+
+                
+                <div id="tableLoadingOverlay" class="table-loading-overlay d-none">
+                    <div class="loading-content">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Fetching invoices...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div> -->
+
+     <div class="table-section">
+        <div class="inbound-table-wrapper">
+            <div class="inbound-table-container">
+                <div class="d-flex justify-content-between align-items-center p-3">
+                    <div class="d-flex align-items-center">
+                        <div class="table-length me-2"></div>
+                        <button id="refreshLHDNData" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
+                        </button>
+                    </div>
+                    <div class="table-filter"></div>
+                </div>
+                <div class="table-responsive">
+                    <table id="invoiceTable" class="outbound-table">
+                        <thead>
+                            <tr>
+                                <th class="inbound-checkbox-column">
+                                    <div class="outbound-checkbox-header">
+                                        <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                                    </div>
+                                </th>
+                                <th class="inbound-uuid-column">UUID</th>
+                                <th class="inbound-invoice-column">INVOICE DOCUMENT</th>
+                                <th class="inbound-supplier-column">SUPPLIER</th>
+                                <th class="inbound-buyer-column">RECEIVER</th>
+                                <th class="inbound-issue-date-column">ISSUE DATE</th>
+                                <th class="inbound-received-date-column">RECEIVED DATE</th>
+                                <th class="inbound-status-column">STATUS</th>
+                                <th class="inbound-source-column">SOURCE</th>
+                                <th class="inbound-amount-column">TOTAL SALES</th>
+                                <th class="inbound-action-column">ACTION</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+        
+
+
+  </div>
+</div>
+<!-- View Details Modal -->
+<div class="modal fade lhdn-inbound-modal" id="documentDetailsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="d-flex align-items-center">
+                    <div>
+                        <h5 class="modal-title mb-0">
+                            <i class="bi bi-file-text"></i>
+                            Document Details
+                        </h5>
+                        <small id="modal-invoice-number" class="text-white-50"></small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center">
+                    <span class="badge-status me-3"></span>
+                    
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <!-- Left Sidebar - Details -->
+                <div class="info-sidebar">
+                    <div class="info-section">
+                        <div class="section-header">
+                            <i class="bi bi-building"></i>
+                            <span>Supplier Information</span>
+                        </div>
+                        <div id="supplier-info-content"></div>
+                    </div>
+
+                    <div class="info-section">
+                        <div class="section-header">
+                            <i class="bi bi-person"></i>
+                            <span>Buyer Information</span>
+                        </div>
+                        <div id="buyer-info-content"></div>
+                    </div>
+
+                    <div class="info-section">
+                        <div class="section-header">
+                            <i class="bi bi-credit-card"></i>
+                            <span>Payment Details</span>
+                        </div>
+                        <div id="payment-info-content"></div>
+                    </div>
+                </div>
+
+                <!-- Right Side - PDF Viewer -->
+                <div class="pdf-section">
+                    <div class="pdf-viewer-container">
+                        <div class="loading-container" id="loadingSpinner">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <div class="loading-text">Loading PDF...</div>
+                        </div>
+                        <iframe id="pdfViewer" style="display: none;"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Validation Results -->
+<div class="modal fade lhdn-validation-modal" id="validationResultsModal" tabindex="-1" aria-labelledby="validationResultsModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="validationResultsModalLabel">
+          <i class="bi bi-shield-check"></i>
+          Validation Results
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="lhdn-validation-content">
+          <div class="lhdn-validation-steps" id="validationResults">
+            <!-- Validation results will be populated here -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Loading Modal -->
+<div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body p-4">
+                <div class="text-center mb-4">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="modal-title mb-3" id="loadingModalLabel">Refreshing Your Data</h5>
+                    <div class="progress mb-3" style="height: 10px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="text-muted" id="loadingStatus">Preparing to fetch your documents...</div>
+                    <div class="small text-muted mt-2" id="loadingDetails"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %} 
+{% block scripts %}
+<script src="/assets/js/modules/excel/inbound-excel.js"></script>
+{% endblock %} 

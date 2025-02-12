@@ -1,0 +1,288 @@
+{% extends 'layout.html' %}
+
+{% block head %}
+<!-- Set page title -->
+<title>Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<link href="/assets/css/components/table.css" rel="stylesheet">
+<link href="/assets/css/components/buttons.css" rel="stylesheet">
+
+<link href="/assets/css/pages/profile.css" rel="stylesheet">
+<link href="/assets/css/welcome-card.css" rel="stylesheet">
+
+
+<style>
+  /* Card Base Styles */
+  .card {
+    border: none;
+    border-radius: 15px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+  }
+
+  .info-card {
+    height: 100%;
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .info-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    transition: all 0.3s ease;
+  }
+
+  .info-card:hover::before {
+    height: 6px;
+  }
+
+  .customers-card::before { background: #00ac69; }
+  .revenue-card::before { background: #f4a100; }
+  .sales-card::before { background: #0061f2; }
+
+  .card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    margin-right: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .info-card:hover .card-icon {
+    transform: scale(1.1);
+  }
+
+  .customers-card .card-icon {
+    background: rgba(0, 172, 105, 0.1);
+    color: #00ac69;
+  }
+
+  .revenue-card .card-icon {
+    background: rgba(244, 161, 0, 0.1);
+    color: #f4a100;
+  }
+
+  .sales-card .card-icon {
+    background: rgba(0, 97, 242, 0.1);
+    color: #0061f2;
+  }
+
+  /* Stats Numbers */
+  #fileCount,
+  #inboundCount,
+  #companyCount {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #363d47;
+    margin-bottom: 0.25rem;
+    line-height: 1;
+  }
+
+  .text-muted {
+    color: #69707a !important;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  /* Card Title */
+  .card-title-new {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #363d47;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 0;
+  }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4 px-lg-5">
+  <!-- Welcome Card -->
+    <div class="profile-welcome-card">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+          <div class="welcome-icon">
+            <i class="bi bi-speedometer2"></i>
+          </div>
+          <div class="welcome-content">
+            <h4 class="mb-1">Dashboard Overview</h4>
+            <p class="mb-0">Monitor your e-invoice activities and manage your transactions efficiently.</p>
+          </div>
+        </div>
+        <div class="welcome-datetime">
+          <div class="current-time">
+            <i class="bi bi-clock"></i>
+            <span id="currentTime">00:00:00 AM</span>
+          </div>
+          <div class="current-date">
+            <i class="bi bi-calendar3"></i>
+            <span id="currentDate">Loading...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+
+
+  <div class="row">
+    <!-- Left Column - Stats & Reports -->
+    <div class="col-lg-8">
+      <!-- Statistics Cards Row -->
+      <div class="row g-3 mb-4">
+        <!-- Outbound Card -->
+        <div class="col-md-4">
+          <div class="card info-card customers-card h-100">
+            <div class="card-body p-3">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                  <div class="card-icon">
+                    <i class="bi bi-box-arrow-right"></i>
+                  </div>
+                  <div>
+                    <h6 id="fileCount" class="mb-0">0</h6>
+                    <span class="text-muted">Total</span>
+                  </div>
+                </div>
+                <a href="/outbound" class="nav-link">
+                  <h5 style="text-align: center;" class="card-title-new">OUTBOUND</h5>
+                  <span style="text-align: center;" class="text-muted">STATUS</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inbound Card -->
+        <div class="col-md-4">
+          <div class="card info-card revenue-card h-100">
+            <div class="card-body p-3">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                  <div class="card-icon">
+                    <i class="bi bi-box-arrow-in-right"></i>
+                  </div>
+                  <div>
+                    <h6 id="inboundCount" class="mb-0">0</h6>
+                    <span class="text-muted">Total</span>
+                  </div>
+                </div>
+                <a href="/inbound" class="nav-link">
+                  <h5 class="card-title-new">INBOUND</h5>
+                  <span style="text-align: center;" class="text-muted">STATUS</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Company Card -->
+        <div class="col-md-4">
+          <div class="card info-card sales-card h-100">
+            <div class="card-body p-3">
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                  <div class="card-icon">
+                    <i class="bi bi-building"></i>
+                  </div>
+                  <div>
+                    <h6 id="companyCount" class="mb-0">0</h6>
+                    <span class="text-muted">Active</span>
+                  </div>
+                </div>
+                <a href="#" class="nav-link">
+                  <h5 class="card-title-new">COMPANIES</h5>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reports Chart -->
+      <div class="card h-90" style="height: 550px;">
+        <div class="card-body p-3">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5 class="card-title-new mb-0">REPORTS BY WEEK</h5>
+           
+          </div>
+          <div id="stackedBarChart"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column - Activity -->
+    <div class="col-lg-4">
+      <div class="card h-90">
+        <div class="card-body p-3">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="card-title-new mb-0">RECENT ACTIVITY</h5>
+            <span class="badge bg-primary rounded-pill">Today</span>
+          </div>
+          <div class="activity-log-container" id="activity-log">
+            <!-- Activity logs will be dynamically populated by JavaScript -->
+          </div>
+          <div class="text-center mt-3">
+            <a href="/dashboard/audit-trail" class="btn btn-light btn-sm w-100">
+              View All Activities
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/assets/js/stackbar.js"></script>
+<script src="/assets/js/logs.js"></script>
+<script src="/assets/js/dashboard.js"></script>
+
+
+<script>
+function updateDateTime() {
+    const timeElement = document.getElementById('currentTime');
+    const dateElement = document.getElementById('currentDate');
+    
+    function update() {
+        const now = new Date();
+        
+        // Update time
+        timeElement.textContent = now.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+        });
+        
+        // Update date
+        dateElement.textContent = now.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    }
+    
+    // Update immediately and then every second
+    update();
+    setInterval(update, 1000);
+}
+
+// Call when the document is ready
+document.addEventListener('DOMContentLoaded', updateDateTime);
+</script>
+{% endblock %} 
