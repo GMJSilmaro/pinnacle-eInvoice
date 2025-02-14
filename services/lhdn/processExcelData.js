@@ -673,7 +673,9 @@ const processExcelData = (rawData) => {
                         percent: getField(footerRow, '79') || DEFAULT_VALUES.ZERO,            // Was taxRate
                         exemptionReason: getField(footerRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
                         taxScheme: {
-                            id: getField(footerRow, '61') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id
+                            id: getField(footerRow, '61') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id,
+                            schemeId: getField(footerRow, '62') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeId,
+                            schemeAgencyId: String(getField(footerRow, '63') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeAgencyId)
                         }
                     }
                 }]

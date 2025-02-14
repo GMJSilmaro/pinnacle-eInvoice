@@ -833,14 +833,70 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
             return taxTypes[code] || code;
         };
 
-                // Calculate computed tax rate
-        const taxableAmount = parseFloat(taxSubtotal?.TaxableAmount?.[0]._ || 0);
-        const taxAmountValue = parseFloat(taxTotal?.TaxAmount?.[0]._ || 0);
-        const computedTaxRate = taxableAmount ? ((taxAmountValue / taxableAmount) * 100).toFixed(0) : '0';
-        const taxRate = taxSubtotal?.Percent?.[0]._ || '0'; // Default to '0' if not found
-        const formattedTaxRate = `${parseFloat(taxRate).toFixed(0)}%`; // Format as a percentage string
-        const taxAmount = parseFloat(invoice?.TaxTotal?.[0]?.TaxAmount?.[0]?._ || 0);
-        
+        // Process tax information for each line item
+        const taxSummary = {};
+        const items = invoice.InvoiceLine?.map((line, index) => {
+            const lineAmount = parseFloat(line.LineExtensionAmount?.[0]._ || 0);
+            const lineTax = parseFloat(line.TaxTotal?.[0]?.TaxAmount?.[0]._ || 0);
+            const quantity = parseFloat(line.InvoicedQuantity?.[0]._ || 0);
+            const unitPrice = parseFloat(line.Price?.[0]?.PriceAmount?.[0]._ || 0);
+            const discount = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
+            
+            // Extract tax information for this line
+            const lineTaxCategory = line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0];
+            const taxTypeCode = lineTaxCategory?.ID?.[0]._ || '06';
+            const taxPercent = parseFloat(lineTaxCategory?.Percent?.[0]._ || 0);
+            
+            // Add to tax summary
+            const taxKey = `${taxTypeCode}_${taxPercent}`;
+            if (!taxSummary[taxKey]) {
+                taxSummary[taxKey] = {
+                    taxType: taxTypeCode,
+                    taxRate: taxPercent,
+                    baseAmount: 0,
+                    taxAmount: 0
+                };
+            }
+            taxSummary[taxKey].baseAmount += lineAmount;
+            taxSummary[taxKey].taxAmount += lineTax;
+
+            // Format quantity with exactly 2 decimal places
+            const formattedQuantity = quantity.toLocaleString('en-MY', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+                useGrouping: false
+            });
+
+            // Format unit price with exactly 4 decimal places
+            const formattedUnitPrice = unitPrice.toLocaleString('en-MY', {
+                minimumFractionDigits: 4,
+                maximumFractionDigits: 4,
+                useGrouping: false
+            });
+            
+            return {
+                No: index + 1,
+                Cls: line.Item?.[0]?.CommodityClassification?.[0]?.ItemClassificationCode?.[0]._ || 'NA',
+                Description: line.Item?.[0]?.Description?.[0]._ || 'NA',
+                Quantity: formattedQuantity,
+                UnitPrice: formattedUnitPrice,
+                QtyAmount: lineAmount.toFixed(2),
+                Disc: discount === 0 ? '-' : discount.toFixed(2),
+                LineTaxPercent: taxPercent.toFixed(2),
+                LineTaxAmount: lineTax.toFixed(2),
+                Total: (lineAmount + lineTax).toFixed(2),
+                TaxType: getTaxTypeDescription(taxTypeCode)
+            };
+        }) || [];
+
+        // Convert tax summary to array for template
+        const taxSummaryArray = Object.values(taxSummary).map(summary => ({
+            baseAmount: summary.baseAmount.toFixed(2),
+            taxType: getTaxTypeDescription(summary.taxType),
+            taxRate: summary.taxRate.toFixed(2),
+            taxAmount: summary.taxAmount.toFixed(2)
+        }));
+
         // Then update the templateData mapping:
         const templateData = {
             // Company Info
@@ -877,54 +933,57 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
             TotalExcludingTax: (parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || 0)).toFixed(2),
             TotalIncludingTax: (parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || 0)).toFixed(2),
             TotalPayableAmount: (parseFloat(invoice.LegalMonetaryTotal?.[0]?.PayableAmount?.[0]._ || 0)).toFixed(2),
-            TotalTaxAmount: taxAmountValue.toFixed(2),
+            TotalTaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2),
 
-            // Additional Info
-            TaxRate: computedTaxRate,
-            TaxAmount: taxAmount,
+            TaxRate: Object.values(taxSummary).reduce((sum, item) => sum + item.taxRate, 0).toFixed(2),
+            TaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2),
 
             // Items array with formatted totals
-            items: invoice.InvoiceLine?.map((line, index) => {
-                const lineAmount = parseFloat(line.LineExtensionAmount?.[0]._ || 0);
-                const lineTax = parseFloat(line.TaxTotal?.[0]?.TaxAmount?.[0]._ || 0);
-                const quantity = parseFloat(line.InvoicedQuantity?.[0]._ || 0);
-                const unitPrice = parseFloat(line.Price?.[0]?.PriceAmount?.[0]._ || 0);
-                const discount = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
-                
-                // Format quantity with exactly 2 decimal places
-                const formattedQuantity = quantity.toLocaleString('en-MY', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                    useGrouping: false
-                });
-
-                // Format unit price with exactly 4 decimal places
-                const formattedUnitPrice = unitPrice.toLocaleString('en-MY', {
-                    minimumFractionDigits: 4,
-                    maximumFractionDigits: 4,
-                    useGrouping: false
-                });
-                
-                return {
-                    No: index + 1,
-                    Cls: line.Item?.[0]?.CommodityClassification?.[0]?.ItemClassificationCode?.[0]._ || 'NA',
-                    Description: line.Item?.[0]?.Description?.[0]._ || 'NA',
-                    Quantity: formattedQuantity,
-                    UnitPrice: formattedUnitPrice,
-                    QtyAmount: lineAmount.toFixed(2),
-                    Disc: discount === 0 ? '-' : discount.toFixed(2),
-                    LineTaxPercent: (parseFloat(line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.Percent?.[0]._ || 0)).toFixed(2),
-                    LineTaxAmount: lineTax.toFixed(2),
-                    Total: (lineAmount + lineTax).toFixed(2),
-                };
-            }) || [],
+            items: items,
 
             // Tax information for footer - exact values from UBL
             TaxType: taxCategory?.ID?.[0]._ || '06',
             TaxSchemeId: getTaxTypeDescription(taxCategory?.ID?.[0]._ || '06'),
-            TaxPercent: '0', // For Sales Tax (01), show 0%
 
             // Footer
+            qrCode: qrCodeDataUrl,
+            DigitalSignature: rawData.digitalSignature || '-',
+            validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString(),
+
+            // Update tax information
+            taxSummary: taxSummaryArray,
+            
+            // Update totals from tax summary
+            TotalExcludingTax: Object.values(taxSummary).reduce((sum, item) => sum + item.baseAmount, 0).toFixed(2),
+            TotalTaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2),
+            TotalIncludingTax: (
+                Object.values(taxSummary).reduce((sum, item) => sum + item.baseAmount + item.taxAmount, 0)
+            ).toFixed(2),
+            TotalPayableAmount: (
+                Object.values(taxSummary).reduce((sum, item) => sum + item.baseAmount + item.taxAmount, 0)
+            ).toFixed(2),
+
+            // Company Info
+            companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
+            companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
+            companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
+            companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
+            InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Tax Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
+            InvoiceVersion: rawData.typeVersionName || 'NA',
+            InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
+            UniqueIdentifier: rawData.uuid || 'NA',
+            OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
+            dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString(),
+            SupplierTIN: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
+            SupplierRegistrationNumber: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
+            SupplierSSTID: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || 'NA',
+            SupplierMSICCode: supplierParty.IndustryClassificationCode?.[0]._ || '00000',
+            SupplierBusinessActivity: supplierParty.IndustryClassificationCode?.[0]?.name || 'NA',
+            BuyerTIN: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
+            BuyerName: customerParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
+            BuyerPhone: customerParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
+            BuyerRegistrationNumber: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
+            BuyerAddress: customerParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
             qrCode: qrCodeDataUrl,
             DigitalSignature: rawData.digitalSignature || '-',
             validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString()

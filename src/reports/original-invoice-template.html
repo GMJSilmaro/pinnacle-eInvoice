@@ -110,7 +110,7 @@
 
         /* Tax Summary Table */
         .tax-summary-table {
-            width: auto;
+            width: 100%;
             border-collapse: collapse;
             margin: 15px 0;
             font-size: 10px;
@@ -119,15 +119,28 @@
         .tax-summary-table th,
         .tax-summary-table td {
             border: 1px solid #000;
-            padding: 4px 8px;
+            padding: 6px 8px;
             text-align: left;
-            min-width: 80px;
         }
 
         .tax-summary-table th {
             background-color: #000;
             color: #fff;
             font-weight: bold;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .tax-summary-table td {
+            background-color: #fff;
+        }
+
+        .tax-summary-table td.text-right {
+            text-align: right;
+        }
+
+        .tax-summary-table td.text-center {
+            text-align: center;
         }
 
         /* Totals Section */
@@ -291,20 +304,28 @@
         </table>
 
         <!-- Tax Summary Table -->
-        <table class="details-table" style="margin-top: 20px; margin-right: 30px;">
-            <tr>
-                <th>Total Product / Service Price</th>
-                <th>Tax type</th>
-                <th>Tax Rate</th>
-                <th>Tax amount</th>
-            </tr>
-            <tr>
-                <td class="text-right">RM{{:TotalExcludingTax}}</td>
-                <td>{{:TaxSchemeId}}</td>
-                <td class="text-center">{{:TaxRate}}%</td>
-                <td class="text-right">RM{{:TotalTaxAmount}}</td>
-            </tr>
-        </table>
+        <div style="margin-top: 20px;">
+            <table class="tax-summary-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th style="width: 10%;">Total Product / Service Price</th>
+                        <th>Tax type</th>
+                        <th>Tax Rate</th>
+                        <th>Tax amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{for taxSummary}}
+                    <tr>
+                        <td class="text-right">RM{{:baseAmount}}</td>
+                        <td class="text-center">{{:taxType}}</td>
+                        <td class="text-center">{{:taxRate}}%</td>
+                        <td class="text-right">RM{{:taxAmount}}</td>
+                    </tr>
+                    {{/for}}
+                </tbody>
+            </table>
+        </div>
 
         <!-- Footer -->
         <div class="footer">

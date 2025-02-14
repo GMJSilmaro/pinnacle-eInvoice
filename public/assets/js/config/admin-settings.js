@@ -2,8 +2,7 @@ let originalFormData = null;
 let hasUnsavedChanges = false;
 let savedLHDNConfig = null;
 
-// Load SAP configuration function
-/*
+
 async function loadSAPConfig() {
     try {
         console.log('Fetching SAP config...');
@@ -201,7 +200,7 @@ async function saveSAPConfig() {
         });
     }
 }
-*/
+
 
 // Consolidate all DOM ready event listeners into a single function
 document.addEventListener('DOMContentLoaded', async function initializeAdminSettings() {
@@ -252,6 +251,7 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
 
         // Initialize LHDN configuration
         await loadLHDNConfig();
+        await loadSAPConfig();
         // Start auto-refresh of access token (every 5 minutes)
         const tokenRefreshInterval = setInterval(updateAccessToken, 5 * 60 * 1000);
 

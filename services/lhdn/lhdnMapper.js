@@ -480,6 +480,45 @@ const mapToLHDNFormat = (excelData, version) => {
             }]
           }]
         }],
+        ...(doc.delivery?.name || doc.delivery?.address ? {
+          "Delivery": [{
+            "DeliveryParty": [{
+              ...(doc.delivery.identifications?.length > 0 && {
+                "PartyIdentification": mapPartyIdentifications(doc.delivery.identifications)
+              }),
+              ...(doc.delivery.name && {
+                "PartyLegalEntity": [{
+                  "RegistrationName": wrapValue(doc.delivery.name)
+                }]
+              }),
+              ...(doc.delivery.address && {
+                "PostalAddress": [{
+                  "CityName": wrapValue(doc.delivery.address.city),
+                  "PostalZone": wrapValue(doc.delivery.address.postcode),
+                  "CountrySubentityCode": wrapValue(doc.delivery.address.state),
+                  "AddressLine": mapAddressLines(doc.delivery.address.line),
+                  "Country": [{
+                    "IdentificationCode": [{
+                      "_": doc.delivery.address.country || "MYS",
+                      "listID": "ISO3166-1",
+                      "listAgencyID": "6"
+                    }]
+                  }]
+                }]
+              })
+            }],
+            ...(doc.delivery.shipment && {
+              "Shipment": [{
+                "ID": wrapValue(doc.delivery.shipment.id),
+                "FreightAllowanceCharge": [{
+                  "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
+                  "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
+                  "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
+                }]
+              }]
+            })
+          }]
+        } : {}),
         "PaymentMeans": [{
           "PaymentMeansCode": wrapValue(String(doc.payment.paymentMeansCode)),
           "PayeeFinancialAccount": [{
@@ -578,50 +617,6 @@ const mapToLHDNFormat = (excelData, version) => {
     lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...buyerParty };
     logger.logMapping('Buyer', doc.buyer, buyerParty);
 
-    // Only include delivery if it exists and has required data
-    let deliveryParty = {};
-    if (doc.delivery?.name || doc.delivery?.address) {
-        deliveryParty = {
-            "Delivery": [{
-                "DeliveryParty": [{
-                    ...(doc.delivery.identifications?.length > 0 && {
-                        "PartyIdentification": mapPartyIdentifications(doc.delivery.identifications)
-                    }),
-                    ...(doc.delivery.name && {
-                        "PartyLegalEntity": [{
-                            "RegistrationName": wrapValue(doc.delivery.name)
-                        }]
-                    }),
-                    ...(doc.delivery.address && {
-                        "PostalAddress": [{
-                            "CityName": wrapValue(doc.delivery.address.city),
-                            "PostalZone": wrapValue(doc.delivery.address.postcode),
-                            "CountrySubentityCode": wrapValue(doc.delivery.address.state),
-                            "AddressLine": mapAddressLines(doc.delivery.address.line),
-                            "Country": [{
-                                "IdentificationCode": [{
-                                    "_": doc.delivery.address.country || "MYS",
-                                    "listID": "ISO3166-1",
-                                    "listAgencyID": "6"
-                                }]
-                            }]
-                        }]
-                    })
-                }],
-                ...(doc.delivery.shipment && {
-                    "Shipment": [{
-                        "ID": wrapValue(doc.delivery.shipment.id),
-                        "FreightAllowanceCharge": [{
-                            "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
-                            "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
-                            "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
-                        }]
-                    }]
-                })
-            }]
-        };
-    }
-
     // Update tax and totals mapping
     const taxAndTotals = {
         "TaxTotal": mapTaxTotal(doc.summary?.taxTotal, doc.header.currency),
@@ -635,12 +630,6 @@ const mapToLHDNFormat = (excelData, version) => {
             "PayableAmount": wrapValue(doc.summary.amounts.payableAmount, doc.header.currency)
         }]
     };
-
-    // Only include delivery in final format if it has content
-    if (Object.keys(deliveryParty).length > 0) {
-        lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...deliveryParty };
-        logger.logMapping('Delivery', doc.delivery, deliveryParty);
-    }
 
     lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...taxAndTotals };
     logger.logMapping('TaxAndTotals', { 
