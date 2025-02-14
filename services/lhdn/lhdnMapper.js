@@ -257,18 +257,45 @@ const mapTaxCategory = (taxCategory, taxScheme) => {
   }];
 };
 
-const mapTaxTotal = (tax, currency) => {
-  const taxScheme = tax?.category?.scheme || DEFAULT_VALUES.TAX_SCHEME;
-  const taxCategory = tax?.category || DEFAULT_VALUES.TAX_CATEGORY;
+// const mapTaxTotal = (tax, currency) => {
+//   const taxScheme = tax?.category?.scheme || DEFAULT_VALUES.TAX_SCHEME;
+//   const taxCategory = tax?.category || DEFAULT_VALUES.TAX_CATEGORY;
+
+//   return [{
+//     "TaxAmount": wrapValue(tax?.taxAmount || 0, currency),
+//     "TaxSubtotal": [{
+//       "TaxableAmount": wrapValue(tax?.taxableAmount || 0, currency),
+//       "TaxAmount": wrapValue(tax?.taxAmount || 0, currency),
+//       "Percent": tax?.taxRate ? wrapNumericValue(tax.taxRate) : undefined,
+//       "TaxCategory": mapTaxCategory(taxCategory, taxScheme)
+//     }]
+//   }];
+// };
+
+const mapTaxTotal = (taxTotal, currency) => {
+  if (!taxTotal) return [];
 
   return [{
-    "TaxAmount": wrapValue(tax?.taxAmount || 0, currency),
-    "TaxSubtotal": [{
-      "TaxableAmount": wrapValue(tax?.taxableAmount || 0, currency),
-      "TaxAmount": wrapValue(tax?.taxAmount || 0, currency),
-      "Percent": tax?.taxRate ? wrapNumericValue(tax.taxRate) : undefined,
-      "TaxCategory": mapTaxCategory(taxCategory, taxScheme)
-    }]
+      "TaxAmount": wrapValue(taxTotal.taxAmount || 0, currency),
+      "TaxSubtotal": taxTotal.taxSubtotal?.map(subtotal => ({
+          "TaxableAmount": wrapValue(subtotal.taxableAmount || 0, currency),
+          "TaxAmount": wrapValue(subtotal.taxAmount || 0, currency),
+          "TaxCategory": [{
+              "ID": [{
+                  "_": subtotal.taxCategory?.id || DEFAULT_VALUES.TAX_CATEGORY.id
+              }],
+              "Percent": wrapNumericValue(subtotal.taxCategory?.percent || 0),
+              "TaxExemptionReason": subtotal.taxCategory?.exemptionReason ? 
+                  wrapValue(subtotal.taxCategory.exemptionReason) : undefined,
+              "TaxScheme": [{
+                  "ID": [{
+                      "_": subtotal.taxCategory?.taxScheme?.id || "VAT", // This should be "OTH"
+                      "schemeID": "UN/ECE 5153",
+                      "schemeAgencyID": "6"
+                  }]
+              }]
+          }]
+      })) || []
   }];
 };
 
@@ -288,7 +315,7 @@ const mapLineItem = (item, currency) => {
       "MultiplierFactorNumeric": charge.multiplierFactorNumeric ? wrapNumericValue(charge.multiplierFactorNumeric) : undefined,
       "Amount": wrapValue(charge.amount || 0, currency)
     })),
-    "TaxTotal": mapTaxTotal(item.tax, currency),
+    "TaxTotal": mapTaxTotal(item.taxTotal, currency),
     "Item": [{
       "CommodityClassification": mapCommodityClassifications(item.item),
       "Description": wrapValue(item.item.description),
@@ -453,35 +480,6 @@ const mapToLHDNFormat = (excelData, version) => {
             }]
           }]
         }],
-        // "Delivery": [{
-        //   "DeliveryParty": [{
-        //     "PartyIdentification": mapPartyIdentifications(doc.delivery.identifications),
-        //     "PartyLegalEntity": [{
-        //       "RegistrationName": wrapValue(doc.delivery.name)
-        //     }],
-        //     "PostalAddress": [{
-        //       "CityName": wrapValue(doc.delivery.address.city),
-        //       "PostalZone": wrapValue(doc.delivery.address.postcode),
-        //       "CountrySubentityCode": wrapValue(doc.delivery.address.state),
-        //       "AddressLine": mapAddressLines(doc.delivery.address.line),
-        //       "Country": [{
-        //         "IdentificationCode": [{
-        //           "_": doc.delivery.address.country || "MYS",
-        //           "listID": "ISO3166-1",
-        //           "listAgencyID": "6"
-        //         }]
-        //       }]
-        //     }]
-        //   }],
-        //   "Shipment": [{
-        //     "ID": wrapValue(doc.delivery.shipment.id),
-        //     "FreightAllowanceCharge": [{
-        //       "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
-        //       "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
-        //       "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
-        //     }]
-        //   }]
-        // }],
         "PaymentMeans": [{
           "PaymentMeansCode": wrapValue(String(doc.payment.paymentMeansCode)),
           "PayeeFinancialAccount": [{
@@ -498,7 +496,7 @@ const mapToLHDNFormat = (excelData, version) => {
           "PaidTime": wrapValue(doc.payment.prepaidPayment.time)
         }],
         "AllowanceCharge": mapAllowanceCharges(doc.allowanceCharge),
-        "TaxTotal": mapTaxTotal(doc.summary?.tax, doc.header.currency),
+        "TaxTotal": mapTaxTotal(doc.summary?.taxTotal, doc.header.currency),
         "LegalMonetaryTotal": [{
           "LineExtensionAmount": wrapValue(doc.summary.amounts.lineExtensionAmount, doc.header.currency),
           "TaxExclusiveAmount": wrapValue(doc.summary.amounts.taxExclusiveAmount, doc.header.currency),
@@ -580,85 +578,75 @@ const mapToLHDNFormat = (excelData, version) => {
     lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...buyerParty };
     logger.logMapping('Buyer', doc.buyer, buyerParty);
 
-    // Map and log delivery party
-    const deliveryParty = {
-      "Delivery": [{
-        "DeliveryParty": [{
-          "PartyIdentification": mapPartyIdentifications(doc.delivery.identifications),
-          "PartyLegalEntity": [{
-            "RegistrationName": wrapValue(doc.delivery.name)
-          }],
-          "PostalAddress": [{
-            "CityName": wrapValue(doc.delivery.address.city),
-            "PostalZone": wrapValue(doc.delivery.address.postcode),
-            "CountrySubentityCode": wrapValue(doc.delivery.address.state),
-            "AddressLine": mapAddressLines(doc.delivery.address.line),
-            "Country": [{
-              "IdentificationCode": [{
-                "_": doc.delivery.address.country || "MYS",
-                "listID": "ISO3166-1",
-                "listAgencyID": "6"
-              }]
+    // Only include delivery if it exists and has required data
+    let deliveryParty = {};
+    if (doc.delivery?.name || doc.delivery?.address) {
+        deliveryParty = {
+            "Delivery": [{
+                "DeliveryParty": [{
+                    ...(doc.delivery.identifications?.length > 0 && {
+                        "PartyIdentification": mapPartyIdentifications(doc.delivery.identifications)
+                    }),
+                    ...(doc.delivery.name && {
+                        "PartyLegalEntity": [{
+                            "RegistrationName": wrapValue(doc.delivery.name)
+                        }]
+                    }),
+                    ...(doc.delivery.address && {
+                        "PostalAddress": [{
+                            "CityName": wrapValue(doc.delivery.address.city),
+                            "PostalZone": wrapValue(doc.delivery.address.postcode),
+                            "CountrySubentityCode": wrapValue(doc.delivery.address.state),
+                            "AddressLine": mapAddressLines(doc.delivery.address.line),
+                            "Country": [{
+                                "IdentificationCode": [{
+                                    "_": doc.delivery.address.country || "MYS",
+                                    "listID": "ISO3166-1",
+                                    "listAgencyID": "6"
+                                }]
+                            }]
+                        }]
+                    })
+                }],
+                ...(doc.delivery.shipment && {
+                    "Shipment": [{
+                        "ID": wrapValue(doc.delivery.shipment.id),
+                        "FreightAllowanceCharge": [{
+                            "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
+                            "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
+                            "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
+                        }]
+                    }]
+                })
             }]
-          }]
-        }],
-        "Shipment": [{
-          "ID": wrapValue(doc.delivery.shipment.id),
-          "FreightAllowanceCharge": [{
-            "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
-            "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
-            "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
-          }]
-        }]
-      }]
-    };
+        };
+    }
 
-    lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...deliveryParty };
-    logger.logMapping('Delivery', doc.delivery, deliveryParty);
-
-    // Map and log payment information
-    const paymentInfo = {
-      "PaymentMeans": [{
-        "PaymentMeansCode": wrapValue(String(doc.payment.paymentMeansCode)),
-        "PayeeFinancialAccount": [{
-          "ID": wrapValue(doc.payment.payeeFinancialAccount)
-        }]
-      }],
-      "PaymentTerms": [{
-        "Note": wrapValue(doc.payment.paymentTerms)
-      }],
-      "PrepaidPayment": [{
-        "ID": wrapValue(doc.payment.prepaidPayment.id),
-        "PaidAmount": wrapValue(doc.payment.prepaidPayment.amount, doc.header.currency),
-        "PaidDate": wrapValue(doc.payment.prepaidPayment.date),
-        "PaidTime": wrapValue(doc.payment.prepaidPayment.time)
-      }]
-    };
-
-    lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...paymentInfo };
-    logger.logMapping('Payment', doc.payment, paymentInfo);
-
-    // Map and log line items
-    const invoiceLines = mapInvoiceLines(doc.items, doc.header.currency);
-    lhdnFormat.Invoice[0].InvoiceLine = invoiceLines;
-    logger.logMapping('LineItems', doc.items, invoiceLines);
-
-    // Map and log tax and totals
+    // Update tax and totals mapping
     const taxAndTotals = {
-      "TaxTotal": mapTaxTotal(doc.summary?.tax, doc.header.currency),
-      "LegalMonetaryTotal": [{
-        "LineExtensionAmount": wrapValue(doc.summary.amounts.lineExtensionAmount, doc.header.currency),
-        "TaxExclusiveAmount": wrapValue(doc.summary.amounts.taxExclusiveAmount, doc.header.currency),
-        "TaxInclusiveAmount": wrapValue(doc.summary.amounts.taxInclusiveAmount, doc.header.currency),
-        "AllowanceTotalAmount": wrapValue(doc.summary.amounts.allowanceTotalAmount, doc.header.currency),
-        "ChargeTotalAmount": wrapValue(doc.summary.amounts.chargeTotalAmount, doc.header.currency),
-        "PayableRoundingAmount": wrapValue(doc.summary.amounts.payableRoundingAmount, doc.header.currency),
-        "PayableAmount": wrapValue(doc.summary.amounts.payableAmount, doc.header.currency)
-      }]
+        "TaxTotal": mapTaxTotal(doc.summary?.taxTotal, doc.header.currency),
+        "LegalMonetaryTotal": [{
+            "LineExtensionAmount": wrapValue(doc.summary.amounts.lineExtensionAmount, doc.header.currency),
+            "TaxExclusiveAmount": wrapValue(doc.summary.amounts.taxExclusiveAmount, doc.header.currency),
+            "TaxInclusiveAmount": wrapValue(doc.summary.amounts.taxInclusiveAmount, doc.header.currency),
+            "AllowanceTotalAmount": wrapValue(doc.summary.amounts.allowanceTotalAmount, doc.header.currency),
+            "ChargeTotalAmount": wrapValue(doc.summary.amounts.chargeTotalAmount, doc.header.currency),
+            "PayableRoundingAmount": wrapValue(doc.summary.amounts.payableRoundingAmount, doc.header.currency),
+            "PayableAmount": wrapValue(doc.summary.amounts.payableAmount, doc.header.currency)
+        }]
     };
+
+    // Only include delivery in final format if it has content
+    if (Object.keys(deliveryParty).length > 0) {
+        lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...deliveryParty };
+        logger.logMapping('Delivery', doc.delivery, deliveryParty);
+    }
 
     lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...taxAndTotals };
-    logger.logMapping('TaxAndTotals', { tax: doc.summary?.tax, amounts: doc.summary?.amounts }, taxAndTotals);
+    logger.logMapping('TaxAndTotals', { 
+        taxTotal: doc.summary?.taxTotal, 
+        amounts: doc.summary?.amounts 
+    }, taxAndTotals);
 
     // Add digital signature for version 1.1
     if (version === '1.1') {

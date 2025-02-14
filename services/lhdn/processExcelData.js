@@ -462,90 +462,224 @@ const processExcelData = (rawData) => {
         return doc;
       };
   
+      // const processLineItem = (lineRow) => {
+      //   return {
+      //     lineId: getField(lineRow, 'InvoiceLine'),
+      //     quantity: getField(lineRow, '70'),
+      //     unitCode: getField(lineRow, '71'),
+      //     unitPrice: getField(lineRow, '88'),
+      //     lineExtensionAmount: getField(lineRow, '72'),
+      //     allowanceCharges: [{
+      //       chargeIndicator: getField(lineRow, '73') === true || 
+      //                       getField(lineRow, '73') === 'true' || 
+      //                       getField(lineRow, '73') === 1,
+      //       reason: getField(lineRow, '74') || null,
+      //       multiplierFactorNumeric: getField(lineRow, '75') || 0,
+      //       amount: getField(lineRow, '76') || 0
+      //     }],
+      //     tax: {
+      //       totalAmount: getField(lineRow, 'InvoiceLine_TaxTotal') || DEFAULT_VALUES.ZERO,
+      //       taxAmount: getField(lineRow, '78') || DEFAULT_VALUES.ZERO,
+      //       taxableAmount: getField(lineRow, '77') || DEFAULT_VALUES.ZERO,
+      //       taxExemptedAmount: getField(lineRow, '78') || DEFAULT_VALUES.ZERO,
+      //       taxRate: getField(lineRow, '79') || DEFAULT_VALUES.ZERO,
+      //       taxTypeCode: getField(lineRow, '80') || DEFAULT_VALUES.NOT_APPLICABLE,
+      //       taxExemptionReason: getField(lineRow, '81') || DEFAULT_VALUES.NOT_APPLICABLE,
+      //       taxSubtotal: {
+      //         taxableAmount: getField(lineRow, '77') || DEFAULT_VALUES.ZERO,
+      //         taxAmount: getField(lineRow, '78') || DEFAULT_VALUES.ZERO
+      //       },
+      //       category: {
+      //         id: getField(lineRow, '80') || DEFAULT_VALUES.TAX_CATEGORY.id,
+      //         exemptionReason: getField(lineRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
+      //         scheme: {
+      //           id: getField(lineRow, '82') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id,
+      //           schemeId: getField(lineRow, '83') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeId,
+      //           schemeAgencyId: String(getField(lineRow, '84') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeAgencyId)
+      //         }
+      //       }
+      //     },
+      //     item: {
+      //       classification: {
+      //         code: getField(lineRow, 'InvoiceItem'),
+      //         type: getField(lineRow, '85')
+      //       },
+      //       description: getField(lineRow, '86'),
+      //       originCountry: getField(lineRow, '87')
+      //     },
+      //     price: {
+      //       amount: getField(lineRow, '88'),
+      //       subtotal: getField(lineRow, '89'),
+      //       extension: getField(lineRow, '89')
+      //     }
+      //   };
+      // };
+
       const processLineItem = (lineRow) => {
         return {
-          lineId: getField(lineRow, 'InvoiceLine'),
-          quantity: getField(lineRow, '70'),
-          unitCode: getField(lineRow, '71'),
-          unitPrice: getField(lineRow, '88'),
-          lineExtensionAmount: getField(lineRow, '72'),
-          allowanceCharges: [{
-            chargeIndicator: getField(lineRow, '73') === true || 
-                            getField(lineRow, '73') === 'true' || 
-                            getField(lineRow, '73') === 1,
-            reason: getField(lineRow, '74') || null,
-            multiplierFactorNumeric: getField(lineRow, '75') || 0,
-            amount: getField(lineRow, '76') || 0
-          }],
-          tax: {
-            totalAmount: getField(lineRow, 'InvoiceLine_TaxTotal') || DEFAULT_VALUES.ZERO,
-            taxAmount: getField(lineRow, '78') || DEFAULT_VALUES.ZERO,
-            taxableAmount: getField(lineRow, '77') || DEFAULT_VALUES.ZERO,
-            taxExemptedAmount: getField(lineRow, '78') || DEFAULT_VALUES.ZERO,
-            taxRate: getField(lineRow, '79') || DEFAULT_VALUES.ZERO,
-            taxTypeCode: getField(lineRow, '80') || DEFAULT_VALUES.NOT_APPLICABLE,
-            taxExemptionReason: getField(lineRow, '81') || DEFAULT_VALUES.NOT_APPLICABLE,
-            taxSubtotal: {
-              taxableAmount: getField(lineRow, '77') || DEFAULT_VALUES.ZERO,
-              taxAmount: getField(lineRow, '78') || DEFAULT_VALUES.ZERO
+            lineId: getField(lineRow, 'InvoiceLine'),
+            quantity: getField(lineRow, '70'),
+            unitCode: getField(lineRow, '71'),
+            unitPrice: getField(lineRow, '88'),
+            lineExtensionAmount: getField(lineRow, '72'),
+            allowanceCharges: [{
+                chargeIndicator: getField(lineRow, '73') === true || 
+                                getField(lineRow, '73') === 'true' || 
+                                getField(lineRow, '73') === 1,
+                reason: getField(lineRow, '74') || null,
+                multiplierFactorNumeric: getField(lineRow, '75') || 0,
+                amount: getField(lineRow, '76') || 0
+            }],
+            taxTotal: {
+                taxAmount: getField(lineRow, 'InvoiceLine_TaxTotal') || DEFAULT_VALUES.ZERO,
+                taxSubtotal: [{
+                    taxableAmount: getField(lineRow, '77') || DEFAULT_VALUES.ZERO,
+                    taxAmount: getField(lineRow, '78') || DEFAULT_VALUES.ZERO,
+                    taxCategory: {
+                        id: getField(lineRow, '80') || DEFAULT_VALUES.TAX_CATEGORY.id,
+                        percent: getField(lineRow, '79') || DEFAULT_VALUES.ZERO,
+                        exemptionReason: getField(lineRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
+                        taxScheme: {
+                            id: getField(lineRow, '82') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id
+                        }
+                    }
+                }]
             },
-            category: {
-              id: getField(lineRow, '80') || DEFAULT_VALUES.TAX_CATEGORY.id,
-              exemptionReason: getField(lineRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
-              scheme: {
-                id: getField(lineRow, '82') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id,
-                schemeId: getField(lineRow, '83') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeId,
-                schemeAgencyId: String(getField(lineRow, '84') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeAgencyId)
-              }
+            item: {
+                classification: {
+                    code: getField(lineRow, 'InvoiceItem'),
+                    type: getField(lineRow, '85')
+                },
+                description: getField(lineRow, '86'),
+                originCountry: getField(lineRow, '87')
+            },
+            price: {
+                amount: getField(lineRow, '88'),
+                subtotal: getField(lineRow, '89'),
+                extension: getField(lineRow, '89')
             }
-          },
-          item: {
-            classification: {
-              code: getField(lineRow, 'InvoiceItem'),
-              type: getField(lineRow, '85')
-            },
-            description: getField(lineRow, '86'),
-            originCountry: getField(lineRow, '87')
-          },
-          price: {
-            amount: getField(lineRow, '88'),
-            subtotal: getField(lineRow, '89'),
-            extension: getField(lineRow, '89')
-          }
         };
-      };
+    };
+    
+    const DEFAULT_VALUES = {
+        CURRENCY: 'MYR',
+        COUNTRY: 'MYS',
+        COUNTRY_SCHEME: {
+            listId: 'ISO3166-1',
+            agencyId: '6'
+        },
+        TAX_SCHEME: {
+            id: 'VAT'  // Changed from 'OTH' to 'VAT' as per LHDN
+        },
+        NOT_APPLICABLE: 'NA',
+        ZERO: 0,
+        TAX_CATEGORY: {
+            id: '01',
+            exemptionReason: 'NA',
+            scheme: {
+                id: 'VAT'  // Changed from 'OTH' to 'VAT'
+            }
+        }
+    };
+    
+    // Add helper function to support multiple tax types if needed
+    const createTaxSubtotal = (taxTypeCode, taxAmount, taxableAmount, percent, exemptionReason) => {
+        return {
+            taxableAmount: taxableAmount || DEFAULT_VALUES.ZERO,
+            taxAmount: taxAmount || DEFAULT_VALUES.ZERO,
+            taxCategory: {
+                id: taxTypeCode || DEFAULT_VALUES.TAX_CATEGORY.id,
+                percent: percent || DEFAULT_VALUES.ZERO,
+                exemptionReason: exemptionReason || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
+                taxScheme: {
+                    id: DEFAULT_VALUES.TAX_SCHEME.id
+                }
+            }
+        };
+    };
+    
+    // Add function to process multiple tax types if needed
+    const processMultipleTaxTypes = (taxRows) => {
+        let totalTaxAmount = 0;
+        const taxSubtotals = taxRows.map(row => {
+            const taxAmount = getField(row, '78') || DEFAULT_VALUES.ZERO;
+            totalTaxAmount += taxAmount;
+            
+            return createTaxSubtotal(
+                getField(row, '80'),
+                taxAmount,
+                getField(row, '77'),
+                getField(row, '79'),
+                getField(row, '81')
+            );
+        });
+    
+        return {
+            taxAmount: totalTaxAmount,
+            taxSubtotal: taxSubtotals
+        };
+    };
   
+      // const processFooter = (footerRow) => {
+      //   return {
+      //     amounts: {
+      //       lineExtensionAmount: getField(footerRow, 'LegalMonetaryTotal') || DEFAULT_VALUES.ZERO,
+      //       taxExclusiveAmount: getField(footerRow, '64') || DEFAULT_VALUES.ZERO,
+      //       taxInclusiveAmount: getField(footerRow, '65') || DEFAULT_VALUES.ZERO,
+      //       allowanceTotalAmount: getField(footerRow, '66') || DEFAULT_VALUES.ZERO,
+      //       chargeTotalAmount: getField(footerRow, '67') || DEFAULT_VALUES.ZERO,
+      //       payableRoundingAmount: getField(footerRow, '68') || DEFAULT_VALUES.ZERO,
+      //       payableAmount: getField(footerRow, '69') || DEFAULT_VALUES.ZERO
+      //     },
+      //     tax: {
+      //       totalAmount: getField(footerRow, 'Invoice_TaxTotal') || DEFAULT_VALUES.ZERO,
+      //       taxAmount: getField(footerRow, 'Invoice_TaxTotal') || DEFAULT_VALUES.ZERO,
+      //       taxableAmount: getField(footerRow, '58') || DEFAULT_VALUES.ZERO,
+      //       taxExemptedAmount: getField(footerRow, '59') || DEFAULT_VALUES.ZERO,
+      //       taxRate: getField(footerRow, '79') || DEFAULT_VALUES.ZERO,
+      //       taxTypeCode: getField(footerRow, '60') || DEFAULT_VALUES.NOT_APPLICABLE,
+      //       taxExemptionReason: getField(footerRow, '81') || DEFAULT_VALUES.NOT_APPLICABLE,
+      //       category: {
+      //         id: getField(footerRow, '60') || DEFAULT_VALUES.TAX_CATEGORY.id,
+      //         exemptionReason: getField(footerRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
+      //         scheme: {
+      //           id: getField(footerRow, '61') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id,
+      //           schemeId: getField(footerRow, '62') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeId,
+      //           schemeAgencyId: String(getField(footerRow, '63') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeAgencyId)
+      //         }
+      //       }
+      //     }
+      //   };
+      // };
+
       const processFooter = (footerRow) => {
         return {
-          amounts: {
-            lineExtensionAmount: getField(footerRow, 'LegalMonetaryTotal') || DEFAULT_VALUES.ZERO,
-            taxExclusiveAmount: getField(footerRow, '64') || DEFAULT_VALUES.ZERO,
-            taxInclusiveAmount: getField(footerRow, '65') || DEFAULT_VALUES.ZERO,
-            allowanceTotalAmount: getField(footerRow, '66') || DEFAULT_VALUES.ZERO,
-            chargeTotalAmount: getField(footerRow, '67') || DEFAULT_VALUES.ZERO,
-            payableRoundingAmount: getField(footerRow, '68') || DEFAULT_VALUES.ZERO,
-            payableAmount: getField(footerRow, '69') || DEFAULT_VALUES.ZERO
-          },
-          tax: {
-            totalAmount: getField(footerRow, 'Invoice_TaxTotal') || DEFAULT_VALUES.ZERO,
-            taxAmount: getField(footerRow, 'Invoice_TaxTotal') || DEFAULT_VALUES.ZERO,
-            taxableAmount: getField(footerRow, '58') || DEFAULT_VALUES.ZERO,
-            taxExemptedAmount: getField(footerRow, '59') || DEFAULT_VALUES.ZERO,
-            taxRate: getField(footerRow, '79') || DEFAULT_VALUES.ZERO,
-            taxTypeCode: getField(footerRow, '60') || DEFAULT_VALUES.NOT_APPLICABLE,
-            taxExemptionReason: getField(footerRow, '81') || DEFAULT_VALUES.NOT_APPLICABLE,
-            category: {
-              id: getField(footerRow, '60') || DEFAULT_VALUES.TAX_CATEGORY.id,
-              exemptionReason: getField(footerRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
-              scheme: {
-                id: getField(footerRow, '61') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id,
-                schemeId: getField(footerRow, '62') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeId,
-                schemeAgencyId: String(getField(footerRow, '63') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeAgencyId)
-              }
+            amounts: {
+                lineExtensionAmount: getField(footerRow, 'LegalMonetaryTotal') || DEFAULT_VALUES.ZERO,
+                taxExclusiveAmount: getField(footerRow, '64') || DEFAULT_VALUES.ZERO,
+                taxInclusiveAmount: getField(footerRow, '65') || DEFAULT_VALUES.ZERO,
+                allowanceTotalAmount: getField(footerRow, '66') || DEFAULT_VALUES.ZERO,
+                chargeTotalAmount: getField(footerRow, '67') || DEFAULT_VALUES.ZERO,
+                payableRoundingAmount: getField(footerRow, '68') || DEFAULT_VALUES.ZERO,
+                payableAmount: getField(footerRow, '69') || DEFAULT_VALUES.ZERO
+            },
+            taxTotal: {                // Changed from 'tax' to 'taxTotal'
+                taxAmount: getField(footerRow, 'Invoice_TaxTotal') || DEFAULT_VALUES.ZERO,
+                taxSubtotal: [{        // Changed to array structure
+                    taxableAmount: getField(footerRow, '58') || DEFAULT_VALUES.ZERO,
+                    taxAmount: getField(footerRow, 'Invoice_TaxTotal') || DEFAULT_VALUES.ZERO,
+                    taxCategory: {
+                        id: getField(footerRow, '60') || DEFAULT_VALUES.TAX_CATEGORY.id,      // Was taxTypeCode
+                        percent: getField(footerRow, '79') || DEFAULT_VALUES.ZERO,            // Was taxRate
+                        exemptionReason: getField(footerRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
+                        taxScheme: {
+                            id: getField(footerRow, '61') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id
+                        }
+                    }
+                }]
             }
-          }
         };
-      };
+    };
   
       /**
        * Process each row in the Excel data:

@@ -16,7 +16,25 @@ const { exec } = require('child_process');
 const LHDNSubmitter = require('../../services/lhdn/lhdnSubmitter');
 const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../services/lhdn/lhdnService');
 const { getActiveSAPConfig } = require('../../config/paths');
+const { formatLHDNError } = require('../../utils/lhdnErrorHandler');
 
+const handleLHDNResponse = async (response) => {
+    if (!response.ok) {
+        const errorData = await response.json();
+        
+        // Format error for frontend
+        const formattedError = {
+            status: response.status,
+            message: 'LHDN Validation Failed',
+            errors: Array.isArray(errorData.errors) 
+                ? errorData.errors.map(formatLHDNError)
+                : [formatLHDNError(errorData)]
+        };
+
+        throw formattedError;
+    }
+    return response.json();
+};
 /**
  * Helper function to read Excel file with detailed logging
  */
