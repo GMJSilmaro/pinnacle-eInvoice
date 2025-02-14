@@ -968,7 +968,7 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
             companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
             companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
             companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
-            InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Tax Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
+            InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice 1.0' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
             InvoiceVersion: rawData.typeVersionName || 'NA',
             InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
             UniqueIdentifier: rawData.uuid || 'NA',
