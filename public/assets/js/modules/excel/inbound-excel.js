@@ -1,3 +1,47 @@
+// Toast Manager Class
+class ToastManager {
+    static container = null;
+
+    static init() {
+        if (!this.container) {
+            this.container = document.createElement('div');
+            this.container.className = 'custom-toast-container';
+            document.body.appendChild(this.container);
+        }
+    }
+
+    static show(message, type = 'success') {
+        this.init();
+
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `custom-toast ${type}`;
+        
+        // Create icon
+        const icon = document.createElement('div');
+        icon.className = `custom-toast-icon ${type}`;
+        icon.innerHTML = type === 'success' 
+            ? '<i class="bi bi-check-circle-fill"></i>'
+            : '<i class="bi bi-x-circle-fill"></i>';
+        
+        // Create message
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'custom-toast-message';
+        messageDiv.textContent = message;
+        
+        // Assemble toast
+        toast.appendChild(icon);
+        toast.appendChild(messageDiv);
+        this.container.appendChild(toast);
+        
+        // Remove toast after delay
+        setTimeout(() => {
+            toast.style.animation = 'fadeOut 0.2s ease-in-out forwards';
+            setTimeout(() => toast.remove(), 200);
+        }, 1500);
+    }
+}
+
 // DateTime Manager Class
 class DateTimeManager {
     static updateDateTime() {
@@ -34,6 +78,146 @@ class DateTimeManager {
     }
 }
 
+// Add Tailwind styles at the top of the file
+const tableStyles = `
+<style>
+    /* Source Badge Styles */
+    .badge-source {
+        @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+    }
+    .badge-source.manual {
+        @apply bg-blue-100 text-blue-800;
+    }
+    .badge-source.schedule {
+        @apply bg-purple-100 text-purple-800;
+    }
+
+    /* Table Styles */
+    .outbound-table-container {
+        @apply w-full overflow-hidden rounded-lg shadow bg-white;
+    }
+    
+    .outbound-table {
+        @apply min-w-full divide-y divide-gray-200;
+    }
+    
+    .outbound-table th {
+        @apply px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap;
+    }
+    
+    .outbound-table td {
+        @apply px-4 py-3 whitespace-nowrap text-sm text-gray-900;
+    }
+
+    /* Status Badge Styles */
+    .outbound-status {
+        @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    }
+    .outbound-status.pending {
+        @apply bg-yellow-100 text-yellow-800;
+    }
+    .outbound-status.submitted {
+        @apply bg-green-100 text-green-800;
+    }
+    .outbound-status.cancelled {
+        @apply bg-gray-100 text-gray-800;
+    }
+    .outbound-status.rejected {
+        @apply bg-red-100 text-red-800;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1280px) {
+        .outbound-table th, .outbound-table td {
+            @apply px-2 py-2 text-xs;
+        }
+        .outbound-table-container {
+            @apply mx-auto max-w-full;
+        }
+        .outbound-table {
+            @apply table-auto;
+        }
+    }
+</style>`;
+
+// Add styles to document
+document.head.insertAdjacentHTML('beforeend', tableStyles);
+
+// Add additional styles to document
+const additionalStyles = `
+<style>
+    /* Table Container */
+    .outbound-table-wrapper {
+        @apply w-full bg-white shadow-sm rounded-lg overflow-hidden;
+    }
+
+    /* Table Controls */
+    .outbound-controls {
+        @apply flex flex-wrap items-center justify-between p-4 border-b border-gray-200;
+    }
+
+    .outbound-length-control {
+        @apply flex items-center space-x-2;
+    }
+
+    .outbound-search-control {
+        @apply relative mt-2 sm:mt-0;
+    }
+
+    /* Table Header */
+    .outbound-table thead th {
+        @apply bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+    }
+
+    /* Table Body */
+    .outbound-table tbody td {
+        @apply px-4 py-3 text-sm text-gray-900 border-b border-gray-200;
+    }
+
+    /* Table Footer */
+    .outbound-bottom {
+        @apply flex flex-wrap items-center justify-between p-4 border-t border-gray-200;
+    }
+
+    /* Pagination */
+    .outbound-pagination {
+        @apply flex items-center justify-end space-x-2;
+    }
+
+    .outbound-pagination .paginate_button {
+        @apply px-3 py-1 text-sm font-medium rounded-md transition-colors;
+    }
+
+    .outbound-pagination .paginate_button.current {
+        @apply bg-primary-600 text-white;
+    }
+
+    .outbound-pagination .paginate_button:not(.current) {
+        @apply text-gray-700 hover:bg-gray-100;
+    }
+
+    /* Action Buttons */
+    .outbound-action-btn {
+        @apply inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md shadow-sm 
+        transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2;
+    }
+
+    .outbound-action-btn.submit {
+        @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+    }
+
+    .outbound-action-btn.cancel {
+        @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+    }
+
+    .outbound-action-btn[disabled] {
+        @apply bg-gray-200 text-gray-500 cursor-not-allowed opacity-70;
+    }
+</style>`;
+
+// Add additional styles to document
+document.head.insertAdjacentHTML('beforeend', additionalStyles);
+
 // Create a class for managing inbound invoices
 class InvoiceTableManager {
     static instance = null;
@@ -60,15 +244,6 @@ class InvoiceTableManager {
             return;
         }
 
-        // Add refresh button to the table header
-        const refreshButton = `
-            <button id="refreshLHDNData" class="btn btn-outline-primary btn-sm me-2">
-                <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
-            </button>
-        `;
-        // Move button to be before the search input
-        $('.dataTables_filter').prepend(refreshButton);
-
         this.table = $('#invoiceTable').DataTable({
             processing: false,
             serverSide: false,
@@ -93,81 +268,102 @@ class InvoiceTableManager {
                 {
                     data: null,
                     orderable: false,
-                    className: 'checkbox-column',
+                    className: 'outbound-checkbox-column',
                     defaultContent: `
-                        <div class="form-check">
-                            <input type="checkbox" class="form-check-input row-checkbox">
-                        </div>`,
-                    width: '28px'
+                        <div class="outbound-checkbox-header">
+                            <input type="checkbox" class="outbound-checkbox row-checkbox">
+                        </div>`
                 },
                 {
                     data: 'uuid',
-                    className: 'uuid-column',
-                    width: '180px',
+                    className: 'inbound-uuid-column',
                     render: function(data) {
-                        return `<a href="#" class="badge-status Valid text-truncate" data-bs-toggle="tooltip" data-bs-placement="top" title="Click to copy UUID">${data}</a>`;
+                        return `
+                            <div class="flex flex-col">
+                                <div class="flex items-center gap-2">
+                                    <a href="#" class="inbound-badge-status text-truncate copy-uuid" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="${data}" 
+                                       data-uuid="${data}"
+                                       style="max-width: 180px; overflow: hidden; text-overflow: ellipsis;">
+                                        ${data}
+                                    </a>
+                                </div>
+                            </div>`;
                     }
                 },
                 {
                     data: 'internalId',
                     title: 'INTERNAL ID',
-                    className: 'invoice-number text-center',
-                    render: data => `<span class="badge-invoice">${data}</span>`
+                    className: 'inbound-invoice-column',
+                    render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                 },
-                {
-                    data: null,
-                    title: 'TYPE',
-                    className: 'type-column ',
-                    render: function(row) {
-                        return `<span class="badge-type invoice">Invoice ${row.typeVersionName || '1.0'}</span>`;
-                    }
-                },
+          
                 {
                     data: 'supplierName',
                     title: 'SUPPLIER',
-                    className: 'customer-name',
-                    render: function(data) {
-                        return `<div class="customer-name" data-bs-toggle="tooltip" data-bs-placement="top" title="${data}">${data}</div>`;
-                    }
+                    className: 'inbound-supplier-column',
+                   render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                 },
                 {
                     data: 'receiverName',
                     title: 'RECEIVER',
-                    className: 'customer-name',
-                    render: function(data) {
-                        return `<div class="customer-name" data-bs-toggle="tooltip" data-bs-placement="top" title="${data}">${data}</div>`;
-                    }
-                },
-                {
-                    data: 'dateTimeIssued',
-                    title: 'ISSUE DATE', 
-                    className: 'date-column text-left',
-                    render: data => `<div class="date-column" data-bs-toggle="tooltip" data-bs-placement="top" title="${this.formatDate(data)}">${this.formatDate(data)}</div>`
-                },
-                {
-                    data: 'dateTimeReceived',
-                    title: 'RECEIVED DATE',
-                    className: 'date-column text-left',
-                    render: data => `<div class="date-column" data-bs-toggle="tooltip" data-bs-placement="top" title="${this.formatDate(data)}">${this.formatDate(data)}</div>`
+                    className: 'inbound-buyer-column',
+                    render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                 },
                 {
                     data: null,
-                    title: 'STATUS',
-                    className: 'status-column text-center',
-                    render: function(row) {
-                        return `<span class="badge-status ${row.status}">${row.status}</span>`;
-                    }
+                    className: 'inbound-date-column',
+                    title: 'ISSUE DATE',
+                    render: function(data, type, row) {
+                        return this.renderDateInfo(row.dateTimeIssued);
+                    }.bind(this)
                 },
                 {
-                    data: 'submissionChannel',
-                    title: 'SOURCE',
-                    className: 'source-column text-center',
-                    render: data => `<span class="badge bg-primary rounded-pill">LHDN</span>`
+                    data: null,
+                    className: 'inbound-date-column',
+                    title: 'RECEIVED DATE',
+                    render: function(data, type, row) {
+                        return this.renderDateInfo(row.dateTimeReceived);
+                    }.bind(this)
+                },
+                {
+                    data: 'status',
+                    className: 'inbound-status-column',
+                    render: function(data) {
+                        const statusClass = data.toLowerCase();
+                        const icons = {
+                            valid: 'check-circle-fill',
+                            invalid: 'x-circle-fill',
+                            pending: 'hourglass-split',
+                            rejected: 'x-circle-fill',
+                            cancelled: 'x-circle-fill'
+                        };
+                        const statusColors = {
+                            valid: '#198754',
+                            invalid: '#dc3545',
+                            pending: '#ff8307',
+                            rejected: '#dc3545',
+                            cancelled: '#ffc107'
+                        };
+                        const icon = icons[statusClass] || 'question-circle';
+                        const color = statusColors[statusClass];
+
+                        return `
+                            <span class="inbound-status ${statusClass}" 
+                                  style="display: inline-flex; align-items: center; gap: 6px; 
+                                         padding: 6px 12px; border-radius: 6px; 
+                                         background: ${color}15; color: ${color}; 
+                                         font-weight: 500; transition: all 0.2s ease;">
+                                <i class="bi bi-${icon}"></i>${data}
+                            </span>`;
+                    }
                 },
                 {
                     data: 'totalSales',
                     title: 'TOTAL SALES',
-                    className: 'amount-column text-end',
+                    className: 'inbound-amount-column',
                     render: data => `<span class="text-nowrap">MYR ${parseFloat(data || 0).toLocaleString('en-MY', {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2
@@ -175,15 +371,15 @@ class InvoiceTableManager {
                 },
                 {
                     data: null,
-                    title: '',
-                    className: 'action-column text-center',
+                    className: 'inbound-action-column',
                     orderable: false,
                     render: function(row) {
                         return `
                             <button class="outbound-action-btn submit" 
                                     onclick="viewInvoiceDetails('${row.uuid}')"
                                     data-uuid="${row.uuid}">
-                                <i class="bi bi-eye me-1"></i>View</button>`;
+                                <i class="bi bi-eye me-1"></i>View
+                            </button>`;
                     }
                 }
             ],
@@ -192,7 +388,7 @@ class InvoiceTableManager {
             scrollCollapse: true,
             autoWidth: false,
             pageLength: 10,
-            dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rtip',
+            dom: '<"inbound-controls"<"inbound-length-control"l><"inbound-search-control"f>>rt<"inbound-bottom"<"inbound-info"i><"inbound-pagination"p>>',
             language: {
                 search: '',
                 searchPlaceholder: 'Search...',
@@ -269,6 +465,135 @@ class InvoiceTableManager {
         if (this.table) {
             this.table.destroy();
         }
+    }
+
+    renderInvoiceNumber(data, type, row) {
+        if (!data) return '<span class="text-muted">N/A</span>';
+        
+        // Get document type icon based on type
+        const getDocTypeIcon = (docType) => {
+            const icons = {
+                'Invoice 1.0': 'receipt',
+                'Credit Note 1.0': 'arrow-return-left',
+                'Debit Note 1.0': 'arrow-return-right',
+                'Refund Note 1.0': 'cash-stack'
+            };
+            return icons[docType] || 'file-text';
+        };
+
+        // Get document type color based on type
+        const getDocTypeColor = (docType) => {
+            const colors = {
+                'Invoice 1.0': '#0d6efd',
+                'Credit Note 1.0': '#198754',
+                'Debit Note 1.0': '#dc3545',
+                'Refund Note 1.0': '#6f42c1'
+            };
+            return colors[docType] || '#6c757d';
+        };
+
+        const docType = 'Invoice ' + row.typeVersionName || 'Invoice 1.0';
+        const docTypeIcon = getDocTypeIcon(docType);
+        const docTypeColor = getDocTypeColor(docType);
+
+        return `
+            <div class="invoice-info-wrapper" style="display: flex; flex-direction: column; gap: 8px; text-align: left;">
+                <div class="invoice-main" style="display: flex; align-items: center; gap: 12px;">
+                    
+                </div>
+                <div class="invoice-number" style="
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-weight: 500;
+                    color: #2c3345;
+                    padding-left: 0;
+                ">
+                    <i class="bi bi-hash text-primary"></i>
+                    <span class="invoice-text" title="${data}" style="
+                        max-width: 180px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                    ">${data}</span>
+                </div>
+              <div class="document-type" style="padding-left: 0;">
+                        <span class="badge-document-type" style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 4px;
+                            padding: 4px 8px;
+                            border-radius: 4px;
+                            font-size: 0.75rem;
+                            font-weight: 500;
+                            background-color: ${docTypeColor}15;
+                            color: ${docTypeColor};
+                        ">
+                            <i class="bi bi-${docTypeIcon}"></i>
+                            ${docType}
+                        </span>
+                    </div>
+            </div>`;
+    }
+
+    renderCompanyInfo(data) {
+        if (!data) return '<span class="text-muted">N/A</span>';
+        return `
+            <div class="cell-group">
+                <div class="cell-main">
+                    <i class="bi bi-building me-1"></i>
+                    <span class="supplier-text">${data}</span>
+                </div>
+                <div class="cell-sub">
+                    <i class="bi bi-card-text me-1"></i>
+                    <span class="reg-text">Company Name</span>
+                </div>
+            </div>`;
+    }
+
+    renderDateInfo(dateString) {
+        if (!dateString) return '<span class="text-muted">N/A</span>';
+        
+        const date = new Date(dateString);
+        
+        // Format date parts
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = date.toLocaleString('en-US', { month: 'short' });
+        const year = date.getFullYear();
+        const time = date.toLocaleString('en-US', { 
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true 
+        });
+
+        return `
+            <div class="date-info-wrapper" style="
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            ">
+                <div class="date-main" style="
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    color: #2c3345;
+                    font-weight: 500;
+                ">
+                    <i class="bi bi-calendar3 text-primary"></i>
+                    <span>${day} ${month} ${year}</span>
+                </div>
+                <div class="time-info" style="
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    color: #6c757d;
+                    font-size: 0.85em;
+                ">
+                    <i class="bi bi-clock text-secondary"></i>
+                    <span>${time}</span>
+                </div>
+            </div>
+        `;
     }
 
     // Helper methods
@@ -410,16 +735,7 @@ class InvoiceTableManager {
                     detailsText.textContent = '';
                     
                     // Show success toast
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Data Refreshed',
-                        text: 'Successfully fetched fresh data from LHDN',
-                        toast: true,
-                        position: 'top-end',
-                        showConfirmButton: false,
-                        timer: 3000,
-                        backdrop: false // Add this line to remove the backdrop
-                    });
+                    ToastManager.show('Successfully fetched fresh data from LHDN', 'success');
                 }, 1000);
 
             } catch (error) {
@@ -433,12 +749,8 @@ class InvoiceTableManager {
                 setTimeout(() => {
                     bootstrap.Modal.getInstance(document.getElementById('loadingModal')).hide();
                     
-                    // Show error alert
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Refresh Failed',
-                        text: 'Unable to fetch fresh data from LHDN. Please try again.'
-                    });
+                    // Show error toast
+                    ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
                 }, 2000);
             } finally {
                 // Reset button state
@@ -475,11 +787,7 @@ class InvoiceTableManager {
             });
 
             if (selectedRows.length === 0) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'No Records Selected',
-                    text: 'Please select at least one record to export.'
-                });
+                ToastManager.show('Please select at least one record to export', 'error');
                 return;
             }
 
@@ -517,23 +825,11 @@ class InvoiceTableManager {
             exportBtn.html(originalHtml);
 
             // Show success message
-            Swal.fire({
-                icon: 'success',
-                title: 'Export Complete',
-                text: `Successfully exported ${selectedRows.length} records`,
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 3000
-            });
+            ToastManager.show(`Successfully exported ${selectedRows.length} records`, 'success');
 
         } catch (error) {
             console.error('Export error:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Export Failed',
-                text: 'Failed to export selected records. Please try again.'
-            });
+            ToastManager.show('Failed to export selected records', 'error');
         }
     }
 
@@ -678,9 +974,9 @@ class InvoiceTableManager {
         });
 
         // Handle UUID copy
-        this.table.on('click', '.uuid-link', (e) => {
+        this.table.on('click', '.copy-uuid', (e) => {
             e.preventDefault();
-            const uuid = $(e.currentTarget).text();
+            const uuid = $(e.currentTarget).data('uuid');
             const tooltipInstance = bootstrap.Tooltip.getInstance(e.currentTarget);
             
             navigator.clipboard.writeText(uuid).then(() => {
@@ -689,25 +985,11 @@ class InvoiceTableManager {
                     tooltipInstance.hide();
                 }
                 
-                // Show success message
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'success',
-                    title: 'UUID copied to clipboard!',
-                    showConfirmButton: false,
-                    timer: 1500
-                });
+                // Show success message using our custom toast
+                ToastManager.show('UUID copied to clipboard!', 'success');
             }).catch(err => {
                 console.error('Failed to copy:', err);
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'error',
-                    title: 'Failed to copy UUID',
-                    showConfirmButton: false,
-                    timer: 1500
-                });
+                ToastManager.show('Failed to copy UUID', 'error');
             });
         });
     }
@@ -1164,8 +1446,9 @@ async function openValidationResultsModal(uuid) {
                 }, []) : 
                 (step.error?.innerError || []);
 
+            const contentId = `collapse${index}`;
             stepDiv.innerHTML = `
-                <div class="lhdn-step-header ${statusClass}" data-bs-toggle="collapse" data-bs-target="#collapse${index}">
+                <div class="lhdn-step-header ${statusClass}" data-bs-toggle="collapse" data-bs-target="#${contentId}" aria-expanded="${!isValid}" aria-controls="${contentId}">
                     <div class="lhdn-step-title">
                         <i class="bi bi-${statusIcon}"></i>
                         <span>${cleanedName}</span>
@@ -1173,28 +1456,30 @@ async function openValidationResultsModal(uuid) {
                     </div>
                     <div class="lhdn-step-status">
                         ${isValid ? 'Valid' : 'Invalid'}
+                        <i class="bi bi-chevron-down ms-2"></i>
                     </div>
                 </div>
-                <div id="collapse${index}" class="lhdn-step-content collapse ${!isValid ? 'show' : ''}">
+                <div id="${contentId}" class="lhdn-step-content collapse ${!isValid ? 'show' : ''}" aria-labelledby="heading${index}">
                     ${
                         !isValid && allInnerErrors.length > 0
                             ? `
                                 <div class="lhdn-validation-message">
                                     ${allInnerErrors.map((err, i) => `
                                         ${i > 0 ? '<div class="lhdn-inner-error mt-3">' : ''}
-                                        <div class="lhdn-error-location">
-                                            <strong>Field:</strong> 
-                                            <span class="text-break">${ValidationTranslations.getFieldName(err.propertyPath)}</span>
-                                        </div>
-                                        <div class="lhdn-error-message">
-                                            <strong>Issue:</strong> 
-                                            <span class="text-break">${ValidationTranslations.getErrorMessage(err.error)}</span>
-                                        </div>
-                                        <div class="lhdn-error-code">
-                                            <strong>Error Type:</strong> 
-                                            <span>${ValidationTranslations.getErrorType(err.errorCode)}</span>
-                                        </div>
+                                     <div class="lhdn-error-location">
+                                        <strong class="lhdn-step-error">Field:</strong> 
+                                        <span class="lhdn-step-error">${ValidationTranslations.getFieldName(err.propertyPath)}</span>
+                                    </div>
+                                    <div class="lhdn-error-message">
+                                        <strong class="lhdn-step-error">Issue:</strong> 
+                                        <span class="lhdn-step-error">${ValidationTranslations.getErrorMessage(err.error)}</span>
+                                    </div>
+                                    <div class="lhdn-error-code">
+                                        <strong class="lhdn-step-error">Error Type:</strong> 
+                                        <span class="lhdn-step-error">${ValidationTranslations.getErrorType(err.errorCode)}</span>
+                                    </div>
                                         ${i > 0 ? '</div>' : ''}
+
                                     `).join('')}
                                     ${allInnerErrors.length > 1 ? `
                                         <div class="error-summary mt-4">
@@ -1214,11 +1499,11 @@ async function openValidationResultsModal(uuid) {
                                     </div>
                                     <div class="lhdn-error-message">
                                         <strong>Issue:</strong> 
-                                        <span class="text-break text-danger">${ValidationTranslations.getErrorMessage(step.error?.error)}</span>
+                                        <span class="text-break lhdn-step-error">${ValidationTranslations.getErrorMessage(step.error?.error)}</span>
                                     </div>
                                     <div class="lhdn-error-code">
                                         <strong>Error Type:</strong> 
-                                        <span class="text-danger">${ValidationTranslations.getErrorType(step.error?.errorCode)}</span>
+                                        <span class="lhdn-step-error">${ValidationTranslations.getErrorType(step.error?.errorCode)}</span>
                                     </div>
                                 </div>
                             ` : '<div class="lhdn-validation-success"><i class="bi bi-check-circle-fill"></i>No errors found</div>')
@@ -1226,13 +1511,32 @@ async function openValidationResultsModal(uuid) {
                 </div>
             `;
             validationResultsDiv.appendChild(stepDiv);
+
+            // Initialize collapse functionality
+            const collapseElement = document.getElementById(contentId);
+            if (collapseElement) {
+                new bootstrap.Collapse(collapseElement, {
+                    toggle: !isValid
+                });
+            }
         });
 
         // Show the modal
         const modal = new bootstrap.Modal(document.getElementById('validationResultsModal'));
         
-        // Add event listener for modal close
+        // Add event listener for modal show
         const modalElement = document.getElementById('validationResultsModal');
+        modalElement.addEventListener('shown.bs.modal', function () {
+            // Reinitialize all collapses after modal is shown
+            validationResultsDiv.querySelectorAll('.collapse').forEach(collapse => {
+                bootstrap.Collapse.getInstance(collapse)?.dispose();
+                new bootstrap.Collapse(collapse, {
+                    toggle: collapse.classList.contains('show')
+                });
+            });
+        });
+
+        // Add event listener for modal close
         modalElement.addEventListener('hidden.bs.modal', function (e) {
             // Remove modal-specific classes and backdrop
             document.body.classList.remove('modal-open');

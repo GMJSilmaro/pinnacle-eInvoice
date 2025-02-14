@@ -8,8 +8,6 @@ const jsrender = require('jsrender');
 const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
 const { createCanvas, loadImage } = require('canvas');
-const xml2js = require('xml2js');
-
 
 // Helper function to format currency numbers
 function formatNumber(number) {
@@ -88,39 +86,6 @@ async function ensureTempDirectory() {
     }
 }
 
-// Helper function to handle authentication errors
-const handleAuthError = (req, res) => {
-    // Clear session
-    req.session.destroy((err) => {
-        if (err) {
-            console.error('Error destroying session:', err);
-        }
-    });
-
-    // Return error response with redirect flag
-    return res.status(401).json({
-        success: false,
-        message: 'Authentication failed. Please log in again.',
-        redirect: '/login'
-    });
-};
-
-// Document retrieval limitations
-const getDocumentRetrievalLimits = () => {
-    return {
-        maxDocuments: 10000, // Maximum number of documents that can be returned
-        timeWindowDays: 30,  // Time window in days for document retrieval
-        validateTimeWindow: (dateTimeIssued) => {
-            if (!dateTimeIssued) return false;
-            const currentDate = new Date();
-            const documentDate = new Date(dateTimeIssued);
-            const diffTime = Math.abs(currentDate - documentDate);
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return diffDays <= 30; // Only allow documents within last 30 days
-        }
-    };
-};
-
 // Document fetching function
 const fetchRecentDocuments = async (req) => {
     console.log('User from session:', req.session.user);
@@ -129,9 +94,6 @@ const fetchRecentDocuments = async (req) => {
     const pageSize = 100;
     let totalPages = 999; 
     let hasMorePages = true;
-
-    // Get document retrieval limits
-    const limits = getDocumentRetrievalLimits();
 
     // Configuration for rate limiting and retries
     const maxRetries = 5;
@@ -151,13 +113,6 @@ const fetchRecentDocuments = async (req) => {
         while (pageNo <= totalPages && hasMorePages) {
             let retryCount = 0;
             let success = false;
-            let currentPageData = null;
-
-            // Check if we've hit the maximum document limit
-            if (allDocuments.length >= limits.maxDocuments) {
-                console.log(`Maximum document limit (${limits.maxDocuments}) reached. Stopping pagination.`);
-                break;
-            }
 
             while (!success && retryCount <= maxRetries) {
                 try {
@@ -170,29 +125,20 @@ const fetchRecentDocuments = async (req) => {
                     console.log(`Fetching page ${pageNo} (Attempt ${retryCount + 1}/${maxRetries + 1})...`);
                     
                     const response = await axios(config);
-                    currentPageData = response.data;
+                    const data = response.data;
 
                     // Log the complete raw data for the first document
-                    if (pageNo === 1 && currentPageData.result && currentPageData.result.length > 0) {
-                        console.log('Raw API Response:', JSON.stringify(currentPageData.result[0], null, 2));
+                    if (pageNo === 1 && data.result && data.result.length > 0) {
+                        console.log('Raw API Response:', JSON.stringify(data.result[0], null, 2));
                     }
 
-                    if (!currentPageData.result || currentPageData.result.length === 0) {
+                    if (!data.result || data.result.length === 0) {
                         console.log(`No more documents found on page ${pageNo}.`);
                         hasMorePages = false;
                         break;
                     }
 
-                    // Filter documents based on time window
-                    const validDocuments = currentPageData.result.filter(doc => limits.validateTimeWindow(doc.dateTimeIssued));
-                    
-                    if (validDocuments.length === 0) {
-                        console.log('All documents on this page are outside the time window. Stopping pagination.');
-                        hasMorePages = false;
-                        break;
-                    }
-
-                    const mappedDocuments = validDocuments.map(doc => ({
+                    const mappedDocuments = data.result.map(doc => ({
                         ...doc,
                         typeName: doc.typeName,
                         typeVersionName: doc.typeVersionName,
@@ -200,25 +146,13 @@ const fetchRecentDocuments = async (req) => {
                     }));
 
                     allDocuments.push(...mappedDocuments);
-                    console.log(`Successfully fetched page ${pageNo} with ${validDocuments.length} valid documents.`);
+                    console.log(`Successfully fetched page ${pageNo} with ${data.result.length} documents.`);
 
-                    if (currentPageData.meta?.totalPages) {
-                        totalPages = currentPageData.meta.totalPages;
+                    if (data.meta?.totalPages) {
+                        totalPages = data.meta.totalPages;
                     }
 
                     success = true;
-
-                    // After successfully fetching each page, save to database
-                    try {
-                        if (currentPageData && currentPageData.result) {
-                            await saveInboundStatus({ result: currentPageData.result });
-                            console.log(`Saved page ${pageNo} documents to database`);
-                        }
-                    } catch (saveError) {
-                        console.error(`Error saving page ${pageNo} to database:`, saveError);
-                        // Continue fetching even if save fails
-                    }
-
                     pageNo++;
 
                 } catch (error) {
@@ -302,117 +236,38 @@ const saveInboundStatus = async (data) => {
             return;
         }
 
-        const savedCount = { success: 0, skipped: 0, failed: 0 };
-        const errors = [];
-
         for (const item of data.result) {
             try {
-                // Check if document already exists
-                const existingDoc = await WP_INBOUND_STATUS.findOne({
-                    where: { uuid: item.uuid }
-                });
-
-                if (existingDoc) {
-                    savedCount.skipped++;
-                    continue; // Skip if already exists
-                }
-
-                // Extract all possible monetary values with proper parsing
-                const totalSales = parseFloat(item.totalSales || item.total || item.netAmount || item.totalPayableAmount || 0);
-                const totalExcludingTax = parseFloat(item.totalExcludingTax || 0);
-                const totalDiscount = parseFloat(item.totalDiscount || 0);
-                const totalNetAmount = parseFloat(item.totalNetAmount || 0);
-                const totalPayableAmount = parseFloat(item.totalPayableAmount || 0);
-
-                // Create new record
-                await WP_INBOUND_STATUS.create({
-                    // Unique identifiers
+                await WP_INBOUND_STATUS.upsert({
                     uuid: item.uuid,
                     submissionUid: item.submissionUid || null,
                     longId: item.longId || null,
                     internalId: item.internalId || null,
-
-                    // Document type info
                     typeName: item.typeName || null,
                     typeVersionName: item.typeVersionName || null,
-                    documentType: item.documentType || null,
-                    documentSubtype: item.documentSubtype || null,
-
-                    // Issuer details
                     issuerTin: item.issuerTin || null,
                     issuerName: item.issuerName || null,
-                    issuerAddress: item.issuerAddress || null,
-                    issuerContact: item.issuerContact || null,
-                    issuerEmail: item.issuerEmail || null,
-                    issuerMsicCode: item.issuerMsicCode || null,
-                    issuerBusinessActivity: item.issuerBusinessActivity || null,
-                    issuerTaxRegNo: item.issuerTaxRegNo || null,
-
-                    // Receiver details
                     receiverId: item.receiverId || null,
                     receiverName: item.receiverName || null,
-                    receiverAddress: item.receiverAddress || null,
-                    receiverContact: item.receiverContact || null,
-                    receiverEmail: item.receiverEmail || null,
-                    receiverMsicCode: item.receiverMsicCode || null,
-                    receiverTaxRegNo: item.receiverTaxRegNo || null,
-
-                    // Timestamps
                     dateTimeReceived: item.dateTimeReceived ? new Date(item.dateTimeReceived) : null,
                     dateTimeValidated: item.dateTimeValidated ? new Date(item.dateTimeValidated) : null,
                     dateTimeIssued: item.dateTimeIssued ? new Date(item.dateTimeIssued) : null,
+                    status: item.status || null,
+                    documentStatusReason: item.documentStatusReason || null,
                     cancelDateTime: item.cancelDateTime ? new Date(item.cancelDateTime) : null,
                     rejectRequestDateTime: item.rejectRequestDateTime ? new Date(item.rejectRequestDateTime) : null,
-
-                    // Status information
-                    status: item.status === 'Submitted' ? 'Queue' : (item.status || null),
-                    documentStatusReason: item.documentStatusReason || null,
                     createdByUserId: item.createdByUserId || null,
-
-                    // Financial information
-                    totalSales: totalSales,
-                    totalExcludingTax: totalExcludingTax,
-                    totalDiscount: totalDiscount,
-                    totalNetAmount: totalNetAmount,
-                    totalPayableAmount: totalPayableAmount,
-
-                    // Additional fields
-                    taxType: item.taxType || null,
-                    taxRate: item.taxRate || null,
-                    exchangeRate: item.exchangeRate || null,
-                    documentCurrency: item.documentCurrency || 'MYR',
-                    submissionChannel: item.submissionChannel || null,
-
-                    // Store raw document if available
-                    rawDocument: item.document || null,
-                    
-                    // Metadata
-                    last_sync_date: new Date(),
-                    sync_status: 'success'
+                    totalExcludingTax: parseFloat(item.totalExcludingTax) || null,
+                    totalDiscount: parseFloat(item.totalDiscount) || null,
+                    totalNetAmount: parseFloat(item.totalNetAmount) || null,
+                    totalPayableAmount: parseFloat(item.totalPayableAmount) || null
                 });
 
-                savedCount.success++;
-                console.log(`Successfully saved new document with uuid: ${item.uuid}`);
+                console.log(`Successfully processed item with uuid: ${item.uuid}`);
             } catch (err) {
-                savedCount.failed++;
-                errors.push({ uuid: item.uuid, error: err.message });
                 console.error(`Error processing item with uuid ${item.uuid}:`, err);
             }
         }
-
-        console.log('Save operation completed:', {
-            totalProcessed: data.result.length,
-            successCount: savedCount.success,
-            skippedCount: savedCount.skipped,
-            failedCount: savedCount.failed,
-            errors: errors.length > 0 ? errors : 'None'
-        });
-
-        return {
-            success: true,
-            savedCount,
-            errors: errors.length > 0 ? errors : null
-        };
     } catch (error) {
         console.error('Error in saveInboundStatus:', error);
         throw error;
@@ -425,7 +280,17 @@ router.get('/documents/recent', async (req, res) => {
     try {
         if (!req.session?.user) {
             console.log('No user session found');
-            return handleAuthError(req, res);
+            // Clear session and redirect to login
+            req.session.destroy((err) => {
+                if (err) {
+                    console.error('Error destroying session:', err);
+                }
+            });
+            return res.status(401).json({
+                success: false,
+                message: 'User not authenticated',
+                redirect: '/login'
+            });
         }
 
         console.log('User from session:', req.session.user);
@@ -487,24 +352,11 @@ router.get('/documents/recent', async (req, res) => {
                 result: documents
             });
         } catch (error) {
-            // Check if it's an authentication error
-            if (error.message === 'Authentication failed. Please log in again.' || 
-                error.response?.status === 401 || 
-                error.response?.status === 403) {
-                return handleAuthError(req, res);
-            }
+            console.error('Error processing documents:', error);
             throw error;
         }
     } catch (error) {
         console.error('Error in route handler:', error);
-        
-        // Check if it's an authentication error
-        if (error.message === 'Authentication failed. Please log in again.' || 
-            error.response?.status === 401 || 
-            error.response?.status === 403) {
-            return handleAuthError(req, res);
-        }
-
         res.status(500).json({ 
             success: false, 
             error: {
@@ -547,7 +399,7 @@ router.get('/sync', async (req, res) => {
         }
     });
 
-
+// Update display-details endpoint to fetch all required data
 router.get('/documents/:uuid/display-details', async (req, res) => {
     try {
         const { uuid } = req.params;
@@ -561,7 +413,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
 
         // Check if user is logged in
         if (!req.session.user || !req.session.accessToken) {
-            return handleAuthError(req, res);
+            return res.redirect('/login');
         }
 
         // Get document details directly from LHDN API using raw endpoint
@@ -608,7 +460,6 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
            });
 
            const detailsData = detailsResponse.data;
-           const validationResults = detailsData.validationResults;
            console.log('Raw document details:', JSON.stringify(detailsData, null, 2));
    
 
@@ -621,7 +472,6 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     let errors = [];
                     if (step.error) {
                         if (Array.isArray(step.error.errors)) {
-
                             errors = step.error.errors.map(err => ({
                                 code: err.code || 'VALIDATION_ERROR',
                                 message: err.message || err.toString(),
@@ -660,7 +510,6 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     failedSteps: detailsData.validationResults.validationSteps?.filter(step => step.status === 'Invalid' || step.error)?.length || 0,
                     lastUpdated: new Date().toISOString()
                 }
-
             };
         }
 
@@ -675,33 +524,32 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     internalId: documentData.internalId,
                     status: documentData.status,
                     validationResults: detailsData.validationResults,
-                    supplierSstNo: findPartyId(supplierParty, 'SST') || documentData.supplierSstNo,
-                    supplierMsicCode: supplierParty?.['cbc:IndustryClassificationCode']?.[0]._ || documentData.supplierMsicCode,
-                    supplierAddress: getAddressLines(supplierParty) || documentData.supplierAddress,
-                    receiverSstNo: findPartyId(customerParty, 'SST') || documentData.receiverSstNo,
-                    receiverRegistrationNo: findPartyId(customerParty, 'BRN') || documentData.receiverRegistrationNo,
-                    receiverAddress: getAddressLines(customerParty) || documentData.receiverAddress
+                    supplierSstNo: documentData.supplierSstNo,
+                    supplierMsicCode: documentData.supplierMsicCode,
+                    supplierAddress: documentData.supplierAddress,
+                    receiverSstNo: documentData.receiverSstNo,
+                    receiverRegistrationNo: documentData.receiverRegistrationNo,
+                    receiverAddress: documentData.receiverAddress
                 },
                 supplierInfo: {
-                    company: supplierParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || documentData.supplierName,
-                    tin: findPartyId(supplierParty, 'TIN') || documentData.supplierTin,
-                    registrationNo: findPartyId(supplierParty, 'BRN') || documentData.supplierRegistrationNo,
-                    taxRegNo: findPartyId(supplierParty, 'SST') || documentData.supplierSstNo,
-                    msicCode: supplierParty?.['cbc:IndustryClassificationCode']?.[0]._ || documentData.supplierMsicCode,
-                    address: getAddressLines(supplierParty) || documentData.supplierAddress
+                    company: documentData.supplierName,
+                    tin: documentData.supplierTin,
+                    registrationNo: documentData.supplierRegistrationNo,
+                    taxRegNo: documentData.supplierSstNo,
+                    msicCode: documentData.supplierMsicCode,
+                    address: documentData.supplierAddress
                 },
                 customerInfo: {
-                    company: customerParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || documentData.receiverName,
-                    tin: findPartyId(customerParty, 'TIN') || documentData.receiverTin,
-                    registrationNo: findPartyId(customerParty, 'BRN') || documentData.receiverRegistrationNo,
-                    taxRegNo: findPartyId(customerParty, 'SST') || documentData.receiverSstNo,
-                    address: getAddressLines(customerParty) || documentData.receiverAddress
+                    company: documentData.receiverName,
+                    tin: documentData.receiverTin,
+                    registrationNo: documentData.receiverRegistrationNo,
+                    taxRegNo: documentData.receiverSstNo,
+                    address: documentData.receiverAddress
                 },
                 paymentInfo: {
-                    totalIncludingTax: getMonetaryValue(invoice?.['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxInclusiveAmount']) || documentData.totalSales,
-                    totalExcludingTax: getMonetaryValue(invoice?.['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxExclusiveAmount']) || documentData.totalExcludingTax,
-                    taxAmount: getMonetaryValue(invoice?.['cac:TaxTotal']?.[0]?.['cbc:TaxAmount']) || 
-                              (documentData.totalSales - (documentData.totalExcludingTax || 0)),
+                    totalIncludingTax: documentData.totalSales,
+                    totalExcludingTax: documentData.totalExcludingTax,
+                    taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
                     irbmUniqueNo: documentData.uuid
                 }
             });
@@ -709,50 +557,12 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
 
         // If document field exists, parse it and extract detailed info
         try {
-            //const parsedDocument = JSON.parse(documentData.document);
-            // Check if document field exists and can be parsed
-            let parsedDocument = null;
-            if (documentData.document) {
-                try {
-                    // Try XML parsing first since we know it's XML
-                    const parser = new xml2js.Parser({ explicitArray: true });
-                    parsedDocument = await new Promise((resolve, reject) => {
+            const parsedDocument = JSON.parse(documentData.document);
+            const validationResults = detailsData.validationResults;
+            const invoice = parsedDocument.Invoice[0];
+            const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
+            const customerParty = invoice.AccountingCustomerParty[0].Party[0];
 
-                    parser.parseString(documentData.document, (err, result) => {
-                        if (err) reject(err);
-                        else resolve(result);
-                    });
-                });
-                console.log('Parsed XML structure:', JSON.stringify(parsedDocument, null, 2));
-            } catch (xmlError) {
-                console.log('Failed to parse document as XML:', xmlError);
-            }
-        }
-            // Extract data from parsed document (handles XML)
-            const invoice = parsedDocument?.Invoice;
-            const supplierParty = invoice?.['cac:AccountingSupplierParty']?.[0]?.['cac:Party']?.[0];
-
-            const customerParty = invoice?.['cac:AccountingCustomerParty']?.[0]?.['cac:Party']?.[0];
-
-            // Helper function to find party identification
-            const findPartyId = (party, schemeId) => {
-                if (!party?.['cac:PartyIdentification']) return null;
-                const identification = party['cac:PartyIdentification'].find(id => 
-                    id?.['cbc:ID']?.[0]?.$?.schemeID === schemeId
-                );
-                return identification?.['cbc:ID']?.[0]._ || null;
-            };
-
-            // Helper function to get address lines
-            const getAddressLines = (party) => {
-                const addressLines = party?.['cac:PostalAddress']?.[0]?.['cac:AddressLine'] || [];
-                return addressLines.map(line => line['cbc:Line']?.[0]).filter(Boolean).join(', ');
-            };
-
-            // Helper function to get monetary value
-            const getMonetaryValue = (path) => {
-                return path?.[0]?._ ? parseFloat(path[0]._) : 0;
-            };
             return res.json({
                 success: true,
                 documentInfo: {
@@ -761,34 +571,45 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     longId: documentData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: detailsData.validationResults,
-                    supplierSstNo: findPartyId(supplierParty, 'SST') || documentData.supplierSstNo,
-                    supplierMsicCode: supplierParty?.['cbc:IndustryClassificationCode']?.[0]._ || documentData.supplierMsicCode,
-                    supplierAddress: getAddressLines(supplierParty) || documentData.supplierAddress,
-                    receiverSstNo: findPartyId(customerParty, 'SST') || documentData.receiverSstNo,
-                    receiverRegistrationNo: findPartyId(customerParty, 'BRN') || documentData.receiverRegistrationNo,
-                    receiverAddress: getAddressLines(customerParty) || documentData.receiverAddress
+                    validationResults: validationResults,
+                    supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+                    supplierAddress: supplierParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.supplierAddress,
+                    receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    receiverAddress: customerParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.receiverAddress
                 },
                 supplierInfo: {
-                    company: supplierParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || documentData.supplierName,
-                    tin: findPartyId(supplierParty, 'TIN') || documentData.supplierTin,
-                    registrationNo: findPartyId(supplierParty, 'BRN') || documentData.supplierRegistrationNo,
-                    taxRegNo: findPartyId(supplierParty, 'SST') || documentData.supplierSstNo,
-                    msicCode: supplierParty?.['cbc:IndustryClassificationCode']?.[0]._ || documentData.supplierMsicCode,
-                    address: getAddressLines(supplierParty) || documentData.supplierAddress
+                    company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
+                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
+                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
+                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+                    address: supplierParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.supplierAddress
                 },
                 customerInfo: {
-                    company: customerParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || documentData.receiverName,
-                    tin: findPartyId(customerParty, 'TIN') || documentData.receiverTin,
-                    registrationNo: findPartyId(customerParty, 'BRN') || documentData.receiverRegistrationNo,
-                    taxRegNo: findPartyId(customerParty, 'SST') || documentData.receiverSstNo,
-                    address: getAddressLines(customerParty) || documentData.receiverAddress
+                    company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
+                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
+                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    address: customerParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.receiverAddress
                 },
                 paymentInfo: {
-                    totalIncludingTax: getMonetaryValue(invoice?.['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxInclusiveAmount']) || documentData.totalSales,
-                    totalExcludingTax: getMonetaryValue(invoice?.['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxExclusiveAmount']) || documentData.totalExcludingTax,
-                    taxAmount: getMonetaryValue(invoice?.['cac:TaxTotal']?.[0]?.['cbc:TaxAmount']) || 
-                              (documentData.totalSales - (documentData.totalExcludingTax || 0)),
+                    totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
+                    totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
+                    taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
                     irbmUniqueNo: documentData.uuid
                 }
             });
@@ -803,34 +624,32 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     longId: documentData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: detailsData.validationResults,
-                    supplierSstNo: findPartyId(supplierParty, 'SST') || documentData.supplierSstNo,
-                    supplierMsicCode: supplierParty?.['cbc:IndustryClassificationCode']?.[0]._ || documentData.supplierMsicCode,
-                    supplierAddress: getAddressLines(supplierParty) || documentData.supplierAddress,
-                    receiverSstNo: findPartyId(customerParty, 'SST') || documentData.receiverSstNo,
-                    receiverRegistrationNo: findPartyId(customerParty, 'BRN') || documentData.receiverRegistrationNo,
-                    receiverAddress: getAddressLines(customerParty) || documentData.receiverAddress
+                    supplierSstNo: documentData.supplierSstNo,
+                    supplierMsicCode: documentData.supplierMsicCode,
+                    supplierAddress: documentData.supplierAddress,
+                    receiverSstNo: documentData.receiverSstNo,
+                    receiverRegistrationNo: documentData.receiverRegistrationNo,
+                    receiverAddress: documentData.receiverAddress
                 },
                 supplierInfo: {
-                    company: supplierParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || documentData.supplierName,
-                    tin: findPartyId(supplierParty, 'TIN') || documentData.supplierTin,
-                    registrationNo: findPartyId(supplierParty, 'BRN') || documentData.supplierRegistrationNo,
-                    taxRegNo: findPartyId(supplierParty, 'SST') || documentData.supplierSstNo,
-                    msicCode: supplierParty?.['cbc:IndustryClassificationCode']?.[0]._ || documentData.supplierMsicCode,
-                    address: getAddressLines(supplierParty) || documentData.supplierAddress
+                    company: documentData.supplierName,
+                    tin: documentData.supplierTin,
+                    registrationNo: documentData.supplierRegistrationNo,
+                    taxRegNo: documentData.supplierSstNo,
+                    msicCode: documentData.supplierMsicCode,
+                    address: documentData.supplierAddress
                 },
                 customerInfo: {
-                    company: customerParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || documentData.receiverName,
-                    tin: findPartyId(customerParty, 'TIN') || documentData.receiverTin,
-                    registrationNo: findPartyId(customerParty, 'BRN') || documentData.receiverRegistrationNo,
-                    taxRegNo: findPartyId(customerParty, 'SST') || documentData.receiverSstNo,
-                    address: getAddressLines(customerParty) || documentData.receiverAddress
+                    company: documentData.receiverName,
+                    tin: documentData.receiverTin,
+                    registrationNo: documentData.receiverRegistrationNo,
+                    taxRegNo: documentData.receiverSstNo,
+                    address: documentData.receiverAddress
                 },
                 paymentInfo: {
-                    totalIncludingTax: getMonetaryValue(invoice?.['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxInclusiveAmount']) || documentData.totalSales,
-                    totalExcludingTax: getMonetaryValue(invoice?.['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxExclusiveAmount']) || documentData.totalExcludingTax,
-                    taxAmount: getMonetaryValue(invoice?.['cac:TaxTotal']?.[0]?.['cbc:TaxAmount']) || 
-                              (documentData.totalSales - (documentData.totalExcludingTax || 0)),
+                    totalIncludingTax: documentData.totalSales,
+                    totalExcludingTax: documentData.totalExcludingTax,
+                    taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
                     irbmUniqueNo: documentData.uuid
                 }
             });
@@ -838,14 +657,6 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
 
     } catch (error) {
         console.error('Error fetching document details:', error);
-        
-        // Check if it's an authentication error
-        if (error.message === 'Authentication failed. Please log in again.' || 
-            error.response?.status === 401 || 
-            error.response?.status === 403) {
-            return handleAuthError(req, res);
-        }
-
         return res.status(500).json({
             success: false,
             message: error.message || 'Failed to fetch document details',
@@ -856,6 +667,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         });
     }
 });
+
 //route to check if PDF exists
 router.get('/documents/:uuid/check-pdf', async (req, res) => {
     try {
@@ -878,9 +690,9 @@ router.get('/documents/:uuid/check-pdf', async (req, res) => {
         });
     }
 });
-  
-// XML PDF generation route
-router.post('/documents/:uuid/xml-pdf', async (req, res) => {
+
+// Update PDF generation route
+router.post('/documents/:uuid/pdf', async (req, res) => {
     try {
         console.log('=== Starting PDF Generation Process ===');
         const { uuid } = req.params;
@@ -952,48 +764,42 @@ router.post('/documents/:uuid/xml-pdf', async (req, res) => {
             logoBase64 = null;
         }
 
-           // Parse document data
-           const rawData = response.data;
-           console.log('Raw data structure:', {
-               hasDocument: !!rawData.document,
-               typeName: rawData.typeName,
-               internalId: rawData.internalId,
-               uuid: rawData.uuid,
-               dateTimeIssued: rawData.dateTimeIssued
-           });
-   
-           // Parse XML
-           let documentData;
-           await new Promise((resolve, reject) => {
-               xml2js.parseString(rawData.document, (err, result) => {
-                   if (err) {
-                       console.error('Error parsing XML:', err);
-                       reject(err);
-                   }
-                   documentData = result;
-                   resolve();
-               });
-           });
-           
-           console.log('Document parsed successfully');
-           
+        // Parse document data
+        //console.log('Parsing invoice document data...');
+        const rawData = response.data;
+        console.log('Raw data structure:', {
+            hasDocument: !!rawData.document,
+            typeName: rawData.typeName,
+            internalId: rawData.internalId,
+            uuid: rawData.uuid,
+            dateTimeIssued: rawData.dateTimeIssued
+        });
+
+        const documentData = JSON.parse(rawData.document);
+        console.log('Document parsed successfully');
         
-        // Extract invoice data from XML structure
-        const invoice = documentData.Invoice;
-        const supplierParty = invoice['cac:AccountingSupplierParty']?.[0]?.['cac:Party']?.[0];
-        const customerParty = invoice['cac:AccountingCustomerParty']?.[0]?.['cac:Party']?.[0];
+        const invoice = documentData.Invoice[0];
+        console.log('Invoice data structure:', {
+            hasSupplierParty: !!invoice.AccountingSupplierParty,
+            hasCustomerParty: !!invoice.AccountingCustomerParty,
+            hasInvoiceLines: !!invoice.InvoiceLine,
+            numberOfLines: invoice.InvoiceLine?.length
+        });
 
-        // Get tax information from XML structure
-        const taxTotal = invoice['cac:TaxTotal']?.[0];
-        const taxSubtotal = taxTotal?.['cac:TaxSubtotal']?.[0];
-        const taxCategory = taxSubtotal?.['cac:TaxCategory']?.[0];
+        const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
+        const customerParty = invoice.AccountingCustomerParty[0].Party[0];
 
-        // Calculate tax values
-        const taxableAmount = parseFloat(taxSubtotal?.['cbc:TaxableAmount']?.[0]._ || 0);
-        const taxAmountValue = parseFloat(taxTotal?.['cbc:TaxAmount']?.[0]._ || 0);
-        const computedTaxRate = taxableAmount ? ((taxAmountValue / taxableAmount) * 100).toFixed(0) : '0';
-        const taxAmount = taxAmountValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-       
+        // Add these console logs right here
+        console.log('\n=== TAX STRUCTURE FROM UBL ===');
+        console.log('TaxTotal:', JSON.stringify(invoice.TaxTotal, null, 2));
+        console.log('\n=== TAX CATEGORY ===');
+        console.log('TaxCategory:', JSON.stringify(invoice.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0]?.TaxScheme?.[0]?.ID?.[0]._, null, 2));
+        console.log('\n=== TAX SCHEME ===');
+        console.log('TaxScheme:', JSON.stringify(invoice.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0]?.TaxScheme, null, 2));
+        console.log('\n=== TAX AMOUNTS ===');
+        console.log('TaxAmount:', invoice.TaxTotal?.[0]?.TaxAmount?.[0]._);
+        console.log('TaxPercent:', invoice.TaxTotal?.[0]?.TaxSubtotal?.[0]?.Percent?.[0]._);
+
         // Generate QR code
         console.log('Generating QR code...');
         const longId = rawData.longId || rawData.longID;
@@ -1008,6 +814,11 @@ router.post('/documents/:uuid/xml-pdf', async (req, res) => {
         });
         console.log('✓ QR code generated successfully');
 
+        // Get tax information from UBL structure
+        const taxTotal = invoice.TaxTotal?.[0];
+        const taxSubtotal = taxTotal?.TaxSubtotal?.[0];
+        const taxCategory = taxSubtotal?.TaxCategory?.[0];
+
         // Map the tax type according to SDK documentation
         const getTaxTypeDescription = (code) => {
             const taxTypes = {
@@ -1021,86 +832,123 @@ router.post('/documents/:uuid/xml-pdf', async (req, res) => {
             };
             return taxTypes[code] || code;
         };
-      
-        // Update template data mapping for XML structure
+
+                // Calculate computed tax rate
+        const taxableAmount = parseFloat(taxSubtotal?.TaxableAmount?.[0]._ || 0);
+        const taxAmountValue = parseFloat(taxTotal?.TaxAmount?.[0]._ || 0);
+        const computedTaxRate = taxableAmount ? ((taxAmountValue / taxableAmount) * 100).toFixed(0) : '0';
+        const taxRate = taxSubtotal?.Percent?.[0]._ || '0'; // Default to '0' if not found
+        const formattedTaxRate = `${parseFloat(taxRate).toFixed(0)}%`; // Format as a percentage string
+        const taxAmount = parseFloat(invoice?.TaxTotal?.[0]?.TaxAmount?.[0]?._ || 0);
+        
+        // Then update the templateData mapping:
         const templateData = {
             // Company Info
             CompanyLogo: logoBase64,
-            companyName: supplierParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || 'NA',
-            companyAddress: supplierParty?.['cac:PostalAddress']?.[0]?.['cac:AddressLine']?.map(line => line['cbc:Line']?.[0]).join(', ') || 'NA',
-            companyPhone: supplierParty?.['cac:Contact']?.[0]?.['cbc:Telephone']?.[0] || 'NA',
-            companyEmail: supplierParty?.['cac:Contact']?.[0]?.['cbc:ElectronicMail']?.[0] || 'NA',
+            companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
+            companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
+            companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
+            companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
 
             // Document Info
-            InvoiceType: invoice['cbc:InvoiceTypeCode']?.[0]._ === '01' ? 'Tax Invoice' : invoice['cbc:InvoiceTypeCode']?.[0] || 'NA',
-            InvoiceVersion: invoice['cbc:InvoiceTypeCode']?.[0]?.listVersionId?.[0]._ || '1.0',
-            InvoiceCode: invoice['cbc:InvoiceTypeCode']?.[0]?._ || 'NA',
+            InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Tax Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
+            InvoiceVersion: rawData.typeVersionName || 'NA',
+            InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
             UniqueIdentifier: rawData.uuid || 'NA',
-            internalId: rawData.internalId || 'NA',
-            submissionUid: rawData.submissionUid || 'NA',
-            dateTimeIssued: new Date(invoice['cbc:IssueDate']?.[0] + 'T' + invoice['cbc:IssueTime']?.[0]).toLocaleString(),
-            status: rawData.status || 'NA',
-
-            OriginalInvoiceRef: invoice['cac:BillingReference']?.[0]?.['cac:InvoiceDocumentReference']?.[0]?.['cbc:ID']?.[0] || 'NA',
-            dateTimeReceived: new Date(invoice['cbc:IssueDate']?.[0] + 'T' + invoice['cbc:IssueTime']?.[0]).toLocaleString(),
+            OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
+            dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString(),
 
             // Supplier Info
-            SupplierTIN: supplierParty?.['cac:PartyIdentification']?.find(id => id['cbc:ID']?.[0]?.$?.schemeID === 'TIN')?.['cbc:ID']?.[0]._ || 'NA',
-            SupplierRegistrationNumber: supplierParty?.['cac:PartyIdentification']?.find(id => id['cbc:ID']?.[0]?.$?.schemeID === 'BRN')?.['cbc:ID']?.[0]._ || 'NA',
-            SupplierSSTID: supplierParty?.['cac:PartyIdentification']?.find(id => id['cbc:ID']?.[0]?.$?.schemeID === 'SST')?.['cbc:ID']?.[0]._ || 'NA',
-            SupplierMSICCode: supplierParty?.['cbc:IndustryClassificationCode']?.[0]._ || '00000',
-            SupplierBusinessActivity: supplierParty?.['cbc:IndustryClassificationCode']?.[0]?.$?.name || 'NA',
+            SupplierTIN: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
+            SupplierRegistrationNumber: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
+            SupplierSSTID: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || 'NA',
+            SupplierMSICCode: supplierParty.IndustryClassificationCode?.[0]._ || '00000',
+            SupplierBusinessActivity: supplierParty.IndustryClassificationCode?.[0]?.name || 'NA',
 
             // Buyer Info
-            BuyerTIN: customerParty?.['cac:PartyIdentification']?.find(id => id['cbc:ID']?.[0]?.$?.schemeID === 'TIN')?.['cbc:ID']?.[0]._ || 'NA',
-            BuyerName: customerParty?.['cac:PartyLegalEntity']?.[0]?.['cbc:RegistrationName']?.[0] || 'NA',
-            BuyerPhone: customerParty?.['cac:Contact']?.[0]?.['cbc:Telephone']?.[0] || 'NA',
-            BuyerRegistrationNumber: customerParty?.['cac:PartyIdentification']?.find(id => id['cbc:ID']?.[0]?.$?.schemeID === 'BRN')?.['cbc:ID']?.[0]._ || 'NA',
-            BuyerAddress: customerParty?.['cac:PostalAddress']?.[0]?.['cac:AddressLine']?.map(line => line['cbc:Line']?.[0]).join(', ') || 'NA',
+            BuyerTIN: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
+            BuyerName: customerParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
+            BuyerPhone: customerParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
+            BuyerRegistrationNumber: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
+            BuyerAddress: customerParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
 
-            // Monetary values
-            Subtotal: (parseFloat(invoice['cac:LegalMonetaryTotal']?.[0]?.['cbc:LineExtensionAmount']?.[0]._ || 0)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-            TotalExcludingTax: (parseFloat(invoice['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxExclusiveAmount']?.[0]._ || 0)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-            TotalIncludingTax: (parseFloat(invoice['cac:LegalMonetaryTotal']?.[0]?.['cbc:TaxInclusiveAmount']?.[0]._ || 0)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-            TotalPayableAmount: (parseFloat(invoice['cac:LegalMonetaryTotal']?.[0]?.['cbc:PayableAmount']?.[0]._ || 0)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-            TotalTaxAmount: taxAmountValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
+            // Format monetary values with two decimal places
+            Subtotal: (parseFloat(invoice.LegalMonetaryTotal?.[0]?.LineExtensionAmount?.[0]._ || 0)).toFixed(2),
+            TotalExcludingTax: (parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || 0)).toFixed(2),
+            TotalIncludingTax: (parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || 0)).toFixed(2),
+            TotalPayableAmount: (parseFloat(invoice.LegalMonetaryTotal?.[0]?.PayableAmount?.[0]._ || 0)).toFixed(2),
+            TotalTaxAmount: taxAmountValue.toFixed(2),
 
-            // Tax Info
+            // Additional Info
             TaxRate: computedTaxRate,
             TaxAmount: taxAmount,
 
-            // Items array
-            items: invoice['cac:InvoiceLine']?.map((line, index) => {
-                const lineAmount = parseFloat(line['cbc:LineExtensionAmount']?.[0]._ || 0);
-                const lineTax = parseFloat(line['cac:TaxTotal']?.[0]?.['cbc:TaxAmount']?.[0]._ || 0);
-                const quantity = parseFloat(line['cbc:InvoicedQuantity']?.[0]._ || 0);
-                const unitPrice = parseFloat(line['cac:Price']?.[0]?.['cbc:PriceAmount']?.[0]._ || 0);
-                const discount = parseFloat(line['cac:AllowanceCharge']?.[0]?.['cbc:Amount']?.[0]._ || 0);
+            // Items array with formatted totals
+            items: invoice.InvoiceLine?.map((line, index) => {
+                const lineAmount = parseFloat(line.LineExtensionAmount?.[0]._ || 0);
+                const lineTax = parseFloat(line.TaxTotal?.[0]?.TaxAmount?.[0]._ || 0);
+                const quantity = parseFloat(line.InvoicedQuantity?.[0]._ || 0);
+                const unitPrice = parseFloat(line.Price?.[0]?.PriceAmount?.[0]._ || 0);
+                const discount = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
+                
+                // Format quantity with exactly 2 decimal places
+                const formattedQuantity = quantity.toLocaleString('en-MY', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                    useGrouping: false
+                });
 
+                // Format unit price with exactly 4 decimal places
+                const formattedUnitPrice = unitPrice.toLocaleString('en-MY', {
+                    minimumFractionDigits: 4,
+                    maximumFractionDigits: 4,
+                    useGrouping: false
+                });
+                
                 return {
                     No: index + 1,
-                    Cls: line['cac:Item']?.[0]?.['cac:CommodityClassification']?.[0]?.['cbc:ItemClassificationCode']?.[0]._ || 'NA',
-                    Description: line['cac:Item']?.[0]?.['cbc:Description']?.[0] || 'NA',
-                    Quantity: quantity.toLocaleString('en-US', {minimumFractionDigits: 5, maximumFractionDigits: 5}),
-                    UnitPrice: unitPrice.toLocaleString('en-US', {minimumFractionDigits: 4, maximumFractionDigits: 4}),
-                    QtyAmount: lineAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-                    Disc: discount === 0 ? '-' : discount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-                    LineTaxPercent: (parseFloat(line['cac:TaxTotal']?.[0]?.['cac:TaxSubtotal']?.[0]?.['cac:TaxCategory']?.[0]?.['cbc:Percent']?.[0] || 0)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-                    LineTaxAmount: lineTax.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
-                    Total: (lineAmount + lineTax).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}),
+                    Cls: line.Item?.[0]?.CommodityClassification?.[0]?.ItemClassificationCode?.[0]._ || 'NA',
+                    Description: line.Item?.[0]?.Description?.[0]._ || 'NA',
+                    Quantity: formattedQuantity,
+                    UnitPrice: formattedUnitPrice,
+                    QtyAmount: lineAmount.toFixed(2),
+                    Disc: discount === 0 ? '-' : discount.toFixed(2),
+                    LineTaxPercent: (parseFloat(line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.Percent?.[0]._ || 0)).toFixed(2),
+                    LineTaxAmount: lineTax.toFixed(2),
+                    Total: (lineAmount + lineTax).toFixed(2),
                 };
             }) || [],
 
+            // Tax information for footer - exact values from UBL
+            TaxType: taxCategory?.ID?.[0]._ || '06',
+            TaxSchemeId: getTaxTypeDescription(taxCategory?.ID?.[0]._ || '06'),
+            TaxPercent: '0', // For Sales Tax (01), show 0%
+
             // Footer
-            TaxType: taxCategory?.['cbc:ID']?.[0] || '06',
-            TaxSchemeId: getTaxTypeDescription(taxCategory?.['cbc:ID']?.[0] || '06'),
-            TaxPercent: computedTaxRate,
             qrCode: qrCodeDataUrl,
             DigitalSignature: rawData.digitalSignature || '-',
             validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString()
-
         };
 
+        console.log('Template data mapped:', {
+            companyInfo: {
+                name: templateData.companyName,
+                hasLogo: !!templateData.CompanyLogo
+            },
+            documentInfo: {
+                type: templateData.InvoiceType,
+                code: templateData.InvoiceCode,
+                uuid: templateData.UniqueIdentifier
+            },
+            lineItems: `${templateData.items.length} items processed`,
+            totals: {
+                subtotal: templateData.Subtotal,
+                tax: templateData.TotalTaxAmount,
+                total: templateData.TotalPayableAmount
+            }
+        });
+
+        // Generate PDF
         console.log('Starting PDF generation process...');
         const templatePath = path.join(__dirname, '../../src/reports/original-invoice-template.html');
         console.log('Template path:', templatePath);
@@ -1162,7 +1010,6 @@ router.post('/documents/:uuid/xml-pdf', async (req, res) => {
         });
     }
 });
-
 
 // Add static route for temp directory in your Express app
 router.use('/temp', express.static(path.join(__dirname, '../../public/temp')));

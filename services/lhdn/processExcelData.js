@@ -37,6 +37,7 @@ const ROW_TYPE_INDICATORS = {
 
 // Define party identification scheme types for tax and business registration
 const PARTY_SCHEME_TYPES = {
+  TIN: 'TIN', // Tax Identification Number
   BRN: 'BRN', // Business Registration Number
   SST: 'SST', // Sales and Service Tax
   TTX: 'TTX'  // Tax Registration Number
@@ -258,7 +259,7 @@ const processExcelData = (rawData) => {
           supplier: [
             { 
               PartyIdentification_ID: getField(headerRow, '16'),
-              schemeId: getField(headerRow, '17')
+              schemeId: getField(headerRow, '17') || PARTY_SCHEME_TYPES.TIN
             },
             { 
               PartyIdentification_ID: dataRows[currentIndex + 1] ? getField(dataRows[currentIndex + 1], '16') : undefined,
@@ -472,9 +473,9 @@ const processExcelData = (rawData) => {
             chargeIndicator: getField(lineRow, '73') === true || 
                             getField(lineRow, '73') === 'true' || 
                             getField(lineRow, '73') === 1,
-            reason: getField(lineRow, '74'),
-            multiplierFactorNumeric: getField(lineRow, '75'),
-            amount: getField(lineRow, '76')
+            reason: getField(lineRow, '74') || null,
+            multiplierFactorNumeric: getField(lineRow, '75') || 0,
+            amount: getField(lineRow, '76') || 0
           }],
           tax: {
             totalAmount: getField(lineRow, 'InvoiceLine_TaxTotal') || DEFAULT_VALUES.ZERO,

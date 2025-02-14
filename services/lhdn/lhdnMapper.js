@@ -453,35 +453,35 @@ const mapToLHDNFormat = (excelData, version) => {
             }]
           }]
         }],
-        "Delivery": [{
-          "DeliveryParty": [{
-            "PartyIdentification": mapPartyIdentifications(doc.delivery.identifications),
-            "PartyLegalEntity": [{
-              "RegistrationName": wrapValue(doc.delivery.name)
-            }],
-            "PostalAddress": [{
-              "CityName": wrapValue(doc.delivery.address.city),
-              "PostalZone": wrapValue(doc.delivery.address.postcode),
-              "CountrySubentityCode": wrapValue(doc.delivery.address.state),
-              "AddressLine": mapAddressLines(doc.delivery.address.line),
-              "Country": [{
-                "IdentificationCode": [{
-                  "_": doc.delivery.address.country || "MYS",
-                  "listID": "ISO3166-1",
-                  "listAgencyID": "6"
-                }]
-              }]
-            }]
-          }],
-          "Shipment": [{
-            "ID": wrapValue(doc.delivery.shipment.id),
-            "FreightAllowanceCharge": [{
-              "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
-              "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
-              "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
-            }]
-          }]
-        }],
+        // "Delivery": [{
+        //   "DeliveryParty": [{
+        //     "PartyIdentification": mapPartyIdentifications(doc.delivery.identifications),
+        //     "PartyLegalEntity": [{
+        //       "RegistrationName": wrapValue(doc.delivery.name)
+        //     }],
+        //     "PostalAddress": [{
+        //       "CityName": wrapValue(doc.delivery.address.city),
+        //       "PostalZone": wrapValue(doc.delivery.address.postcode),
+        //       "CountrySubentityCode": wrapValue(doc.delivery.address.state),
+        //       "AddressLine": mapAddressLines(doc.delivery.address.line),
+        //       "Country": [{
+        //         "IdentificationCode": [{
+        //           "_": doc.delivery.address.country || "MYS",
+        //           "listID": "ISO3166-1",
+        //           "listAgencyID": "6"
+        //         }]
+        //       }]
+        //     }]
+        //   }],
+        //   "Shipment": [{
+        //     "ID": wrapValue(doc.delivery.shipment.id),
+        //     "FreightAllowanceCharge": [{
+        //       "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
+        //       "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
+        //       "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
+        //     }]
+        //   }]
+        // }],
         "PaymentMeans": [{
           "PaymentMeansCode": wrapValue(String(doc.payment.paymentMeansCode)),
           "PayeeFinancialAccount": [{

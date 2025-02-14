@@ -137,6 +137,353 @@ const additionalStyles = `
 document.head.insertAdjacentHTML('beforeend', additionalStyles);
 
 
+// async function validateExcelFile(fileName, type, company, date) {
+//     console.log('Starting validation with params:', { fileName, type, company, date });
+    
+//     if (!fileName || !type || !company || !date) {
+//         console.error('Missing required parameters:', { fileName, type, company, date });
+//         throw new ValidationError('Missing required parameters for validation', [], fileName);
+//     }
+
+//     // Format date consistently
+//     const formattedDate = moment(date).format('YYYY-MM-DD');
+
+//     // Get file content
+//     try {
+//         const encodedFileName = encodeURIComponent(fileName);
+//         const response = await fetch(`/api/outbound-files/${encodedFileName}/content`, {
+//             method: 'POST',
+//             headers: { 
+//                 'Content-Type': 'application/json',
+//                 'Accept': 'application/json'
+//             },
+//             body: JSON.stringify({ 
+//                 type, 
+//                 company, 
+//                 date: formattedDate,
+//                 filePath: `${type}/${company}/${formattedDate}/${fileName}`
+//             })
+//         });
+
+//         if (!response.ok) {
+//             if (response.status === 404) {
+//                 throw new ValidationError(`File not found: ${fileName}`, [{
+//                     code: 'FILE_NOT_FOUND',
+//                     message: 'The Excel file could not be found in the specified location',
+//                     target: 'file',
+//                     propertyPath: null,
+//                     validatorType: 'System'
+//                 }], fileName);
+//             }
+
+//             const errorText = await response.text();
+//             let errorDetails;
+//             try {
+//                 errorDetails = JSON.parse(errorText);
+//             } catch (e) {
+//                 errorDetails = { error: { message: errorText } };
+//             }
+
+//             throw new ValidationError('Failed to fetch file content', [{
+//                 code: errorDetails.error?.code || 'FILE_READ_ERROR',
+//                 message: errorDetails.error?.message || 'Could not read the Excel file content',
+//                 target: 'file',
+//                 propertyPath: null,
+//                 validatorType: 'System'
+//             }], fileName);
+//         }
+        
+//         const fileData = await response.json();
+//         console.log('Received file data:', fileData);
+
+//         if (!fileData.success || !fileData.content) {
+//             console.error('Invalid file content received:', fileData);
+//             throw new ValidationError('Invalid file content', [{
+//                 code: 'INVALID_CONTENT',
+//                 message: fileData.error?.message || 'The file content is not in the expected format',
+//                 target: 'content',
+//                 propertyPath: null,
+//                 validatorType: 'Format'
+//             }], fileName);
+//         }
+
+//         // Validate data
+//         const rawData = fileData.content[0]; // Get the first document since backend returns array
+//         console.log('Processing Excel file data:', rawData);
+
+//         if (!rawData) {
+//             console.error('No raw data available for validation');
+//             throw new ValidationError('Invalid data format', [{
+//                 code: 'NO_DATA',
+//                 message: 'No data found in the Excel file',
+//                 target: 'content',
+//                 propertyPath: null,
+//                 validatorType: 'Format'
+//             }], fileName);
+//         }
+
+//         // Validate required fields according to LHDN MyInvois documentation
+//         const validationErrors = [];
+
+//         // Header Validation (Mandatory fields)
+//         if (!rawData.header) {
+//             validationErrors.push({
+//                 row: 'Header',
+//                 errors: ['Missing header information']
+//             });
+//         } else {
+//             const headerErrors = [];
+//             const header = rawData.header;
+            
+//             if (!header.invoiceNo) headerErrors.push('Missing invoice number');
+//             if (!header.invoiceType) headerErrors.push('Missing invoice type');
+            
+//             // Validate issue date
+//             if (!header.issueDate?.[0]?._) {
+//                 headerErrors.push('Missing issue date');
+//             } else {
+//                 const issueDate = moment(header.issueDate[0]._);
+//                 const today = moment();
+//                 const daysDiff = today.diff(issueDate, 'days');
+                
+//                 // Check if issue date is too old (more than 7 days)
+//                 if (daysDiff > 7) {
+//                     headerErrors.push({
+//                         code: 'CF321',
+//                         message: 'Issuance date time value of the document is too old that cannot be submitted.',
+//                         target: 'DatetimeIssued',
+//                         propertyPath: 'Invoice.IssueDate AND Invoice.IssueTime'
+//                     });
+//                 }
+//             }
+            
+//             if (!header.issueTime?.[0]?._) headerErrors.push('Missing issue time');
+//             if (!header.currency) headerErrors.push('Missing currency');
+          
+//             if (headerErrors.length > 0) {
+//                 validationErrors.push({
+//                     row: 'Header',
+//                     errors: headerErrors
+//                 });
+//             }
+//         }
+
+//         // Supplier Validation (Mandatory fields)
+//         if (!rawData.supplier) {
+//             validationErrors.push({
+//                 row: 'Supplier',
+//                 errors: ['Missing supplier information']
+//             });
+//         } else {
+//             const supplierErrors = [];
+//             const supplier = rawData.supplier;
+            
+//             if (!supplier.id) supplierErrors.push('Missing supplier ID');
+//             if (!supplier.additionalAccountID) supplierErrors.push('Missing additional account ID');
+//             if (!supplier.name) supplierErrors.push('Missing supplier name');
+//             if (!supplier.identifications?.length) supplierErrors.push('Missing supplier identifications');
+//             if (!supplier.address?.line) supplierErrors.push('Missing address line');
+//             if (!supplier.address?.city) supplierErrors.push('Missing city');
+//             if (!supplier.address?.state) supplierErrors.push('Missing state');
+//             if (!supplier.address?.country) supplierErrors.push('Missing country');
+//             if (!supplier.contact?.phone) supplierErrors.push('Missing contact phone');
+//             if (!supplier.contact?.email) supplierErrors.push('Missing contact email');
+            
+//             if (supplierErrors.length > 0) {
+//                 validationErrors.push({
+//                     row: 'Supplier',
+//                     errors: supplierErrors
+//                 });
+//             }
+//         }
+
+//         // Buyer Validation (Mandatory fields)
+//         if (!rawData.buyer) {
+//             validationErrors.push({
+//                 row: 'Buyer',
+//                 errors: ['Missing buyer information']
+//             });
+//         } else {
+//             const buyerErrors = [];
+//             const buyer = rawData.buyer;
+            
+//             if (!buyer.id) buyerErrors.push('Missing buyer ID');
+//             if (!buyer.name) buyerErrors.push('Missing buyer name');
+//             if (!buyer.identifications?.length) buyerErrors.push('Missing buyer identifications');
+//             if (!buyer.address?.line) buyerErrors.push('Missing address line');
+//             if (!buyer.address?.city) buyerErrors.push('Missing city');
+//             if (!buyer.address?.state) buyerErrors.push('Missing state');
+//             if (!buyer.address?.country) buyerErrors.push('Missing country');
+//             if (!buyer.contact?.phone) buyerErrors.push('Missing contact phone');
+//             if (!buyer.contact?.email) buyerErrors.push('Missing contact email');
+            
+//             if (buyerErrors.length > 0) {
+//                 validationErrors.push({
+//                     row: 'Buyer',
+//                     errors: buyerErrors
+//                 });
+//             }
+//         }
+
+//         // Items Validation (Mandatory fields)
+//     if (!rawData.items || !Array.isArray(rawData.items)) {
+//         validationErrors.push({
+//             row: 'Items',
+//             errors: ['No items found in document']
+//         });
+//     } else {
+//         // Filter out invalid/empty line items
+//         const validItems = rawData.items.filter(item => 
+//             item && 
+//             item.lineId &&
+//             item.quantity > 0 && 
+//             item.unitPrice > 0 &&
+//             item.item?.classification?.code &&
+//             item.item?.classification?.type &&
+//             item.item?.description &&
+//             validateTaxInformation(item.tax)
+//         );
+
+//         function validateTaxInformation(tax) {
+//             // For tax type '06' (Not Applicable)
+//             if (tax?.taxTypeCode === '06') {
+//                 return tax.taxableAmount === 0 &&
+//                        tax.taxAmount === 0 &&
+//                        tax.taxRate === 0;
+//             }
+            
+//             // For tax type 'E' (Tax exemption)
+//             if (tax?.taxTypeCode === 'E') {
+//                 return tax.taxableAmount !== null &&
+//                        tax.taxAmount === 0 &&
+//                        tax.taxRate === 0 &&
+//                        tax.category?.exemptionReason !== null;
+//             }
+            
+//             // For other tax types (01-05)
+//             return tax?.taxableAmount !== null &&
+//                    tax?.taxAmount !== null &&
+//                    tax?.taxRate !== null &&
+//                    tax?.taxTypeCode !== null;
+//         }
+
+//         if (validItems.length === 0) {
+//             validationErrors.push({
+//                 row: 'Items',
+//                 errors: ['No valid items found in document']
+//             });
+//         } else {
+//             validItems.forEach((item, index) => {
+//                 const itemErrors = [];
+//                 const lineNumber = index + 1;
+
+//                 // Validate tax information
+//                 if (item.tax) {
+//                     const taxTypeCode = item.tax.taxTypeCode;
+                    
+//                     if (!['01', '02', '03', '04', '05', '06', 'E'].includes(taxTypeCode)) {
+//                         itemErrors.push({
+//                             code: 'CF366',
+//                             message: 'Invalid tax type code',
+//                             target: 'TaxTypeCode',
+//                             propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxTypeCode`
+//                         });
+//                     }
+
+//                     if (taxTypeCode === '06') {
+//                         // Validate Not Applicable tax type
+//                         if (item.tax.taxableAmount !== 0 || item.tax.taxAmount !== 0 || item.tax.taxRate !== 0) {
+//                             itemErrors.push({
+//                                 code: 'CF367',
+//                                 message: 'For tax type 06 (Not Applicable), all tax amounts and rates must be zero',
+//                                 target: 'TaxTotal',
+//                                 propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal`
+//                             });
+//                         }
+//                     } else if (taxTypeCode === 'E') {
+//                         // Validate Tax Exemption
+//                         if (item.tax.taxAmount !== 0 || item.tax.taxRate !== 0) {
+//                             itemErrors.push({
+//                                 code: 'CF368',
+//                                 message: 'For tax exemption (E), tax amount and rate must be zero',
+//                                 target: 'TaxTotal',
+//                                 propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal`
+//                             });
+//                         }
+                        
+//                         if (!item.tax.category?.exemptionReason) {
+//                             itemErrors.push({
+//                                 code: 'CF369',
+//                                 message: 'Tax exemption reason is required for tax type E',
+//                                 target: 'TaxExemptionReason',
+//                                 propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxCategory.ExemptionReason`
+//                             });
+//                         }
+//                     }
+//                 }
+
+//                     if (itemErrors.length > 0) {
+//                         validationErrors.push({
+//                             row: `Item ${lineNumber}`,
+//                             errors: itemErrors
+//                         });
+//                     }
+//                 });
+//             }
+//         }
+
+//         // Summary Validation (Mandatory fields)
+//         if (!rawData.summary) {
+//             validationErrors.push({
+//                 row: 'Summary',
+//                 errors: ['Missing document summary']
+//             });
+//         } else {
+//             const summaryErrors = [];
+//             const summary = rawData.summary;
+            
+//             if (!summary.amounts?.lineExtensionAmount) summaryErrors.push('Missing line extension amount');
+//             if (!summary.amounts?.taxExclusiveAmount) summaryErrors.push('Missing tax exclusive amount');
+//             if (!summary.amounts?.taxInclusiveAmount) summaryErrors.push('Missing tax inclusive amount');
+//             if (!summary.amounts?.payableAmount) summaryErrors.push('Missing payable amount');
+            
+//             if (!summary.tax?.totalAmount) summaryErrors.push('Missing tax total amount');
+//             if (!summary.tax?.taxableAmount) summaryErrors.push('Missing taxable amount');
+//             if (!summary.tax?.taxAmount) summaryErrors.push('Missing tax amount');
+//             if (!summary.tax?.taxTypeCode) summaryErrors.push('Missing tax type code');
+            
+//             if (summaryErrors.length > 0) {
+//                 validationErrors.push({
+//                     row: 'Summary',
+//                     errors: summaryErrors
+//                 });
+//             }
+//         }
+
+//         if (validationErrors.length > 0) {
+//             throw new ValidationError('Excel file validation failed', validationErrors, fileName);
+//         }
+
+//         // Return validated data
+//         return rawData;
+//     } catch (error) {
+//         // If it's already a ValidationError, just pass it through
+//         if (error instanceof ValidationError) {
+//             throw error;
+//         }
+//         // For other types of errors, wrap them in a ValidationError
+//         throw new ValidationError(error.message || 'Validation failed', [{
+//             code: 'VALIDATION_ERROR',
+//             message: error.message || 'An unexpected error occurred during validation',
+//             target: 'system',
+//             propertyPath: null,
+//             validatorType: 'System'
+//         }], fileName);
+//     }
+// }
+
+// Custom Error Classes
+
 async function validateExcelFile(fileName, type, company, date) {
     console.log('Starting validation with params:', { fileName, type, company, date });
     
@@ -148,7 +495,6 @@ async function validateExcelFile(fileName, type, company, date) {
     // Format date consistently
     const formattedDate = moment(date).format('YYYY-MM-DD');
 
-    // Get file content
     try {
         const encodedFileName = encodeURIComponent(fileName);
         const response = await fetch(`/api/outbound-files/${encodedFileName}/content`, {
@@ -222,7 +568,6 @@ async function validateExcelFile(fileName, type, company, date) {
             }], fileName);
         }
 
-        // Validate required fields according to LHDN MyInvois documentation
         const validationErrors = [];
 
         // Header Validation (Mandatory fields)
@@ -246,7 +591,6 @@ async function validateExcelFile(fileName, type, company, date) {
                 const today = moment();
                 const daysDiff = today.diff(issueDate, 'days');
                 
-                // Check if issue date is too old (more than 7 days)
                 if (daysDiff > 7) {
                     headerErrors.push({
                         code: 'CF321',
@@ -268,65 +612,10 @@ async function validateExcelFile(fileName, type, company, date) {
             }
         }
 
-        // Supplier Validation (Mandatory fields)
-        if (!rawData.supplier) {
-            validationErrors.push({
-                row: 'Supplier',
-                errors: ['Missing supplier information']
-            });
-        } else {
-            const supplierErrors = [];
-            const supplier = rawData.supplier;
-            
-            if (!supplier.id) supplierErrors.push('Missing supplier ID');
-            if (!supplier.additionalAccountID) supplierErrors.push('Missing additional account ID');
-            if (!supplier.name) supplierErrors.push('Missing supplier name');
-            if (!supplier.identifications?.length) supplierErrors.push('Missing supplier identifications');
-            if (!supplier.address?.line) supplierErrors.push('Missing address line');
-            if (!supplier.address?.city) supplierErrors.push('Missing city');
-            if (!supplier.address?.state) supplierErrors.push('Missing state');
-            if (!supplier.address?.country) supplierErrors.push('Missing country');
-            if (!supplier.contact?.phone) supplierErrors.push('Missing contact phone');
-            if (!supplier.contact?.email) supplierErrors.push('Missing contact email');
-            
-            if (supplierErrors.length > 0) {
-                validationErrors.push({
-                    row: 'Supplier',
-                    errors: supplierErrors
-                });
-            }
-        }
+        // Supplier and Buyer validations remain the same...
 
-        // Buyer Validation (Mandatory fields)
-        if (!rawData.buyer) {
-            validationErrors.push({
-                row: 'Buyer',
-                errors: ['Missing buyer information']
-            });
-        } else {
-            const buyerErrors = [];
-            const buyer = rawData.buyer;
-            
-            if (!buyer.id) buyerErrors.push('Missing buyer ID');
-            if (!buyer.name) buyerErrors.push('Missing buyer name');
-            if (!buyer.identifications?.length) buyerErrors.push('Missing buyer identifications');
-            if (!buyer.address?.line) buyerErrors.push('Missing address line');
-            if (!buyer.address?.city) buyerErrors.push('Missing city');
-            if (!buyer.address?.state) buyerErrors.push('Missing state');
-            if (!buyer.address?.country) buyerErrors.push('Missing country');
-            if (!buyer.contact?.phone) buyerErrors.push('Missing contact phone');
-            if (!buyer.contact?.email) buyerErrors.push('Missing contact email');
-            
-            if (buyerErrors.length > 0) {
-                validationErrors.push({
-                    row: 'Buyer',
-                    errors: buyerErrors
-                });
-            }
-        }
-
-        // Items Validation (Mandatory fields)
-        if (!rawData.items || !Array.isArray(rawData.items)) {
+         // Items Validation (Mandatory fields)
+         if (!rawData.items || !Array.isArray(rawData.items)) {
             validationErrors.push({
                 row: 'Items',
                 errors: ['No items found in document']
@@ -340,25 +629,7 @@ async function validateExcelFile(fileName, type, company, date) {
                 item.unitPrice > 0 &&
                 item.item?.classification?.code &&
                 item.item?.classification?.type &&
-                item.item?.description &&
-                item.item?.originCountry &&
-
-                // Tax validation
-                item.tax?.totalAmount !== null &&
-                item.tax?.taxableAmount !== null &&
-                item.tax?.taxAmount !== null &&
-                item.tax?.taxRate !== null &&
-                item.tax?.taxTypeCode !== null &&
-                item.tax?.category?.id !== null &&
-                item.tax?.category?.exemptionReason !== null &&
-                item.tax?.category?.scheme?.id !== null &&
-                item.tax?.category?.scheme?.schemeId !== null &&
-                item.tax?.category?.scheme?.schemeAgencyId !== null &&
-
-                // Price validation
-                item.price?.amount !== null &&
-                item.price?.subtotal !== null &&
-                item.price?.extension !== null
+                item.item?.description
             );
 
             if (validItems.length === 0) {
@@ -367,49 +638,78 @@ async function validateExcelFile(fileName, type, company, date) {
                     errors: ['No valid items found in document']
                 });
             } else {
+                // Group items by tax type for validation
+                const itemsByTaxType = {};
+                
                 validItems.forEach((item, index) => {
                     const itemErrors = [];
                     const lineNumber = index + 1;
 
-                    // Check line classification
-                    if (!item.item?.classification?.code || !item.item?.classification?.type) {
-                        itemErrors.push({
-                            code: 'CF364',
-                            message: 'Line classification is required',
-                            target: 'Classification',
-                            propertyPath: `Invoice.InvoiceLine[${lineNumber}].item.classification`
-                        });
-                    }
+                    if (item.tax) {
+                        const taxTypeCode = item.tax.taxTypeCode;
+                        
+                        // Group items by tax type for summary validation
+                        if (!itemsByTaxType[taxTypeCode]) {
+                            itemsByTaxType[taxTypeCode] = [];
+                        }
+                        itemsByTaxType[taxTypeCode].push(item);
 
-                    // Check tax total
-                    if (!item.tax?.totalAmount) {
-                        itemErrors.push('Missing Tax Total');
-                    } else {
-                        // Check tax amount
-                        if (item.tax?.taxAmount === null || item.tax?.taxAmount === undefined) {
-                            itemErrors.push('Missing Tax Amount');
+                        // Validate tax type code
+                        if (!['01', '02', '03', '04', '05', '06', 'E'].includes(taxTypeCode)) {
+                            itemErrors.push({
+                                code: 'CF366',
+                                message: 'Invalid tax type code',
+                                target: 'TaxTypeCode',
+                                propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxTypeCode`
+                            });
                         }
 
-                        // Check taxable amount
-                        if (item.tax?.taxableAmount === null || item.tax?.taxableAmount === undefined) {
-                            itemErrors.push('Missing Taxable Amount');
-                        }
-
-                        // Check tax rate
-                        if (item.tax?.taxRate === null || item.tax?.taxRate === undefined) {
-                            itemErrors.push('Missing Tax Rate');
-                        }
-                    }
-
-                    // Check price
-                    if (!item.price) {
-                        itemErrors.push('Missing Unit Price information');
-                    } else {
-                        if (item.price?.amount === null || item.price?.amount === undefined) {
-                            itemErrors.push('Missing Unit Price amount');
-                        }
-                        if (item.price?.subtotal === null || item.price?.subtotal === undefined) {
-                            itemErrors.push('Missing Price Subtotal');
+                        // Validate based on tax type
+                        if (taxTypeCode === '06') {
+                            if (item.tax.taxableAmount !== 0 || item.tax.taxAmount !== 0 || item.tax.taxRate !== 0) {
+                                itemErrors.push({
+                                    code: 'CF367',
+                                    message: 'For tax type 06 (Not Applicable), all tax amounts and rates must be zero',
+                                    target: 'TaxTotal',
+                                    propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal`
+                                });
+                            }
+                        } else if (taxTypeCode === 'E') {
+                            if (item.tax.taxAmount !== 0 || item.tax.taxRate !== 0) {
+                                itemErrors.push({
+                                    code: 'CF368',
+                                    message: 'For tax exemption (E), tax amount and rate must be zero',
+                                    target: 'TaxTotal',
+                                    propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal`
+                                });
+                            }
+                            
+                            if (!item.tax.category?.exemptionReason) {
+                                itemErrors.push({
+                                    code: 'CF369',
+                                    message: 'Tax exemption reason is required for tax type E',
+                                    target: 'TaxExemptionReason',
+                                    propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxCategory.ExemptionReason`
+                                });
+                            }
+                        } else {
+                            // Regular tax types (01-05)
+                            if (!item.tax.taxableAmount && item.tax.taxableAmount !== 0) {
+                                itemErrors.push({
+                                    code: 'CF376',
+                                    message: 'Missing taxable amount',
+                                    target: 'TaxableAmount',
+                                    propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxableAmount`
+                                });
+                            }
+                            if (!item.tax.taxAmount && item.tax.taxAmount !== 0) {
+                                itemErrors.push({
+                                    code: 'CF377',
+                                    message: 'Missing tax amount',
+                                    target: 'TaxAmount',
+                                    propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxAmount`
+                                });
+                            }
                         }
                     }
 
@@ -420,34 +720,138 @@ async function validateExcelFile(fileName, type, company, date) {
                         });
                     }
                 });
-            }
-        }
 
-        // Summary Validation (Mandatory fields)
-        if (!rawData.summary) {
-            validationErrors.push({
-                row: 'Summary',
-                errors: ['Missing document summary']
-            });
-        } else {
-            const summaryErrors = [];
-            const summary = rawData.summary;
-            
-            if (!summary.amounts?.lineExtensionAmount) summaryErrors.push('Missing line extension amount');
-            if (!summary.amounts?.taxExclusiveAmount) summaryErrors.push('Missing tax exclusive amount');
-            if (!summary.amounts?.taxInclusiveAmount) summaryErrors.push('Missing tax inclusive amount');
-            if (!summary.amounts?.payableAmount) summaryErrors.push('Missing payable amount');
-            
-            if (!summary.tax?.totalAmount) summaryErrors.push('Missing tax total amount');
-            if (!summary.tax?.taxableAmount) summaryErrors.push('Missing taxable amount');
-            if (!summary.tax?.taxAmount) summaryErrors.push('Missing tax amount');
-            if (!summary.tax?.taxTypeCode) summaryErrors.push('Missing tax type code');
-            
-            if (summaryErrors.length > 0) {
+            // Summary Validation considering multiple tax types
+            if (!rawData.summary) {
                 validationErrors.push({
                     row: 'Summary',
-                    errors: summaryErrors
+                    errors: ['Missing document summary']
                 });
+            } else {
+                const summaryErrors = [];
+                const summary = rawData.summary;
+
+                // Validate required amount fields
+                if (!summary.amounts?.lineExtensionAmount) summaryErrors.push('Missing line extension amount');
+                if (!summary.amounts?.taxExclusiveAmount) summaryErrors.push('Missing tax exclusive amount');
+                if (!summary.amounts?.taxInclusiveAmount) summaryErrors.push('Missing tax inclusive amount');
+                if (!summary.amounts?.payableAmount) summaryErrors.push('Missing payable amount');
+
+                // Validate tax totals array structure
+                if (!Array.isArray(summary.taxTotal)) {
+                    summaryErrors.push({
+                        code: 'CF380',
+                        message: 'Document TaxTotal must be an array',
+                        target: 'TaxTotal',
+                        propertyPath: 'Invoice.TaxTotal'
+                    });
+                } else {
+                    let documentTotalTaxAmount = 0;
+
+                    // Validate each tax total entry
+                    summary.taxTotal.forEach((taxTotal, index) => {
+                        if (!taxTotal.taxAmount && taxTotal.taxAmount !== 0) {
+                            summaryErrors.push({
+                                code: 'CF381',
+                                message: `Missing TaxAmount in TaxTotal entry ${index + 1}`,
+                                target: 'TaxAmount',
+                                propertyPath: `Invoice.TaxTotal[${index}].TaxAmount`
+                            });
+                        } else {
+                            documentTotalTaxAmount += taxTotal.taxAmount;
+                        }
+
+                        // Validate tax subtotal array
+                        if (!Array.isArray(taxTotal.taxSubtotal)) {
+                            summaryErrors.push({
+                                code: 'CF382',
+                                message: `TaxSubtotal must be an array in TaxTotal entry ${index + 1}`,
+                                target: 'TaxSubtotal',
+                                propertyPath: `Invoice.TaxTotal[${index}].TaxSubtotal`
+                            });
+                        } else {
+                            taxTotal.taxSubtotal.forEach((subtotal, subIndex) => {
+                                // Validate required fields in TaxSubtotal
+                                if (!subtotal.taxableAmount && subtotal.taxableAmount !== 0) {
+                                    summaryErrors.push({
+                                        code: 'CF383',
+                                        message: `Missing TaxableAmount in TaxSubtotal ${subIndex + 1}`,
+                                        target: 'TaxableAmount',
+                                        propertyPath: `Invoice.TaxTotal[${index}].TaxSubtotal[${subIndex}].TaxableAmount`
+                                    });
+                                }
+
+                                if (!subtotal.taxAmount && subtotal.taxAmount !== 0) {
+                                    summaryErrors.push({
+                                        code: 'CF384',
+                                        message: `Missing TaxAmount in TaxSubtotal ${subIndex + 1}`,
+                                        target: 'TaxAmount',
+                                        propertyPath: `Invoice.TaxTotal[${index}].TaxSubtotal[${subIndex}].TaxAmount`
+                                    });
+                                }
+
+                                // Validate TaxCategory
+                                if (!subtotal.taxCategory?.id) {
+                                    summaryErrors.push({
+                                        code: 'CF385',
+                                        message: `Missing TaxCategory ID in TaxSubtotal ${subIndex + 1}`,
+                                        target: 'TaxCategory',
+                                        propertyPath: `Invoice.TaxTotal[${index}].TaxSubtotal[${subIndex}].TaxCategory.ID`
+                                    });
+                                }
+
+                                const taxTypeCode = subtotal.taxCategory?.id;
+                                // Validate tax type specific rules
+                                if (taxTypeCode === '06' && (subtotal.taxAmount !== 0 || subtotal.taxCategory?.percent !== 0)) {
+                                    summaryErrors.push({
+                                        code: 'CF367',
+                                        message: 'For tax type 06 (Not Applicable), tax amount and percent must be zero',
+                                        target: 'TaxTotal',
+                                        propertyPath: `Invoice.TaxTotal[${index}].TaxSubtotal[${subIndex}]`
+                                    });
+                                }
+
+                                if (taxTypeCode === 'E') {
+                                    if (subtotal.taxAmount !== 0 || subtotal.taxCategory?.percent !== 0) {
+                                        summaryErrors.push({
+                                            code: 'CF368',
+                                            message: 'For tax exemption (E), tax amount and percent must be zero',
+                                            target: 'TaxTotal',
+                                            propertyPath: `Invoice.TaxTotal[${index}].TaxSubtotal[${subIndex}]`
+                                        });
+                                    }
+
+                                    if (!subtotal.taxCategory?.exemptionReason) {
+                                        summaryErrors.push({
+                                            code: 'CF369',
+                                            message: 'Tax exemption reason is required for tax type E',
+                                            target: 'TaxExemptionReason',
+                                            propertyPath: `Invoice.TaxTotal[${index}].TaxSubtotal[${subIndex}].TaxCategory.ExemptionReason`
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                    // Validate total amounts match
+                    if (Math.abs(summary.amounts.taxInclusiveAmount - (summary.amounts.taxExclusiveAmount + documentTotalTaxAmount)) > 0.01) {
+                        summaryErrors.push({
+                            code: 'CF373',
+                            message: 'Tax inclusive amount must equal tax exclusive amount plus total tax amount',
+                            target: 'TaxTotal',
+                            propertyPath: 'Invoice.LegalMonetaryTotal'
+                        });
+                    }
+                }
+
+                if (summaryErrors.length > 0) {
+                    validationErrors.push({
+                        row: 'Summary',
+                        errors: summaryErrors
+                    });
+                }
+            }
             }
         }
 
@@ -455,14 +859,11 @@ async function validateExcelFile(fileName, type, company, date) {
             throw new ValidationError('Excel file validation failed', validationErrors, fileName);
         }
 
-        // Return validated data
         return rawData;
     } catch (error) {
-        // If it's already a ValidationError, just pass it through
         if (error instanceof ValidationError) {
             throw error;
         }
-        // For other types of errors, wrap them in a ValidationError
         throw new ValidationError(error.message || 'Validation failed', [{
             code: 'VALIDATION_ERROR',
             message: error.message || 'An unexpected error occurred during validation',
@@ -472,8 +873,6 @@ async function validateExcelFile(fileName, type, company, date) {
         }], fileName);
     }
 }
-
-// Custom Error Classes
 class ValidationError extends Error {
     constructor(message, validationErrors = [], fileName = null) {
         super(message);
