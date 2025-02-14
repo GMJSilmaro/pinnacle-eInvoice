@@ -2694,6 +2694,12 @@ class InvoiceTableManager {
                     render: (data, type, row) => this.renderBuyerInfo(data, type, row)
                 },
                 {
+                    data: 'uploadedDate',
+                    className: 'outbound-date-column',
+                    title: 'FILE UPLOADED',
+                    render: (data, type, row) => this.renderUploadedDate(data, type, row)
+                },
+                {
                     data: null,
                     className: 'outbound-date-column',
                     title: 'DATE INFO',
@@ -2935,7 +2941,11 @@ class InvoiceTableManager {
             </div>`;
     }
 
-    
+    renderUploadedDate(data) {
+        const formattedDate = this.formatIssueDate(data);
+        if (!data) return '<span class="text-muted">N/A</span>';
+        return `<span class="time-text text-muted" title="${data}">${formattedDate}</span>`;
+    }
   
     renderTimeRemaining(date, row) {
         if (!date || row.status === 'Cancelled' || row.status === 'Failed' || row.status === 'Rejected') {
