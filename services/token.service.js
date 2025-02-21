@@ -1,6 +1,5 @@
 const axios = require('axios');
-const db = require('../models');
-const WP_CONFIGURATION = db.WP_CONFIGURATION;
+const { WP_CONFIGURATION } = require('../models');
 
 const generateAccessToken = async (req, userId = null) => {
   try {
@@ -126,28 +125,6 @@ const checkTokenExpiry = (req) => {
   return Date.now() <= tokenExpiryTime;
 };
 
-const getAccessToken = async (req) => {
-  try {
-    // Check if we have a valid token
-    if (checkTokenExpiry(req)) {
-      return req.session.accessToken;
-    }
-
-    // Generate new token if expired or not exists
-    const accessToken = await generateAccessToken(req);
-    
-    // Store the new token in session
-    if (req.session) {
-      req.session.accessToken = accessToken;
-      req.session.tokenExpiryTime = Date.now() + (3600 * 1000); // Default 1 hour expiry
-    }
-    
-    return accessToken;
-  } catch (error) {
-    throw error;
-  }
-};
-
 // Function to test LHDN connection by generating a token
 const generateToken = async (settings) => {
   try {
@@ -158,7 +135,7 @@ const generateToken = async (settings) => {
     params.append('scope', 'InvoicingAPI');
 
     // Ensure proper URL construction
-    let baseUrl = settings.middlewareUrl || process.env.ID_SRV_BASE_URL;
+    let baseUrl = settings.middlewareUrl;
     
     // Remove any trailing slashes
     baseUrl = baseUrl.replace(/\/+$/, '');
@@ -236,6 +213,88 @@ const validateCredentials = async (settings) => {
     };
   }
 };
+
+async function getLHDNConfig() {
+    const config = await WP_CONFIGURATION.findOne({
+        where: {
+            Type: 'LHDN',
+            IsActive: 1
+        },
+        order: [['CreateTS', 'DESC']]
+    });
+
+    if (!config || !config.Settings) {
+        throw new Error('LHDN configuration not found');
+    }
+
+    let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
+    
+    return {
+        baseUrl: settings.environment === 'production' 
+            ? settings.productionUrl || settings.middlewareUrl 
+            : settings.sandboxUrl || settings.middlewareUrl,
+        environment: settings.environment,
+        clientId: settings.clientId,
+        clientSecret: settings.clientSecret,
+        timeout: settings.timeout || 30000,
+        retryEnabled: settings.retryEnabled || false
+    };
+}
+
+// const getAccessToken = async (req) => {
+//   try {
+//     // Check if we have a valid token
+//     if (checkTokenExpiry(req)) {
+//       return req.session.accessToken;
+//     }
+
+//     // Generate new token if expired or not exists
+//     const accessToken = await generateAccessToken(req);
+    
+//     // Store the new token in session
+//     if (req.session) {
+//       req.session.accessToken = accessToken;
+//       req.session.tokenExpiryTime = Date.now() + (3600 * 1000); // Default 1 hour expiry
+//     }
+    
+//     return accessToken;
+//   } catch (error) {
+//     throw error;
+//   }
+// };
+
+async function getAccessToken(req) {
+    try {
+        const config = await getLHDNConfig();
+        
+        // Rest of the token acquisition logic using config instead of env vars
+        const tokenUrl = `${config.baseUrl}/connect/token`;
+        const data = new URLSearchParams({
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+            grant_type: 'client_credentials',
+            scope: 'InvoicingAPI'
+        });
+
+        const response = await axios.post(tokenUrl, data, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+
+        if (response.data && response.data.access_token) {
+            // Store token in session
+            req.session.accessToken = response.data.access_token;
+            req.session.tokenExpiryTime = Date.now() + (response.data.expires_in * 1000);
+            return response.data.access_token;
+        }
+
+        throw new Error('Failed to get access token');
+    } catch (error) {
+        console.error('Error getting access token:', error);
+        throw error;
+    }
+}
 
 module.exports = {
   generateAccessToken,

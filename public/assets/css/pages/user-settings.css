@@ -276,16 +276,6 @@
     transition: background-color 0.2s;
 }
 
-.btn-primary {
-    background: #2563eb;
-    color: white;
-    border: none;
-}
-
-.btn-primary:hover {
-    background: #1d4ed8;
-}
-
 .btn-outline-danger {
     background: transparent;
     border: 1px solid #dc2626;

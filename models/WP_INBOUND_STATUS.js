@@ -42,11 +42,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true
     },
     dateTimeReceived: {
-      type: DataTypes.DATE,
+      type: DataTypes.STRING(100),
       allowNull: true
     },
     dateTimeValidated: {
-      type: DataTypes.DATE,
+      type: DataTypes.STRING(100),
       allowNull: true
     },
     status: {
@@ -58,11 +58,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true
     },
     cancelDateTime: {
-      type: DataTypes.DATE,
+      type: DataTypes.STRING(100),
       allowNull: true
     },
     rejectRequestDateTime: {
-      type: DataTypes.DATE,
+      type: DataTypes.STRING(100),
       allowNull: true
     },
     createdByUserId: {
@@ -70,7 +70,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true
     },
     dateTimeIssued: {
-      type: DataTypes.DATE,
+      type: DataTypes.STRING(100),
+      allowNull: true
+    },
+    totalSales: {
+      type: DataTypes.DECIMAL(18, 2),
       allowNull: true
     },
     totalExcludingTax: {
@@ -88,11 +92,48 @@ module.exports = (sequelize, DataTypes) => {
     totalPayableAmount: {
       type: DataTypes.DECIMAL(18, 2),
       allowNull: true
+    },
+    created_at: {
+      type: DataTypes.STRING(100),
+      allowNull: false,
+      defaultValue: sequelize.literal('GETDATE()')
+    },
+    updated_at: {
+      type: DataTypes.STRING(100),
+      allowNull: false,
+      defaultValue: sequelize.literal('GETDATE()')
+    },
+    last_sync_date: {
+      type: DataTypes.STRING(100),
+      allowNull: true
+    },
+    sync_status: {
+      type: DataTypes.STRING(50),
+      allowNull: true
     }
   }, {
     tableName: 'WP_INBOUND_STATUS',
-    timestamps: false,
-    freezeTableName: true
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    freezeTableName: true,
+    indexes: [
+      {
+        name: 'IX_WP_INBOUND_STATUS_dateTimeReceived',
+        fields: [{ name: 'dateTimeReceived', order: 'DESC' }]
+      },
+      {
+        name: 'IX_WP_INBOUND_STATUS_status',
+        fields: ['status']
+      },
+      {
+        name: 'IX_WP_INBOUND_STATUS_issuerTin',
+        fields: ['issuerTin']
+      },
+      {
+        fields: ['last_sync_date']
+      }
+    ]
   });
 
   return WP_INBOUND_STATUS;

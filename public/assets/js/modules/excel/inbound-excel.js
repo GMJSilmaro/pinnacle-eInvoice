@@ -243,7 +243,10 @@ class InvoiceTableManager {
         if ($.fn.DataTable.isDataTable('#invoiceTable')) {
             return;
         }
-
+    
+        // Store reference to the class instance
+        const self = this;
+    
         this.table = $('#invoiceTable').DataTable({
             processing: false,
             serverSide: false,
@@ -251,16 +254,18 @@ class InvoiceTableManager {
                 url: '/api/lhdn/documents/recent',
                 method: 'GET',
                 data: function(d) {
-                    // Add force refresh parameter
-                    d.forceRefresh = window.forceRefreshLHDN || false;
+                    // Use the stored reference 'self' instead of 'this'
+                    d.forceRefresh = window.forceRefreshLHDN || !self.checkDataFreshness();
                     return d;
                 },
                 dataSrc: (json) => {
                     const result = json && json.result ? json.result : [];
-                    // Reset force refresh flag after data is loaded
+                    // Update last data update timestamp
+                    localStorage.setItem('lastDataUpdate', new Date().getTime());
+                    // Reset force refresh flag
                     window.forceRefreshLHDN = false;
-                    // Update totals after data is loaded and table is ready
-                    setTimeout(() => this.updateCardTotals(), 100);
+                    // Update totals
+                    setTimeout(() => self.updateCardTotals(), 100);
                     return result;
                 }
             },
@@ -296,41 +301,39 @@ class InvoiceTableManager {
                 {
                     data: 'internalId',
                     title: 'INTERNAL ID',
-                    className: 'inbound-invoice-column',
                     render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                 },
           
                 {
                     data: 'supplierName',
                     title: 'SUPPLIER',
-                    className: 'inbound-supplier-column',
                    render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                 },
                 {
                     data: 'receiverName',
                     title: 'RECEIVER',
-                    className: 'inbound-buyer-column',
+                    width: '15%',
                     render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                 },
                 {
                     data: null,
-                    className: 'inbound-date-column',
+                    className: '',
                     title: 'ISSUE DATE',
+                    width: '15%',
                     render: function(data, type, row) {
                         return this.renderDateInfo(row.dateTimeIssued);
                     }.bind(this)
                 },
                 {
                     data: null,
-                    className: 'inbound-date-column',
                     title: 'RECEIVED DATE',
+                    width: '10%',
                     render: function(data, type, row) {
                         return this.renderDateInfo(row.dateTimeReceived);
                     }.bind(this)
                 },
                 {
                     data: 'status',
-                    className: 'inbound-status-column',
                     render: function(data) {
                         const statusClass = data.toLowerCase();
                         const icons = {
@@ -363,7 +366,6 @@ class InvoiceTableManager {
                 {
                     data: 'totalSales',
                     title: 'TOTAL SALES',
-                    className: 'inbound-amount-column',
                     render: data => `<span class="text-nowrap">MYR ${parseFloat(data || 0).toLocaleString('en-MY', {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2
@@ -383,12 +385,11 @@ class InvoiceTableManager {
                     }
                 }
             ],
-           
             scrollX: true,
             scrollCollapse: true,
             autoWidth: false,
             pageLength: 10,
-            dom: '<"inbound-controls"<"inbound-length-control"l><"inbound-search-control"f>>rt<"inbound-bottom"<"inbound-info"i><"inbound-pagination"p>>',
+            dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
             language: {
                 search: '',
                 searchPlaceholder: 'Search...',
@@ -444,6 +445,106 @@ class InvoiceTableManager {
             }
         `;
         document.head.appendChild(style);
+
+        // Add refresh button with smart refresh logic
+        const refreshButton = $(`
+            <button id="refreshLHDNData" class="outbound-action-btn submit btn-sm ms-2">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
+                <small class="text-muted ms-1 refresh-timer" style="display: none;"></small>
+            </button>
+        `);
+
+        $('.dataTables_length').append(refreshButton);
+
+        // Handle refresh button click with improved UX
+        $('#refreshLHDNData').on('click', async () => {
+            try {
+                const button = $('#refreshLHDNData');
+                const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+                const progressBar = document.querySelector('#loadingModal .progress-bar');
+                const statusText = document.getElementById('loadingStatus');
+                const detailsText = document.getElementById('loadingDetails');
+                
+                // Check if data is fresh enough
+                if (this.checkDataFreshness() && !window.forceRefreshLHDN) {
+                    const result = await Swal.fire({
+                        title: 'Data is up to date',
+                        text: 'The data was updated less than 15 minutes ago. Do you still want to refresh?',
+                        icon: 'info',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, refresh anyway',
+                        cancelButtonText: 'No, keep current data'
+                    });
+
+                    if (!result.isConfirmed) {
+                        return;
+                    }
+                }
+
+                // Disable button and show loading state
+                button.prop('disabled', true);
+                
+                // Show loading modal with improved progress tracking
+                loadingModal.show();
+                
+                // Update progress bar and status
+                progressBar.style.width = '10%';
+                statusText.textContent = 'Connecting to LHDN server...';
+                
+                // Set force refresh flag
+                window.forceRefreshLHDN = true;
+
+                // Set up event listeners for progress tracking
+                $(document).on('ajaxSend.dt', (e, xhr, settings) => {
+                    if (settings.url.includes('/api/lhdn/documents/recent')) {
+                        progressBar.style.width = '30%';
+                        statusText.textContent = 'Connected! Fetching your documents...';
+                    }
+                });
+
+                $(document).on('xhr.dt', (e, settings, json, xhr) => {
+                    if (json && json.result) {
+                        progressBar.style.width = '60%';
+                        statusText.textContent = 'Documents received! Processing data...';
+                        detailsText.textContent = `Found ${json.result.length} documents`;
+                    }
+                });
+
+                // Reload the table
+                await this.table.ajax.reload(null, false);
+
+                // Update final progress
+                progressBar.style.width = '100%';
+                statusText.textContent = 'Success! Your data is now up to date.';
+                
+                // Close modal after a short delay
+                setTimeout(() => {
+                    loadingModal.hide();
+                    progressBar.style.width = '0%';
+                    detailsText.textContent = '';
+                    
+                    // Show success toast
+                    ToastManager.show('Successfully fetched fresh data from LHDN', 'success');
+
+                    // Start refresh timer
+                    this.startRefreshTimer();
+                }, 1000);
+
+            } catch (error) {
+                console.error('Error refreshing LHDN data:', error);
+                
+                // Show error in modal
+                document.getElementById('loadingStatus').textContent = 'Oops! Something went wrong.';
+                document.getElementById('loadingDetails').textContent = error.message || 'Please try again in a few moments.';
+                
+                setTimeout(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('loadingModal')).hide();
+                    ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
+                }, 2000);
+            } finally {
+                $('#refreshLHDNData').prop('disabled', false);
+            }
+        });
     }
 
     // Add this new method to handle table styles initialization
@@ -492,7 +593,7 @@ class InvoiceTableManager {
             return colors[docType] || '#6c757d';
         };
 
-        const docType = 'Invoice ' + row.typeVersionName || 'Invoice 1.0';
+        const docType = row.typeName + ' ' + row.typeVersionName || 'Invoice 1.0';
         const docTypeIcon = getDocTypeIcon(docType);
         const docTypeColor = getDocTypeColor(docType);
 
@@ -617,6 +718,11 @@ class InvoiceTableManager {
         }).format(amount || 0);
     }
 
+    renderSource(data) {
+        if (!data) return '<span class="text-muted">N/A</span>';
+        return `<span class="badge-source ${data.toLowerCase()}">LHDN</span>`;
+    }
+
     createStatusBadge(status, reason) {
         const statusClasses = {
             'Valid': 'bg-success',
@@ -667,102 +773,8 @@ class InvoiceTableManager {
 
         $('.dataTables_length').append(exportBtn);
 
-        // Remove existing refresh button
-        $('#refreshLHDNData').remove();
-
-        // Add refresh button next to the export button
-        const refreshButton = `
-            <button id="refreshLHDNData" class="outbound-action-btn submit btn-sm ms-2">
-                <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
-            </button>
-        `;
-        $('.dataTables_length').append(refreshButton);
-
         // Handle export button click
         $('#exportSelected').on('click', () => this.exportSelectedRecords());
-        
-        // Add refresh button click handler
-        $('#refreshLHDNData').on('click', async () => {
-            try {
-                const button = $('#refreshLHDNData');
-                const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
-                const progressBar = document.querySelector('#loadingModal .progress-bar');
-                const statusText = document.getElementById('loadingStatus');
-                const detailsText = document.getElementById('loadingDetails');
-                
-                // Disable button and show loading state
-                button.prop('disabled', true);
-                
-                // Show loading modal
-                loadingModal.show();
-                
-                // Update progress bar and status (initial state)
-                progressBar.style.width = '10%';
-                statusText.textContent = 'Connecting to LHDN server...';
-                
-                // Set force refresh flag
-                window.forceRefreshLHDN = true;
-
-                // Set up event listener for ajax events
-                $(document).on('ajaxSend.dt', (e, xhr, settings) => {
-                    if (settings.url.includes('/api/lhdn/documents/recent')) {
-                        progressBar.style.width = '30%';
-                        statusText.textContent = 'Connected! Fetching your documents...';
-                    }
-                });
-
-                // Listen for xhr progress
-                $(document).on('xhr.dt', (e, settings, json, xhr) => {
-                    if (json && json.result) {
-                        progressBar.style.width = '60%';
-                        statusText.textContent = 'Documents received! Processing data...';
-                        detailsText.textContent = `Found ${json.result.length} documents`;
-                    }
-                });
-
-                // Reload the table
-                await this.table.ajax.reload(null, false);
-
-                // Update final progress
-                progressBar.style.width = '100%';
-                statusText.textContent = 'Success! Your data is now up to date.';
-                
-                // Close modal after a short delay
-                setTimeout(() => {
-                    loadingModal.hide();
-                    // Reset progress bar for next time
-                    progressBar.style.width = '0%';
-                    detailsText.textContent = '';
-                    
-                    // Show success toast
-                    ToastManager.show('Successfully fetched fresh data from LHDN', 'success');
-                }, 1000);
-
-            } catch (error) {
-                console.error('Error refreshing LHDN data:', error);
-                
-                // Show error in modal
-                document.getElementById('loadingStatus').textContent = 'Oops! Something went wrong.';
-                document.getElementById('loadingDetails').textContent = 'Please try again in a few moments.';
-                
-                // Close modal after error message
-                setTimeout(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('loadingModal')).hide();
-                    
-                    // Show error toast
-                    ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
-                }, 2000);
-            } finally {
-                // Reset button state
-                $('#refreshLHDNData')
-                    .prop('disabled', false)
-                    .html('<i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data');
-                
-                // Clean up event listeners
-                $(document).off('ajaxSend.dt');
-                $(document).off('xhr.dt');
-            }
-        });
     }
 
     updateExportButton() {
@@ -992,6 +1004,44 @@ class InvoiceTableManager {
                 ToastManager.show('Failed to copy UUID', 'error');
             });
         });
+    }
+
+    // Add new function to check data freshness
+    checkDataFreshness() {
+        const lastUpdate = localStorage.getItem('lastDataUpdate');
+        if (!lastUpdate) return false;
+
+        const currentTime = new Date().getTime();
+        const lastUpdateTime = parseInt(lastUpdate);
+        const fifteenMinutes = 15 * 60 * 1000;
+
+        return (currentTime - lastUpdateTime) < fifteenMinutes;
+    }
+
+    // Add refresh timer functionality
+    startRefreshTimer() {
+        const timerElement = $('.refresh-timer');
+        const updateTimer = () => {
+            const lastUpdate = localStorage.getItem('lastDataUpdate');
+            if (!lastUpdate) {
+                timerElement.hide();
+                return;
+            }
+
+            const now = new Date().getTime();
+            const timeSinceUpdate = now - parseInt(lastUpdate);
+            const minutesAgo = Math.floor(timeSinceUpdate / 60000);
+
+            if (minutesAgo < 15) {
+                timerElement.show().text(`(${15 - minutesAgo}m until next refresh)`);
+            } else {
+                timerElement.hide();
+            }
+        };
+
+        // Update timer immediately and every minute
+        updateTimer();
+        this.refreshTimerInterval = setInterval(updateTimer, 60000);
     }
 }
 

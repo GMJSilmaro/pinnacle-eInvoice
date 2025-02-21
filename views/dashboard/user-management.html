@@ -2,7 +2,7 @@
 
 {% block head %}
 <title>User Management - LHDN e-Invoice Portal</title>
-<link href="/assets/css/components/tooltip.css" rel="stylesheet">
+
 <link href="/assets/css/pages/settings.css" rel="stylesheet">
 <link href="/assets/css/pages/admin-settings.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -38,17 +38,17 @@
           </div>
         </a>
 
-        <a href="#add-user" class="settings-nav-item" data-section="add-user">
+        <!-- <a href="#add-user" class="settings-nav-item" data-section="add-user">
           <div class="settings-nav-icon">
             <i class="fas fa-user-plus"></i>
           </div>
           <div class="settings-nav-details">
-            <h4>Add New User</h4>
-            <p>Create a new user account</p>
+            <h4>Add Administrator User</h4>
+            <p>Create a new admin user account</p>
           </div>
-        </a>
+        </a> -->
 
-        <a href="#roles" class="settings-nav-item" data-section="roles">
+        <!-- <a href="#roles" class="settings-nav-item" data-section="roles">
           <div class="settings-nav-icon">
             <i class="fas fa-user-tag"></i>
           </div>
@@ -56,7 +56,7 @@
             <h4>Roles & Permissions</h4>
             <p>Manage user roles and access</p>
           </div>
-        </a>
+        </a> -->
       </div>
     </div>
 
@@ -79,7 +79,7 @@
                 <input type="text" class="form-control" placeholder="Search users...">
               </div>
             </div>
-            <button class="btn btn-primary" onclick="showAddUserForm()">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
               <i class="fas fa-plus"></i> Add New User
             </button>
           </div>
@@ -120,55 +120,112 @@
         </div>
       </div>
 
-      <!-- Add New User -->
-      <div class="settings-form" id="add-user">
-        <h3 class="settings-form-title">
-          <i class="fas fa-user-plus"></i>
-          Add New User
-        </h3>
-        <div class="settings-form-content">
-          <form id="addUserForm">
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label">Full Name</label>
-                <input type="text" class="form-control" id="newUserName" required>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Email Address</label>
-                <input type="email" class="form-control" id="newUserEmail" required>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Role</label>
-                <select class="form-control" id="newUserRole" required>
-                  <option value="">Select Role</option>
-                  <option value="admin">Administrator</option>
-                  <option value="user">Regular User</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Department</label>
-                <input type="text" class="form-control" id="newUserDepartment">
-              </div>
-              <div class="col-12">
-                <div class="form-check">
-                  <input type="checkbox" class="form-check-input" id="sendWelcomeEmail">
-                  <label class="form-check-label" for="sendWelcomeEmail">
-                    Send welcome email with login credentials
-                  </label>
-                </div>
-              </div>
+      <!-- Add User Modal -->
+      <div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">
+                <i class="fas fa-user-plus"></i>
+                Add New User
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
+            <div class="modal-body">
+              <form id="addUserForm" class="modal-form-container">
+                <!-- Basic Information -->
+                <div class="form-group">
+                  <label for="newUserName" class="form-label required">Full Name</label>
+                  <input type="text" class="form-control" id="newUserName" required minlength="2" maxlength="100">
+                </div>
 
-            <div class="mt-4 text-end">
-              <button type="button" class="btn btn-secondary me-2" onclick="resetForm()">
-                Reset
-              </button>
-              <button type="submit" class="btn btn-primary">
+                <div class="form-group">
+                  <label for="newUserUsername" class="form-label required">Username</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="newUserUsername" required minlength="3" maxlength="50" pattern="[a-zA-Z0-9_-]+">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                      Suggestions
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" id="usernameSuggestions">
+                      <!-- Will be populated dynamically -->
+                    </ul>
+                  </div>
+                  <small class="text-muted">Only letters, numbers, underscore and hyphen allowed</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="newUserEmail" class="form-label required">Email Address</label>
+                  <input type="email" class="form-control" id="newUserEmail" required pattern="[^@\s]+@[^@\s]+\.[^@\s]+" maxlength="255">
+                </div>
+
+                <div class="form-group">
+                  <label for="newUserPhone" class="form-label">Phone Number</label>
+                  <input type="tel" class="form-control" id="newUserPhone" pattern="[0-9+()\\-\\s]+" maxlength="20">
+                  <small class="text-muted">Include country code (e.g., +1234567890)</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="newUserRole" class="form-label required">Role</label>
+                  <select class="form-select" id="newUserRole" required>
+                    <option value="">Select Role</option>
+                    <option value="admin">Administrator</option>
+                    <option value="user">Regular User</option>
+                  </select>
+                </div>
+
+                <!-- Company Information -->
+                <div class="form-group">
+                  <label for="newUserTIN" class="form-label">Company TIN</label>
+                  <div class="input-group">
+                    <select class="form-select" id="newUserTIN">
+                      <option value="">Select Company TIN</option>
+                      <!-- Will be populated dynamically -->
+                    </select>
+                    <input type="text" class="form-control" id="newUserCustomTIN" placeholder="Or enter custom TIN" style="display: none;" pattern="[A-Z0-9\\-]+" maxlength="50">
+                    <button class="btn btn-outline-secondary" type="button" onclick="toggleTINInput('add')">
+                      <i class="fas fa-exchange-alt"></i>
+                    </button>
+                  </div>
+                  <small class="text-muted">Select from existing companies or enter a new one</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="newUserIDType" class="form-label">ID Type</label>
+                  <select class="form-select" id="newUserIDType">
+                    <option value="">Select ID Type</option>
+                    <option value="BRN">BRN</option>
+                    <option value="Passport">Passport</option>
+                    <option value="National ID">National ID</option>
+                    <option value="Driver's License">Driver's License</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="newUserIDValue" class="form-label">ID Value</label>
+                  <input type="text" class="form-control" id="newUserIDValue" pattern="[A-Z0-9\\-]+" maxlength="50">
+                </div>
+
+                <!-- Security Settings -->
+                <div class="form-group">
+                  <label class="form-label d-block">Security Settings</label>
+                  <div class="form-check form-switch">
+                    <input type="checkbox" class="form-check-input" id="newUserTwoFactor">
+                    <label class="form-check-label" for="newUserTwoFactor">Enable Two-Factor Authentication</label>
+                  </div>
+                  <div class="form-check form-switch mt-2">
+                    <input type="checkbox" class="form-check-input" id="newUserNotifications" checked>
+                    <label class="form-check-label" for="newUserNotifications">Enable Notifications</label>
+                  </div>
+                </div>
+              </form>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-primary" onclick="handleAddUser(event)">
                 <i class="fas fa-plus"></i> Create User
               </button>
             </div>
-          </form>
+          </div>
         </div>
       </div>
 
@@ -294,7 +351,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <form id="editUserForm">
+        <form id="editUserForm" class="modal-form-container">
           <div class="mb-3">
             <label class="form-label">Full Name</label>
             <input type="text" class="form-control" id="editUserName" required>
@@ -317,6 +374,23 @@
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
+          </div>
+          
+          <!-- Password Change Section -->
+          <div class="form-group">
+            <label class="form-label d-flex justify-content-between align-items-center">
+              <span>Change Password</span>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generatePassword('editUserPassword')">
+                Generate New Password
+              </button>
+            </label>
+            <div class="input-group">
+              <input type="password" class="form-control" id="editUserPassword" placeholder="Leave blank to keep current password">
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePasswordVisibility('editUserPassword')">
+                <i class="fas fa-eye"></i>
+              </button>
+            </div>
+            <small class="text-muted">Minimum 8 characters, must include uppercase, lowercase, number, and special character</small>
           </div>
         </form>
       </div>
@@ -343,6 +417,93 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-danger" onclick="confirmDeleteUser()">Delete User</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- User Details Modal -->
+<div class="modal fade" id="userDetailsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="fas fa-user"></i>
+          User Details
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="user-details-container">
+          <div class="user-profile-section">
+            <img src="${userData.ProfilePicture || '/assets/img/default-avatar.png'}" alt="Profile Picture">
+            <h4 class="mb-0">${escapeHtml(userData.FullName)}</h4>
+            <p class="text-muted mb-0">${escapeHtml(userData.Username)}</p>
+          </div>
+          
+          <div class="details-grid">
+            <div class="detail-item">
+              <label>Email</label>
+              <span>${escapeHtml(userData.Email)}</span>
+            </div>
+            <div class="detail-item">
+              <label>Phone</label>
+              <span>${escapeHtml(userData.Phone || '-')}</span>
+            </div>
+            <div class="detail-item">
+              <label>Role</label>
+              <span>
+                <span class="badge bg-primary">
+                  <i class="fas fa-user-shield"></i>
+                  Administrator
+                </span>
+              </span>
+            </div>
+            <div class="detail-item">
+              <label>Status</label>
+              <span>
+                <span class="badge bg-success">
+                  <i class="fas fa-check-circle"></i>
+                  Active
+                </span>
+                ${userData.TwoFactorEnabled ? '<span class="badge bg-warning"><i class="fas fa-shield-alt"></i>2FA</span>' : ''}
+              </span>
+            </div>
+            <div class="detail-item">
+              <label>Created</label>
+              <span>${new Date(userData.CreateTS).toLocaleString()}</span>
+            </div>
+            <div class="detail-item">
+              <label>Last Login</label>
+              <span>${userData.LastLoginTime ? new Date(userData.LastLoginTime).toLocaleString() : 'Never'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" onclick="editUser('${userData.ID}')">
+          <i class="fas fa-edit"></i>
+          Edit User
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Temporary Password Modal -->
+<div class="modal fade" id="tempPasswordModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">New User Credentials</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Content will be dynamically populated -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
       </div>
     </div>
   </div>

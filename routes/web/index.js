@@ -80,12 +80,12 @@ router.get('/settings/user/admin/profile/:id', auth.isAdmin, (req, res) => {
     });
 });
 
-// router.get('/users', auth.isAdmin, (req, res) => {
-//     res.render('dashboard/user-management.html', {
-//         title: 'Users',
-//         user: req.session.user || null,
-//         layout: 'layout'
-//     });
-// });
+router.get('/users', auth.isAdmin, (req, res) => {
+    res.render('dashboard/user-management.html', {
+        title: 'Users Management',
+        user: req.session.user || null,
+        layout: 'layout'
+    });
+});
 
 module.exports = router;

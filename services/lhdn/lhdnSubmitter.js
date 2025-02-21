@@ -16,15 +16,54 @@ const { parseStringPromise } = require('xml2js');
 
 class LHDNSubmitter {
   constructor(req) {
-    this.baseUrl = process.env.PREPROD_BASE_URL;
     this.req = req;
+    this.baseUrl = null;  // Will be set after loading config
+    this.loadConfig();  // Initialize configuration
+  }
+
+  async loadConfig() {
+    try {
+      // Get LHDN configuration from database
+      const config = await require('../models').WP_CONFIGURATION.findOne({
+        where: {
+          Type: 'LHDN',
+          IsActive: 1
+        },
+        order: [['CreateTS', 'DESC']]
+      });
+
+      if (!config || !config.Settings) {
+        throw new Error('LHDN configuration not found');
+      }
+
+      // Parse settings if it's a string
+      let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
+
+      // Set base URL based on environment
+      this.baseUrl = settings.environment === 'production' 
+        ? settings.productionUrl || settings.middlewareUrl 
+        : settings.sandboxUrl || settings.middlewareUrl;
+
+      if (!this.baseUrl) {
+        throw new Error('LHDN API URL not configured');
+      }
+
+      console.log('Using LHDN configuration:', {
+        environment: settings.environment,
+        baseUrl: this.baseUrl
+      });
+
+    } catch (error) {
+      console.error('Error loading LHDN configuration:', error);
+      throw new Error('Failed to load LHDN configuration: ' + error.message);
+    }
   }
 
   async logOperation(description, options = {}) {
     try {
       await WP_LOGS.create({
         Description: description,
-        CreateTS: sequelize.literal('GETDATE()'),
+        CreateTS: new GetDate(),
         LoggedUser: this.req.session?.user?.username || 'System',
         IPAddress: this.req.ip,
         LogType: options.logType || 'INFO',

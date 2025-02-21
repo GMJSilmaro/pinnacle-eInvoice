@@ -388,7 +388,6 @@ router.get('/user-details', async (req, res) => {
 // Inbound status
 router.get('/inbound-status', async (req, res) => {
   try {
-    // Add your inbound status logic here
     res.json({ success: true, count: 0 });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -398,7 +397,6 @@ router.get('/inbound-status', async (req, res) => {
 // Company count
 router.get('/company-count', async (req, res) => {
   try {
-    // Add your company count logic here
     res.json({ success: true, count: 0 });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -479,17 +477,18 @@ router.get('/dashboard/stats', async (req, res) => {
         // Get inbound stats for the chart (last 7 days)
         const inboundStats = await WP_INBOUND_STATUS.findAll({
             attributes: [
-                [sequelize.literal('CONVERT(DATE, dateTimeReceived)'), 'date'],
+                [sequelize.fn('TRY_CONVERT', sequelize.literal('DATE'), sequelize.col('dateTimeReceived')), 'date'],
                 'status',
                 [sequelize.fn('COUNT', sequelize.col('*')), 'count']
             ],
-            where: {
-                dateTimeReceived: {
+            where: sequelize.where(
+                sequelize.fn('TRY_CONVERT', sequelize.literal('DATE'), sequelize.col('dateTimeReceived')),
+                {
                     [Op.gte]: sequelize.literal("DATEADD(day, -7, GETDATE())")
                 }
-            },
+            ),
             group: [
-                sequelize.literal('CONVERT(DATE, dateTimeReceived)'),
+                sequelize.fn('TRY_CONVERT', sequelize.literal('DATE'), sequelize.col('dateTimeReceived')),
                 'status'
             ],
             raw: true
@@ -517,8 +516,9 @@ router.get('/dashboard/stats', async (req, res) => {
             Module: 'Dashboard',
             Action: 'VIEW',
             Status: 'FAILED',
-            UserID: req.session?.user?.id || null
-        });
+            UserID: req.session?.user?.id || null,
+            Details: JSON.stringify(error)
+        }).catch(console.error);
 
         res.status(500).json({
             success: false,

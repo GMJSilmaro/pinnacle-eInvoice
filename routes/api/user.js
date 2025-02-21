@@ -61,27 +61,55 @@ const checkAdmin = (req, res, next) => {
     next();
 };
 
-// // Get list of all users (admin only)
-// router.get('/users-list', checkAdmin, async (req, res) => {
-//     try {
-//         const users = await WP_USER_REGISTRATION.findAll({
-//             attributes: [
-//                 'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
-//                 'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
-//                 'CreateTS', 'LastLoginTime', 'ProfilePicture'
-//             ],
-//             order: [['CreateTS', 'DESC']]
-//         });
+// Get list of all users (admin only)
+router.get('/users-list', checkAdmin, async (req, res) => {
+    try {
+        const users = await WP_USER_REGISTRATION.findAll({
+            attributes: [
+                'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
+                'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
+                'CreateTS', 'LastLoginTime', 'ProfilePicture'
+            ],
+            order: [['CreateTS', 'DESC']]
+        });
 
-//         res.json(users);
-//     } catch (error) {
-//         console.error('Error fetching users:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to fetch users'
-//         });
-//     }
-// });
+        res.json(users);
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch users'
+        });
+    }
+});
+
+// Get single user details (admin only)
+router.get('/users-list/:id', checkAdmin, async (req, res) => {
+    try {
+        const user = await WP_USER_REGISTRATION.findByPk(req.params.id, {
+            attributes: [
+                'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
+                'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
+                'CreateTS', 'LastLoginTime', 'ProfilePicture'
+            ]
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        res.json(user);
+    } catch (error) {
+        console.error('Error fetching user details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch user details'
+        });
+    }
+});
 
 // Add new user (admin only)
 router.post('/users-add', checkAdmin, async (req, res) => {
@@ -89,7 +117,7 @@ router.post('/users-add', checkAdmin, async (req, res) => {
         const {
             fullName, email, username, password, userType,
             phone, admin, twoFactorEnabled, notificationsEnabled,
-            validStatus, profilePicture
+            validStatus, profilePicture, TIN, IDType, IDValue
         } = req.body;
 
         // Validate required fields
@@ -128,6 +156,9 @@ router.post('/users-add', checkAdmin, async (req, res) => {
             Username: username,
             Password: hashedPassword,
             UserType: userType || null,
+            TIN: TIN || null,
+            IDType: IDType || null,
+            IDValue: IDValue || null,
             Phone: phone || null,
             Admin: admin ? 1 : 0,
             ValidStatus: validStatus || '1',
@@ -174,7 +205,11 @@ router.post('/users-add', checkAdmin, async (req, res) => {
 router.put('/users-update/:id', checkAdmin, async (req, res) => {
     try {
         const id = req.params.id;
-        const { fullName, email, phone, password, userType, validStatus, isAdmin, twoFactorEnabled, notificationsEnabled } = req.body;
+        const {
+            fullName, email, phone, password, userType,
+            admin, validStatus = '1', twoFactorEnabled,
+            notificationsEnabled, TIN, IDType, IDValue
+        } = req.body;
 
         // Validate required fields
         if (!fullName || !email) {
@@ -203,10 +238,13 @@ router.put('/users-update/:id', checkAdmin, async (req, res) => {
         const updateData = {
             FullName: fullName,
             Email: email,
-            Phone: phone,
-            Admin: isAdmin === '1' || isAdmin === true ? 1 : 0,
+            Phone: phone || null,
+            TIN: TIN || null,
+            IDType: IDType || null,
+            IDValue: IDValue || null,
+            Admin: admin === '1' || admin === true ? 1 : 0,
             ValidStatus: validStatus,
-            UserType: userType,
+            UserType: userType || null,
             TwoFactorEnabled: twoFactorEnabled ? 1 : 0,
             NotificationsEnabled: notificationsEnabled ? 1 : 0,
             UpdateTS: sequelize.literal('GETDATE()')
@@ -228,7 +266,7 @@ router.put('/users-update/:id', checkAdmin, async (req, res) => {
             attributes: [
                 'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
                 'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
-                'CreateTS', 'LastLoginTime', 'ProfilePicture'
+                'CreateTS', 'LastLoginTime', 'ProfilePicture', 'TIN', 'IDType', 'IDValue'
             ]
         });
 
@@ -237,20 +275,24 @@ router.put('/users-update/:id', checkAdmin, async (req, res) => {
             Description: `Admin ${req.session.user.username} updated user profile id ${id}`,
             CreateTS: sequelize.literal('GETDATE()'),
             LoggedUser: req.session.user.username,
-            Action: 'UPDATE_PROFILE',
-            IPAddress: req.ip
+            Action: 'UPDATE_USER',
+            IPAddress: req.ip,
+            Details: JSON.stringify({
+                updatedFields: Object.keys(updateData).join(', '),
+                userId: id
+            })
         });
 
         res.json({
             success: true,
-            message: 'Profile updated successfully',
+            message: 'User updated successfully',
             user: updatedUser
         });
     } catch (error) {
-        console.error('Error updating user profile:', error);
+        console.error('Error updating user:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to update profile'
+            message: 'Failed to update user: ' + error.message
         });
     }
 });
@@ -817,6 +859,41 @@ router.post('/security-settings', async (req, res) => {
       error: error.message 
     });
   }
+});
+
+// Get company list for user registration
+router.get('/company/list', checkAdmin, async (req, res) => {
+    try {
+        const companies = await db.sequelize.query(`
+            SELECT 
+                CompanyImage,
+                CompanyName,
+                Industry,
+                Country,
+                TIN,
+                BRN,
+                About,
+                Address,
+                Phone,
+                Email,
+                ValidStatus,
+                ID,
+                UserID
+            FROM [PXC_E_INVOICE_DATABASE].[dbo].[WP_COMPANY_SETTINGS]
+            WHERE ValidStatus = '1'
+            ORDER BY CompanyName ASC
+        `, {
+            type: db.sequelize.QueryTypes.SELECT
+        });
+
+        res.json(companies);
+    } catch (error) {
+        console.error('Error fetching companies:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch company list'
+        });
+    }
 });
 
 module.exports = router; 
