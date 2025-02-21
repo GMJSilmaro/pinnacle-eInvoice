@@ -60,10 +60,11 @@ class LHDNSubmitter {
   }
 
   async logOperation(description, options = {}) {
+    const now = new Date();
     try {
       await WP_LOGS.create({
         Description: description,
-        CreateTS: new GetDate(),
+        CreateTS: now,
         LoggedUser: this.req.session?.user?.username || 'System',
         IPAddress: this.req.ip,
         LogType: options.logType || 'INFO',
@@ -409,7 +410,7 @@ class LHDNSubmitter {
 
       await WP_OUTBOUND_STATUS.upsert(submissionData, { transaction });
       
-      await this.logOperation(`Updated status to ${data.status} for invoice ${data.invoice_number}`, {
+      await this.logOperation(`Status Updated to ${data.status} for invoice ${data.invoice_number}`, {
         action: 'STATUS_UPDATE',
         status: data.status
       });
@@ -470,7 +471,7 @@ class LHDNSubmitter {
         // Write updated file to outgoing location
         XLSX.writeFile(workbook, outgoingFilePath);
 
-        await this.logOperation(`Updated Excel file with UUID and invoice number: ${outgoingFilePath}`, {
+        await this.logOperation(`Generate Response Excel file with UUID and invoice number: ${outgoingFilePath}`, {
             action: 'UPDATE_EXCEL'
         });
 
