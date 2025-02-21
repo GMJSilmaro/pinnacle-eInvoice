@@ -495,18 +495,6 @@ router.get('/dashboard/stats', async (req, res) => {
             raw: true
         });
 
-        // Log the successful stats retrieval
-        await WP_LOGS.create({
-            Description: 'Dashboard statistics retrieved successfully',
-            CreateTS: sequelize.literal('GETDATE()'),
-            LoggedUser: req.session?.user?.username || 'System',
-            LogType: 'INFO',
-            Module: 'Dashboard',
-            Action: 'VIEW',
-            Status: 'SUCCESS',
-            UserID: req.session?.user?.id || null
-        });
-
         res.json({
             success: true,
             stats: {

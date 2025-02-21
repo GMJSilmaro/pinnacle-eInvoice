@@ -52,7 +52,7 @@ async function readExcelWithLogging(filePath) {
         const dataAsObjects = XLSX.utils.sheet_to_json(worksheet);
         const dataWithHeaders = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         //console.log(dataWithHeaders);
-       console.log(dataAsObjects);
+       //console.log(dataAsObjects);
 
         // Log all cell addresses in first few rows
         //console.log('\n=== Cell by Cell Analysis (First 2 rows) ===');
@@ -152,6 +152,167 @@ async function logSuccess(description, options = {}) {
 /**
  * List all files from network directories
  */
+// router.get('/list-all', async (req, res) => {
+//     const processLog = {
+//         details: [],
+//         summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
+//     };
+
+//     try {
+//         await logDBOperation(req.app.get('models'), req, 'Started listing all outbound files', {
+//             module: 'OUTBOUND',
+//             action: 'LIST_ALL'
+//         });
+
+//         //console.log('Starting list-all endpoint...');
+        
+//         // Get active SAP configuration from database
+//         const config = await WP_CONFIGURATION.findOne({
+//             where: {
+//                 Type: 'SAP',
+//                 IsActive: 1
+//             },
+//             order: [['CreateTS', 'DESC']],
+//             raw: true
+//         });
+
+//         //console.log('SAP Configuration found:', config ? 'Yes' : 'No');
+
+//         if (!config || !config.Settings) {
+//             throw new Error('No active SAP configuration found');
+//         }
+
+//         // Parse Settings if it's a string
+//         let settings = config.Settings;
+//         if (typeof settings === 'string') {
+//             settings = JSON.parse(settings);
+//         }
+//         //console.log('Network Path from settings:', settings.networkPath);
+
+//         // Validate network path format
+//         const networkPath = await validateAndFormatNetworkPath(settings.networkPath);
+//         //console.log('Formatted Network Path:', networkPath);
+
+//         // Test network accessibility
+//         const networkValid = await testNetworkPathAccessibility(networkPath, {
+//             serverName: settings.domain || '',
+//             serverUsername: settings.username,
+//             serverPassword: settings.password
+//         });
+
+//        // console.log('Network accessibility test result:', networkValid.success);
+
+//         if (!networkValid.success) {
+//             throw new Error(`Network access failed: ${networkValid.error}`);
+//         }
+
+//         // Get existing submission statuses with new schema
+//         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
+//             attributes: [
+//                 'id',
+//                 'UUID',
+//                 'submissionUid',
+//                 'fileName',
+//                 'filePath',
+//                 'invoice_number',
+//                 'status',
+//                 'date_submitted',
+//                 'date_sync',
+//                 'date_cancelled',
+//                 'cancelled_by',
+//                 'cancellation_reason',
+//                 'created_at',
+//                 'updated_at'
+//             ],
+//             raw: true
+//         });
+
+//         //console.log('Found submission statuses:', submissionStatuses.length);
+
+//         // Create status lookup map with new schema
+//         const statusMap = new Map(
+//             submissionStatuses.flatMap(status => [
+//                 [status.fileName, {
+//                     UUID: status.UUID, // Use submissionUid here
+//                     SubmissionUID: status.submissionUid,
+//                     SubmissionStatus: status.status,
+//                     DateTimeSent: status.date_submitted,
+//                     DateTimeUpdated: status.updated_at,
+//                     FileName: status.fileName,
+//                     DocNum: status.invoice_number
+//                 }],
+//                 // [status.invoice_number, {
+//                 //     SubmissionUID: status.UUID, // Use submissionUid here
+//                 //     SubmissionStatus: status.status,
+//                 //     DateTimeSent: status.date_submitted,
+//                 //     DateTimeUpdated: status.updated_at,
+//                 //     FileName: status.fileName,
+//                 //     DocNum: status.invoice_number
+//                 // }]
+//             ])
+//         );
+
+//         //console.log('Status Map:', statusMap);
+
+//         const files = [];
+//         const types = ['Manual', 'Schedule'];
+
+//         for (const type of types) {
+//             //console.log(`Processing type directory: ${type}`);
+//             const typeDir = path.join(networkPath, type);
+//            // console.log('Type directory path:', typeDir);
+//             await processTypeDirectory(typeDir, type, files, processLog, statusMap);
+//         }
+
+//         // Merge file information with database status
+//         const mergedFiles = files.map(file => {
+//             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
+//             return {
+//                 ...file,
+//                 status: status?.SubmissionStatus || 'Pending',
+//                 date_submitted: status?.DateTimeSent || null,
+//                 uuid: status?.UUID || null,
+//                 submissionUid: status?.SubmissionUID || null
+//             };
+//         });
+
+//         //console.log('File processing complete');
+//         //console.log('Total files found:', mergedFiles.length);
+//         //console.log('Summary:', processLog.summary);
+
+//         // Log success
+//         await logDBOperation(req.app.get('models'), req, 'Successfully retrieved outbound files list', {
+//             module: 'OUTBOUND',
+//             action: 'LIST_ALL',
+//             status: 'SUCCESS'
+//         });
+
+//         res.json({
+//             success: true,
+//             files: mergedFiles,
+//             processLog
+//         });
+
+//     } catch (error) {
+//         console.error('Error in list-all:', error);
+//         await logDBOperation(req.app.get('models'), req, `Error listing outbound files: ${error.message}`, {
+//             module: 'OUTBOUND',
+//             action: 'LIST_ALL',
+//             status: 'FAILED',
+//             error
+//         });
+        
+//         res.status(500).json({
+//             success: false,
+//             error: error.message,
+//             processLog
+//         });
+//     }
+// });
+
+/**
+ * List all files from network directories
+ */
 router.get('/list-all', async (req, res) => {
     const processLog = {
         details: [],
@@ -164,8 +325,6 @@ router.get('/list-all', async (req, res) => {
             action: 'LIST_ALL'
         });
 
-        //console.log('Starting list-all endpoint...');
-        
         // Get active SAP configuration from database
         const config = await WP_CONFIGURATION.findOne({
             where: {
@@ -176,8 +335,6 @@ router.get('/list-all', async (req, res) => {
             raw: true
         });
 
-        //console.log('SAP Configuration found:', config ? 'Yes' : 'No');
-
         if (!config || !config.Settings) {
             throw new Error('No active SAP configuration found');
         }
@@ -187,11 +344,9 @@ router.get('/list-all', async (req, res) => {
         if (typeof settings === 'string') {
             settings = JSON.parse(settings);
         }
-        //console.log('Network Path from settings:', settings.networkPath);
 
         // Validate network path format
         const networkPath = await validateAndFormatNetworkPath(settings.networkPath);
-        //console.log('Formatted Network Path:', networkPath);
 
         // Test network accessibility
         const networkValid = await testNetworkPathAccessibility(networkPath, {
@@ -199,8 +354,6 @@ router.get('/list-all', async (req, res) => {
             serverUsername: settings.username,
             serverPassword: settings.password
         });
-
-       // console.log('Network accessibility test result:', networkValid.success);
 
         if (!networkValid.success) {
             throw new Error(`Network access failed: ${networkValid.error}`);
@@ -227,40 +380,26 @@ router.get('/list-all', async (req, res) => {
             raw: true
         });
 
-        //console.log('Found submission statuses:', submissionStatuses.length);
-
         // Create status lookup map with new schema
         const statusMap = new Map(
             submissionStatuses.flatMap(status => [
                 [status.fileName, {
-                    UUID: status.UUID, // Use submissionUid here
+                    UUID: status.UUID,
                     SubmissionUID: status.submissionUid,
                     SubmissionStatus: status.status,
                     DateTimeSent: status.date_submitted,
                     DateTimeUpdated: status.updated_at,
                     FileName: status.fileName,
                     DocNum: status.invoice_number
-                }],
-                // [status.invoice_number, {
-                //     SubmissionUID: status.UUID, // Use submissionUid here
-                //     SubmissionStatus: status.status,
-                //     DateTimeSent: status.date_submitted,
-                //     DateTimeUpdated: status.updated_at,
-                //     FileName: status.fileName,
-                //     DocNum: status.invoice_number
-                // }]
+                }]
             ])
         );
-
-        //console.log('Status Map:', statusMap);
 
         const files = [];
         const types = ['Manual', 'Schedule'];
 
         for (const type of types) {
-            //console.log(`Processing type directory: ${type}`);
             const typeDir = path.join(networkPath, type);
-           // console.log('Type directory path:', typeDir);
             await processTypeDirectory(typeDir, type, files, processLog, statusMap);
         }
 
@@ -275,10 +414,6 @@ router.get('/list-all', async (req, res) => {
                 submissionUid: status?.SubmissionUID || null
             };
         });
-
-        //console.log('File processing complete');
-        //console.log('Total files found:', mergedFiles.length);
-        //console.log('Summary:', processLog.summary);
 
         // Log success
         await logDBOperation(req.app.get('models'), req, 'Successfully retrieved outbound files list', {
@@ -301,7 +436,7 @@ router.get('/list-all', async (req, res) => {
             status: 'FAILED',
             error
         });
-        
+
         res.status(500).json({
             success: false,
             error: error.message,
@@ -309,6 +444,7 @@ router.get('/list-all', async (req, res) => {
         });
     }
 });
+
 
 /**
  * Check if a document has already been submitted
@@ -819,13 +955,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
         }
 
         try {
-            // console.log('Getting processed data for:', {
-            //     fileName,
-            //     type,
-            //     company,
-            //     date
-            // });
-
             // Get and process document data
             const processedData = await submitter.getProcessedData(fileName, type, company, date);
             
@@ -892,6 +1021,8 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
+                
+                // First update the submission status in database
                 await submitter.updateSubmissionStatus({
                     invoice_number,
                     uuid: acceptedDoc.uuid,
@@ -900,12 +1031,38 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     filePath: processedData.filePath || fileName,
                     status: 'Submitted'
                 });
-
+            
+                // Then update the Excel file with UUID and submissionUid
+                const excelUpdateResult = await submitter.updateExcelWithResponse(
+                    fileName,
+                    type,
+                    company,
+                    date,
+                    acceptedDoc.uuid,
+                    invoice_number  // Changed from result.data.submissionUid
+                );
+            
+                if (!excelUpdateResult.success) {
+                    console.error('Failed to update Excel file:', excelUpdateResult.error);
+                    await submitter.logOperation(`Failed to update response file: ${excelUpdateResult.error}`, {
+                        action: 'UPDATE_EXCEL',
+                        status: 'FAILED',
+                        logType: 'WARNING'
+                    });
+                }
+            
                 return res.json({
                     success: true,
                     submissionUID: result.data.submissionUid,
                     acceptedDocuments: result.data.acceptedDocuments,
-                    docNum: invoice_number
+                    docNum: invoice_number,
+                    excelUpdate: {
+                        success: excelUpdateResult.success,
+                        ...(excelUpdateResult.success ? 
+                            { path: excelUpdateResult.outgoingPath } : 
+                            { error: excelUpdateResult.error }
+                        )
+                    }
                 });
             }
 
@@ -1132,14 +1289,132 @@ router.post('/:uuid/cancel', async (req, res) => {
 });
 
 // Add the file content endpoint
+// router.post('/:fileName/content', async (req, res) => {
+//     try {
+//         const { fileName } = req.params;
+//         const { type, company, date } = req.body;
+        
+//         // Log request details
+//       //  console.log('\n=== File Content Request ===');
+//         //console.log('Parameters:', { fileName, type, company, date });
+
+//         // 1. Get and validate SAP configuration
+//         const config = await getActiveSAPConfig();
+  
+//         if (!config.success || !config.networkPath) {
+//             throw new Error('Invalid SAP configuration: ' + (config.error || 'No network path configured'));
+//         }
+
+//         // 2. Validate network path
+//         const networkValid = await testNetworkPathAccessibility(config.networkPath, {
+//             serverName: config.domain || '',
+//             serverUsername: config.username,
+//             serverPassword: config.password
+//         });
+//        // console.log('\nNetwork Path Validation:', networkValid);
+
+//         if (!networkValid.success) {
+//             throw new Error(`Network path not accessible: ${networkValid.error}`);
+//         }
+
+//         // 3. Construct and validate file path
+//         const formattedDate = moment(date).format('YYYY-MM-DD');
+//         const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
+       
+
+//         // 4. Check if directories exist
+//         const typeDir = path.join(config.networkPath, type);
+//         const companyDir = path.join(typeDir, company);
+//         const dateDir = path.join(companyDir, formattedDate);
+
+//         // Ensure directories exist
+//         await ensureDirectoryExists(typeDir);
+//         await ensureDirectoryExists(companyDir);
+//         await ensureDirectoryExists(dateDir);
+
+        
+
+//         // 5. Check if file exists
+//         const fileExists = fs.existsSync(filePath);
+
+//         if (!fileExists) {
+//             console.error('\nFile Not Found:', {
+//                 fileName,
+//                 path: filePath,
+//                 type,
+//                 company,
+//                 date: formattedDate
+//             });
+//             return res.status(404).json({
+//                 success: false,
+//                 error: {
+//                     code: 'FILE_NOT_FOUND',
+//                     message: `File not found: ${fileName}`,
+//                     details: {
+//                         path: filePath,
+//                         type,
+//                         company,
+//                         date: formattedDate,
+//                         directories: {
+//                             typeDir: fs.existsSync(typeDir),
+//                             companyDir: fs.existsSync(companyDir),
+//                             dateDir: fs.existsSync(dateDir)
+//                         }
+//                     }
+//                 }
+//             });
+//         }
+
+//         // 6. Read Excel file
+//         //console.log('\nReading Excel file...');
+//         let workbook;
+//         try {
+//             workbook = XLSX.readFile(filePath);
+//             //console.log('Excel file read successfully');
+//         } catch (readError) {
+//             console.error('Error reading Excel file:', readError);
+//             throw new Error(`Failed to read Excel file: ${readError.message}`);
+//         }
+
+//         // 7. Process Excel data
+//         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+//         const data = XLSX.utils.sheet_to_json(worksheet, {
+//             raw: true,
+//             defval: null,
+//             blankrows: false
+//         });
+
+//         // 8. Process the data
+//         const processedData = processExcelData(data);
+//         //console.log('\nExcel data processed successfully');
+
+//         res.json({
+//             success: true,
+//             content: processedData
+//         });
+
+//     } catch (error) {
+//         console.error('\nError in file content endpoint:', error);
+//         res.status(500).json({
+//             success: false,
+//             error: {
+//                 code: 'READ_ERROR',
+//                 message: 'Failed to read file content',
+//                 details: error.message,
+//                 stack: error.stack
+//             }
+//         });
+//     }
+// });
+
 router.post('/:fileName/content', async (req, res) => {
     try {
         const { fileName } = req.params;
-        const { type, company, date } = req.body;
+        const { type, company, date, uuid, submissionUid } = req.body;
         
         // Log request details
-      //  console.log('\n=== File Content Request ===');
-        //console.log('Parameters:', { fileName, type, company, date });
+        // console.log('\n=== File Content Request ===');
+        // console.log('Parameters:', { fileName, type, company, date });
 
         // 1. Get and validate SAP configuration
         const config = await getActiveSAPConfig();
@@ -1154,7 +1429,7 @@ router.post('/:fileName/content', async (req, res) => {
             serverUsername: config.username,
             serverPassword: config.password
         });
-       // console.log('\nNetwork Path Validation:', networkValid);
+        // console.log('\nNetwork Path Validation:', networkValid);
 
         if (!networkValid.success) {
             throw new Error(`Network path not accessible: ${networkValid.error}`);
@@ -1163,7 +1438,6 @@ router.post('/:fileName/content', async (req, res) => {
         // 3. Construct and validate file path
         const formattedDate = moment(date).format('YYYY-MM-DD');
         const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
-       
 
         // 4. Check if directories exist
         const typeDir = path.join(config.networkPath, type);
@@ -1174,8 +1448,6 @@ router.post('/:fileName/content', async (req, res) => {
         await ensureDirectoryExists(typeDir);
         await ensureDirectoryExists(companyDir);
         await ensureDirectoryExists(dateDir);
-
-        
 
         // 5. Check if file exists
         const fileExists = fs.existsSync(filePath);
@@ -1209,11 +1481,11 @@ router.post('/:fileName/content', async (req, res) => {
         }
 
         // 6. Read Excel file
-        //console.log('\nReading Excel file...');
+        // console.log('\nReading Excel file...');
         let workbook;
         try {
             workbook = XLSX.readFile(filePath);
-            //console.log('Excel file read successfully');
+            // console.log('Excel file read successfully');
         } catch (readError) {
             console.error('Error reading Excel file:', readError);
             throw new Error(`Failed to read Excel file: ${readError.message}`);
@@ -1229,11 +1501,44 @@ router.post('/:fileName/content', async (req, res) => {
 
         // 8. Process the data
         const processedData = processExcelData(data);
-        //console.log('\nExcel data processed successfully');
+        // console.log('\nExcel data processed successfully');
+
+        // 9. Create outgoing directory structure
+        const outgoingBasePath = path.join('C:\\SFTPRoot\\MindValley\\Outgoing', type, company, formattedDate);
+        await ensureDirectoryExists(outgoingBasePath);
+
+        // 10. Copy the original Excel file to the outgoing directory
+        const outgoingFilePath = path.join(outgoingBasePath, fileName);
+        await fsPromises.copyFile(filePath, outgoingFilePath);
+
+        // 11. Update the copied Excel file with UUID and submissionUid
+        const outgoingWorkbook = XLSX.readFile(outgoingFilePath);
+        const outgoingWorksheet = outgoingWorkbook.Sheets[outgoingWorkbook.SheetNames[0]];
+
+        const range = XLSX.utils.decode_range(outgoingWorksheet['!ref']);
+        for (let R = 0; R <= range.e.r; ++R) {
+            // Update UUID field (_1)
+            const uuidCell = XLSX.utils.encode_cell({r: R, c: 1}); // Column _1
+            if (outgoingWorksheet[uuidCell]) {
+                outgoingWorksheet[uuidCell].v = uuid;
+                outgoingWorksheet[uuidCell].w = uuid;
+            }
+
+            // Update Internal Reference field (_2)
+            const refCell = XLSX.utils.encode_cell({r: R, c: 2}); // Column _2
+            if (outgoingWorksheet[refCell]) {
+                outgoingWorksheet[refCell].v = submissionUid;
+                outgoingWorksheet[refCell].w = submissionUid;
+            }
+        }
+
+        // Save the updated workbook
+        XLSX.writeFile(outgoingWorkbook, outgoingFilePath);
 
         res.json({
             success: true,
-            content: processedData
+            content: processedData,
+            outgoingPath: outgoingFilePath
         });
 
     } catch (error) {

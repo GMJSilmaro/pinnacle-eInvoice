@@ -540,7 +540,9 @@ const processExcelData = (rawData) => {
                         percent: getField(lineRow, '79') || DEFAULT_VALUES.ZERO,
                         exemptionReason: getField(lineRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
                         taxScheme: {
-                            id: getField(lineRow, '82') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id
+                            id: getField(lineRow, '82') || 'OTH',
+                            schemeId: getField(lineRow, '83') || 'UN/ECE 5153',
+                            schemeAgencyId: String(getField(lineRow, '84') || '6')
                         }
                     }
                 }]
@@ -569,7 +571,7 @@ const processExcelData = (rawData) => {
             agencyId: '6'
         },
         TAX_SCHEME: {
-            id: 'VAT'  // Changed from 'OTH' to 'VAT' as per LHDN
+            id: 'OTH'  // Changed from 'OTH' to 'VAT' as per LHDN
         },
         NOT_APPLICABLE: 'NA',
         ZERO: 0,
@@ -577,7 +579,7 @@ const processExcelData = (rawData) => {
             id: '01',
             exemptionReason: 'NA',
             scheme: {
-                id: 'VAT'  // Changed from 'OTH' to 'VAT'
+                id: 'OTH'  // Changed from 'OTH' to 'VAT'
             }
         }
     };
@@ -673,9 +675,7 @@ const processExcelData = (rawData) => {
                         percent: getField(footerRow, '79') || DEFAULT_VALUES.ZERO,            // Was taxRate
                         exemptionReason: getField(footerRow, '81') || DEFAULT_VALUES.TAX_CATEGORY.exemptionReason,
                         taxScheme: {
-                            id: getField(footerRow, '61') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id,
-                            schemeId: getField(footerRow, '62') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeId,
-                            schemeAgencyId: String(getField(footerRow, '63') || DEFAULT_VALUES.TAX_CATEGORY.scheme.schemeAgencyId)
+                            id: getField(footerRow, '61') || DEFAULT_VALUES.TAX_CATEGORY.scheme.id
                         }
                     }
                 }]

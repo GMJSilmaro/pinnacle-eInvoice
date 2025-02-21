@@ -63,10 +63,6 @@ document.head.insertAdjacentHTML('beforeend', tableStyles);
 
 const additionalStyles = `
 <style>
-    /* Table Container */
-    .outbound-table-wrapper {
-        @apply w-full bg-white shadow-sm rounded-lg overflow-hidden;
-    }
 
     /* Table Controls */
     .outbound-controls {
@@ -79,16 +75,6 @@ const additionalStyles = `
 
     .outbound-search-control {
         @apply relative mt-2 sm:mt-0;
-    }
-
-    /* Table Header */
-    .outbound-table thead th {
-        @apply bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
-    }
-
-    /* Table Body */
-    .outbound-table tbody td {
-        @apply px-4 py-3 text-sm text-gray-900 border-b border-gray-200;
     }
 
     /* Table Footer */
@@ -135,354 +121,6 @@ const additionalStyles = `
 </style>`;
 
 document.head.insertAdjacentHTML('beforeend', additionalStyles);
-
-
-// async function validateExcelFile(fileName, type, company, date) {
-//     console.log('Starting validation with params:', { fileName, type, company, date });
-    
-//     if (!fileName || !type || !company || !date) {
-//         console.error('Missing required parameters:', { fileName, type, company, date });
-//         throw new ValidationError('Missing required parameters for validation', [], fileName);
-//     }
-
-//     // Format date consistently
-//     const formattedDate = moment(date).format('YYYY-MM-DD');
-
-//     // Get file content
-//     try {
-//         const encodedFileName = encodeURIComponent(fileName);
-//         const response = await fetch(`/api/outbound-files/${encodedFileName}/content`, {
-//             method: 'POST',
-//             headers: { 
-//                 'Content-Type': 'application/json',
-//                 'Accept': 'application/json'
-//             },
-//             body: JSON.stringify({ 
-//                 type, 
-//                 company, 
-//                 date: formattedDate,
-//                 filePath: `${type}/${company}/${formattedDate}/${fileName}`
-//             })
-//         });
-
-//         if (!response.ok) {
-//             if (response.status === 404) {
-//                 throw new ValidationError(`File not found: ${fileName}`, [{
-//                     code: 'FILE_NOT_FOUND',
-//                     message: 'The Excel file could not be found in the specified location',
-//                     target: 'file',
-//                     propertyPath: null,
-//                     validatorType: 'System'
-//                 }], fileName);
-//             }
-
-//             const errorText = await response.text();
-//             let errorDetails;
-//             try {
-//                 errorDetails = JSON.parse(errorText);
-//             } catch (e) {
-//                 errorDetails = { error: { message: errorText } };
-//             }
-
-//             throw new ValidationError('Failed to fetch file content', [{
-//                 code: errorDetails.error?.code || 'FILE_READ_ERROR',
-//                 message: errorDetails.error?.message || 'Could not read the Excel file content',
-//                 target: 'file',
-//                 propertyPath: null,
-//                 validatorType: 'System'
-//             }], fileName);
-//         }
-        
-//         const fileData = await response.json();
-//         console.log('Received file data:', fileData);
-
-//         if (!fileData.success || !fileData.content) {
-//             console.error('Invalid file content received:', fileData);
-//             throw new ValidationError('Invalid file content', [{
-//                 code: 'INVALID_CONTENT',
-//                 message: fileData.error?.message || 'The file content is not in the expected format',
-//                 target: 'content',
-//                 propertyPath: null,
-//                 validatorType: 'Format'
-//             }], fileName);
-//         }
-
-//         // Validate data
-//         const rawData = fileData.content[0]; // Get the first document since backend returns array
-//         console.log('Processing Excel file data:', rawData);
-
-//         if (!rawData) {
-//             console.error('No raw data available for validation');
-//             throw new ValidationError('Invalid data format', [{
-//                 code: 'NO_DATA',
-//                 message: 'No data found in the Excel file',
-//                 target: 'content',
-//                 propertyPath: null,
-//                 validatorType: 'Format'
-//             }], fileName);
-//         }
-
-//         // Validate required fields according to LHDN MyInvois documentation
-//         const validationErrors = [];
-
-//         // Header Validation (Mandatory fields)
-//         if (!rawData.header) {
-//             validationErrors.push({
-//                 row: 'Header',
-//                 errors: ['Missing header information']
-//             });
-//         } else {
-//             const headerErrors = [];
-//             const header = rawData.header;
-            
-//             if (!header.invoiceNo) headerErrors.push('Missing invoice number');
-//             if (!header.invoiceType) headerErrors.push('Missing invoice type');
-            
-//             // Validate issue date
-//             if (!header.issueDate?.[0]?._) {
-//                 headerErrors.push('Missing issue date');
-//             } else {
-//                 const issueDate = moment(header.issueDate[0]._);
-//                 const today = moment();
-//                 const daysDiff = today.diff(issueDate, 'days');
-                
-//                 // Check if issue date is too old (more than 7 days)
-//                 if (daysDiff > 7) {
-//                     headerErrors.push({
-//                         code: 'CF321',
-//                         message: 'Issuance date time value of the document is too old that cannot be submitted.',
-//                         target: 'DatetimeIssued',
-//                         propertyPath: 'Invoice.IssueDate AND Invoice.IssueTime'
-//                     });
-//                 }
-//             }
-            
-//             if (!header.issueTime?.[0]?._) headerErrors.push('Missing issue time');
-//             if (!header.currency) headerErrors.push('Missing currency');
-          
-//             if (headerErrors.length > 0) {
-//                 validationErrors.push({
-//                     row: 'Header',
-//                     errors: headerErrors
-//                 });
-//             }
-//         }
-
-//         // Supplier Validation (Mandatory fields)
-//         if (!rawData.supplier) {
-//             validationErrors.push({
-//                 row: 'Supplier',
-//                 errors: ['Missing supplier information']
-//             });
-//         } else {
-//             const supplierErrors = [];
-//             const supplier = rawData.supplier;
-            
-//             if (!supplier.id) supplierErrors.push('Missing supplier ID');
-//             if (!supplier.additionalAccountID) supplierErrors.push('Missing additional account ID');
-//             if (!supplier.name) supplierErrors.push('Missing supplier name');
-//             if (!supplier.identifications?.length) supplierErrors.push('Missing supplier identifications');
-//             if (!supplier.address?.line) supplierErrors.push('Missing address line');
-//             if (!supplier.address?.city) supplierErrors.push('Missing city');
-//             if (!supplier.address?.state) supplierErrors.push('Missing state');
-//             if (!supplier.address?.country) supplierErrors.push('Missing country');
-//             if (!supplier.contact?.phone) supplierErrors.push('Missing contact phone');
-//             if (!supplier.contact?.email) supplierErrors.push('Missing contact email');
-            
-//             if (supplierErrors.length > 0) {
-//                 validationErrors.push({
-//                     row: 'Supplier',
-//                     errors: supplierErrors
-//                 });
-//             }
-//         }
-
-//         // Buyer Validation (Mandatory fields)
-//         if (!rawData.buyer) {
-//             validationErrors.push({
-//                 row: 'Buyer',
-//                 errors: ['Missing buyer information']
-//             });
-//         } else {
-//             const buyerErrors = [];
-//             const buyer = rawData.buyer;
-            
-//             if (!buyer.id) buyerErrors.push('Missing buyer ID');
-//             if (!buyer.name) buyerErrors.push('Missing buyer name');
-//             if (!buyer.identifications?.length) buyerErrors.push('Missing buyer identifications');
-//             if (!buyer.address?.line) buyerErrors.push('Missing address line');
-//             if (!buyer.address?.city) buyerErrors.push('Missing city');
-//             if (!buyer.address?.state) buyerErrors.push('Missing state');
-//             if (!buyer.address?.country) buyerErrors.push('Missing country');
-//             if (!buyer.contact?.phone) buyerErrors.push('Missing contact phone');
-//             if (!buyer.contact?.email) buyerErrors.push('Missing contact email');
-            
-//             if (buyerErrors.length > 0) {
-//                 validationErrors.push({
-//                     row: 'Buyer',
-//                     errors: buyerErrors
-//                 });
-//             }
-//         }
-
-//         // Items Validation (Mandatory fields)
-//     if (!rawData.items || !Array.isArray(rawData.items)) {
-//         validationErrors.push({
-//             row: 'Items',
-//             errors: ['No items found in document']
-//         });
-//     } else {
-//         // Filter out invalid/empty line items
-//         const validItems = rawData.items.filter(item => 
-//             item && 
-//             item.lineId &&
-//             item.quantity > 0 && 
-//             item.unitPrice > 0 &&
-//             item.item?.classification?.code &&
-//             item.item?.classification?.type &&
-//             item.item?.description &&
-//             validateTaxInformation(item.tax)
-//         );
-
-//         function validateTaxInformation(tax) {
-//             // For tax type '06' (Not Applicable)
-//             if (tax?.taxTypeCode === '06') {
-//                 return tax.taxableAmount === 0 &&
-//                        tax.taxAmount === 0 &&
-//                        tax.taxRate === 0;
-//             }
-            
-//             // For tax type 'E' (Tax exemption)
-//             if (tax?.taxTypeCode === 'E') {
-//                 return tax.taxableAmount !== null &&
-//                        tax.taxAmount === 0 &&
-//                        tax.taxRate === 0 &&
-//                        tax.category?.exemptionReason !== null;
-//             }
-            
-//             // For other tax types (01-05)
-//             return tax?.taxableAmount !== null &&
-//                    tax?.taxAmount !== null &&
-//                    tax?.taxRate !== null &&
-//                    tax?.taxTypeCode !== null;
-//         }
-
-//         if (validItems.length === 0) {
-//             validationErrors.push({
-//                 row: 'Items',
-//                 errors: ['No valid items found in document']
-//             });
-//         } else {
-//             validItems.forEach((item, index) => {
-//                 const itemErrors = [];
-//                 const lineNumber = index + 1;
-
-//                 // Validate tax information
-//                 if (item.tax) {
-//                     const taxTypeCode = item.tax.taxTypeCode;
-                    
-//                     if (!['01', '02', '03', '04', '05', '06', 'E'].includes(taxTypeCode)) {
-//                         itemErrors.push({
-//                             code: 'CF366',
-//                             message: 'Invalid tax type code',
-//                             target: 'TaxTypeCode',
-//                             propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxTypeCode`
-//                         });
-//                     }
-
-//                     if (taxTypeCode === '06') {
-//                         // Validate Not Applicable tax type
-//                         if (item.tax.taxableAmount !== 0 || item.tax.taxAmount !== 0 || item.tax.taxRate !== 0) {
-//                             itemErrors.push({
-//                                 code: 'CF367',
-//                                 message: 'For tax type 06 (Not Applicable), all tax amounts and rates must be zero',
-//                                 target: 'TaxTotal',
-//                                 propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal`
-//                             });
-//                         }
-//                     } else if (taxTypeCode === 'E') {
-//                         // Validate Tax Exemption
-//                         if (item.tax.taxAmount !== 0 || item.tax.taxRate !== 0) {
-//                             itemErrors.push({
-//                                 code: 'CF368',
-//                                 message: 'For tax exemption (E), tax amount and rate must be zero',
-//                                 target: 'TaxTotal',
-//                                 propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal`
-//                             });
-//                         }
-                        
-//                         if (!item.tax.category?.exemptionReason) {
-//                             itemErrors.push({
-//                                 code: 'CF369',
-//                                 message: 'Tax exemption reason is required for tax type E',
-//                                 target: 'TaxExemptionReason',
-//                                 propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal.TaxCategory.ExemptionReason`
-//                             });
-//                         }
-//                     }
-//                 }
-
-//                     if (itemErrors.length > 0) {
-//                         validationErrors.push({
-//                             row: `Item ${lineNumber}`,
-//                             errors: itemErrors
-//                         });
-//                     }
-//                 });
-//             }
-//         }
-
-//         // Summary Validation (Mandatory fields)
-//         if (!rawData.summary) {
-//             validationErrors.push({
-//                 row: 'Summary',
-//                 errors: ['Missing document summary']
-//             });
-//         } else {
-//             const summaryErrors = [];
-//             const summary = rawData.summary;
-            
-//             if (!summary.amounts?.lineExtensionAmount) summaryErrors.push('Missing line extension amount');
-//             if (!summary.amounts?.taxExclusiveAmount) summaryErrors.push('Missing tax exclusive amount');
-//             if (!summary.amounts?.taxInclusiveAmount) summaryErrors.push('Missing tax inclusive amount');
-//             if (!summary.amounts?.payableAmount) summaryErrors.push('Missing payable amount');
-            
-//             if (!summary.tax?.totalAmount) summaryErrors.push('Missing tax total amount');
-//             if (!summary.tax?.taxableAmount) summaryErrors.push('Missing taxable amount');
-//             if (!summary.tax?.taxAmount) summaryErrors.push('Missing tax amount');
-//             if (!summary.tax?.taxTypeCode) summaryErrors.push('Missing tax type code');
-            
-//             if (summaryErrors.length > 0) {
-//                 validationErrors.push({
-//                     row: 'Summary',
-//                     errors: summaryErrors
-//                 });
-//             }
-//         }
-
-//         if (validationErrors.length > 0) {
-//             throw new ValidationError('Excel file validation failed', validationErrors, fileName);
-//         }
-
-//         // Return validated data
-//         return rawData;
-//     } catch (error) {
-//         // If it's already a ValidationError, just pass it through
-//         if (error instanceof ValidationError) {
-//             throw error;
-//         }
-//         // For other types of errors, wrap them in a ValidationError
-//         throw new ValidationError(error.message || 'Validation failed', [{
-//             code: 'VALIDATION_ERROR',
-//             message: error.message || 'An unexpected error occurred during validation',
-//             target: 'system',
-//             propertyPath: null,
-//             validatorType: 'System'
-//         }], fileName);
-//     }
-// }
-
-// Custom Error Classes
 
 async function validateExcelFile(fileName, type, company, date) {
     console.log('Starting validation with params:', { fileName, type, company, date });
@@ -2678,6 +2316,7 @@ class InvoiceTableManager {
                 {
                     data: 'invoiceNumber',
                     className: 'outbound-invoice-column',
+                    width: '10px',
                     title: 'INVOICE NO. / DOCUMENT',
                     render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                 },
@@ -2842,10 +2481,8 @@ class InvoiceTableManager {
                         color: #198754;
                         font-size: 1rem;
                     "></i>
-                    <span class="file-name-text" title="${row.fileName}" style="
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
+                    <span title="${row.fileName}" style="
+                        text-truncate;
                     ">${row.fileName}</span>
                 </div>
                     <div class="document-type" style="padding-left: 0;">
@@ -2910,17 +2547,6 @@ class InvoiceTableManager {
         
         return `
             <div class="date-info"> 
-                      <div class="date-row" data-bs-toggle="tooltip" title="Original document issue date and time">
-                        <i class="bi bi-calendar3 me-1"></i>    
-                        <span class="date-value">
-                            ${issueDateFormatted},
-                            ${issueTimeFormatted ? `
-                                <span class="time-text" title="Original Issue Time: ${issueTime}">
-                                ${issueTimeFormatted}
-                                </span>
-                            ` : ''}
-                        </span>
-                    </div>
                 ${submittedFormatted ? `
                     <div class="date-row" data-bs-toggle="tooltip" title="Date and time when document was submitted to LHDN">
                         <i class="bi bi-check-circle me-1 text-success"></i>

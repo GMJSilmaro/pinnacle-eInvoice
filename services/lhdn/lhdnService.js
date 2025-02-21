@@ -7,7 +7,7 @@ const forge = require('node-forge');
 const jsonminify = require('jsonminify');
 const crypto = require('crypto');
 require('dotenv').config();
-const tokenService = require('../../services/token.service');
+const tokenService = require('../token.service');
 const { WP_CONFIGURATION } = require('../../models');
 
 async function getConfig() {

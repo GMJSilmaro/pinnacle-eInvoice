@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,19 +24,21 @@
             position: relative;
         }
 
-        /* Company Info */
+        /* Modified Company Info styles */
         .company-info {
-            margin-bottom: 10px;
+            width: 100%;
+            margin-bottom: 15px;
+            /* Reduced from 30px */
+        }
+
+        .company-info p {
+            margin: 1px 0;
         }
 
         .company-info img {
             max-width: 150px;
             margin-bottom: 5px;
             height: auto;
-        }
-
-        .company-info p {
-            margin: 1px 0;
         }
 
         .company-name {
@@ -47,31 +50,65 @@
             text-decoration: underline;
         }
 
-        /* Invoice Header */
+        /* Modified Invoice Header styles */
         .invoice-header {
+            position: relative;
             text-align: right;
-            margin-top: -80px;
-            margin-bottom: 30px;
+            margin-top: 0;
+            /* Remove top margin */
         }
 
         .invoice-title {
             font-weight: bold;
             font-size: 16px;
-            margin-bottom: 5px;
+            margin-bottom: 15px;
         }
 
         .invoice-details {
             text-align: right;
-            margin-bottom: 20px;
+
         }
 
         .invoice-details p {
             margin: 1px 0;
         }
 
-        /* Main Content */
+        /* UUID Section */
+        .uuid-section {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            text-align: right;
+            font-size: 10px;
+        }
+
         .main-content {
-            margin: 20px 0;
+            clear: both;
+            margin-top: 20px;
+        }
+
+        .info-row {
+            margin: 1px 0;
+        }
+
+        /* Buyer section specific styling */
+        .buyer-section {
+            margin-top: 15px;
+        }
+
+        .buyer-section .info-row {
+            margin: 1px 0;
+        }
+
+        .two-column {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            /* Reduced from 30px */
+        }
+
+        .column {
+            width: 45%;
         }
 
         .info-row {
@@ -105,12 +142,17 @@
             white-space: nowrap;
         }
 
-        .text-center { text-align: center; }
-        .text-right { text-align: right; }
+        .text-center {
+            text-align: center;
+        }
+
+        .text-right {
+            text-align: right;
+        }
 
         /* Tax Summary Table */
         .tax-summary-table {
-            width: 100%;
+            width: auto;
             border-collapse: collapse;
             margin: 15px 0;
             font-size: 10px;
@@ -119,28 +161,32 @@
         .tax-summary-table th,
         .tax-summary-table td {
             border: 1px solid #000;
-            padding: 6px 8px;
+            padding: 4px 8px;
             text-align: left;
+            min-width: 80px;
         }
 
         .tax-summary-table th {
             background-color: #000;
             color: #fff;
             font-weight: bold;
-            text-align: center;
-            white-space: nowrap;
         }
 
-        .tax-summary-table td {
-            background-color: #fff;
+        /* Currency Section */
+        .currency-section {
+            margin: 15px 0;
+            width: 250px;
         }
 
-        .tax-summary-table td.text-right {
-            text-align: right;
+        .currency-section table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
         }
 
-        .tax-summary-table td.text-center {
-            text-align: center;
+        .currency-section td {
+            padding: 4px;
+            border: 1px solid #000;
         }
 
         /* Totals Section */
@@ -199,69 +245,143 @@
         }
 
         .qr-code {
-            position: absolute;
-            right: 0;
-            top: 10px;
+            position: relative;
+            /* Changed from fixed to relative */
+            float: right;
+            /* Float right to align with right column */
             width: 100px;
             height: 100px;
         }
+
+        .qr-container {
+            clear: right;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+
+        .line-items-note {
+            font-size: 9px;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        .url-footer {
+            font-size: 8px;
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <!-- Company Info -->
-        <div class="company-info">
+        <!-- <div class="company-info">
             {{if CompanyLogo}}
                 <img src="{{:CompanyLogo}}" alt="Company Logo">
             {{/if}}
             <p class="company-name">{{:companyName}}</p>
+            <p>Tax Identification Number (TIN): {{:SupplierTIN}}</p>
+            <p>Registration Number: {{:SupplierRegistrationNo}}</p>
+            <p>SST Registration Number: {{:SupplierSSTID}}</p>
             <p>{{:companyAddress}}</p>
             <p>{{:companyPhone}}</p>
             <p><a href="mailto:{{:companyEmail}}" class="email-link">{{:companyEmail}}</a></p>
-        </div>
+            <p>MSIC Code: {{:SupplierMSICCode}}</p>
+            <p>Business Activity: {{:SupplierBusinessActivity}}</p>
+        </div> -->
 
-        <!-- Invoice Header -->
-        <div class="invoice-header">
-            <div class="invoice-title">Tax Invoice</div>
-            <div class="invoice-details">
-                <p><span class="info-label">e-Invoice No:</span> {{:InvoiceCode}}</p>
-                <p><span class="info-label">e-Invoice type:</span> {{:InvoiceType}}</p>
-                <p><span class="info-label">e-Invoice version:</span> {{:InvoiceVersion}}</p>
-                <p><span class="info-label">Unique Identifier No:</span> {{:UniqueIdentifier}}</p>
-                <p><span class="info-label">Original Invoice Ref. No.:</span> {{:OriginalInvoiceRef}}</p>
-                <p><span class="info-label">Issue Date:</span> {{:dateTimeReceived}}</p>
+        <div class="two-column">
+            <!-- Left Column: Company Info -->
+            <div class="column">
+                <div class="company-info">
+                    {{if CompanyLogo}}
+                    <img src="{{:CompanyLogo}}" alt="Company Logo">
+                    {{/if}}
+                    <p class="company-name">{{:companyName}}</p>
+                    <p>Tax Identification Number (TIN): {{:SupplierTIN}}</p>
+                    <p>ID Type/Number: {{:SupplierIdType}}/{{:SupplierIdNumber}}</p>
+                    <p>SST Registration Number: {{:SupplierSSTID}}</p>
+                    <p>{{:companyAddress}}</p>
+                    <p>{{:companyPhone}}</p>
+                    <p><a href="mailto:{{:companyEmail}}" class="email-link">{{:companyEmail}}</a></p>
+                    <p>MSIC Code: {{:SupplierMSICCode}}</p>
+                    <p>Business Activity: {{:SupplierBusinessActivity}}</p>
+                </div>
+
+                <!-- Buyer Section moved inside left column -->
+                <div class="buyer-section">
+                    <div class="info-row"><span class="info-label">TO:</span></div>
+                    <div class="info-row"><span class="info-label">Name:</span> {{:BuyerName}}</div>
+                    <div class="info-row"><span class="info-label">Tax Identification Number (TIN):</span> {{:BuyerTIN}}
+                    </div>
+                    <div class="info-row"><span class="info-label">ID Type/Number:</span>
+                        {{:BuyerIdType}}/{{:BuyerIdNumber}}</div>
+                    <div class="info-row"><span class="info-label">SST Registration Number:</span> {{:BuyerSSTID}}
+                    </div>
+                    <div class="info-row"><span class="info-label">Address:</span> {{:BuyerAddress}}</div>
+                    <div class="info-row"><span class="info-label">Telephone Number:</span> {{:BuyerPhone}}</div>
+                    <div class="info-row"><span class="info-label">Email:</span> <a href="mailto:{{:companyEmail}}"
+                            class="email-link">{{:BuyerEmail}}</a></div>
+                    <div class="info-row"><span class="info-label">MSIC Code:</span> {{:BuyerMSICCode}}</div>
+                    <div class="info-row"><span class="info-label">Business Activity:</span> {{:BuyerBusinessActivity}}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Invoice Header -->
+            <div class="column">
+                <div class="invoice-header">
+                    <div class="invoice-title">{{:InvoiceTypeName}} {{:InvoiceVersionCode}}</div>
+                    <div class="qr-container">
+                        {{if qrCode}}
+                        <img src="{{:qrCode}}" alt="QR Code" class="qr-code">
+                        {{/if}}
+                    </div>
+                    <div class="invoice-details">
+
+                        <p><span class="info-label">e-Invoice No:</span> {{:internalId}}</p>
+                        <p><span class="info-label">e-Invoice type:</span> {{:InvoiceType}}</p>
+                        <p><span class="info-label">e-Invoice version:</span> {{:InvoiceVersion}}</p>
+                        <p><span class="info-label">Unique Identifier No:</span> {{:UniqueIdentifier}}</p>
+                        <p><span class="info-label">Long ID:</span> {{:longID}}</p>
+                        <p><span class="info-label">Original Invoice Ref. No.:</span> {{:OriginalInvoiceRef}}</p>
+                        <p><span class="info-label">Issue Date:</span> {{:issueDate}}</p>
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- Main Content -->
-        <div class="main-content">
-            <div class="info-row"><span class="info-label">Supplier TIN:</span> {{:SupplierTIN}}</div>
-            <div class="info-row"><span class="info-label">Supplier Registration Number:</span> {{:SupplierRegistrationNumber}}</div>
-            <div class="info-row"><span class="info-label">Supplier SST ID:</span> {{:SupplierSSTID}}</div>
-            <div class="info-row"><span class="info-label">Supplier MSIC code:</span> {{:SupplierMSICCode}}</div>
-            <div class="info-row"><span class="info-label">Supplier business activity description:</span> {{:SupplierBusinessActivity}}</div>
-            <div class="info-row"><span class="info-label"></span></div>
-            <div class="info-row"><span class="info-label">Buyer TIN:</span> {{:BuyerTIN}}</div>
-            <div class="info-row"><span class="info-label">Buyer Name:</span> {{:BuyerName}}</div>
-            <div class="info-row"><span class="info-label">Buyer Registration No:</span> {{:BuyerRegistrationNumber}}</div>
-            <div class="info-row"><span class="info-label">Buyer Address:</span> {{:BuyerAddress}}</div>
-            <div class="info-row"><span class="info-label">Buyer Contact Number:</span> {{:BuyerPhone}}</div>
-            <div class="info-row"><span class="info-label">Buyer Email:</span> {{:companyEmail}}</div>
-        </div>
+        <!-- <div class="buyer-section">
+            <div class="info-row"><span class="info-label">TO:</span></div>
+            <p class="company-name">{{:BuyerName}}</p>
+            <p>Tax Identification Number (TIN): {{:BuyerTIN}}</p>
+            <p>Registration Number: {{:BuyerRegistrationNumber}}</p>
+            <p>SST Registration Number: {{:BuyerSSTNo}}</p>
+            <p>{{:BuyerAddress}}</p>
+            <p>{{:BuyerPhone}}</p>
+            <p><a href="mailto:{{:companyEmail}}" class="email-link">{{:BuyerEmail}}</a></p>
+            <p>MSIC Code: {{:BuyerMSICCode}}</p>
+            <p>Business Activity: {{:BuyerBusinessActivity}}</p>
+        </div> -->
 
         <!-- Main Table -->
         <table class="details-table">
             <tr>
                 <th>No.</th>
-                <th>Classification</th>
+                <th>Code</th>
                 <th>Description</th>
                 <th>Quantity</th>
+                <th>UOM</th>
                 <th>Unit Price</th>
-                <th>Amount</th>
-                <th>Disc</th>
+                <th>Subtotal</th>
+                <th>(A) Discount</th>
+                <th>(B) Fee / Charges</th>
                 <th>Tax Rate</th>
                 <th>Tax Amount</th>
-                <th>Total</th>
+                <th>Amount</th>
             </tr>
             {{for items}}
             <tr>
@@ -269,12 +389,50 @@
                 <td class="text-center">{{:Cls}}</td>
                 <td>{{:Description}}</td>
                 <td class="text-right">{{:Quantity}}</td>
-                <td class="text-right">RM{{:UnitPrice}}</td>
-                <td class="text-right">RM{{:QtyAmount}}</td>
-                <td class="text-right">{{if Disc === '-'}}{{:Disc}}{{else}}RM{{:Disc}}{{/if}}</td>
+                <td class="text-right">{{:UOM}}</td>
+                <td class="text-right">{{:UnitPrice}}</td>
+                <td class="text-right">{{:QtyAmount}}</td>
+                <td class="text-right">{{if Disc === '0.00'}}{{:Disc}}{{else}} {{:Disc}}{{/if}}</td>
+                <td class="text-right">{{:Charges}}</td>
                 <td class="text-center">{{:LineTaxPercent}}%</td>
-                <td class="text-right">RM{{:LineTaxAmount}}</td>
-                <td class="text-right">RM{{:Total}}</td>
+                <td class="text-right">{{:LineTaxAmount}}</td>
+                <td class="text-right">{{:Total}}</td>
+            </tr>
+            {{/for}}
+        </table>
+        <div class="line-items-note">
+            Note: Classification Code, UOM - Unit of Measurement, ( ) - Additional data present, * will be displayed in
+            Line Items /Additional Details table.
+        </div>
+
+        <!-- Currency Section -->
+        <div class="currency-section">
+            <table>
+                <tr>
+                    <td>Currency Code</td>
+                    <td>{{:documentCurrency}}</td>
+                </tr>
+                <tr>
+                    <td>Exchange Rate</td>
+                    <td>{{:TaxExchangeRate}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Tax Summary Table -->
+        <table class="details-table" style="margin-top: 20px;">
+            <tr>
+                <th>Tax Type</th>
+                <th>Tax Rate</th>
+                <th>Total Amount ({{:documentCurrency}})</th>
+                <th>Total Tax Amount Per Tax Type ({{:documentCurrency}})</th>
+            </tr>
+            {{for taxSummary}}
+            <tr>
+                <td>{{:taxType}}</td>
+                <td class="text-center">{{:taxRate}}%</td>
+                <td class="text-right">{{:totalAmount}}</td>
+                <td class="text-right">{{:totalTaxAmount}}</td>
             </tr>
             {{/for}}
         </table>
@@ -282,62 +440,47 @@
         <!-- Totals -->
         <table class="totals-table">
             <tr>
-                <td class="total-label">Subtotal</td>
-                <td class="total-amount">RM{{:Subtotal}}</td>
+                <td class="total-label">Total Tax Amount ({{:documentCurrency}})</td>
+                <td class="total-amount">{{:TotalTaxAmount}}</td>
             </tr>
             <tr>
-                <td class="total-label">Total excluding tax</td>
-                <td class="total-amount">RM{{:TotalExcludingTax}}</td>
+                <td class="total-label">Total Net Amount ({{:documentCurrency}})</td>
+                <td class="total-amount">{{:TotalNetAmount}}</td>
             </tr>
             <tr>
-                <td class="total-label">Tax amount</td>
-                <td class="total-amount">RM{{:TotalTaxAmount}}</td>
+                <td class="total-label">Total excluding Tax ({{:documentCurrency}})</td>
+                <td class="total-amount">{{:TotalExcludingTax}}</td>
             </tr>
             <tr>
-                <td class="total-label">Total including tax</td>
-                <td class="total-amount">{{if TotalIncludingTax == "0.00"}}RM0.00{{else}}RM{{:TotalIncludingTax}}{{/if}}</td>
+                <td class="total-label">Total including Tax ({{:documentCurrency}})</td>
+                <td class="total-amount">{{:TotalIncludingTax}}</td>
             </tr>
             <tr>
-                <td class="total-label">Total payable amount</td>
-                <td class="total-amount final">RM{{:TotalPayableAmount}}</td>
+                <td class="total-label">Prepayment Amount ({{:documentCurrency}})</td>
+                <td class="total-amount">{{:Prepayment}}</td>
+            </tr>
+            <tr>
+                <td class="total-label">Total Payable Amount ({{:documentCurrency}})</td>
+                <td class="total-amount final">{{:TotalPayableAmount}}</td>
             </tr>
         </table>
-
-        <!-- Tax Summary Table -->
-        <div style="margin-top: 20px;">
-            <table class="tax-summary-table" style="width: 100%;">
-                <thead>
-                    <tr>
-                        <th style="width: 10%;">Total Product / Service Price</th>
-                        <th>Tax type</th>
-                        <th>Tax Rate</th>
-                        <th>Tax amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{for taxSummary}}
-                    <tr>
-                        <td class="text-right">RM{{:baseAmount}}</td>
-                        <td class="text-center">{{:taxType}}</td>
-                        <td class="text-center">{{:taxRate}}%</td>
-                        <td class="text-right">RM{{:taxAmount}}</td>
-                    </tr>
-                    {{/for}}
-                </tbody>
-            </table>
-        </div>
 
         <!-- Footer -->
         <div class="footer">
             <div class="signature-block">
+                <p><span class="signature-title">Signed by:</span> {{:signedBy}}</p>
                 <p><span class="signature-title">Digital Signature:</span> {{:DigitalSignature}}</p>
                 <p><span class="signature-title">Date and Time of Validation:</span> {{:validationDateTime}}</p>
                 <p>This document is a visual presentation of the e-Invoice.</p>
             </div>
-            {{if qrCode}}
-                <img src="{{:qrCode}}" alt="QR Code" class="qr-code">
-            {{/if}}
+            <div class="url-footer">
+                This document was automatically generated by Pinnacle e-Invoice Portal from Lembaga Hasil Dalam Negeri
+                Malaysia (LHDNM).
+                <br>
+                {{:lhdnLink}}
+            </div>
         </div>
     </div>
 </body>
+
 </html>

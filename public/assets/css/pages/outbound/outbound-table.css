@@ -31,6 +31,7 @@
     width: 100%;
 }
 
+
 .outbound-table-container {
     position: relative;
     width: 100%;
@@ -40,22 +41,6 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     -ms-overflow-style: -ms-autohiding-scrollbar;
-}
-
-.table-responsive {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* Table Styles */
-.outbound-table {
-    width: 100%;
-    margin: 0;
-    background-color: #fff;
-    border-collapse: separate;
-    border-spacing: 0;
-    table-layout: auto;
 }
 
 .inbound-table {
@@ -119,7 +104,7 @@
 
 /* Column Widths - Using Percentages and Min-widths */
 .outbound-checkbox-column { width: 30px; min-width: 30px; }
-.outbound-invoice-column { width: 20%; min-width: 30px; }
+.outbound-invoice-column { width: 5%; min-width: 10px; }
 .outbound-supplier-column { width: 15%; min-width: 150px; }
 .outbound-buyer-column { width: 15%; min-width: 150px; }
 .outbound-date-column { width: 15%; min-width: 150px; }
@@ -192,19 +177,12 @@
     width: 14px;
 }
 
-.doc-type-text, 
-.file-name-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: calc(100% - 20px);
-}
-
 /* Date Info Styles */
 .date-info {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    width: auto;
 }
 
 .date-row {
@@ -474,14 +452,6 @@
     flex-shrink: 0;
     font-size: 1rem;
     width: 16px;
-}
-
-.outbound-file-name-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: calc(100% - 24px);
-    font-size: 0.8125rem;
 }
 
 /* Bottom Controls Container */
@@ -1009,11 +979,3 @@ body.swal2-shown {
     transform: translateY(-50%);
 }
 
-.file-name-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: calc(100% - 20px);
-    color: #6c757d;
-    padding-left: 2px;  /* Small padding for better spacing */
-}

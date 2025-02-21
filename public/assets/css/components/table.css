@@ -10,69 +10,6 @@
     transition: all 0.3s ease;
 }
 
-.table-responsive {
-    margin: 0;
-    padding: 0;
-    border-radius: 0.5rem;
-    overflow: visible;  
-    background: #fff;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* Table Base Styles */
-.table {
-    width: 100% !important;
-    margin: 0 !important;
-    //font-size: 0.875rem;
-    color: #475569;
-    background: #fff;
-    table-layout: fixed;
-    min-width: 800px;
-}
-
-/* Table Cell Styles */
-#invoiceTable tbody td {
-    padding: 0.75rem;
-    vertical-align: middle;
-    color: #495057;
-    border-bottom: 1px solid #e9ecef;
-    white-space: normal;
-    word-wrap: break-word;
-}
-
-/* Header Styles */
-.table thead th {
-    padding: 12px 16px !important;
-    font-weight: 600 !important;
-    color: #475569 !important;
-    background: #f8fafc !important;
-    border-bottom: 1px solid #e2e8f0;
-    text-transform: uppercase;
-    font-size: 0.78rem !important;
-    letter-spacing: 0.08em !important;
-    white-space: nowrap;
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-
-/* Cell Styles */
-.table tbody td {
-    padding: 12px 16px !important;
-    vertical-align: middle;
-    color: #1e293b !important;
-    font-size: 0.90rem !important;
-    border-bottom: 1px solid #f1f5f9 !important;
-    /* white-space: nowrap;
-    overflow: hidden; */
-    padding: 0.75rem;
-    vertical-align: middle;
-    color: #495057;
-    border-bottom: 1px solid #e9ecef;
-    white-space: normal;
-    word-wrap: break-word;
-}
 
 /* Column-specific styles */
 .submituid-column a {

@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         color: '#997404',
         iconColor: '#ffc107'
       };
-    } else if (desc.includes('success') || desc.includes('authorized') || desc.includes('confirmed')) {
+    } else if (desc.includes('success') || desc.includes('authorized') || desc.includes('confirmed') || desc.includes('submitted')) {
       return {
         icon: 'bi-check-circle-fill',
         color: '',
@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const limitedLogs = logs.slice(0, 6);
 
     limitedLogs.forEach(log => {
-      const date = new Date(log.CreateTS);
+      const date = new Date(Date.parse(log.CreateTS));
       const timeString = date.toLocaleTimeString([], { 
         hour: '2-digit', 
         minute: '2-digit', 

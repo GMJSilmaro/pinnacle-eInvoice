@@ -1870,8 +1870,6 @@ function copyXmlNetworkPath() {
 
 // Add XML config initialization to the DOMContentLoaded event
 document.addEventListener('DOMContentLoaded', () => {
-    // ... existing initialization code ...
-    
     // Initialize XML configuration
     loadXMLConfig();
 });

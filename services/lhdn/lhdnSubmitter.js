@@ -7,6 +7,7 @@ const { WP_OUTBOUND_STATUS, WP_LOGS, sequelize } = require('../../models');
 const moment = require('moment');
 const { Op } = require('sequelize');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const path = require('path');
 const XLSX = require('xlsx');
 const { getActiveSAPConfig } = require('../../config/paths');
@@ -379,6 +380,82 @@ class LHDNSubmitter {
       throw error;
     }
   }
+
+  async updateExcelWithResponse(fileName, type, company, date, uuid, invoice_number) {
+    try {
+        // Get network path from config
+        const config = await getActiveSAPConfig();
+        if (!config.success) {
+            throw new Error('Failed to get SAP configuration');
+        }
+
+        // Format date properly for folder structure
+        const formattedDate = moment(date).format('YYYY-MM-DD');
+
+        // Construct base paths
+        const outgoingRoot = 'C:\\SFTPRoot\\MindValley\\Outgoing';
+        const outgoingTypeDir = path.join(outgoingRoot, type);
+        const outgoingCompanyDir = path.join(outgoingTypeDir, company);
+        const outgoingDateDir = path.join(outgoingCompanyDir, formattedDate);
+
+        // Create directory structure recursively
+        await fsPromises.mkdir(outgoingRoot, { recursive: true });
+        await fsPromises.mkdir(outgoingTypeDir, { recursive: true });
+        await fsPromises.mkdir(outgoingCompanyDir, { recursive: true });
+        await fsPromises.mkdir(outgoingDateDir, { recursive: true });
+
+        // Construct file paths
+        const incomingPath = path.join(config.networkPath, type, company, formattedDate, fileName);
+        const outgoingFilePath = path.join(outgoingDateDir, fileName);
+
+        // Read source Excel file
+        const workbook = XLSX.readFile(incomingPath);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+        // Find header row (type "H") and update UUID and invoice_number
+        const range = XLSX.utils.decode_range(worksheet['!ref']);
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+            const typeCell = XLSX.utils.encode_cell({r: R, c: 0}); // First column
+            if (worksheet[typeCell] && worksheet[typeCell].v === 'H') {
+                // Update UUID in _1 column
+                const uuidCell = XLSX.utils.encode_cell({r: R, c: 2}); // _1 column
+                worksheet[uuidCell] = { t: 's', v: uuid };
+
+                // Update invoice_number in _2 column
+                const invoiceCell = XLSX.utils.encode_cell({r: R, c: 3}); // _2 column
+                worksheet[invoiceCell] = { t: 's', v: invoice_number };
+                break;
+            }
+        }
+
+        // Write updated file to outgoing location
+        XLSX.writeFile(workbook, outgoingFilePath);
+
+        await this.logOperation(`Updated Excel file with UUID and invoice number: ${outgoingFilePath}`, {
+            action: 'UPDATE_EXCEL'
+        });
+
+        return {
+            success: true,
+            outgoingPath: outgoingFilePath
+        };
+
+    } catch (error) {
+        console.error('Error updating Excel file:', error);
+        await this.logOperation(`Error updating Excel file: ${error.message}`, {
+            action: 'UPDATE_EXCEL',
+            status: 'FAILED',
+            logType: 'ERROR'
+        });
+        
+        return {
+            success: false,
+            error: error.message
+        };
+    }
 }
 
-module.exports = LHDNSubmitter; 
+
+}
+
+module.exports = LHDNSubmitter;
