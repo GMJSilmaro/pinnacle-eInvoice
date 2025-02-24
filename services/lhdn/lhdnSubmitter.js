@@ -1,4 +1,4 @@
-const { 
+const {
   getCertificatesHashedParams,
   validateCustomerTin,
   submitDocument
@@ -40,8 +40,8 @@ class LHDNSubmitter {
       let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
 
       // Set base URL based on environment
-      this.baseUrl = settings.environment === 'production' 
-        ? settings.productionUrl || settings.middlewareUrl 
+      this.baseUrl = settings.environment === 'production'
+        ? settings.productionUrl || settings.middlewareUrl
         : settings.sandboxUrl || settings.middlewareUrl;
 
       if (!this.baseUrl) {
@@ -81,7 +81,7 @@ class LHDNSubmitter {
   async validateCustomerTaxInfo(tin, idType, idValue) {
     try {
       const token = this.req.session.accessToken;
-      console.log("Using Login Authentication Token",token);
+      console.log("Using Login Authentication Token", token);
       const result = await validateCustomerTin(tin, idType, idValue, token);
       return result;
     } catch (error) {
@@ -96,8 +96,8 @@ class LHDNSubmitter {
   async prepareDocumentForSubmission(lhdnJson, version) {
     try {
       console.log('Preparing document for submission with version:', version);
-      
-      const invoiceNumber = lhdnJson?.Invoice?.[0]?.ID?.[0]?._; 
+
+      const invoiceNumber = lhdnJson?.Invoice?.[0]?.ID?.[0]?._;
       if (!invoiceNumber) {
         throw new Error('Invoice number not found in the document');
       }
@@ -110,7 +110,7 @@ class LHDNSubmitter {
       // Different handling for v1.0 and v1.1
       if (version === '1.1') {
         console.log('Processing as v1.1 document with digital signature');
-        const { certificateJsonPortion_Signature, certificateJsonPortion_UBLExtensions } = 
+        const { certificateJsonPortion_Signature, certificateJsonPortion_UBLExtensions } =
           getCertificatesHashedParams(lhdnJson);
 
         lhdnJson.Invoice[0].Signature = certificateJsonPortion_Signature;
@@ -123,7 +123,7 @@ class LHDNSubmitter {
           delete lhdnJson.Invoice[0].Signature;
         }
       }
-  
+
       // Create payload
       const payload = {
         "documents": [
@@ -159,7 +159,7 @@ class LHDNSubmitter {
     try {
       const preparedXMLData = xmlData.replace(/<\?xml.*?\?>/, '').trim();
       console.log('Preparing document for submission with version:', version);
-      
+
       // Parse XML data for validation and extraction
       const parsedXml = await parseStringPromise(preparedXMLData, { explicitArray: false });
       const currentDate = new Date();
@@ -173,7 +173,7 @@ class LHDNSubmitter {
 
       // Update the XML string directly using regex replacements
       let updatedXMLData = preparedXMLData;
-      
+
       // Update IssueDate
       updatedXMLData = updatedXMLData.replace(
         /<cbc:IssueDate>[^<]+<\/cbc:IssueDate>/,
@@ -337,11 +337,11 @@ class LHDNSubmitter {
       // Format the date consistently
       const formattedDate = moment(date).format('YYYY-MM-DD');
       console.log('Formatted date:', formattedDate);
-      
+
       // Construct the full path
       const filePath = path.join(networkPath, type, company, formattedDate, fileName);
       console.log('Constructed file path:', filePath);
-      
+
       // Verify the file exists
       if (!fs.existsSync(filePath)) {
         console.error(`File not found at path: ${filePath}`);
@@ -409,7 +409,7 @@ class LHDNSubmitter {
       };
 
       await WP_OUTBOUND_STATUS.upsert(submissionData, { transaction });
-      
+
       await this.logOperation(`Status Updated to ${data.status} for invoice ${data.invoice_number}`, {
         action: 'STATUS_UPDATE',
         status: data.status
@@ -423,78 +423,157 @@ class LHDNSubmitter {
 
   async updateExcelWithResponse(fileName, type, company, date, uuid, invoice_number) {
     try {
-        // Get network path from config
-        const config = await getActiveSAPConfig();
-        if (!config.success) {
-            throw new Error('Failed to get SAP configuration');
+      console.log('=== updateExcelWithResponse Start ===');
+      console.log('Input Parameters:', { fileName, type, company, date, uuid, invoice_number });
+
+      // Get network path from config
+      const config = await getActiveSAPConfig();
+      console.log('SAP Config:', config);
+
+      if (!config.success) {
+        throw new Error('Failed to get SAP configuration');
+      }
+
+      // Format date properly for folder structure
+      const formattedDate = moment(date).format('YYYY-MM-DD');
+
+      // Construct base paths for outgoing files
+      const outgoingBasePath = path.join('C:\\SFTPRoot\\MindValley\\Outgoing', type, company, formattedDate);
+      const outgoingFilePath = path.join(outgoingBasePath, fileName);
+
+      // Generate JSON file in the same folder as Excel
+      const baseFileName = fileName.replace('.xls', '');
+      const jsonFileName = `${baseFileName}.json`;
+      const jsonFilePath = path.join(outgoingBasePath, jsonFileName);
+
+      console.log('File Paths:', {
+        outgoingBasePath,
+        outgoingFilePath,
+        jsonFilePath
+      });
+
+      // Create directory structure recursively
+      await fsPromises.mkdir(outgoingBasePath, { recursive: true });
+
+      // Construct incoming file path
+      const incomingPath = path.join(config.networkPath, type, company, formattedDate, fileName);
+
+      console.log('File Paths:', {
+        incomingPath,
+        outgoingFilePath
+      });
+
+      // Read source Excel file
+      const workbook = XLSX.readFile(incomingPath);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+      // Find header row and update UUID and invoice_number
+      const range = XLSX.utils.decode_range(worksheet['!ref']);
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        const typeCell = XLSX.utils.encode_cell({ r: R, c: 0 });
+        if (worksheet[typeCell] && worksheet[typeCell].v === 'H') {
+          const uuidCell = XLSX.utils.encode_cell({ r: R, c: 2 });
+          worksheet[uuidCell] = { t: 's', v: uuid };
+          const invoiceCell = XLSX.utils.encode_cell({ r: R, c: 3 });
+          worksheet[invoiceCell] = { t: 's', v: invoice_number };
+          break;
         }
+      }
 
-        // Format date properly for folder structure
-        const formattedDate = moment(date).format('YYYY-MM-DD');
+      // Write updated Excel file
+      XLSX.writeFile(workbook, outgoingFilePath);
 
-        // Construct base paths
-        const outgoingRoot = 'C:\\SFTPRoot\\MindValley\\Outgoing';
-        const outgoingTypeDir = path.join(outgoingRoot, type);
-        const outgoingCompanyDir = path.join(outgoingTypeDir, company);
-        const outgoingDateDir = path.join(outgoingCompanyDir, formattedDate);
+      // Get processed data
+      const processedData = await this.getProcessedData(fileName, type, company, date);
+      console.log('Processed Data:', processedData);
 
-        // Create directory structure recursively
-        await fsPromises.mkdir(outgoingRoot, { recursive: true });
-        await fsPromises.mkdir(outgoingTypeDir, { recursive: true });
-        await fsPromises.mkdir(outgoingCompanyDir, { recursive: true });
-        await fsPromises.mkdir(outgoingDateDir, { recursive: true });
+      // Get config for version
+      const lhdnConfig = await require('../../models').WP_CONFIGURATION.findOne({
+        where: {
+          Type: 'LHDN',
+          IsActive: 1
+        },
+        raw: true
+      });
 
-        // Construct file paths
-        const incomingPath = path.join(config.networkPath, type, company, formattedDate, fileName);
-        const outgoingFilePath = path.join(outgoingDateDir, fileName);
+      const lhdnSettings = lhdnConfig?.Settings ?
+        (typeof lhdnConfig.Settings === 'string' ?
+          JSON.parse(lhdnConfig.Settings) :
+          lhdnConfig.Settings) : {};
 
-        // Read source Excel file
-        const workbook = XLSX.readFile(incomingPath);
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-
-        // Find header row (type "H") and update UUID and invoice_number
-        const range = XLSX.utils.decode_range(worksheet['!ref']);
-        for (let R = range.s.r; R <= range.e.r; ++R) {
-            const typeCell = XLSX.utils.encode_cell({r: R, c: 0}); // First column
-            if (worksheet[typeCell] && worksheet[typeCell].v === 'H') {
-                // Update UUID in _1 column
-                const uuidCell = XLSX.utils.encode_cell({r: R, c: 2}); // _1 column
-                worksheet[uuidCell] = { t: 's', v: uuid };
-
-                // Update invoice_number in _2 column
-                const invoiceCell = XLSX.utils.encode_cell({r: R, c: 3}); // _2 column
-                worksheet[invoiceCell] = { t: 's', v: invoice_number };
-                break;
+      // Create JSON content with actual data
+      const jsonContent = {
+        "steps": [
+          {
+            "timestamp": new Date().toISOString(),
+            "step": "Starting LHDN mapping",
+            "data": {
+              "version": processedData.version || processedData.header?.version || "1.0",
+              "documentId": invoice_number
             }
-        }
+          },
+          {
+            "timestamp": new Date().toISOString(),
+            "step": "Input Document Structure",
+            "data": {
+              "header": {
+                "invoiceNo": invoice_number,
+                "invoiceType": processedData.invoiceType || processedData.header?.invoiceType,
+                "documentReference": {
+                  "uuid": uuid,
+                  "internalId": invoice_number,
+                  "billingReference": processedData.billingReference || processedData.header?.billingReference || "NA",
+                  "billingReferenceType": processedData.billingReferenceType || processedData.header?.billingReferenceType || "NA"
+                },
+                "issueDate": [{ "_": date }],
+                "issueTime": [{ "_": new Date().toISOString().split('T')[1].split('.')[0] + 'Z' }],
+                "currency": processedData.currency || processedData.header?.currency || "MYR",
+                "invoicePeriod": {
+                  "startDate": processedData.periodStart || processedData.header?.periodStart || "",
+                  "endDate": processedData.periodEnd || processedData.header?.periodEnd || "",
+                  "description": processedData.periodDescription || processedData.header?.periodDescription || "Not Applicable"
+                }
+              },
+              "parties": processedData.parties,
+              "itemsCount": processedData.items?.length || 1,
+              "summary": {
+                "amounts": processedData.amounts,
+                "taxTotal": processedData.taxTotal
+              }
+            }
+          },
+          {
+            "timestamp": new Date().toISOString(),
+            "step": "Mapping Complete",
+            "data": {
+              "documentId": invoice_number,
+              "version": processedData.version || processedData.header?.version || "1.0",
+              "hasSignature": Boolean(processedData.requireSignature),
+              "uuid": uuid
+            }
+          }
+        ]
+      };
+      // Write JSON file
+      await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
 
-        // Write updated file to outgoing location
-        XLSX.writeFile(workbook, outgoingFilePath);
+      const response = {
+        success: true,
+        outgoingPath: outgoingFilePath,
+        jsonPath: jsonFilePath
+      };
 
-        await this.logOperation(`Generate Response Excel file with UUID and invoice number: ${outgoingFilePath}`, {
-            action: 'UPDATE_EXCEL'
-        });
-
-        return {
-            success: true,
-            outgoingPath: outgoingFilePath
-        };
+      console.log('=== updateExcelWithResponse Response ===', response);
+      return response;
 
     } catch (error) {
-        console.error('Error updating Excel file:', error);
-        await this.logOperation(`Error updating Excel file: ${error.message}`, {
-            action: 'UPDATE_EXCEL',
-            status: 'FAILED',
-            logType: 'ERROR'
-        });
-        
-        return {
-            success: false,
-            error: error.message
-        };
+      console.error('=== updateExcelWithResponse Error ===', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
-}
-
+  }
 
 }
 

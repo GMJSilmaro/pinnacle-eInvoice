@@ -903,6 +903,11 @@ async function processFile(file, dateDir, date, company, type, files, processLog
 router.post('/:fileName/submit-to-lhdn', async (req, res) => {
     try {
         console.log('=== Manual LHDN Submission Start ===');
+        console.log('Request Parameters:', {
+            fileName: req.params.fileName,
+            body: req.body
+        });
+
         const { fileName } = req.params;
         const { type, company, date, version } = req.body;
 
@@ -1021,6 +1026,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
+                console.log('Accepted Document:', acceptedDoc);
                 
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
@@ -1033,37 +1039,50 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 });
             
                 // Then update the Excel file with UUID and submissionUid
+                console.log('Calling updateExcelWithResponse with:', {
+                    fileName,
+                    type,
+                    company,
+                    date,
+                    uuid: acceptedDoc.uuid,
+                    invoice_number
+                });
+
                 const excelUpdateResult = await submitter.updateExcelWithResponse(
                     fileName,
                     type,
                     company,
                     date,
                     acceptedDoc.uuid,
-                    invoice_number  // Changed from result.data.submissionUid
+                    invoice_number
                 );
-            
+                
+                console.log('Excel Update Result:', excelUpdateResult);
+
                 if (!excelUpdateResult.success) {
                     console.error('Failed to update Excel file:', excelUpdateResult.error);
-                    await submitter.logOperation(`Failed to update response file: ${excelUpdateResult.error}`, {
-                        action: 'UPDATE_EXCEL',
-                        status: 'FAILED',
-                        logType: 'WARNING'
-                    });
+                    // ... rest of error handling ...
                 }
             
-                return res.json({
+                const response = {
                     success: true,
                     submissionUID: result.data.submissionUid,
                     acceptedDocuments: result.data.acceptedDocuments,
                     docNum: invoice_number,
-                    excelUpdate: {
+                    fileUpdates: {
                         success: excelUpdateResult.success,
                         ...(excelUpdateResult.success ? 
-                            { path: excelUpdateResult.outgoingPath } : 
+                            { 
+                                excelPath: excelUpdateResult.outgoingPath,
+                                jsonPath: excelUpdateResult.jsonPath 
+                            } : 
                             { error: excelUpdateResult.error }
                         )
                     }
-                });
+                };
+
+                console.log('=== Final Response ===', response);
+                return res.json(response);
             }
 
             // Handle rejected documents
@@ -1094,7 +1113,10 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
         }
 
     } catch (error) {
-        console.error('Error in submit-to-lhdn endpoint:', error);
+        console.error('=== Submit to LHDN Error ===', {
+            error: error.message,
+            stack: error.stack
+        });
 
         // Update status if possible
         if (error.invoice_number) {
@@ -1288,133 +1310,10 @@ router.post('/:uuid/cancel', async (req, res) => {
     }
 });
 
-// Add the file content endpoint
-// router.post('/:fileName/content', async (req, res) => {
-//     try {
-//         const { fileName } = req.params;
-//         const { type, company, date } = req.body;
-        
-//         // Log request details
-//       //  console.log('\n=== File Content Request ===');
-//         //console.log('Parameters:', { fileName, type, company, date });
-
-//         // 1. Get and validate SAP configuration
-//         const config = await getActiveSAPConfig();
-  
-//         if (!config.success || !config.networkPath) {
-//             throw new Error('Invalid SAP configuration: ' + (config.error || 'No network path configured'));
-//         }
-
-//         // 2. Validate network path
-//         const networkValid = await testNetworkPathAccessibility(config.networkPath, {
-//             serverName: config.domain || '',
-//             serverUsername: config.username,
-//             serverPassword: config.password
-//         });
-//        // console.log('\nNetwork Path Validation:', networkValid);
-
-//         if (!networkValid.success) {
-//             throw new Error(`Network path not accessible: ${networkValid.error}`);
-//         }
-
-//         // 3. Construct and validate file path
-//         const formattedDate = moment(date).format('YYYY-MM-DD');
-//         const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
-       
-
-//         // 4. Check if directories exist
-//         const typeDir = path.join(config.networkPath, type);
-//         const companyDir = path.join(typeDir, company);
-//         const dateDir = path.join(companyDir, formattedDate);
-
-//         // Ensure directories exist
-//         await ensureDirectoryExists(typeDir);
-//         await ensureDirectoryExists(companyDir);
-//         await ensureDirectoryExists(dateDir);
-
-        
-
-//         // 5. Check if file exists
-//         const fileExists = fs.existsSync(filePath);
-
-//         if (!fileExists) {
-//             console.error('\nFile Not Found:', {
-//                 fileName,
-//                 path: filePath,
-//                 type,
-//                 company,
-//                 date: formattedDate
-//             });
-//             return res.status(404).json({
-//                 success: false,
-//                 error: {
-//                     code: 'FILE_NOT_FOUND',
-//                     message: `File not found: ${fileName}`,
-//                     details: {
-//                         path: filePath,
-//                         type,
-//                         company,
-//                         date: formattedDate,
-//                         directories: {
-//                             typeDir: fs.existsSync(typeDir),
-//                             companyDir: fs.existsSync(companyDir),
-//                             dateDir: fs.existsSync(dateDir)
-//                         }
-//                     }
-//                 }
-//             });
-//         }
-
-//         // 6. Read Excel file
-//         //console.log('\nReading Excel file...');
-//         let workbook;
-//         try {
-//             workbook = XLSX.readFile(filePath);
-//             //console.log('Excel file read successfully');
-//         } catch (readError) {
-//             console.error('Error reading Excel file:', readError);
-//             throw new Error(`Failed to read Excel file: ${readError.message}`);
-//         }
-
-//         // 7. Process Excel data
-//         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-//         const data = XLSX.utils.sheet_to_json(worksheet, {
-//             raw: true,
-//             defval: null,
-//             blankrows: false
-//         });
-
-//         // 8. Process the data
-//         const processedData = processExcelData(data);
-//         //console.log('\nExcel data processed successfully');
-
-//         res.json({
-//             success: true,
-//             content: processedData
-//         });
-
-//     } catch (error) {
-//         console.error('\nError in file content endpoint:', error);
-//         res.status(500).json({
-//             success: false,
-//             error: {
-//                 code: 'READ_ERROR',
-//                 message: 'Failed to read file content',
-//                 details: error.message,
-//                 stack: error.stack
-//             }
-//         });
-//     }
-// });
-
 router.post('/:fileName/content', async (req, res) => {
     try {
         const { fileName } = req.params;
         const { type, company, date, uuid, submissionUid } = req.body;
-        
-        // Log request details
-        // console.log('\n=== File Content Request ===');
-        // console.log('Parameters:', { fileName, type, company, date });
 
         // 1. Get and validate SAP configuration
         const config = await getActiveSAPConfig();
