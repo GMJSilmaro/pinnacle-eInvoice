@@ -665,27 +665,27 @@ function isValidFileFormat(fileName) {
         const match = baseName.match(pattern);
         
         if (!match) {
-            console.log(`Invalid file name format: ${fileName}`);
-            console.log('File name must follow this pattern:');
-            console.log('XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS');
-            console.log('Examples:');
-            console.log('- 01_ARINV118965_eInvoice_20250127102244 (Main format)');
-            console.log('- 01_IN-LABS-010001_eInvoice_20250128183637 (Alternative format)');
-            console.log('Where:');
-            console.log('- XX: Document type');
-            console.log('Standard Documents:');
-            console.log('  * 01: Invoice');
-            console.log('  * 02: Credit Note');
-            console.log('  * 03: Debit Note');
-            console.log('  * 04: Refund Note');
-            console.log('Self-billed Documents:');
-            console.log('  * 11: Self-billed Invoice');
-            console.log('  * 12: Self-billed Credit Note');
-            console.log('  * 13: Self-billed Debit Note');
-            console.log('  * 14: Self-billed Refund Note');
-            console.log('- InvoiceNumber: Document number (alphanumeric with optional hyphens)');
-            console.log('- eInvoice: Fixed text');
-            console.log('- YYYYMMDDHHMMSS: Timestamp');
+            // console.log(`Invalid file name format: ${fileName}`);
+            // console.log('File name must follow this pattern:');
+            // console.log('XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS');
+            // console.log('Examples:');
+            // console.log('- 01_ARINV118965_eInvoice_20250127102244 (Main format)');
+            // console.log('- 01_IN-LABS-010001_eInvoice_20250128183637 (Alternative format)');
+            // console.log('Where:');
+            // console.log('- XX: Document type');
+            // console.log('Standard Documents:');
+            // console.log('  * 01: Invoice');
+            // console.log('  * 02: Credit Note');
+            // console.log('  * 03: Debit Note');
+            // console.log('  * 04: Refund Note');
+            // console.log('Self-billed Documents:');
+            // console.log('  * 11: Self-billed Invoice');
+            // console.log('  * 12: Self-billed Credit Note');
+            // console.log('  * 13: Self-billed Debit Note');
+            // console.log('  * 14: Self-billed Refund Note');
+            // console.log('- InvoiceNumber: Document number (alphanumeric with optional hyphens)');
+            // console.log('- eInvoice: Fixed text');
+            // console.log('- YYYYMMDDHHMMSS: Timestamp');
             return false;
         }
         
@@ -705,21 +705,21 @@ function isValidFileFormat(fileName) {
         };
 
         if (!docTypes[docType]) {
-            console.log(`Invalid document type: ${docType}`);
-            console.log('Valid document types:');
+            //console.log(`Invalid document type: ${docType}`);
+          //  console.log('Valid document types:');
             Object.entries(docTypes).forEach(([code, type]) => {
-                console.log(`- ${code}: ${type}`);
+              //  console.log(`- ${code}: ${type}`);
             });
             return false;
         }
         
         // Additional validation for invoice number format
         if (!/^[A-Z0-9][A-Z0-9-]*[A-Z0-9]$/.test(invoiceNumber)) {
-            console.log(`Invalid invoice number format: ${invoiceNumber}`);
-            console.log('Invoice number must:');
-            console.log('- Start and end with alphanumeric characters');
-            console.log('- Contain only uppercase letters, numbers, and hyphens');
-            console.log('- Have at least 2 characters');
+            // console.log(`Invalid invoice number format: ${invoiceNumber}`);
+            // console.log('Invoice number must:');
+            // console.log('- Start and end with alphanumeric characters');
+            // console.log('- Contain only uppercase letters, numbers, and hyphens');
+            // console.log('- Have at least 2 characters');
             return false;
         }
         
@@ -742,8 +742,8 @@ function isValidFileFormat(fileName) {
             date.getSeconds() !== second ||
             year < 2000 || year > 2100
         ) {
-            console.log(`Invalid timestamp: ${timestamp}`);
-            console.log('Timestamp must be a valid date/time in format: YYYYMMDDHHMMSS');
+           // console.log(`Invalid timestamp: ${timestamp}`);
+           // console.log('Timestamp must be a valid date/time in format: YYYYMMDDHHMMSS');
             return false;
         }
         
@@ -852,12 +852,12 @@ async function processFile(file, dateDir, date, company, type, files, processLog
         const buyerInfo = extractBuyerInfo(excelData.dataWithHeaders);
         const dates = extractDates(excelData.dataAsObjects);
 
-        console.log('Current Dates:', dates);
+        //console.log('Current Dates:', dates);
         const issueDate = dates.issueDate;
         const issueTime = dates.issueTime;
 
-        console.log('Issue Date:', issueDate);
-        console.log('Issue Time:', issueTime);
+        //console.log('Issue Date:', issueDate);
+       // console.log('Issue Time:', issueTime);
       
         files.push({
             type,
@@ -902,11 +902,6 @@ async function processFile(file, dateDir, date, company, type, files, processLog
  */
 router.post('/:fileName/submit-to-lhdn', async (req, res) => {
     try {
-        console.log('=== Manual LHDN Submission Start ===');
-        console.log('Request Parameters:', {
-            fileName: req.params.fileName,
-            body: req.body
-        });
 
         const { fileName } = req.params;
         const { type, company, date, version } = req.body;
@@ -1023,11 +1018,19 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     });
                 }
             }
-
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
                 console.log('Accepted Document:', acceptedDoc);
-                
+                console.log('Full LHDN Response:', result.data);
+            
+                const submissionDetails = await submitter.getSubmissionDetails(
+                    result.data.submissionUid, 
+                    req.session.accessToken
+                );
+
+                const longId = submissionDetails.success && submissionDetails.longId ? 
+    submissionDetails.longId : 
+    'NA'; 
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
                     invoice_number,
@@ -1038,26 +1041,14 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     status: 'Submitted'
                 });
             
-                // Then update the Excel file with UUID and submissionUid
-                console.log('Calling updateExcelWithResponse with:', {
-                    fileName,
-                    type,
-                    company,
-                    date,
-                    uuid: acceptedDoc.uuid,
-                    longId: acceptedDoc.longId,
-                    submissionUid: result.data.submissionUid,
-                    invoice_number
-                });
-
+                // Then update the Excel file
                 const excelUpdateResult = await submitter.updateExcelWithResponse(
                     fileName,
                     type,
                     company,
                     date,
                     acceptedDoc.uuid,
-                    acceptedDoc.longId,
-                    result.data.submissionUid,
+                    longId,  // This should now be either the real longId or 'NA'
                     invoice_number
                 );
                 
@@ -1078,6 +1069,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 const response = {
                     success: true,
                     submissionUID: result.data.submissionUid,
+                    longId: longId, 
                     acceptedDocuments: result.data.acceptedDocuments,
                     docNum: invoice_number,
                     fileUpdates: {
@@ -1460,6 +1452,87 @@ router.post('/:fileName/content', async (req, res) => {
                 message: 'Failed to read file content',
                 details: error.message,
                 stack: error.stack
+            }
+        });
+    }
+});
+
+// Add this new route after existing routes
+
+/**
+ * Get submission details and update longId
+ */
+router.get('/submission/:submissionUid', async (req, res) => {
+    try {
+        const { submissionUid } = req.params;
+        
+        // Basic auth check
+        if (!req.session?.accessToken) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'AUTH_ERROR',
+                    message: 'Not authenticated'
+                }
+            });
+        }
+
+        const token = req.session.accessToken;
+        
+        // Call LHDN API to get submission details
+        const response = await axios.get(
+            `https://preprod-api.myinvois.hasil.gov.my/api/v1.0/documentsubmissions/${submissionUid}?pageNo=1&pageSize=10`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        const submissionData = response.data;
+        
+        // Extract longId from the response
+        if (submissionData?.documents?.length > 0) {
+            const document = submissionData.documents[0];
+            const longId = document.longId;
+
+            // Update the database with the longId
+            await WP_OUTBOUND_STATUS.update(
+                { longId },
+                { 
+                    where: { 
+                        submissionUid,
+                        status: 'Submitted'
+                    }
+                }
+            );
+
+            return res.json({
+                success: true,
+                submissionUid,
+                longId,
+                status: submissionData.status,
+                documents: submissionData.documents
+            });
+        }
+
+        return res.json({
+            success: false,
+            error: {
+                code: 'NO_DOCUMENTS',
+                message: 'No documents found in submission'
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting submission details:', error);
+        return res.status(500).json({
+            success: false,
+            error: {
+                code: 'SUBMISSION_DETAILS_ERROR',
+                message: 'Failed to get submission details',
+                details: error.message
             }
         });
     }

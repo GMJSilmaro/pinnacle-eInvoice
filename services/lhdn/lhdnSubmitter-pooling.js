@@ -16,39 +16,42 @@ const { processExcelData } = require('./processExcelData');
 const { parseStringPromise } = require('xml2js');
 
 async function getLHDNConfig() {
-    const config = await WP_CONFIGURATION.findOne({
-        where: {
-            Type: 'LHDN',
-            IsActive: 1
-        },
-        order: [['CreateTS', 'DESC']]
-    });
+  const config = await WP_CONFIGURATION.findOne({
+      where: {
+          Type: 'LHDN',
+          IsActive: 1
+      },
+      order: [['CreateTS', 'DESC']]
+  });
 
-    if (!config || !config.Settings) {
-        throw new Error('LHDN configuration not found');
-    }
+  if (!config || !config.Settings) {
+      throw new Error('LHDN configuration not found');
+  }
 
-    let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
-    
-    const baseUrl = settings.environment === 'production' 
-        ? settings.productionUrl || settings.middlewareUrl 
-        : settings.sandboxUrl || settings.middlewareUrl;
+  let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
+  
+  const baseUrl = settings.environment === 'production' 
+      ? settings.productionUrl || settings.middlewareUrl 
+      : settings.sandboxUrl || settings.middlewareUrl;
 
-    if (!baseUrl) {
-        throw new Error('LHDN API URL not configured');
-    }
+  if (!baseUrl) {
+      throw new Error('LHDN API URL not configured');
+  }
 
-    return {
-        baseUrl,
-        environment: settings.environment,
-        timeout: parseInt(settings.timeout) || 60000,
-        retryEnabled: settings.retryEnabled !== false,
-        maxRetries: settings.maxRetries || 3,
-        retryDelay: settings.retryDelay || 3000,
-        maxRetryDelay: settings.maxRetryDelay || 60000
-    };
+  return {
+      baseUrl,
+      environment: settings.environment,
+      timeout: Math.min(Math.max(parseInt(settings.timeout) || 60000, 30000), 300000),
+      retryEnabled: settings.retryEnabled !== false,
+      maxRetries: settings.maxRetries || 10, // Increased for polling
+      retryDelay: settings.retryDelay || 3000, // 3 seconds base delay
+      maxRetryDelay: settings.maxRetryDelay || 5000, // 5 seconds max delay
+      rateLimit: {
+          submissionRequests: settings.rateLimit?.submissionRequests || 300, // RPM
+          minInterval: settings.rateLimit?.minInterval || 200 // ms between requests
+      }
+  };
 }
-
 class LHDNSubmitter {
   constructor(req) {
     this.req = req;
@@ -453,69 +456,111 @@ class LHDNSubmitter {
     }
   }
 
-  async getSubmissionDetails(submissionUid, accessToken) {
+async getSubmissionDetails(submissionUid, accessToken) {
     try {
-        // Get config first
         const lhdnConfig = await getLHDNConfig();
         
-        // Add delay before calling the API (5 seconds)
+        // Initial delay before first poll (5 seconds)
         await new Promise(resolve => setTimeout(resolve, 5000));
     
-        // Make multiple attempts
         let attempts = lhdnConfig.maxRetries;
-        let response;
+        let lastError;
         
+        // Polling loop with exponential backoff
         while (attempts > 0) {
             try {
                 const url = `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`;
-                console.log('Calling API:', url);
+                console.log(`[Polling] Attempt ${lhdnConfig.maxRetries - attempts + 1}:`, url);
                 
-                response = await axios.get(url, {
-                    params: {
-                        pageNo: 1
-                    },
+                const response = await axios.get(url, {
+                    params: { pageNo: 1, pageSize: 10 },
                     headers: {
                         'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json'
                     },
                     timeout: lhdnConfig.timeout
                 });
-                break; // If successful, exit the loop
+
+                // Process successful response
+                if (response.status === 200 && response.data) {
+                    const status = response.data.overallStatus;
+                    console.log('[Polling] Current status:', status);
+
+                    // Check if processing is complete
+                    if (status === 'valid' || status === 'invalid' || status === 'partially valid') {
+                        const documentSummary = response.data.documentSummary?.[0];
+                        const longId = documentSummary?.longId;
+
+                        if (!longId) {
+                            throw new Error('LongId not found in completed submission');
+                        }
+
+                        return {
+                            success: true,
+                            data: response.data,
+                            status: status,
+                            documentCount: response.data.documentCount,
+                            longId: longId,
+                            documentDetails: documentSummary
+                        };
+                    }
+
+                    // Still in progress, wait before next attempt
+                    if (status === 'in progress') {
+                        attempts--;
+                        if (attempts === 0) {
+                            throw new Error('Maximum polling attempts reached');
+                        }
+
+                        // Calculate exponential backoff delay (3-5 seconds as per docs)
+                        const backoffDelay = Math.min(
+                            5000, // max 5 seconds
+                            3000 * Math.pow(1.5, lhdnConfig.maxRetries - attempts) // exponential increase
+                        );
+
+                        console.log(`[Polling] Status in progress, waiting ${backoffDelay}ms before next attempt...`);
+                        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                        continue;
+                    }
+                }
+
+                throw new Error(`Invalid response status: ${response.status}`);
+
             } catch (error) {
-                console.log(`Attempt ${lhdnConfig.maxRetries - attempts + 1} failed:`, error.message);
+                lastError = error;
+                
+                // Handle rate limiting (429)
+                if (error.response?.status === 429) {
+                    const retryAfter = error.response.headers['retry-after'] || 60;
+                    console.log(`[Polling] Rate limited, waiting ${retryAfter}s before retry...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    continue;
+                }
+
                 attempts--;
-                if (attempts === 0) throw error;
-                // Wait based on config retryDelay
-                await new Promise(resolve => setTimeout(resolve, lhdnConfig.retryDelay));
+                if (attempts === 0) break;
+
+                // Standard backoff for other errors
+                const backoffDelay = Math.min(
+                    lhdnConfig.maxRetryDelay,
+                    lhdnConfig.retryDelay * Math.pow(2, lhdnConfig.maxRetries - attempts)
+                );
+                console.log(`[Polling] Error occurred, waiting ${backoffDelay}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, backoffDelay));
             }
         }
     
-        console.log('Raw submission details:', response.data);
+        throw lastError || new Error('Failed to get submission details after all retries');
         
-     
-        const documentSummary = response.data?.documentSummary?.[0];
-        const longId = documentSummary?.longId || 'NA';
-    
-        console.log('Document Summary:', documentSummary);
-        console.log('Extracted longId:', longId);
-        
-        return {
-            success: true,
-            data: response.data,
-            status: response.data?.overallStatus,
-            documentCount: response.data?.documentCount,
-            longId: longId,
-            documentDetails: documentSummary
-        };
     } catch (error) {
-        console.error('Error getting submission details:', error);
+        console.error('[Polling] Error getting submission details:', error);
         return {
             success: false,
             error: error.message,
             longId: 'NA'
         };
     }
-  }
+}
   
   async updateExcelWithResponse(fileName, type, company, date, uuid, longId, invoice_number) {
     try {
