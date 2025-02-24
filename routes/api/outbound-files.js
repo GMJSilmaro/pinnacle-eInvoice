@@ -1045,6 +1045,8 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     company,
                     date,
                     uuid: acceptedDoc.uuid,
+                    longId: acceptedDoc.longId,
+                    submissionUid: result.data.submissionUid,
                     invoice_number
                 });
 
@@ -1054,6 +1056,8 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     company,
                     date,
                     acceptedDoc.uuid,
+                    acceptedDoc.longId,
+                    result.data.submissionUid,
                     invoice_number
                 );
                 
@@ -1061,7 +1065,14 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
                 if (!excelUpdateResult.success) {
                     console.error('Failed to update Excel file:', excelUpdateResult.error);
-                    // ... rest of error handling ...
+                    return res.status(500).json({
+                        success: false,
+                        error: {
+                            code: 'EXCEL_UPDATE_ERROR',
+                            message: 'Failed to update Excel file',
+                            details: excelUpdateResult.error
+                        }
+                    });
                 }
             
                 const response = {

@@ -421,10 +421,10 @@ class LHDNSubmitter {
     }
   }
 
-  async updateExcelWithResponse(fileName, type, company, date, uuid, invoice_number) {
+  async updateExcelWithResponse(fileName, type, company, date, uuid, longId, invoice_number) {
     try {
       console.log('=== updateExcelWithResponse Start ===');
-      console.log('Input Parameters:', { fileName, type, company, date, uuid, invoice_number });
+      console.log('Input Parameters:', { fileName, type, company, date, uuid, longId, invoice_number });
 
       // Get network path from config
       const config = await getActiveSAPConfig();
@@ -501,58 +501,14 @@ class LHDNSubmitter {
           JSON.parse(lhdnConfig.Settings) :
           lhdnConfig.Settings) : {};
 
-      // Create JSON content with actual data
+      // Create JSON content with simplified structure
       const jsonContent = {
-        "steps": [
-          {
-            "timestamp": new Date().toISOString(),
-            "step": "Starting LHDN mapping",
-            "data": {
-              "version": processedData.version || processedData.header?.version || "1.0",
-              "documentId": invoice_number
-            }
-          },
-          {
-            "timestamp": new Date().toISOString(),
-            "step": "Input Document Structure",
-            "data": {
-              "header": {
-                "invoiceNo": invoice_number,
-                "invoiceType": processedData.invoiceType || processedData.header?.invoiceType,
-                "documentReference": {
-                  "uuid": uuid,
-                  "internalId": invoice_number,
-                  "billingReference": processedData.billingReference || processedData.header?.billingReference || "NA",
-                  "billingReferenceType": processedData.billingReferenceType || processedData.header?.billingReferenceType || "NA"
-                },
-                "issueDate": [{ "_": date }],
-                "issueTime": [{ "_": new Date().toISOString().split('T')[1].split('.')[0] + 'Z' }],
-                "currency": processedData.currency || processedData.header?.currency || "MYR",
-                "invoicePeriod": {
-                  "startDate": processedData.periodStart || processedData.header?.periodStart || "",
-                  "endDate": processedData.periodEnd || processedData.header?.periodEnd || "",
-                  "description": processedData.periodDescription || processedData.header?.periodDescription || "Not Applicable"
-                }
-              },
-              "parties": processedData.parties,
-              "itemsCount": processedData.items?.length || 1,
-              "summary": {
-                "amounts": processedData.amounts,
-                "taxTotal": processedData.taxTotal
-              }
-            }
-          },
-          {
-            "timestamp": new Date().toISOString(),
-            "step": "Mapping Complete",
-            "data": {
-              "documentId": invoice_number,
-              "version": processedData.version || processedData.header?.version || "1.0",
-              "hasSignature": Boolean(processedData.requireSignature),
-              "uuid": uuid
-            }
-          }
-        ]
+        "issueDate": moment(date).format('YYYY-MM-DD'),
+        "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
+        "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
+        "invoiceNo": invoice_number,
+        "uuid": uuid,
+        "longID": longId // You can modify this if you have a different longID source
       };
       // Write JSON file
       await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));

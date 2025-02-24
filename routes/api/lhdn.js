@@ -11,6 +11,7 @@ const { createCanvas, loadImage } = require('canvas');
 const xml2js = require('xml2js');
 const { logger, apiLogger, versionLogger } = require('../../utils/logger');
 const { getUnitType } = require('../../utils/UOM');
+const axiosRetry = require('axios-retry');
 
 // Initialize cache with 5 minutes standard TTL
 const cache = new NodeCache({ stdTTL: 300 }); // 5 minutes in seconds
@@ -44,6 +45,36 @@ const handleAuthError = (req, res) => {
         redirect: '/login'
     });
 };
+
+const rateLimit = require('express-rate-limit');
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    trustProxy: false, // Disable trust proxy
+    keyGenerator: function (req) {
+        // Use session ID or user ID if available, fallback to IP
+        return req.session?.user?.id || req.ip;
+    },
+    handler: function (req, res) {
+        return res.status(429).json({
+            success: false,
+            message: 'Too many requests. Please try again later.',
+            retryAfter: req.rateLimit.resetTime - Date.now()
+        });
+    }
+});
+
+
+axiosRetry.default(axios, { 
+    retries: 3,
+    retryDelay: axiosRetry.exponentialDelay,
+    retryCondition: (error) => {
+        return axiosRetry.isNetworkOrIdempotentRequestError(error) || 
+               error.response?.status === 429;
+    }
+});
 
 // Document retrieval limitations
 const getDocumentRetrievalLimits = () => {
@@ -316,6 +347,32 @@ const getCachedDocuments = async (req) => {
     return data;
 };
 
+const generateTemplateHash = (templateData) => {
+    const crypto = require('crypto');
+    // Create a string of key data that should trigger regeneration when changed
+    const keyData = JSON.stringify({
+        logo: templateData.CompanyLogo,
+        companyInfo: {
+            name: templateData.companyName,
+            address: templateData.companyAddress,
+            phone: templateData.companyPhone,
+            email: templateData.companyEmail
+        },
+        documentInfo: {
+            type: templateData.InvoiceType,
+            code: templateData.InvoiceCode,
+            uuid: templateData.UniqueIdentifier
+        },
+        items: templateData.items,
+        totals: {
+            subtotal: templateData.Subtotal,
+            tax: templateData.TotalTaxAmount,
+            total: templateData.TotalPayableAmount
+        }
+    });
+    return crypto.createHash('md5').update(keyData).digest('hex');
+};
+
 // Enhanced save to database function
 const saveInboundStatus = async (data) => {
     if (!data.result || !Array.isArray(data.result)) {
@@ -400,6 +457,23 @@ const saveInboundStatus = async (data) => {
     return { successCount, errorCount };
 };
 
+// Add better request logging middleware
+const requestLogger = async (req, res, next) => {
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[${requestId}] New request:`, {
+        method: req.method,
+        path: req.path,
+        params: req.params,
+        query: req.query,
+        user: req.session?.user?.id || 'anonymous'
+    });
+    req.requestId = requestId;
+    next();
+};
+
+// Apply logging middleware
+router.use(requestLogger);
+
 // Routes
 router.get('/documents/recent', async (req, res) => {
     console.log('LHDN documents/recent endpoint hit');
@@ -418,6 +492,8 @@ router.get('/documents/recent', async (req, res) => {
             
             const documents = data.result.map(doc => ({
                 uuid: doc.uuid,
+                submissionUid: doc.submissionUid,
+                longId: doc.longId,
                 internalId: doc.internalId,
                 dateTimeIssued: doc.dateTimeIssued,
                 dateTimeReceived: doc.dateTimeReceived,
@@ -563,6 +639,8 @@ router.get('/sync', async (req, res) => {
 
 // Update display-details endpoint to fetch all required data
 router.get('/documents/:uuid/display-details', async (req, res) => {
+    const lhdnConfig = await getLHDNConfig();
+
     try {
         const { uuid } = req.params;
 
@@ -580,7 +658,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
 
         // Get document details directly from LHDN API using raw endpoint
         console.log('Fetching raw document from LHDN API...');
-        const response = await axios.get(`${process.env.API_BASE_URL}/api/v1.0/documents/${uuid}/raw`, {
+        const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/raw`, {
             headers: {
                 'Authorization': `Bearer ${req.session.accessToken}`,
                 'Content-Type': 'application/json'
@@ -614,7 +692,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
 
         // Get document details directly from LHDN API using raw endpoint
         console.log('Fetching raw document from LHDN API...');
-        const detailsResponse = await axios.get(`${process.env.API_BASE_URL}/api/v1.0/documents/${uuid}/details`, {
+        const detailsResponse = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/details`, {
             headers: {
                 'Authorization': `Bearer ${req.session.accessToken}`,
                 'Content-Type': 'application/json'
@@ -830,340 +908,399 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
     }
 });
 
+// Helper function to get template data
+async function getTemplateData(uuid, accessToken, user) {
+    // Get LHDN configuration
+    const lhdnConfig = await getLHDNConfig();
+    
+    // Get raw document data
+    const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/raw`, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    // Get company data
+    const company = await WP_COMPANY_SETTINGS.findOne({
+        where: { TIN: user.TIN }
+    });
+
+    // Handle company logo
+    const logoPath = company?.CompanyImage
+        ? path.join(__dirname, '../../public', company.CompanyImage)
+        : null;
+
+    let logoBase64;
+    try {
+        const logoBuffer = await fs.readFile(logoPath);
+        const logoExt = path.extname(logoPath).substring(1);
+        logoBase64 = `data:image/${logoExt};base64,${logoBuffer.toString('base64')}`;
+    } catch (error) {
+        logoBase64 = null;
+    }
+
+    // Parse document data
+    const rawData = response.data;
+    const documentData = JSON.parse(rawData.document);
+    const invoice = documentData.Invoice[0];
+
+    const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
+    const customerParty = invoice.AccountingCustomerParty[0].Party[0];
+
+    // Generate QR code
+    const longId = rawData.longId || rawData.longID;
+    const lhdnUuid = rawData.uuid;
+    const lhdnLongId = longId;
+    const qrCodeUrl = `${lhdnConfig.baseUrl}/${lhdnUuid}/share/${longId}`;
+
+    const qrCodeDataUrl = await QRCode.toDataURL(qrCodeUrl, {
+        width: 200,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' }
+    });
+
+    // Get tax information from UBL structure
+    const taxTotal = invoice.TaxTotal?.[0];
+    const taxSubtotal = taxTotal?.TaxSubtotal?.[0];
+    const taxCategory = taxSubtotal?.TaxCategory?.[0];
+
+    // Map the tax type according to SDK documentation
+    const getTaxTypeDescription = (code) => {
+        const taxTypes = {
+            '01': 'Sales Tax',
+            '02': 'Service Tax',
+            '03': 'Tourism Tax',
+            '04': 'High-Value Goods Tax',
+            '05': 'Sales Tax on Low Value Goods',
+            '06': 'Not Applicable',
+            'E': 'Tax exemption'
+        };
+        return taxTypes[code] || code;
+    };
+
+    const idTypes = ['TIN', 'BRN', 'NRIC', 'Passport', 'Army', 'SST', 'TTX'];
+    function getIdTypeAndNumber(partyIdentification) {
+        const tinInfo = partyIdentification?.find(id => id.ID[0].schemeID === 'TIN');
+        if (!tinInfo) {
+            throw new Error('TIN is mandatory and not found.');
+        }
+
+        for (const idType of idTypes) {
+            if (idType === 'TIN') continue;
+            const idInfo = partyIdentification?.find(id => id.ID[0].schemeID === idType);
+            if (idInfo) {
+                return { type: idType, number: idInfo.ID[0]._ };
+            }
+        }
+        return { type: 'NA', number: 'NA' };
+    }
+
+    const supplierIdInfo = getIdTypeAndNumber(supplierParty.PartyIdentification, idTypes);
+    const customerIdInfo = getIdTypeAndNumber(customerParty.PartyIdentification, idTypes);
+
+    // Process tax information for each line item
+    const taxSummary = {};
+    const items = await Promise.all(invoice.InvoiceLine?.map(async (line, index) => {
+        const lineAmount = parseFloat(line.LineExtensionAmount?.[0]._ || 0);
+        const lineTax = parseFloat(line.TaxTotal?.[0]?.TaxAmount?.[0]._ || 0);
+        const quantity = parseFloat(line.InvoicedQuantity?.[0]._ || 0);
+        const unitPrice = parseFloat(line.Price?.[0]?.PriceAmount?.[0]._ || 0);
+        const discount = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
+        const unitCode = line.InvoicedQuantity?.[0]?.unitCode || 'NA';
+        const taxlineCurrency = line.TaxTotal?.[0]?.TaxAmount?.[0]?.currencyID || 'MYR';
+        const allowanceCharges = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
+    
+        // Get unit type name
+        const unitType = await getUnitType(unitCode);
+    
+        // Extract tax information for this line
+        const lineTaxCategory = line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0];
+        const taxTypeCode = lineTaxCategory?.ID?.[0]._ || '06';
+        const taxPercent = parseFloat(lineTaxCategory?.Percent?.[0]._ || 0);
+    
+        // Add to tax summary
+        const taxKey = `${taxTypeCode}_${taxPercent}`;
+        if (!taxSummary[taxKey]) {
+            taxSummary[taxKey] = {
+                taxType: taxTypeCode,
+                taxRate: taxPercent,
+                baseAmount: 0,
+                taxAmount: 0
+            };
+        }
+        taxSummary[taxKey].baseAmount += lineAmount;
+        taxSummary[taxKey].taxAmount += lineTax;
+    
+        // Format quantity with exactly 2 decimal places
+        const formattedQuantity = quantity.toLocaleString('en-MY', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+            useGrouping: false
+        });
+    
+        // Format unit price with exactly 4 decimal places
+        const formattedUnitPrice = unitPrice.toLocaleString('en-MY', {
+            minimumFractionDigits: 4,
+            maximumFractionDigits: 4,
+            useGrouping: false
+        });
+    
+        return {
+            No: index + 1,
+            Cls: line.Item?.[0]?.CommodityClassification?.[0]?.ItemClassificationCode?.[0]._ || 'NA',
+            Description: line.Item?.[0]?.Description?.[0]._ || 'NA',
+            Quantity: formattedQuantity,
+            UOM: unitType, // Display unit type name instead of code
+            UnitPrice: taxlineCurrency + ' ' + formattedUnitPrice,
+            QtyAmount: lineAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            Disc: discount === 0 ? '0.00' : discount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            Charges: allowanceCharges.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00',
+            LineTaxPercent: taxPercent.toFixed(2),
+            LineTaxAmount: taxlineCurrency + ' ' + lineTax.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            Total: taxlineCurrency + ' ' + (lineAmount + lineTax).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            TaxType: getTaxTypeDescription(taxTypeCode)
+        };
+    }) || []);
+    
+    const taxSummaryArray = Object.values(taxSummary).map(summary => ({
+        baseAmount: parseFloat(summary.baseAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        taxType: getTaxTypeDescription(summary.taxType),
+        taxRate: parseFloat(summary.taxRate).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        taxAmount: parseFloat(summary.taxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }));
+    
+    // Sort the taxSummaryArray based on the desired order
+    const taxTypeOrder = ['Service Tax', 'Sales Tax', 'Tourism Tax', 'High-Value Goods Tax', 'Sales Tax on Low Value Goods', 'Not Applicable', 'Tax exemption', 'Other'];
+    taxSummaryArray.sort((a, b) => taxTypeOrder.indexOf(a.taxType) - taxTypeOrder.indexOf(b.taxType));
+
+    const templateData = {
+        CompanyLogo: logoBase64,
+        companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
+        companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
+        companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
+        companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
+
+        internalId: rawData.internalId || 'NA',
+        InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
+        InvoiceTypeCode: invoice.InvoiceTypeCode?.[0]._ || 'NA',
+        InvoiceTypeName: rawData.typeName || 'NA',
+        InvoiceVersion: rawData.typeVersionName || 'NA',
+        InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
+        UniqueIdentifier: rawData.uuid || 'NA',
+        longID: lhdnLongId || 'NA',
+        lhdnLink: qrCodeUrl,
+
+        OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
+        dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString(),
+        documentCurrency: invoice.DocumentCurrencyCode?.[0]._ || 'MYR',
+        taxCurrency: invoice.TaxCurrencyCode?.[0]._ || 'MYR',
+        TaxExchangeRate: invoice.TaxExchangeRate?.[0]?.CalculationRate?.[0]._ || '----',
+        issueDate: invoice.IssueDate?.[0]._ || 'NA',
+        issueTime: invoice.IssueTime?.[0]._ || 'NA',
+
+        SupplierTIN: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
+        SupplierRegistrationNumber: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
+        SupplierSSTID: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || 'NA',
+        SupplierMSICCode: supplierParty.IndustryClassificationCode?.[0]._ || '00000',
+        SupplierBusinessActivity: supplierParty.IndustryClassificationCode?.[0]?.name || 'NOT APPLICABLE',
+        SupplierIdType: supplierIdInfo.type,
+        SupplierIdNumber: supplierIdInfo.number,
+
+        BuyerTIN: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
+        BuyerName: customerParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
+        BuyerPhone: customerParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
+        BuyerEmail: customerParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
+        BuyerRegistrationNumber: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
+        BuyerAddress: customerParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
+        BuyerSSTID: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || 'NA',
+        BuyerMSICCode: customerParty.IndustryClassificationCode?.[0]._ || '00000',
+        BuyerBusinessActivity: customerParty.IndustryClassificationCode?.[0]?.name || 'NOT APPLICABLE',
+        BuyerIdType: customerIdInfo.type,
+        BuyerIdNumber: customerIdInfo.number,
+
+        Prepayment: parseFloat(invoice.LegalMonetaryTotal?.[0]?.PrepaidAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        TotalNetAmount: parseFloat(rawData.totalNetAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00',
+        Subtotal: parseFloat(invoice.LegalMonetaryTotal?.[0]?.LineExtensionAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        TotalExcludingTax: parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        TotalIncludingTax: parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        TotalPayableAmount: parseFloat(invoice.LegalMonetaryTotal?.[0]?.PayableAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        TotalTaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    
+        TaxRate: Object.values(taxSummary).reduce((sum, item) => sum + item.taxRate, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        TaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+
+        items: items,
+
+        TaxType: taxCategory?.ID?.[0]._ || '06',
+        TaxSchemeId: getTaxTypeDescription(taxCategory?.ID?.[0]._ || '06'),
+
+        qrCode: qrCodeDataUrl,
+        QRLink: qrCodeUrl,
+        DigitalSignature: rawData.digitalSignature || '-',
+        validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString(),
+
+        taxSummary: taxSummaryArray.map(item => ({
+            taxType: item.taxType,
+            taxRate: item.taxRate,
+            totalAmount: item.baseAmount || '0.00',
+            totalTaxAmount: item.taxAmount || '0.00'
+        })),
+
+        companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
+        companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
+        companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
+        companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
+        InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice 1.0' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
+        InvoiceVersionCode: invoice.InvoiceTypeCode?.[0].listVersionID || 'NA',
+        InvoiceVersion: rawData.typeVersionName || 'NA',
+        InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
+        UniqueIdentifier: rawData.uuid || 'NA',
+        LHDNlongId: rawData.longId || 'NA',
+        OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
+        dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleDateString('en-GB'),
+        issueDate: invoice.IssueDate?.[0]._ ? new Date(invoice.IssueDate[0]._).toLocaleDateString('en-GB') : 'NA',
+        issueTime: invoice.IssueTime?.[0]._ || 'NA',
+
+        startPeriodDate: invoice.InvoicePeriod?.[0]?.StartDate?.[0]._ || 'NA',
+        endPeriodDate: invoice.InvoicePeriod?.[0]?.EndDate?.[0]._ || 'NA',
+        dateDescription: invoice.InvoicePeriod?.[0]?.Description?.[0]._ || 'NA',
+
+        qrCode: qrCodeDataUrl,
+        DigitalSignature: rawData.digitalSignature || '-',
+        validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString()
+    };
+   
+   return templateData;
+}
+
 //route to check if PDF exists
 router.get('/documents/:uuid/check-pdf', async (req, res) => {
+    const { uuid } = req.params;
+    const requestId = req.requestId;
+    
     try {
-        const { uuid, longId } = req.params;
-        console.log('Checking PDF for document:', uuid);
-        console.log('Long ID:', longId);
-        const pdfPath = path.join(__dirname, '../../public/temp', `${uuid}.pdf`);
+        console.log(`[${requestId}] Checking PDF existence for ${uuid}`);
+        const tempDir = path.join(__dirname, '../../public/temp');
+        const pdfPath = path.join(tempDir, `${uuid}.pdf`);
+        const hashPath = path.join(tempDir, `${uuid}.hash`);
+
+        console.log(`[${requestId}] Paths:`, {
+            pdfPath,
+            hashPath
+        });
 
         try {
             await fs.access(pdfPath);
-            return res.json({ exists: true });
-        } catch {
+            console.log(`[${requestId}] PDF exists at ${pdfPath}`);
+            return res.json({ 
+                exists: true,
+                url: `/temp/${uuid}.pdf`
+            });
+        } catch (error) {
+            console.log(`[${requestId}] PDF not found at ${pdfPath}`);
             return res.json({ exists: false });
         }
     } catch (error) {
-        console.error('Error checking PDF:', error);
+        console.error(`[${requestId}] Error checking PDF:`, error);
         return res.status(500).json({
             success: false,
-            message: 'Failed to check PDF existence'
+            message: 'Failed to check PDF existence',
+            error: error.message
         });
     }
 });
 
+// Apply rate limiting to PDF routes
+router.use('/documents/:uuid/pdf', limiter);
+
 // Update PDF generation route
 router.post('/documents/:uuid/pdf', async (req, res) => {
-    try {
-        console.log('=== Starting PDF Generation Process ===');
-        const { uuid } = req.params;
+    const { uuid } = req.params;
+    const requestId = req.requestId;
 
+    try {
+        console.log(`[${requestId}] Starting PDF Generation Process for ${uuid}`);
+        
         const tempDir = path.join(__dirname, '../../public/temp');
         const pdfPath = path.join(tempDir, `${uuid}.pdf`);
+        const hashPath = path.join(tempDir, `${uuid}.hash`);
 
-        // Check if PDF exists
+        console.log(`[${requestId}] Paths:`, {
+            tempDir,
+            pdfPath,
+            hashPath
+        });
+
+        // Check directory exists
         try {
-            await fs.access(pdfPath);
-            return res.json({
-                success: true,
-                url: `/temp/${uuid}.pdf`,
-                cached: true,
-                message: 'Loading existing PDF from cache...'
-            });
+            await fs.access(tempDir);
+            console.log(`[${requestId}] Temp directory exists`);
         } catch {
-            // PDF not found in cache, will generate new one
+            console.log(`[${requestId}] Creating temp directory`);
+            await fs.mkdir(tempDir, { recursive: true });
         }
 
-        // Get raw document data
-        const response = await axios.get(`${process.env.API_BASE_URL}/api/v1.0/documents/${uuid}/raw`, {
-            headers: {
-                'Authorization': `Bearer ${req.session.accessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        // Get user and company data
-        const user = await WP_USER_REGISTRATION.findOne({
-            where: { Username: req.session.user.username }
-        });
-
-        if (!user) {
-            throw new Error('User not found');
+        // Auth check
+        if (!req.session?.user) {
+            console.log(`[${requestId}] No user session found`);
+            return res.status(401).json({
+                success: false,
+                message: 'User not authenticated'
+            });
         }
 
-        const company = await WP_COMPANY_SETTINGS.findOne({
-            where: { TIN: user.TIN }
+        console.log(`[${requestId}] User authenticated:`, {
+            id: req.session.user.id,
+            TIN: req.session.user.TIN
         });
 
-        // Handle company logo
-        const logoPath = company?.CompanyImage
-            ? path.join(__dirname, '../../public', company.CompanyImage)
-            : null;
+        const forceRegenerate = req.query.force === 'true';
+        console.log(`[${requestId}] Force regenerate:`, forceRegenerate);
 
-        let logoBase64;
-        try {
-            const logoBuffer = await fs.readFile(logoPath);
-            const logoExt = path.extname(logoPath).substring(1);
-            logoBase64 = `data:image/${logoExt};base64,${logoBuffer.toString('base64')}`;
-        } catch (error) {
-            logoBase64 = null;
-        }
+        // Get template data
+        console.log(`[${requestId}] Fetching template data...`);
+        const templateData = await getTemplateData(uuid, req.session.accessToken, req.session.user);
+        console.log(`[${requestId}] Template data fetched successfully`);
 
-        // Parse document data
-        const rawData = response.data;
-        const documentData = JSON.parse(rawData.document);
-        const invoice = documentData.Invoice[0];
+        // Check if regeneration needed
+        if (!forceRegenerate) {
+            try {
+                const storedHash = await fs.readFile(hashPath, 'utf8');
+                const currentHash = generateTemplateHash(templateData);
 
-        const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
-        const customerParty = invoice.AccountingCustomerParty[0].Party[0];
+                console.log(`[${requestId}] Hash comparison:`, {
+                    stored: storedHash.substring(0, 8),
+                    current: currentHash.substring(0, 8),
+                    matches: storedHash === currentHash
+                });
 
-        // Generate QR code
-        const longId = rawData.longId || rawData.longID;
-        const lhdnUuid = rawData.uuid;
-        const lhdnLongId = longId;
-        const qrCodeUrl = `https://preprod.myinvois.hasil.gov.my/${lhdnUuid}/share/${longId}`;
-        const qrCodeDataUrl = await QRCode.toDataURL(qrCodeUrl, {
-            width: 200,
-            margin: 2,
-            color: { dark: '#000000', light: '#ffffff' }
-        });
-
-        // Get tax information from UBL structure
-        const taxTotal = invoice.TaxTotal?.[0];
-        const taxSubtotal = taxTotal?.TaxSubtotal?.[0];
-        const taxCategory = taxSubtotal?.TaxCategory?.[0];
-
-        // Map the tax type according to SDK documentation
-        const getTaxTypeDescription = (code) => {
-            const taxTypes = {
-                '01': 'Sales Tax',
-                '02': 'Service Tax',
-                '03': 'Tourism Tax',
-                '04': 'High-Value Goods Tax',
-                '05': 'Sales Tax on Low Value Goods',
-                '06': 'Not Applicable',
-                'E': 'Tax exemption'
-            };
-            return taxTypes[code] || code;
-        };
-
-        const idTypes = ['TIN', 'BRN', 'NRIC', 'Passport', 'Army', 'SST', 'TTX'];
-        function getIdTypeAndNumber(partyIdentification) {
-            const tinInfo = partyIdentification?.find(id => id.ID[0].schemeID === 'TIN');
-            if (!tinInfo) {
-                throw new Error('TIN is mandatory and not found.');
-            }
-
-            for (const idType of idTypes) {
-                if (idType === 'TIN') continue;
-                const idInfo = partyIdentification?.find(id => id.ID[0].schemeID === idType);
-                if (idInfo) {
-                    return { type: idType, number: idInfo.ID[0]._ };
+                if (storedHash === currentHash) {
+                    console.log(`[${requestId}] Using cached PDF`);
+                    return res.json({
+                        success: true,
+                        url: `/temp/${uuid}.pdf`,
+                        cached: true,
+                        message: 'Loading existing PDF from cache...'
+                    });
                 }
+            } catch (error) {
+                console.log(`[${requestId}] Cache check failed:`, error.message);
             }
-            return { type: 'NA', number: 'NA' };
         }
 
-        const supplierIdInfo = getIdTypeAndNumber(supplierParty.PartyIdentification, idTypes);
-        const customerIdInfo = getIdTypeAndNumber(customerParty.PartyIdentification, idTypes);
+        // Generate new PDF
+        console.log(`[${requestId}] Generating new PDF...`);
+        const newHash = generateTemplateHash(templateData);
 
-        // Process tax information for each line item
-        const taxSummary = {};
-        const items = await Promise.all(invoice.InvoiceLine?.map(async (line, index) => {
-            const lineAmount = parseFloat(line.LineExtensionAmount?.[0]._ || 0);
-            const lineTax = parseFloat(line.TaxTotal?.[0]?.TaxAmount?.[0]._ || 0);
-            const quantity = parseFloat(line.InvoicedQuantity?.[0]._ || 0);
-            const unitPrice = parseFloat(line.Price?.[0]?.PriceAmount?.[0]._ || 0);
-            const discount = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
-            const unitCode = line.InvoicedQuantity?.[0]?.unitCode || 'NA';
-            const taxlineCurrency = line.TaxTotal?.[0]?.TaxAmount?.[0]?.currencyID || 'MYR';
-            const allowanceCharges = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
-        
-            // Get unit type name
-            const unitType = await getUnitType(unitCode);
-        
-            // Extract tax information for this line
-            const lineTaxCategory = line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0];
-            const taxTypeCode = lineTaxCategory?.ID?.[0]._ || '06';
-            const taxPercent = parseFloat(lineTaxCategory?.Percent?.[0]._ || 0);
-        
-            // Add to tax summary
-            const taxKey = `${taxTypeCode}_${taxPercent}`;
-            if (!taxSummary[taxKey]) {
-                taxSummary[taxKey] = {
-                    taxType: taxTypeCode,
-                    taxRate: taxPercent,
-                    baseAmount: 0,
-                    taxAmount: 0
-                };
-            }
-            taxSummary[taxKey].baseAmount += lineAmount;
-            taxSummary[taxKey].taxAmount += lineTax;
-        
-            // Format quantity with exactly 2 decimal places
-            const formattedQuantity = quantity.toLocaleString('en-MY', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-                useGrouping: false
-            });
-        
-            // Format unit price with exactly 4 decimal places
-            const formattedUnitPrice = unitPrice.toLocaleString('en-MY', {
-                minimumFractionDigits: 4,
-                maximumFractionDigits: 4,
-                useGrouping: false
-            });
-        
-            return {
-                No: index + 1,
-                Cls: line.Item?.[0]?.CommodityClassification?.[0]?.ItemClassificationCode?.[0]._ || 'NA',
-                Description: line.Item?.[0]?.Description?.[0]._ || 'NA',
-                Quantity: formattedQuantity,
-                UOM: unitType, // Display unit type name instead of code
-                UnitPrice: taxlineCurrency + ' ' + formattedUnitPrice,
-                QtyAmount: lineAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                Disc: discount === 0 ? '0.00' : discount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                Charges: allowanceCharges.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00',
-                LineTaxPercent: taxPercent.toFixed(2),
-                LineTaxAmount: taxlineCurrency + ' ' + lineTax.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                Total: taxlineCurrency + ' ' + (lineAmount + lineTax).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                TaxType: getTaxTypeDescription(taxTypeCode)
-            };
-        }) || []);
-        
-        const taxSummaryArray = Object.values(taxSummary).map(summary => ({
-            baseAmount: parseFloat(summary.baseAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            taxType: getTaxTypeDescription(summary.taxType),
-            taxRate: parseFloat(summary.taxRate).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            taxAmount: parseFloat(summary.taxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        }));
-        
-        // Sort the taxSummaryArray based on the desired order
-        const taxTypeOrder = ['Service Tax', 'Sales Tax', 'Tourism Tax', 'High-Value Goods Tax', 'Sales Tax on Low Value Goods', 'Not Applicable', 'Tax exemption', 'Other'];
-        taxSummaryArray.sort((a, b) => taxTypeOrder.indexOf(a.taxType) - taxTypeOrder.indexOf(b.taxType));
-
-        const templateData = {
-            CompanyLogo: logoBase64,
-            companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
-            companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
-            companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
-            companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
-
-            internalId: rawData.internalId || 'NA',
-            InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
-            InvoiceTypeCode: invoice.InvoiceTypeCode?.[0]._ || 'NA',
-            InvoiceTypeName: rawData.typeName || 'NA',
-            InvoiceVersion: rawData.typeVersionName || 'NA',
-            InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
-            UniqueIdentifier: rawData.uuid || 'NA',
-            longID: lhdnLongId || 'NA',
-            lhdnLink: qrCodeUrl,
-
-            OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
-            dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString(),
-            documentCurrency: invoice.DocumentCurrencyCode?.[0]._ || 'MYR',
-            taxCurrency: invoice.TaxCurrencyCode?.[0]._ || 'MYR',
-            TaxExchangeRate: invoice.TaxExchangeRate?.[0]?.CalculationRate?.[0]._ || '----',
-            issueDate: invoice.IssueDate?.[0]._ || 'NA',
-            issueTime: invoice.IssueTime?.[0]._ || 'NA',
-
-            SupplierTIN: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
-            SupplierRegistrationNumber: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
-            SupplierSSTID: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || 'NA',
-            SupplierMSICCode: supplierParty.IndustryClassificationCode?.[0]._ || '00000',
-            SupplierBusinessActivity: supplierParty.IndustryClassificationCode?.[0]?.name || 'NOT APPLICABLE',
-            SupplierIdType: supplierIdInfo.type,
-            SupplierIdNumber: supplierIdInfo.number,
-
-            BuyerTIN: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
-            BuyerName: customerParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
-            BuyerPhone: customerParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
-            BuyerEmail: customerParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
-            BuyerRegistrationNumber: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
-            BuyerAddress: customerParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
-            BuyerSSTID: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || 'NA',
-            BuyerMSICCode: customerParty.IndustryClassificationCode?.[0]._ || '00000',
-            BuyerBusinessActivity: customerParty.IndustryClassificationCode?.[0]?.name || 'NOT APPLICABLE',
-            BuyerIdType: customerIdInfo.type,
-            BuyerIdNumber: customerIdInfo.number,
-
-            Prepayment: parseFloat(invoice.LegalMonetaryTotal?.[0]?.PrepaidAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            TotalNetAmount: parseFloat(rawData.totalNetAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00',
-            Subtotal: parseFloat(invoice.LegalMonetaryTotal?.[0]?.LineExtensionAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            TotalExcludingTax: parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            TotalIncludingTax: parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            TotalPayableAmount: parseFloat(invoice.LegalMonetaryTotal?.[0]?.PayableAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            TotalTaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        
-            TaxRate: Object.values(taxSummary).reduce((sum, item) => sum + item.taxRate, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            TaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-
-            items: items,
-
-            TaxType: taxCategory?.ID?.[0]._ || '06',
-            TaxSchemeId: getTaxTypeDescription(taxCategory?.ID?.[0]._ || '06'),
-
-            qrCode: qrCodeDataUrl,
-            QRLink: qrCodeUrl,
-            DigitalSignature: rawData.digitalSignature || '-',
-            validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString(),
-
-            taxSummary: taxSummaryArray.map(item => ({
-                taxType: item.taxType,
-                taxRate: item.taxRate,
-                totalAmount: item.baseAmount || '0.00',
-                totalTaxAmount: item.taxAmount || '0.00'
-            })),
-
-            companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
-            companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
-            companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
-            companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
-            InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice 1.0' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
-            InvoiceVersionCode: invoice.InvoiceTypeCode?.[0].listVersionID || 'NA',
-            InvoiceVersion: rawData.typeVersionName || 'NA',
-            InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
-            UniqueIdentifier: rawData.uuid || 'NA',
-            LHDNlongId: rawData.longId || 'NA',
-            OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
-            dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleDateString('en-GB'),
-            issueDate: invoice.IssueDate?.[0]._ ? new Date(invoice.IssueDate[0]._).toLocaleDateString('en-GB') : 'NA',
-            issueTime: invoice.IssueTime?.[0]._ || 'NA',
-
-            startPeriodDate: invoice.InvoicePeriod?.[0]?.StartDate?.[0]._ || 'NA',
-            endPeriodDate: invoice.InvoicePeriod?.[0]?.EndDate?.[0]._ || 'NA',
-            dateDescription: invoice.InvoicePeriod?.[0]?.Description?.[0]._ || 'NA',
-
-            qrCode: qrCodeDataUrl,
-            DigitalSignature: rawData.digitalSignature || '-',
-            validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString()
-        };
-
-        console.log('Template data mapped:', {
-            companyInfo: {
-                name: templateData.companyName,
-                hasLogo: !!templateData.CompanyLogo
-            },
-            documentInfo: {
-                type: templateData.InvoiceType,
-                code: templateData.InvoiceCode,
-                uuid: templateData.UniqueIdentifier
-            },
-            lineItems: `${templateData.items.length} items processed`,
-            totals: {
-                subtotal: templateData.Subtotal,
-                tax: templateData.TotalTaxAmount,
-                total: templateData.TotalPayableAmount
-            }
-        });
-
-        // Generate PDF
         const templatePath = path.join(__dirname, '../../src/reports/original-invoice-template.html');
+        console.log(`[${requestId}] Using template:`, templatePath);
+
         const templateContent = await fs.readFile(templatePath, 'utf8');
         const template = jsrender.templates(templateContent);
         const html = template.render(templateData);
 
+        console.log(`[${requestId}] Launching browser...`);
         const browser = await puppeteer.launch({
             headless: 'new',
             args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -1171,8 +1308,11 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
 
         const page = await browser.newPage();
         await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
+        
+        console.log(`[${requestId}] Setting page content...`);
         await page.setContent(html, { waitUntil: 'networkidle0' });
-
+        
+        console.log(`[${requestId}] Generating PDF...`);
         const pdfBuffer = await page.pdf({
             format: 'A4',
             printBackground: true,
@@ -1180,7 +1320,18 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
         });
 
         await browser.close();
+        console.log(`[${requestId}] Browser closed`);
+
+        // Save files
+        console.log(`[${requestId}] Saving PDF and hash...`);
         await fs.writeFile(pdfPath, pdfBuffer);
+        await fs.writeFile(hashPath, newHash);
+
+        console.log(`[${requestId}] PDF generated successfully:`, {
+            path: pdfPath,
+            hash: newHash.substring(0, 8),
+            size: pdfBuffer.length
+        });
 
         return res.json({
             success: true,
@@ -1190,12 +1341,20 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('=== PDF Generation Error ===');
-        console.error('Error details:', {
+        console.error(`[${requestId}] PDF Generation Error:`, {
             message: error.message,
             stack: error.stack,
             name: error.name
         });
+        
+        if (error.response?.status === 429) {
+            return res.status(429).json({
+                success: false,
+                message: 'Server is busy. Please try again later.',
+                retryAfter: error.response.headers['retry-after'] || 30
+            });
+        }
+        
         return res.status(500).json({
             success: false,
             message: `Failed to generate PDF: ${error.message}`,
@@ -1204,7 +1363,4 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
     }
 });
 
-// Add static route for temp directory in your Express app
-router.use('/temp', express.static(path.join(__dirname, '../../public/temp')));
-
-module.exports = router; 
+module.exports = router;

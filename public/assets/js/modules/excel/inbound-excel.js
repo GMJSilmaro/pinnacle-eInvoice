@@ -16,24 +16,24 @@ class ToastManager {
         // Create toast element
         const toast = document.createElement('div');
         toast.className = `custom-toast ${type}`;
-        
+
         // Create icon
         const icon = document.createElement('div');
         icon.className = `custom-toast-icon ${type}`;
-        icon.innerHTML = type === 'success' 
+        icon.innerHTML = type === 'success'
             ? '<i class="bi bi-check-circle-fill"></i>'
             : '<i class="bi bi-x-circle-fill"></i>';
-        
+
         // Create message
         const messageDiv = document.createElement('div');
         messageDiv.className = 'custom-toast-message';
         messageDiv.textContent = message;
-        
+
         // Assemble toast
         toast.appendChild(icon);
         toast.appendChild(messageDiv);
         this.container.appendChild(toast);
-        
+
         // Remove toast after delay
         setTimeout(() => {
             toast.style.animation = 'fadeOut 0.2s ease-in-out forwards';
@@ -47,10 +47,10 @@ class DateTimeManager {
     static updateDateTime() {
         const timeElement = document.getElementById('currentTime');
         const dateElement = document.getElementById('currentDate');
-        
+
         function update() {
             const now = new Date();
-            
+
             // Update time
             if (timeElement) {
                 timeElement.textContent = now.toLocaleTimeString('en-US', {
@@ -60,7 +60,7 @@ class DateTimeManager {
                     hour12: true
                 });
             }
-            
+
             // Update date
             if (dateElement) {
                 dateElement.textContent = now.toLocaleDateString('en-US', {
@@ -71,7 +71,7 @@ class DateTimeManager {
                 });
             }
         }
-        
+
         // Update immediately and then every second
         update();
         setInterval(update, 1000);
@@ -243,17 +243,17 @@ class InvoiceTableManager {
         if ($.fn.DataTable.isDataTable('#invoiceTable')) {
             return;
         }
-    
+
         // Store reference to the class instance
         const self = this;
-    
+
         this.table = $('#invoiceTable').DataTable({
             processing: false,
             serverSide: false,
             ajax: {
                 url: '/api/lhdn/documents/recent',
                 method: 'GET',
-                data: function(d) {
+                data: function (d) {
                     // Use the stored reference 'self' instead of 'this'
                     d.forceRefresh = window.forceRefreshLHDN || !self.checkDataFreshness();
                     return d;
@@ -282,16 +282,23 @@ class InvoiceTableManager {
                 {
                     data: 'uuid',
                     className: 'inbound-uuid-column',
-                    render: function(data) {
+                    render: function (data) {
                         return `
                             <div class="flex flex-col">
                                 <div class="flex items-center gap-2">
-                                    <a href="#" class="inbound-badge-status text-truncate copy-uuid" 
+                                    <a href="#" class="inbound-badge-status copy-uuid" 
                                        data-bs-toggle="tooltip" 
                                        data-bs-placement="top" 
                                        title="${data}" 
                                        data-uuid="${data}"
-                                       style="max-width: 180px; overflow: hidden; text-overflow: ellipsis;">
+                                       style="
+                                              line-height: 1.2; /* Adjust line height */
+                                              display: block; /* Ensure block display */
+                                              padding: 4px 8px; /* Add some padding */
+                                              border-radius: 10px; /* Rounded corners */
+                                              font-family: monospace; /* Monospace font for better readability */
+                                              font-size: 0.875rem; /* Slightly smaller font size */
+                                              ">
                                         ${data}
                                     </a>
                                 </div>
@@ -299,47 +306,76 @@ class InvoiceTableManager {
                     }
                 },
                 {
+                    data: 'longId',
+                    className: 'inbound-uuid-column', // Changed from text-nowrap to text-wrap
+                    render: function (data) {
+                        // Split the longId into chunks of 40 characters
+                        return `
+                            <div class="flex flex-col">
+                                <div class="overflow-hidden text-ellipsis  flex items-center gap-2">
+                                    <a href="#" 
+                                       class="inbound-badge-status copy-longId" 
+                                       data-bs-toggle="tooltip" 
+                                       data-bs-placement="top" 
+                                       title="${data}" 
+                                       data-longId="${data}"
+                                       style="
+                                              max-width: 200px; 
+                                              line-height: 1.2; 
+                                              display: block; 
+                                              padding: 4px 8px; 
+                                              border-radius: 10px;
+                                              font-family: monospace;
+                                              font-size: 0.875rem; 
+                                              ">
+                                        ${data}
+                                    </a>
+                                </div>
+                            </div>`;
+                    },
+                    width: '10%'
+                },
+                {
                     data: 'internalId',
                     title: 'INTERNAL ID',
+                    className: 'text-nowrap',
+                    width: '12%',
                     render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                 },
-          
                 {
                     data: 'supplierName',
                     title: 'SUPPLIER',
-                   render: (data, type, row) => this.renderCompanyInfo(data, type, row)
+                    render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                 },
                 {
                     data: 'receiverName',
                     title: 'RECEIVER',
-                    width: '15%',
                     render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                 },
                 {
                     data: null,
                     className: '',
                     title: 'ISSUE DATE',
-                    width: '15%',
-                    render: function(data, type, row) {
+                    render: function (data, type, row) {
                         return this.renderDateInfo(row.dateTimeIssued);
                     }.bind(this)
                 },
                 {
                     data: null,
                     title: 'RECEIVED DATE',
-                    width: '10%',
-                    render: function(data, type, row) {
+                    render: function (data, type, row) {
                         return this.renderDateInfo(row.dateTimeReceived);
                     }.bind(this)
                 },
                 {
                     data: 'status',
-                    render: function(data) {
+                    render: function (data) {
                         const statusClass = data.toLowerCase();
                         const icons = {
                             valid: 'check-circle-fill',
                             invalid: 'x-circle-fill',
                             pending: 'hourglass-split',
+                            submitted: 'hourglass-split',
                             rejected: 'x-circle-fill',
                             cancelled: 'x-circle-fill'
                         };
@@ -347,6 +383,7 @@ class InvoiceTableManager {
                             valid: '#198754',
                             invalid: '#dc3545',
                             pending: '#ff8307',
+                            submitted: '#ff8307',
                             rejected: '#dc3545',
                             cancelled: '#ffc107'
                         };
@@ -366,7 +403,8 @@ class InvoiceTableManager {
                 {
                     data: 'totalSales',
                     title: 'TOTAL SALES',
-                    render: data => `<span class="text-nowrap">MYR ${parseFloat(data || 0).toLocaleString('en-MY', {
+                    className: 'inbound-amount-column',
+                    render: data => `<span style="  font-family: monospace; /* Monospace font for better readability */" class="text-nowrap">MYR ${parseFloat(data || 0).toLocaleString('en-MY', {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2
                     })}</span>`
@@ -375,7 +413,7 @@ class InvoiceTableManager {
                     data: null,
                     className: 'inbound-action-column',
                     orderable: false,
-                    render: function(row) {
+                    render: function (row) {
                         return `
                             <button class="outbound-action-btn submit" 
                                     onclick="viewInvoiceDetails('${row.uuid}')"
@@ -422,10 +460,10 @@ class InvoiceTableManager {
                 this.updateCardTotals();
             }
         });
-        
+
         // Assign the DataTable instance to the global variable
         window.inboundDataTable = this.table;
-        
+
         this.initializeTableStyles();
         this.initializeEventListeners();
         this.initializeSelectAll();
@@ -464,7 +502,7 @@ class InvoiceTableManager {
                 const progressBar = document.querySelector('#loadingModal .progress-bar');
                 const statusText = document.getElementById('loadingStatus');
                 const detailsText = document.getElementById('loadingDetails');
-                
+
                 // Check if data is fresh enough
                 if (this.checkDataFreshness() && !window.forceRefreshLHDN) {
                     const result = await Swal.fire({
@@ -483,14 +521,14 @@ class InvoiceTableManager {
 
                 // Disable button and show loading state
                 button.prop('disabled', true);
-                
+
                 // Show loading modal with improved progress tracking
                 loadingModal.show();
-                
+
                 // Update progress bar and status
                 progressBar.style.width = '10%';
                 statusText.textContent = 'Connecting to LHDN server...';
-                
+
                 // Set force refresh flag
                 window.forceRefreshLHDN = true;
 
@@ -516,13 +554,13 @@ class InvoiceTableManager {
                 // Update final progress
                 progressBar.style.width = '100%';
                 statusText.textContent = 'Success! Your data is now up to date.';
-                
+
                 // Close modal after a short delay
                 setTimeout(() => {
                     loadingModal.hide();
                     progressBar.style.width = '0%';
                     detailsText.textContent = '';
-                    
+
                     // Show success toast
                     ToastManager.show('Successfully fetched fresh data from LHDN', 'success');
 
@@ -532,11 +570,11 @@ class InvoiceTableManager {
 
             } catch (error) {
                 console.error('Error refreshing LHDN data:', error);
-                
+
                 // Show error in modal
                 document.getElementById('loadingStatus').textContent = 'Oops! Something went wrong.';
                 document.getElementById('loadingDetails').textContent = error.message || 'Please try again in a few moments.';
-                
+
                 setTimeout(() => {
                     bootstrap.Modal.getInstance(document.getElementById('loadingModal')).hide();
                     ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
@@ -570,7 +608,7 @@ class InvoiceTableManager {
 
     renderInvoiceNumber(data, type, row) {
         if (!data) return '<span class="text-muted">N/A</span>';
-        
+
         // Get document type icon based on type
         const getDocTypeIcon = (docType) => {
             const icons = {
@@ -643,7 +681,7 @@ class InvoiceTableManager {
             <div class="cell-group">
                 <div class="cell-main">
                     <i class="bi bi-building me-1"></i>
-                    <span class="supplier-text">${data}</span>
+                    <span>${data}</span>
                 </div>
                 <div class="cell-sub">
                     <i class="bi bi-card-text me-1"></i>
@@ -654,17 +692,17 @@ class InvoiceTableManager {
 
     renderDateInfo(dateString) {
         if (!dateString) return '<span class="text-muted">N/A</span>';
-        
+
         const date = new Date(dateString);
-        
+
         // Format date parts
         const day = date.getDate().toString().padStart(2, '0');
         const month = date.toLocaleString('en-US', { month: 'short' });
         const year = date.getFullYear();
-        const time = date.toLocaleString('en-US', { 
+        const time = date.toLocaleString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
-            hour12: true 
+            hour12: true
         });
 
         return `
@@ -780,7 +818,7 @@ class InvoiceTableManager {
     updateExportButton() {
         const selectedCount = $('.row-checkbox:checked').length;
         const exportBtn = $('#exportSelected');
-        
+
         if (selectedCount > 0) {
             exportBtn.prop('disabled', false);
             exportBtn.find('.selected-count').text(`(${selectedCount})`);
@@ -812,6 +850,7 @@ class InvoiceTableManager {
             // Prepare export data
             const exportData = selectedRows.map(row => ({
                 UUID: row.uuid,
+                LONGID: row.longId,
                 'Internal ID': row.internalId,
                 Type: row.typeName,
                 Supplier: row.supplierName,
@@ -824,7 +863,7 @@ class InvoiceTableManager {
 
             // Convert to CSV
             const csvContent = this.convertToCSV(exportData);
-            
+
             // Create and trigger download
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
@@ -847,17 +886,17 @@ class InvoiceTableManager {
 
     convertToCSV(data) {
         if (data.length === 0) return '';
-        
+
         const headers = Object.keys(data[0]);
         const rows = [
             headers.join(','), // Header row
-            ...data.map(row => 
-                headers.map(header => 
+            ...data.map(row =>
+                headers.map(header =>
                     JSON.stringify(row[header] || '')
                 ).join(',')
             )
         ];
-        
+
         return rows.join('\n');
     }
 
@@ -875,7 +914,7 @@ class InvoiceTableManager {
                 invalid: 0,
                 rejected: 0,
                 cancelled: 0,
-                queue: 0
+                submitted: 0
             };
 
             // Count totals
@@ -895,8 +934,8 @@ class InvoiceTableManager {
                         case 'Cancelled':
                             totals.cancelled++;
                             break;
-                        case 'Queue':
-                            totals.queue++;
+                        case 'Submitted':
+                            totals.submitted++;
                             break;
                     }
                 });
@@ -939,11 +978,11 @@ class InvoiceTableManager {
                 .append(`<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning">${totals.cancelled}</span>`);
 
             $('.total-queue-value')
-                .text(totals.queue)
+                .text(totals.submitted)
                 .show()
                 .closest('.info-card')
                 .find('.card-icon')
-                .append(`<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-info">${totals.queue}</span>`);
+                .append(`<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-info">${totals.submitted}</span>`);
 
             // Hide all spinners
             $('.loading-spinner').hide();
@@ -960,51 +999,127 @@ class InvoiceTableManager {
     initializeTooltipsAndCopy() {
         // Initialize tooltips for new elements
         const initTooltips = () => {
-            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.forEach(tooltipTriggerEl => {
-                new bootstrap.Tooltip(tooltipTriggerEl, {
-                    trigger: 'hover'
-                });
-            });
-        };
-
-        // Initialize tooltips on first load
-        initTooltips();
-
-        // Reinitialize tooltips after table draw
-        this.table.on('draw', () => {
-            // Dispose existing tooltips
-            const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-            tooltips.forEach(element => {
+            // First, dispose any existing tooltips
+            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            tooltipTriggerList.forEach(element => {
                 const tooltip = bootstrap.Tooltip.getInstance(element);
                 if (tooltip) {
                     tooltip.dispose();
                 }
             });
+    
             // Initialize new tooltips
+            tooltipTriggerList.forEach(tooltipTriggerEl => {
+                new bootstrap.Tooltip(tooltipTriggerEl, {
+                    trigger: 'hover',
+                    container: 'body'
+                });
+            });
+        };
+    
+        // Initialize tooltips on first load
+        initTooltips();
+    
+        // Reinitialize tooltips after table draw
+        this.table.on('draw', () => {
             initTooltips();
         });
-
-        // Handle UUID copy
-        this.table.on('click', '.copy-uuid', (e) => {
+    
+        // Handle longId copy
+        $(document).on('click', '.copy-longId', async (e) => {
             e.preventDefault();
-            const uuid = $(e.currentTarget).data('uuid');
-            const tooltipInstance = bootstrap.Tooltip.getInstance(e.currentTarget);
-            
-            navigator.clipboard.writeText(uuid).then(() => {
-                // Hide tooltip if it exists
-                if (tooltipInstance) {
-                    tooltipInstance.hide();
-                }
+            const element = e.currentTarget;
+            const longId = element.getAttribute('data-longid');
+    
+            if (!longId) {
+                console.error('LongId not found:', element);
+                ToastManager.show('Unable to copy: LongId not found', 'error');
+                return;
+            }
+    
+            try {
+                await navigator.clipboard.writeText(longId);
                 
-                // Show success message using our custom toast
+                // Get tooltip instance and update content temporarily
+                const tooltip = bootstrap.Tooltip.getInstance(element);
+                if (tooltip) {
+                    const originalTitle = element.getAttribute('title');
+                    element.setAttribute('title', 'Copied!');
+                    tooltip.dispose();
+                    new bootstrap.Tooltip(element, {
+                        title: 'Copied!',
+                        trigger: 'manual'
+                    }).show();
+    
+                    // Reset tooltip after 1 second
+                    setTimeout(() => {
+                        const currentTooltip = bootstrap.Tooltip.getInstance(element);
+                        if (currentTooltip) {
+                            currentTooltip.dispose();
+                        }
+                        element.setAttribute('title', originalTitle);
+                        new bootstrap.Tooltip(element, {
+                            title: originalTitle,
+                            trigger: 'hover'
+                        });
+                    }, 1000);
+                }
+    
+                ToastManager.show('LONGID copied to clipboard!', 'success');
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                ToastManager.show('Failed to copy LONGID', 'error');
+            }
+        });
+    
+        // Handle UUID copy (similar enhancement)
+        $(document).on('click', '.copy-uuid', async (e) => {
+            e.preventDefault();
+            const element = e.currentTarget;
+            const uuid = element.getAttribute('data-uuid');
+    
+            if (!uuid) {
+                console.error('UUID not found:', element);
+                ToastManager.show('Unable to copy: UUID not found', 'error');
+                return;
+            }
+    
+            try {
+                await navigator.clipboard.writeText(uuid);
+                
+                // Get tooltip instance and update content temporarily
+                const tooltip = bootstrap.Tooltip.getInstance(element);
+                if (tooltip) {
+                    const originalTitle = element.getAttribute('title');
+                    element.setAttribute('title', 'Copied!');
+                    tooltip.dispose();
+                    new bootstrap.Tooltip(element, {
+                        title: 'Copied!',
+                        trigger: 'manual'
+                    }).show();
+    
+                    // Reset tooltip after 1 second
+                    setTimeout(() => {
+                        const currentTooltip = bootstrap.Tooltip.getInstance(element);
+                        if (currentTooltip) {
+                            currentTooltip.dispose();
+                        }
+                        element.setAttribute('title', originalTitle);
+                        new bootstrap.Tooltip(element, {
+                            title: originalTitle,
+                            trigger: 'hover'
+                        });
+                    }, 1000);
+                }
+    
                 ToastManager.show('UUID copied to clipboard!', 'success');
-            }).catch(err => {
+            } catch (err) {
                 console.error('Failed to copy:', err);
                 ToastManager.show('Failed to copy UUID', 'error');
-            });
+            }
         });
     }
+
 
     // Add new function to check data freshness
     checkDataFreshness() {
@@ -1050,16 +1165,16 @@ async function viewInvoiceDetails(uuid) {
         // Get the table row data first
         const table = $('#invoiceTable').DataTable();
         const rowData = table.rows().data().toArray().find(row => row.uuid === uuid);
-        
+
         console.log('Table Row Data:', rowData);
-        
+
         // Show loading state
         $('#modalLoadingOverlay').removeClass('d-none');
 
         // Fetch document details
         const response = await fetch(`/api/lhdn/documents/${uuid}/display-details`);
         const result = await response.json();
-        
+
         console.log('API Response:', result);
 
         if (!response.ok) {
@@ -1119,7 +1234,7 @@ async function viewInvoiceDetails(uuid) {
         // Only proceed to show modal if document is Valid or Cancelled
         if (['Valid', 'Cancelled'].includes(documentInfo.status)) {
             await populateViewDetailsModal(modalElement, rowData, result);
-            
+
             // Show modal
             modal.show();
 
@@ -1155,7 +1270,7 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
     const modalTitle = modalElement.querySelector('.modal-title');
     const modalInvoiceNumber = modalElement.querySelector('#modal-invoice-number');
     const statusBadge = modalElement.querySelector('.badge-status');
-    
+
     modalTitle.innerHTML = '<i class="bi bi-file-text me-2"></i>Document Details';
     modalInvoiceNumber.textContent = `#${documentInfo.internalId}`;
     statusBadge.className = `badge-status ${documentInfo.status} me-3`;
@@ -1296,7 +1411,7 @@ function createPaymentContent(paymentInfo) {
 // Helper function for formatting address from parts
 function formatAddressFromParts(address) {
     if (!address) return 'N/A';
-    
+
     const parts = [
         ...address.lines,
         address.city,
@@ -1304,7 +1419,7 @@ function formatAddressFromParts(address) {
         address.state,
         address.country
     ].filter(part => part && part !== 'N/A');
-    
+
     return parts.length > 0 ? parts.join(', ') : 'N/A';
 }
 
@@ -1323,10 +1438,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
         // Initialize invoice table using singleton
         const invoiceManager = InvoiceTableManager.getInstance();
-        
+
         // Initialize date/time display
         DateTimeManager.updateDateTime();
-        
+
         console.log('Managers initialized successfully');
     } catch (error) {
         console.error('Error initializing managers:', error);
@@ -1405,13 +1520,13 @@ async function loadPDF(uuid, documentData) {
         // Load the PDF
         const timestamp = new Date().getTime();
         const pdfUrl = `${data.url}?t=${timestamp}`;
-        
+
         // Show final status before loading PDF viewer
         updateStatus(data.message || 'Loading PDF viewer...', 'Almost done');
 
         // Short delay to show the final status message
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         // Create iframe for PDF
         $('.pdf-viewer-container').html(`
             <iframe id="pdfViewer" class="w-100 h-100" style="border: none;" src="${pdfUrl}"></iframe>
@@ -1487,13 +1602,13 @@ async function openValidationResultsModal(uuid) {
 
             // Get all errors from the step
             const errors = step.error?.errors || [];
-            const allInnerErrors = errors.length > 0 ? 
+            const allInnerErrors = errors.length > 0 ?
                 errors.reduce((acc, err) => {
                     if (err.innerError && Array.isArray(err.innerError)) {
                         acc.push(...err.innerError);
                     }
                     return acc;
-                }, []) : 
+                }, []) :
                 (step.error?.innerError || []);
 
             const contentId = `collapse${index}`;
@@ -1510,9 +1625,8 @@ async function openValidationResultsModal(uuid) {
                     </div>
                 </div>
                 <div id="${contentId}" class="lhdn-step-content collapse ${!isValid ? 'show' : ''}" aria-labelledby="heading${index}">
-                    ${
-                        !isValid && allInnerErrors.length > 0
-                            ? `
+                    ${!isValid && allInnerErrors.length > 0
+                    ? `
                                 <div class="lhdn-validation-message">
                                     ${allInnerErrors.map((err, i) => `
                                         ${i > 0 ? '<div class="lhdn-inner-error mt-3">' : ''}
@@ -1541,7 +1655,7 @@ async function openValidationResultsModal(uuid) {
                                     ` : ''}
                                 </div>
                             `
-                            : (!isValid ? `
+                    : (!isValid ? `
                                 <div class="lhdn-validation-message">
                                     <div class="alert alert-danger mb-3">
                                         <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -1557,7 +1671,7 @@ async function openValidationResultsModal(uuid) {
                                     </div>
                                 </div>
                             ` : '<div class="lhdn-validation-success"><i class="bi bi-check-circle-fill"></i>No errors found</div>')
-                    }
+                }
                 </div>
             `;
             validationResultsDiv.appendChild(stepDiv);
@@ -1573,7 +1687,7 @@ async function openValidationResultsModal(uuid) {
 
         // Show the modal
         const modal = new bootstrap.Modal(document.getElementById('validationResultsModal'));
-        
+
         // Add event listener for modal show
         const modalElement = document.getElementById('validationResultsModal');
         modalElement.addEventListener('shown.bs.modal', function () {
@@ -1594,10 +1708,10 @@ async function openValidationResultsModal(uuid) {
             if (backdrop) {
                 backdrop.remove();
             }
-            
+
             // Prevent event from bubbling up
             e.stopPropagation();
-            
+
             // Adjust columns without redrawing the table
             if (inboundDataTable) {
                 inboundDataTable.columns.adjust().draw(false);

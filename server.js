@@ -20,7 +20,7 @@ const webRoutes = require('./routes/web/index');
 const app = express();
 
 // Trust proxy headers from IIS
-app.set('trust proxy', true);
+app.set('trust proxy', 'loopback');
 
 // Enable CORS with specific options
 const corsOptions = {
@@ -67,6 +67,7 @@ swig.setDefaults({
 app.engine('html', swig.renderFile);
 app.set('view engine', 'html');
 app.set('views', path.join(__dirname, 'views'));
+
 
 // 4. Core Middleware Setup
 app.use(express.json({limit: '50mb'}));
