@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { validateAndFormatNetworkPath, SERVER_CONFIG, testNetworkPathAccessibility } = require('../../config/paths');
-const fs = require('fs').promises;
+const path = require('path');
+const fs = require('fs');
+const fsPromises = fs.promises;
 const db = require('../../models');
 const { WP_CONFIGURATION, WP_USER_REGISTRATION, sequelize } = db;
 const tokenService = require('../../services/token.service');
-
-
+const multer = require('multer');
+const crypto = require('crypto');
+const forge = require('node-forge');
 
 // Middleware to check if user is authenticated
 const checkAuth = (req, res, next) => {
@@ -78,95 +81,6 @@ router.get('/sap/get-config', async (req, res) => {
         });
     }
 });
-
-// // Validate SAP network path
-// router.post('/sap/validate-path', async (req, res) => {
-//     try {
-//         const { networkPath, domain, username, password } = req.body;
-
-//         // Input validation
-//         if (!networkPath || !username || !password) {
-//             throw new Error('Network path, username and password are required');
-//         }
-
-//         // Format and validate the network path
-//         const formattedPath = await validateAndFormatNetworkPath(networkPath);
-
-//         // Test network path accessibility
-//         const accessResult = await testNetworkPathAccessibility(formattedPath, {
-//             serverName: domain || '',
-//             serverUsername: username,
-//             serverPassword: password
-//         });
-
-//         if (!accessResult.success) {
-//             throw new Error(accessResult.error || 'Network path validation failed');
-//         }
-
-//         res.json({
-//             success: true,
-//             message: 'Network path validation successful',
-//             formattedPath: accessResult.formattedPath
-//         });
-
-//     } catch (error) {
-//         console.error('Error validating SAP path:', error);
-//         res.status(400).json({
-//             success: false,
-//             error: error.message
-//         });
-//     }
-// });
-
-// // Save SAP configuration
-// router.post('/sap/save-config', async (req, res) => {
-//     try {
-//         const { networkPath, domain, username, password } = req.body;
-
-//         // Input validation
-//         if (!networkPath || !username || !password) {
-//             throw new Error('Network path, username and password are required');
-//         }
-
-//         // Format the network path
-//         const formattedPath = await validateAndFormatNetworkPath(networkPath);
-
-//         // Save to database
-//         const settings = {
-//             networkPath: formattedPath,
-//             domain: domain || '',
-//             username,
-//             password
-//         };
-
-//         await WP_CONFIGURATION.updateConfig('SAP', req.user.id, settings);
-
-//         // Update SERVER_CONFIG for current session
-//         SERVER_CONFIG.networkPath = formattedPath;
-//         SERVER_CONFIG.credentials = {
-//             domain: domain || '',
-//             username,
-//             password
-//         };
-
-//         res.json({ 
-//             success: true,
-//             message: 'SAP configuration saved successfully',
-//             config: {
-//                 networkPath: formattedPath,
-//                 domain: domain || '',
-//                 username
-//                 // Don't send password back
-//             }
-//         });
-//     } catch (error) {
-//         console.error('Error saving SAP config:', error);
-//         res.status(500).json({ 
-//             success: false,
-//             error: error.message 
-//         });
-//     }
-// });
 
 // Validate SAP network path
 router.post('/sap/validate-path', async (req, res) => {
@@ -677,6 +591,295 @@ router.post('/xml/save-config', async (req, res) => {
         res.status(500).json({ 
             success: false,
             error: error.message 
+        });
+    }
+});
+
+// Digital Certificate Routes
+const storage = multer.diskStorage({
+    destination: function(req, file, cb) {
+        cb(null, path.join(__dirname, '../../certificates')); // Store in certificates directory
+    },
+    filename: function(req, file, cb) {
+        // Generate unique filename
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'cert-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    },
+    fileFilter: function(req, file, cb) {
+        // Accept only .p12 and .pfx files
+        if (file.originalname.match(/\.(p12|pfx)$/)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only .p12 or .pfx certificate files are allowed'));
+        }
+    }
+});
+
+// Get certificate configuration
+router.get('/certificate/get-config', async (req, res) => {
+    try {
+        const config = await WP_CONFIGURATION.findOne({
+            where: {
+                Type: 'CERTIFICATE',
+                IsActive: 1
+            },
+            order: [['CreateTS', 'DESC']]
+        });
+
+        if (!config) {
+            return res.json({
+                success: true,
+                config: null
+            });
+        }
+
+        // Parse settings
+        let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
+
+        // Add last modified info
+        if (config.UserID) {
+            const lastModifiedUser = await WP_USER_REGISTRATION.findOne({
+                where: { ID: config.UserID },
+                attributes: ['FullName', 'Username']
+            });
+            
+            if (lastModifiedUser) {
+                settings.lastModifiedBy = {
+                    name: lastModifiedUser.FullName,
+                    username: lastModifiedUser.Username,
+                    timestamp: config.UpdateTS
+                };
+            }
+        }
+
+        res.json({
+            success: true,
+            config: settings
+        });
+
+    } catch (error) {
+        console.error('Error getting certificate config:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Update certificate validation endpoint
+router.post('/certificate/validate', upload.single('certificate'), async (req, res) => {
+    try {
+        if (!req.file) {
+            throw new Error('No certificate file uploaded');
+        }
+
+        const password = req.body.password;
+        if (!password) {
+            throw new Error('Certificate password is required');
+        }
+
+        try {
+            const certBuffer = fs.readFileSync(req.file.path);
+            const p12Der = forge.util.createBuffer(certBuffer.toString('binary'));
+            const p12Asn1 = forge.asn1.fromDer(p12Der);
+            const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
+
+            const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag];
+            if (!certBags || certBags.length === 0) {
+                throw new Error('No certificate found in file');
+            }
+            
+            const cert = certBags[0].cert;
+
+            // Map LHDN required fields to certificate subject attributes
+            const subjectMap = {
+                CN: null,  // Common Name
+                C: null,   // Country
+                O: null,   // Organization
+                OID: null, // Organization Identifier (Business Registration)
+                SERIALNUMBER: null // Serial Number
+            };
+
+            // Parse subject attributes
+            cert.subject.attributes.forEach(attr => {
+                if (attr.shortName === 'organizationIdentifier') {
+                    subjectMap.OID = attr.value;
+                } else if (attr.shortName in subjectMap) {
+                    subjectMap[attr.shortName] = attr.value;
+                }
+            });
+
+            // Extract key usage and extended key usage
+            const keyUsage = cert.extensions.find(ext => ext.name === 'keyUsage')?.value.split(', ') || [];
+            const extKeyUsage = cert.extensions.find(ext => ext.name === 'extKeyUsage')?.value.split(', ') || [];
+
+            // Validate LHDN requirements
+            const requirements = {
+                subject: Object.entries(subjectMap).map(([key, value]) => ({
+                    field: key,
+                    present: !!value,
+                    value: value
+                })),
+                keyUsage: {
+                    nonRepudiation: keyUsage.includes('Non Repudiation') || keyUsage.includes('nonRepudiation'),
+                    required: 'Non-Repudiation'
+                },
+                extKeyUsage: {
+                    documentSigning: extKeyUsage.includes('Document Signing') || extKeyUsage.includes('1.3.6.1.4.1.311.10.3.12'),
+                    required: 'Document Signing'
+                }
+            };
+
+            // Build certificate info
+            const certInfo = {
+                subject: cert.subject.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
+                issuer: cert.issuer.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
+                serialNumber: cert.serialNumber,
+                validFrom: cert.validity.notBefore,
+                validTo: cert.validity.notAfter,
+                status: 'VALID',
+                keyUsage,
+                extKeyUsage,
+                requirements
+            };
+
+            // Check validity period
+            const now = new Date();
+            if (now < certInfo.validFrom) {
+                certInfo.status = 'FUTURE';
+            } else if (now > certInfo.validTo) {
+                certInfo.status = 'EXPIRED';
+            }
+
+            // Clean up temp file
+            fs.unlinkSync(req.file.path);
+
+            // Check if all requirements are met
+            const missingRequirements = [];
+            
+            // Check subject fields
+            const missingFields = requirements.subject
+                .filter(field => !field.present)
+                .map(field => field.field);
+            
+            if (missingFields.length > 0) {
+                missingRequirements.push(`Missing required fields: ${missingFields.join(', ')}`);
+            }
+
+            // Check key usage
+            if (!requirements.keyUsage.nonRepudiation) {
+                missingRequirements.push(`Missing required key usage: ${requirements.keyUsage.required}`);
+            }
+
+            // Check extended key usage
+            if (!requirements.extKeyUsage.documentSigning) {
+                missingRequirements.push(`Missing required extended key usage: ${requirements.extKeyUsage.required}`);
+            }
+
+            res.json({
+                success: true,
+                certInfo,
+                lhdnCompliant: missingRequirements.length === 0,
+                missingRequirements
+            });
+
+        } catch (error) {
+            if (req.file && fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path);
+            }
+            throw new Error(`Invalid certificate or wrong password: ${error.message}`);
+        }
+
+    } catch (error) {
+        console.error('Certificate validation error:', error);
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Update certificate save endpoint
+router.post('/certificate/save', upload.single('certificate'), async (req, res) => {
+    const t = await sequelize.transaction();
+    
+    try {
+        if (!req.file) {
+            throw new Error('No certificate file uploaded');
+        }
+
+        const password = req.body.password;
+        if (!password) {
+            throw new Error('Certificate password is required');
+        }
+
+        try {
+            // Read and parse certificate
+            const certBuffer = fs.readFileSync(req.file.path);
+            const p12Der = forge.util.createBuffer(certBuffer.toString('binary'));
+            const p12Asn1 = forge.asn1.fromDer(p12Der);
+            const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
+            
+            const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag];
+            if (!certBags || certBags.length === 0) {
+                throw new Error('No certificate found in file');
+            }
+            
+            const cert = certBags[0].cert;
+
+            // Save to database
+            const certInfo = {
+                subject: cert.subject.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
+                issuer: cert.issuer.attributes.map(attr => `${attr.shortName}=${attr.value}`).join(', '),
+                serialNumber: cert.serialNumber,
+                validFrom: cert.validity.notBefore,
+                validTo: cert.validity.notAfter
+            };
+
+            await WP_CONFIGURATION.create({
+                Type: 'CERTIFICATE',
+                Settings: {
+                    certificatePath: req.file.filename,
+                    password: password, // Consider encrypting this
+                    certInfo
+                },
+                IsActive: 1,
+                UserID: req.user.id,
+                CreateTS: sequelize.literal('GETDATE()'),
+                UpdateTS: sequelize.literal('GETDATE()')
+            }, {
+                transaction: t
+            });
+
+            await t.commit();
+
+            res.json({
+                success: true,
+                message: 'Certificate saved successfully',
+                certInfo
+            });
+
+        } catch (error) {
+            // Clean up uploaded file on error
+            if (req.file && fs.existsSync(req.file.path)) {
+                fs.unlinkSync(req.file.path);
+            }
+            throw error;
+        }
+
+    } catch (error) {
+        await t.rollback();
+        console.error('Error saving certificate:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });

@@ -5,11 +5,13 @@
 <link href="/assets/css/components/tooltip.css" rel="stylesheet">
 <link href="/assets/css/pages/settings.css" rel="stylesheet">
 <link href="/assets/css/pages/admin-settings.css" rel="stylesheet">
+<link href="/assets/css/pages/certificate-management.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid px-2 px-md-2 px-lg-2">
+<div class="container-fluid px-3 px-md-4 px-lg-5">
   <!-- Header -->
   <div class="profile-welcome-card">
     <h2>
@@ -112,6 +114,16 @@
           <div class="settings-nav-details">
             <h4>LHDN Configuration</h4>
             <p>Configure LHDN middleware</p>
+          </div>
+        </a>
+
+        <a href="#digital-cert-settings" class="settings-nav-item" data-section="digital-cert-settings">
+          <div class="settings-nav-icon">
+            <i class="fas fa-certificate"></i>
+          </div>
+          <div class="settings-nav-details">
+            <h4>Digital Certificate</h4>
+            <p>Manage Digital Signing Certificate</p>
           </div>
         </a>
       </div>
@@ -574,6 +586,249 @@
             <div class="sap-actions mt-4 text-end">
               <button type="button" class="btn btn-primary" onclick="saveSAPConfig()">
                 <i class="fas fa-save"></i> Save Configuration
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Digital Certificate Settings -->
+      <div class="settings-form" id="digital-cert-settings">
+        <h3 class="settings-form-title">
+          <i class="fas fa-certificate"></i>
+          Digital Certificate Management
+        </h3>
+        <div class="settings-form-content">
+          <div class="digital-cert-settings">
+            <div class="alert alert-info" role="alert">
+              <i class="fas fa-info-circle"></i>
+              Digital certificates are required for e-Invoice signing. Learn more about the requirements in the 
+              <a href="https://sdk.myinvois.hasil.gov.my/signature/" target="_blank">LHDN SDK documentation</a>.
+            </div>
+
+            <!-- Certificate Upload Section -->
+            <div class="card">
+              <div class="card-header">
+                <h5 class="mb-0">Upload Certificate</h5>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label class="form-label">Certificate File (.p12/.pfx)</label>
+                  <div class="input-group">
+                    <input type="file" class="form-control" id="certificateFile" accept=".p12,.pfx" style="display: none;">
+                    <input type="text" class="form-control" id="certificateFileName" placeholder="No certificate selected" readonly>
+                    <button class="btn btn-outline-secondary" type="button" onclick="triggerCertificateUpload()">
+                      <i class="fas fa-upload"></i> Browse
+                    </button>
+                  </div>
+                  <small class="text-muted">Upload your PKCS#12 certificate file (.p12 or .pfx format)</small>
+                </div>
+
+                <div class="form-group mt-3">
+                  <label class="form-label">Certificate Password</label>
+                  <div class="input-group">
+                    <input type="password" class="form-control" id="certificatePassword" placeholder="Enter certificate password">
+                    <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('certificatePassword')">
+                      <i class="fas fa-eye"></i>
+                    </button>
+                  </div>
+                  <small class="text-muted">Enter the password used to protect your certificate</small>
+                </div>
+
+                <div class="form-check mt-3">
+                  <input class="form-check-input" type="checkbox" id="lhdnRequirementsCheck">
+                  <label class="form-check-label" for="lhdnRequirementsCheck">
+                    Validate against LHDN requirements
+                  </label>
+                </div>
+
+                <div class="cert-actions mt-4">
+                  <button type="button" class="btn btn-outline-primary me-2" onclick="validateCertificate()">
+                    <i class="fas fa-check-circle"></i> Validate Certificate
+                  </button>
+                  <button type="button" class="btn btn-primary" onclick="saveCertificateConfig()" id="saveCertBtn" disabled>
+                    <i class="fas fa-save"></i> Save Configuration
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Certificate Info Section -->
+            <div id="certificateInfo" style="display: none;" class="mt-4">
+                <div class="card certificate-details-card">
+                    <div class="card-header">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-certificate text-primary me-2"></i>
+                                <h5 class="mb-0">Certificate Details</h5>
+                            </div>
+                            <span id="certStatus" class="badge"></span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Basic Info -->
+                        <div class="cert-section">
+                            <h6 class="section-title">
+                                <i class="fas fa-info-circle"></i>
+                                Basic Information
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="cert-field">
+                                        <label>Common Name (CN)</label>
+                                        <div id="certCN" class="cert-value"></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="cert-field">
+                                        <label>Organization (O)</label>
+                                        <div id="certO" class="cert-value"></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="cert-field">
+                                        <label>Country (C)</label>
+                                        <div id="certC" class="cert-value"></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="cert-field">
+                                        <label>Organization ID (OID)</label>
+                                        <div id="certOID" class="cert-value"></div>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="cert-field">
+                                        <label>Serial Number</label>
+                                        <div id="certSerial" class="cert-value font-monospace"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Validity Period -->
+                        <div class="cert-section mt-4">
+                            <h6 class="section-title">
+                                <i class="fas fa-calendar-check"></i>
+                                Validity Period
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="validity-card">
+                                        <div class="validity-icon">
+                                            <i class="fas fa-play"></i>
+                                        </div>
+                                        <div class="validity-info">
+                                            <label>Valid From</label>
+                                            <div id="certValidFrom" class="validity-date"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="validity-card">
+                                        <div class="validity-icon">
+                                            <i class="fas fa-stop"></i>
+                                        </div>
+                                        <div class="validity-info">
+                                            <label>Valid To</label>
+                                            <div id="certValidTo" class="validity-date"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LHDN Requirements -->
+                        <div class="cert-section mt-4">
+                            <h6 class="section-title">
+                                <i class="fas fa-check-square"></i>
+                                LHDN Requirements
+                            </h6>
+                            <div id="lhdnRequirements" class="requirements-grid">
+                                <!-- Requirements will be populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Technical Details -->
+                        <div class="cert-section mt-4">
+                            <h6 class="section-title">
+                                <i class="fas fa-code"></i>
+                                Technical Details
+                            </h6>
+                            <div class="accordion" id="certDetailsAccordion">
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#keyUsageCollapse" aria-expanded="true">
+                                            <i class="fas fa-key me-2"></i>
+                                            Key Usage
+                                        </button>
+                                    </h2>
+                                    <div id="keyUsageCollapse" class="accordion-collapse collapse show" data-bs-parent="#certDetailsAccordion">
+                                        <div class="accordion-body">
+                                            <div id="certKeyUsage" class="tech-details"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#extKeyUsageCollapse">
+                                            <i class="fas fa-shield-alt me-2"></i>
+                                            Extended Key Usage
+                                        </button>
+                                    </h2>
+                                    <div id="extKeyUsageCollapse" class="accordion-collapse collapse" data-bs-parent="#certDetailsAccordion">
+                                        <div class="accordion-body">
+                                            <div id="certExtKeyUsage" class="tech-details"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issuerCollapse">
+                                            <i class="fas fa-certificate me-2"></i>
+                                            Issuer Information
+                                        </button>
+                                    </h2>
+                                    <div id="issuerCollapse" class="accordion-collapse collapse" data-bs-parent="#certDetailsAccordion">
+                                        <div class="accordion-body">
+                                            <div id="certIssuer" class="tech-details"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#subjectCollapse">
+                                            <i class="fas fa-user-tag me-2"></i>
+                                            Subject Details
+                                        </button>
+                                    </h2>
+                                    <div id="subjectCollapse" class="accordion-collapse collapse" data-bs-parent="#certDetailsAccordion">
+                                        <div class="accordion-body">
+                                            <div id="certSubject" class="tech-details"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Last Modified Info -->
+            <div class="alert alert-info mt-3" role="alert" id="certLastModifiedInfo" style="display: none;">
+              <small>
+                <i class="fas fa-info-circle"></i>
+                Last modified by <strong id="certLastModifiedBy">-</strong> on <span id="certLastModifiedTime">-</span>
+              </small>
+            </div>
+
+            <!-- Remove Certificate Button -->
+            <div class="text-end mt-3">
+              <button type="button" class="btn btn-danger" onclick="disableCertificate()" id="disableCertBtn" style="display: none;">
+                <i class="fas fa-trash-alt"></i> Remove Certificate
               </button>
             </div>
           </div>

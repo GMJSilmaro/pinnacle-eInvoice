@@ -2,6 +2,11 @@ let originalFormData = null;
 let hasUnsavedChanges = false;
 let savedLHDNConfig = null;
 
+// Add validation state tracking
+let isValidated = false;
+
+// Add token refresh state tracking
+let tokenRefreshInterval = null;
 
 async function loadSAPConfig() {
     try {
@@ -210,7 +215,7 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
         
         // Add click handler to each nav item
         navItems.forEach(item => {
-            item.addEventListener('click', function(e) {
+            item.addEventListener('click', async function(e) {
                 e.preventDefault();
                 
                 // Remove active class from all nav items
@@ -236,6 +241,11 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
                     setTimeout(() => {
                         selectedForm.classList.add('active');
                     }, 10);
+
+                    // If switching to digital certificate section, reload the certificate config
+                    if (sectionId === 'digital-cert-settings') {
+                        await loadCertificateConfig();
+                    }
                 }
             });
         });
@@ -249,11 +259,28 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
             if (firstNav) firstNav.click();
         }
 
-        // Initialize LHDN configuration
-        await loadLHDNConfig();
-        await loadSAPConfig();
+        // Initialize configurations
+        await Promise.all([
+            loadLHDNConfig().catch(err => console.error('Error loading LHDN config:', err)),
+            loadSAPConfig().catch(err => console.error('Error loading SAP config:', err)),
+            loadCertificateConfig().catch(err => console.error('Error loading certificate config:', err))
+        ]);
+        
+        // Initial token fetch
+        await updateAccessToken(true);
+        
         // Start auto-refresh of access token (every 5 minutes)
-        const tokenRefreshInterval = setInterval(updateAccessToken, 5 * 60 * 1000);
+        if (tokenRefreshInterval) {
+            clearInterval(tokenRefreshInterval);
+        }
+        tokenRefreshInterval = setInterval(() => updateAccessToken(), 5 * 60 * 1000);
+
+        // Clean up on page unload
+        window.addEventListener('unload', () => {
+            if (tokenRefreshInterval) {
+                clearInterval(tokenRefreshInterval);
+            }
+        });
 
         // Load user data
         await loadUserData();
@@ -267,7 +294,6 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
             }
         });
         
-        // Add environment change listener
         const environmentSelect = document.getElementById('environment');
         if (environmentSelect) {
             environmentSelect.addEventListener('change', () => {
@@ -279,10 +305,11 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
 
     } catch (error) {
         console.error('Error initializing admin settings:', error);
+        // Show error toast but don't prevent the page from loading
         await Swal.fire({
             icon: 'error',
-            title: 'Initialization Error',
-            text: 'Failed to initialize admin settings: ' + error.message,
+            title: 'Initialization Warning',
+            text: 'Some features may not be available: ' + error.message,
             timer: 3000,
             timerProgressBar: true,
             showConfirmButton: false,
@@ -1410,17 +1437,30 @@ async function copyAccessToken() {
     }
 }
 
-async function updateAccessToken() {
+async function updateAccessToken(force = false) {
     try {
+        // Get current token info
+        const tokenInput = document.getElementById('accessToken');
+        const expiryInfo = document.getElementById('tokenExpiryInfo');
+        
+        if (!force) {
+            // Check if we need to refresh
+            const expiryTime = tokenInput.dataset.expiryTime;
+            if (expiryTime) {
+                const timeLeft = new Date(expiryTime) - new Date();
+                if (timeLeft > 5 * 60 * 1000) { // More than 5 minutes left
+                    return; // Skip refresh
+                }
+            }
+        }
+
         const response = await fetch('/api/config/lhdn/access-token');
         const data = await response.json();
         
         if (data.success) {
-            const tokenInput = document.getElementById('accessToken');
-            const expiryInfo = document.getElementById('tokenExpiryInfo');
-            
             // Update token value
             tokenInput.value = data.accessToken;
+            tokenInput.dataset.expiryTime = data.expiryTime;
             
             // Calculate and display expiry time
             if (data.expiryTime) {
@@ -1428,10 +1468,8 @@ async function updateAccessToken() {
                 const now = new Date();
                 const minutesLeft = Math.round((expiryDate - now) / 60000);
                 
-                // Remove all status classes first
                 expiryInfo.className = '';
                 
-                // Add base class and status class based on time left
                 if (minutesLeft < 5) {
                     expiryInfo.className = 'status-error';
                     expiryInfo.textContent = `Token expires in ${minutesLeft} minutes! (Critical)`;
@@ -1442,56 +1480,23 @@ async function updateAccessToken() {
                     expiryInfo.className = 'status-active';
                     expiryInfo.textContent = `Token expires in ${minutesLeft} minutes`;
                 }
-            } else {
-                expiryInfo.className = 'status-default';
-                expiryInfo.textContent = 'Token expiry time not available';
-            }
-
-        } else {
-            // Show warning if using default token
-            if (data.usingDefault) {
-                const tokenInput = document.getElementById('accessToken');
-                const expiryInfo = document.getElementById('tokenExpiryInfo');
-                
-                tokenInput.value = data.accessToken;
-                expiryInfo.className = 'status-warning';
-                expiryInfo.textContent = 'Using default credentials';
-                
-                await Swal.fire({
-                    icon: 'warning',
-                    title: 'Using Default Token',
-                    text: 'Using default credentials as no custom configuration was found',
-                    timer: 5000,
-                    timerProgressBar: true,
-                    showConfirmButton: true,
-                    position: 'top',
-                    toast: false
-                });
-            } else {
-                throw new Error(data.error || 'Failed to get access token');
             }
         }
     } catch (error) {
         console.error('Error updating access token:', error);
-        
-        // Show error in the token field and expiry info
-        const tokenInput = document.getElementById('accessToken');
-        const expiryInfo = document.getElementById('tokenExpiryInfo');
-        
-        tokenInput.value = 'Error generating token. Please check your configuration.';
-        expiryInfo.className = 'status-error';
-        expiryInfo.textContent = 'Token generation failed';
-        
-        await Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'Failed to get access token: ' + error.message,
-            timer: 5000,
-            timerProgressBar: true,
-            showConfirmButton: true,
-            position: 'top',
-            toast: false
-        });
+        // Don't show error toast for rate limit errors
+        if (!error.message.includes('429')) {
+            await Swal.fire({
+                icon: 'error',
+                title: 'Token Update Failed',
+                text: error.message,
+                timer: 3000,
+                timerProgressBar: true,
+                showConfirmButton: false,
+                position: 'top-end',
+                toast: true
+            });
+        }
     }
 }
 
@@ -1872,4 +1877,812 @@ function copyXmlNetworkPath() {
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize XML configuration
     loadXMLConfig();
+});
+
+// Digital Certificate Management Functions
+let currentCertificate = null;
+
+function triggerCertificateUpload() {
+    document.getElementById('certificateFile').click();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const certificateFile = document.getElementById('certificateFile');
+    if (certificateFile) {
+        certificateFile.addEventListener('change', handleCertificateSelection);
+    }
+    
+    // Load existing certificate configuration
+    loadCertificateConfig();
+});
+
+async function handleCertificateSelection(event) {
+    try {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Update filename display
+        document.getElementById('certificateFileName').value = file.name;
+
+        // Validate file type
+        if (!file.name.toLowerCase().endsWith('.p12') && !file.name.toLowerCase().endsWith('.pfx')) {
+            throw new Error('Invalid certificate format. Please upload a .p12 or .pfx file.');
+        }
+
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            throw new Error('Certificate file is too large. Maximum size is 5MB.');
+        }
+
+        // Store the certificate for later use
+        currentCertificate = file;
+
+        // Clear password field
+        document.getElementById('certificatePassword').value = '';
+
+        // Hide certificate info until validated
+        document.getElementById('certificateInfo').style.display = 'none';
+
+    } catch (error) {
+        console.error('Error handling certificate:', error);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Certificate Error',
+            text: error.message,
+            timer: 5000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            position: 'top',
+            toast: false
+        });
+
+        // Reset file input
+        event.target.value = '';
+        document.getElementById('certificateFileName').value = '';
+        currentCertificate = null;
+    }
+}
+
+// Update the validateLHDNCertificateRequirements function
+function validateLHDNCertificateRequirements(cert) {
+    try {
+        // First check if we have a valid certificate object
+        if (!cert || typeof cert !== 'object') {
+            throw new Error('Invalid certificate object');
+        }
+
+        const validation = {
+            isValid: false,
+            requirements: {
+                distinguishedName: false,
+                keyUsage: false,
+                enhancedKeyUsage: false
+            },
+            errors: []
+        };
+
+        // Check Distinguished Name requirements
+        try {
+            // Extract subject components from the certificate
+            const subjectParts = cert.subject.split(',').map(part => part.trim());
+            const requiredFields = {
+                CN: false,  // Common Name
+                C: false,   // Country
+                O: false,   // Organization
+                OID: false, // Organization Identifier
+                SERIALNUMBER: false // Business Registration Number
+            };
+
+            // Parse each subject component
+            subjectParts.forEach(part => {
+                const [key, value] = part.split('=').map(s => s.trim());
+                if (key in requiredFields) {
+                    requiredFields[key] = true;
+                }
+            });
+
+            // Check for missing fields
+            const missingFields = Object.entries(requiredFields)
+                .filter(([_, present]) => !present)
+                .map(([field]) => field);
+
+            if (missingFields.length > 0) {
+                validation.errors.push(`Missing required fields in subject: ${missingFields.join(', ')}`);
+            } else {
+                validation.requirements.distinguishedName = true;
+            }
+        } catch (error) {
+            validation.errors.push(`Error checking distinguished name: ${error.message}`);
+        }
+
+        // Check Key Usage
+        try {
+            if (cert.keyUsage && cert.keyUsage.includes('nonRepudiation')) {
+                validation.requirements.keyUsage = true;
+            } else {
+                validation.errors.push('Certificate must have Non-Repudiation key usage');
+            }
+        } catch (error) {
+            validation.errors.push(`Error checking key usage: ${error.message}`);
+        }
+
+        // Check Enhanced Key Usage
+        try {
+            if (cert.extKeyUsage && cert.extKeyUsage.includes('documentSigning')) {
+                validation.requirements.enhancedKeyUsage = true;
+            } else {
+                validation.errors.push('Certificate must have Document Signing enhanced key usage');
+            }
+        } catch (error) {
+            validation.errors.push(`Error checking enhanced key usage: ${error.message}`);
+        }
+
+        // Overall validation
+        validation.isValid = Object.values(validation.requirements).every(req => req === true);
+
+        return validation;
+
+    } catch (error) {
+        return {
+            isValid: false,
+            requirements: {
+                distinguishedName: false,
+                keyUsage: false,
+                enhancedKeyUsage: false
+            },
+            errors: [`Certificate validation error: ${error.message}`]
+        };
+    }
+}
+
+// Update validateCertificate function
+async function validateCertificate() {
+    try {
+        if (!currentCertificate) {
+            throw new Error('Please select a certificate file first.');
+        }
+
+        const password = document.getElementById('certificatePassword').value;
+        if (!password) {
+            throw new Error('Please enter the certificate password.');
+        }
+
+        // Show loading state
+        Swal.fire({
+            title: 'Validating Certificate',
+            text: 'Please wait while we validate your certificate...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            allowEnterKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('certificate', currentCertificate, currentCertificate.name);
+        formData.append('password', password);
+
+        // Send to backend for validation
+        const response = await fetch('/api/config/certificate/validate', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Certificate validation failed');
+        }
+
+        const result = await response.json();
+        console.log('Validation result:', result);
+
+        if (!result.success) {
+            throw new Error(result.error || 'Certificate validation failed');
+        }
+
+        // Check if LHDN validation is required
+        const requireLHDN = document.getElementById('lhdnRequirementsCheck').checked;
+        if (requireLHDN) {
+            const lhdnValidation = validateLHDNCertificateRequirements(result.certInfo);
+            console.log('LHDN Validation result:', lhdnValidation);
+            
+            if (!lhdnValidation.isValid) {
+                throw new Error(`Certificate does not meet LHDN requirements:\n${lhdnValidation.errors.join('\n')}`);
+            }
+        }
+
+        // Update validation state and enable save button
+        isValidated = true;
+        document.getElementById('saveCertBtn').disabled = false;
+
+        // Update UI
+        updateCertificateInfo({
+            ...result.certInfo,
+            lhdnValidation: requireLHDN ? lhdnValidation : null
+        });
+
+        // Show success message
+        await Swal.fire({
+            icon: 'success',
+            title: 'Certificate Valid',
+            text: requireLHDN ? 'Certificate meets all LHDN requirements' : 'Certificate is valid',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            position: 'top-end',
+            toast: true
+        });
+
+    } catch (error) {
+        console.error('Error validating certificate:', error);
+        isValidated = false;
+        document.getElementById('saveCertBtn').disabled = true;
+        await Swal.fire({
+            icon: 'error',
+            title: 'Validation Failed',
+            text: error.message,
+            timer: 5000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            position: 'top',
+            toast: false
+        });
+    }
+}
+
+async function saveCertificateConfig() {
+    try {
+        if (!currentCertificate) {
+            throw new Error('Please select a certificate file first.');
+        }
+
+        const password = document.getElementById('certificatePassword').value;
+        if (!password) {
+            throw new Error('Certificate password is required');
+        }
+
+        // Show loading state
+        Swal.fire({
+            title: 'Saving Certificate',
+            text: 'Please wait while we save your certificate configuration...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            allowEnterKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('certificate', currentCertificate);
+        formData.append('password', password); // Store the raw password
+
+        // Send to backend
+        const response = await fetch('/api/config/certificate/save', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to save certificate configuration');
+        }
+
+        // Update last modified info
+        if (result.lastModifiedBy) {
+            document.getElementById('certLastModifiedBy').textContent = result.lastModifiedBy.name;
+            document.getElementById('certLastModifiedTime').textContent = new Date(result.lastModifiedBy.timestamp).toLocaleString();
+            document.getElementById('certLastModifiedInfo').style.display = 'block';
+        }
+
+        // Show success message
+        await Swal.fire({
+            icon: 'success',
+            title: 'Configuration Saved',
+            text: 'Digital certificate configuration has been saved successfully',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            position: 'top-end',
+            toast: true
+        });
+
+    } catch (error) {
+        console.error('Error saving certificate config:', error);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: error.message,
+            timer: 5000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            position: 'top',
+            toast: false
+        });
+    }
+}
+
+async function loadCertificateConfig() {
+    try {
+        console.log('Loading certificate configuration...');
+        const response = await fetch('/api/config/certificate/get-config');
+        const data = await response.json();
+        console.log('Certificate config response:', data);
+        
+        // Get all the required DOM elements
+        const certInfoElement = document.getElementById('certificateInfo');
+        const disableBtn = document.getElementById('disableCertBtn');
+        const lastModifiedInfo = document.getElementById('certLastModifiedInfo');
+        const xadesElement = document.getElementById('xadesStructure');
+
+        if (data.success && data.config) {
+            // Show disable button since there's an active certificate
+            if (disableBtn) {
+                disableBtn.style.display = 'inline-block';
+            }
+            
+            // Update certificate info if available
+            if (data.config.certInfo) {
+                console.log('Updating certificate info:', data.config.certInfo);
+                if (certInfoElement) {
+                    certInfoElement.style.display = 'block';
+                    updateCertificateInfo(data.config.certInfo);
+                }
+            }
+
+            // Update last modified info if available
+            if (data.config.lastModifiedBy && lastModifiedInfo) {
+                const lastModifiedBy = document.getElementById('certLastModifiedBy');
+                const lastModifiedTime = document.getElementById('certLastModifiedTime');
+                
+                if (lastModifiedBy && lastModifiedTime) {
+                    lastModifiedBy.textContent = data.config.lastModifiedBy.name;
+                    lastModifiedTime.textContent = new Date(data.config.lastModifiedBy.timestamp).toLocaleString();
+                    lastModifiedInfo.style.display = 'block';
+                }
+            }
+
+            // Update XAdES structure if available
+            if (data.config.xadesStructure && xadesElement) {
+                xadesElement.style.display = 'block';
+            }
+        } else {
+            // Hide elements if no active certificate
+            if (certInfoElement) certInfoElement.style.display = 'none';
+            if (disableBtn) disableBtn.style.display = 'none';
+            if (lastModifiedInfo) lastModifiedInfo.style.display = 'none';
+            if (xadesElement) xadesElement.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading certificate config:', error);
+        // Don't throw the error, just log it and continue
+        // This prevents the error from breaking the entire initialization process
+    }
+}
+
+async function disableCertificate() {
+    try {
+        const result = await Swal.fire({
+            title: 'Remove Certificate?',
+            text: 'Are you sure you want to remove this certificate? This action cannot be undone.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, remove it',
+            cancelButtonText: 'Cancel'
+        });
+
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        // Show loading state
+        Swal.fire({
+            title: 'Removing Certificate',
+            text: 'Please wait...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            allowEnterKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        const response = await fetch('/api/config/certificate/disable', {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to remove certificate');
+        }
+
+        // Reset the form and UI
+        document.getElementById('certificateFile').value = '';
+        document.getElementById('certificateFileName').value = 'No certificate selected';
+        document.getElementById('certificatePassword').value = '';
+        document.getElementById('certificateInfo').style.display = 'none';
+        document.getElementById('certLastModifiedInfo').style.display = 'none';
+        document.getElementById('disableCertBtn').style.display = 'none';
+        currentCertificate = null;
+
+        // Show success message
+        await Swal.fire({
+            icon: 'success',
+            title: 'Certificate Removed',
+            text: 'The certificate has been successfully removed',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            position: 'top-end',
+            toast: true
+        });
+
+    } catch (error) {
+        console.error('Error disabling certificate:', error);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: error.message,
+            timer: 5000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            position: 'top',
+            toast: false
+        });
+    }
+}
+
+// Update certificate info display
+function updateCertificateInfo(certInfo) {
+    const certInfoElement = document.getElementById('certificateInfo');
+    
+    if (certInfo) {
+        // Parse subject components
+        const subjectParts = {};
+        certInfo.subject.split(', ').forEach(part => {
+            const [key, value] = part.split('=');
+            subjectParts[key] = value;
+        });
+
+        // Update basic info
+        document.getElementById('certCN').textContent = subjectParts.CN || 'Not specified';
+        document.getElementById('certO').textContent = subjectParts.O || 'Not specified';
+        document.getElementById('certC').textContent = subjectParts.C || 'Not specified';
+        document.getElementById('certOID').textContent = subjectParts.OID || 'Not specified';
+        document.getElementById('certSerial').textContent = certInfo.serialNumber;
+
+        // Update validity dates
+        document.getElementById('certValidFrom').textContent = new Date(certInfo.validFrom).toLocaleDateString('en-MY', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        document.getElementById('certValidTo').textContent = new Date(certInfo.validTo).toLocaleDateString('en-MY', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+
+        // Update LHDN requirements
+        const requirementsContainer = document.getElementById('lhdnRequirements');
+        requirementsContainer.innerHTML = '';
+
+        // Subject requirements
+        certInfo.requirements.subject.forEach(field => {
+            const reqElement = document.createElement('div');
+            reqElement.className = `requirement-item ${field.present ? 'valid' : 'invalid'}`;
+            reqElement.innerHTML = `
+                <i class="fas ${field.present ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+                <div>
+                    <div class="requirement-name">${field.field}</div>
+                    <div class="requirement-value">${field.value || 'Missing'}</div>
+                </div>
+            `;
+            requirementsContainer.appendChild(reqElement);
+        });
+
+        // Key usage requirement
+        const keyUsageReq = document.createElement('div');
+        keyUsageReq.className = `requirement-item ${certInfo.requirements.keyUsage.nonRepudiation ? 'valid' : 'invalid'}`;
+        keyUsageReq.innerHTML = `
+            <i class="fas ${certInfo.requirements.keyUsage.nonRepudiation ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+            <div>
+                <div class="requirement-name">Key Usage</div>
+                <div class="requirement-value">${certInfo.requirements.keyUsage.required}</div>
+            </div>
+        `;
+        requirementsContainer.appendChild(keyUsageReq);
+
+        // Extended key usage requirement
+        const extKeyUsageReq = document.createElement('div');
+        extKeyUsageReq.className = `requirement-item ${certInfo.requirements.extKeyUsage.documentSigning ? 'valid' : 'invalid'}`;
+        extKeyUsageReq.innerHTML = `
+            <i class="fas ${certInfo.requirements.extKeyUsage.documentSigning ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+            <div>
+                <div class="requirement-name">Extended Key Usage</div>
+                <div class="requirement-value">${certInfo.requirements.extKeyUsage.required}</div>
+            </div>
+        `;
+        requirementsContainer.appendChild(extKeyUsageReq);
+
+        // Update technical details
+        if (certInfo.keyUsage && certInfo.keyUsage.length > 0) {
+            document.getElementById('certKeyUsage').innerHTML = `
+                <ul>
+                    ${certInfo.keyUsage.map(usage => `
+                        <li>
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            ${usage}
+                        </li>
+                    `).join('')}
+                </ul>
+            `;
+        } else {
+            document.getElementById('certKeyUsage').innerHTML = '<p class="text-muted">No key usage specified</p>';
+        }
+
+        if (certInfo.extKeyUsage && certInfo.extKeyUsage.length > 0) {
+            document.getElementById('certExtKeyUsage').innerHTML = `
+                <ul>
+                    ${certInfo.extKeyUsage.map(usage => `
+                        <li>
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            ${usage}
+                        </li>
+                    `).join('')}
+                </ul>
+            `;
+        } else {
+            document.getElementById('certExtKeyUsage').innerHTML = '<p class="text-muted">No extended key usage specified</p>';
+        }
+
+        // Format issuer information
+        if (certInfo.issuer) {
+            const issuerParts = certInfo.issuer.split(', ');
+            document.getElementById('certIssuer').innerHTML = `
+                <ul>
+                    ${issuerParts.map(part => {
+                        const [key, value] = part.split('=');
+                        return `
+                            <li>
+                                <span class="label">${key}:</span>
+                                <span class="value">${value}</span>
+                            </li>
+                        `;
+                    }).join('')}
+                </ul>
+            `;
+        }
+
+        // Format subject information
+        if (certInfo.subject) {
+            const subjectParts = certInfo.subject.split(', ');
+            document.getElementById('certSubject').innerHTML = `
+                <ul>
+                    ${subjectParts.map(part => {
+                        const [key, value] = part.split('=');
+                        return `
+                            <li>
+                                <span class="label">${key}:</span>
+                                <span class="value">${value}</span>
+                            </li>
+                        `;
+                    }).join('')}
+                </ul>
+            `;
+        }
+
+        // Update status badge
+        const statusBadge = document.getElementById('certStatus');
+        statusBadge.className = 'badge';
+        
+        if (certInfo.status === 'VALID' && certInfo.lhdnCompliant) {
+            statusBadge.classList.add('valid');
+            statusBadge.textContent = 'Valid for LHDN';
+        } else if (certInfo.status === 'VALID') {
+            statusBadge.classList.add('warning');
+            statusBadge.textContent = 'Valid but not LHDN compliant';
+        } else {
+            statusBadge.classList.add('error');
+            statusBadge.textContent = certInfo.status === 'EXPIRED' ? 'Expired' : 'Invalid';
+        }
+
+        // Show certificate info with animation
+        certInfoElement.style.display = 'block';
+        setTimeout(() => {
+            certInfoElement.classList.add('show');
+        }, 10);
+    } else {
+        certInfoElement.style.display = 'none';
+        certInfoElement.classList.remove('show');
+    }
+}
+
+// Add function to extract and transform certificate
+async function extractAndTransformCertificate(p12Buffer, password) {
+    try {
+        // Parse the PKCS#12 certificate
+        const p12Asn1 = forge.asn1.fromDer(forge.util.createBuffer(p12Buffer));
+        const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
+
+        // Extract certificate info
+        const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag];
+        const cert = certBags[0].cert;
+
+        // Extract private key
+        const pkeyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag];
+        const pkey = pkeyBags[0];
+
+        // Generate XAdES structure
+        const xadesStructure = {
+            signedInfo: {
+                canonicalizationMethod: {
+                    algorithm: "https://www.w3.org/TR/xml-c14n11/#"
+                },
+                signatureMethod: {
+                    algorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+                },
+                reference: {
+                    documentSignedData: {
+                        transforms: [
+                            {
+                                algorithm: "http://www.w3.org/TR/1999/REC-xpath-19991116",
+                                xpath: "not(//ancestor-or-self::ext:UBLExtensions)"
+                            },
+                            {
+                                algorithm: "http://www.w3.org/TR/1999/REC-xpath-19991116",
+                                xpath: "not(//ancestor-or-self::cac:Signature)"
+                            },
+                            {
+                                algorithm: "http://www.w3.org/2006/12/xml-c14n11"
+                            }
+                        ],
+                        digestMethod: {
+                            algorithm: "http://www.w3.org/2001/04/xmlenc#sha256"
+                        }
+                    }
+                }
+            },
+            signatureValue: null, // Will be populated when signing
+            keyInfo: {
+                x509Data: {
+                    x509Certificate: forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes())
+                }
+            },
+            object: {
+                qualifyingProperties: {
+                    target: "signature",
+                    signedProperties: {
+                        id: "id-xades-signed-props",
+                        signedSignatureProperties: {
+                            signingTime: new Date().toISOString(),
+                            signingCertificate: {
+                                cert: {
+                                    certDigest: {
+                                        digestMethod: {
+                                            algorithm: "http://www.w3.org/2001/04/xmlenc#sha256"
+                                        },
+                                        digestValue: calculateCertificateDigest(cert)
+                                    },
+                                    issuerSerial: {
+                                        x509IssuerName: cert.issuer.getField('CN').value,
+                                        x509SerialNumber: cert.serialNumber
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        return {
+            cert,
+            pkey,
+            xadesStructure
+        };
+
+    } catch (error) {
+        throw new Error(`Failed to extract certificate: ${error.message}`);
+    }
+}
+
+// Helper function to calculate certificate digest
+function calculateCertificateDigest(cert) {
+    const certDer = forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
+    const md = forge.md.sha256.create();
+    md.update(certDer);
+    return forge.util.encode64(md.digest().getBytes());
+}
+
+// Helper function to generate XAdES XML
+function generateXadesXml(xadesStructure) {
+    // Convert the xadesStructure object to XML format
+    const xml = `
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" 
+              xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="DocSig">
+    <ds:SignedInfo>
+        <ds:CanonicalizationMethod Algorithm="${xadesStructure.signedInfo.canonicalizationMethod.algorithm}"/>
+        <ds:SignatureMethod Algorithm="${xadesStructure.signedInfo.signatureMethod.algorithm}"/>
+        <ds:Reference Id="id-doc-signed-data" URI="">
+            <ds:Transforms>
+                ${xadesStructure.signedInfo.reference.documentSignedData.transforms.map(transform => `
+                <ds:Transform Algorithm="${transform.algorithm}">
+                    ${transform.xpath ? `<ds:XPath>${transform.xpath}</ds:XPath>` : ''}
+                </ds:Transform>`).join('')}
+            </ds:Transforms>
+            <ds:DigestMethod Algorithm="${xadesStructure.signedInfo.reference.documentSignedData.digestMethod.algorithm}"/>
+            <ds:DigestValue>[Document Digest Value]</ds:DigestValue>
+        </ds:Reference>
+    </ds:SignedInfo>
+    <ds:SignatureValue>[Signature Value]</ds:SignatureValue>
+    <ds:KeyInfo>
+        <ds:X509Data>
+            <ds:X509Certificate>${xadesStructure.keyInfo.x509Data.x509Certificate}</ds:X509Certificate>
+        </ds:X509Data>
+    </ds:KeyInfo>
+    <ds:Object>
+        <xades:QualifyingProperties Target="#DocSig">
+            <xades:SignedProperties Id="id-xades-signed-props">
+                <xades:SignedSignatureProperties>
+                    <xades:SigningTime>${xadesStructure.object.qualifyingProperties.signedProperties.signedSignatureProperties.signingTime}</xades:SigningTime>
+                    <xades:SigningCertificate>
+                        <xades:Cert>
+                            <xades:CertDigest>
+                                <ds:DigestMethod Algorithm="${xadesStructure.object.qualifyingProperties.signedProperties.signedSignatureProperties.signingCertificate.cert.certDigest.digestMethod.algorithm}"/>
+                                <ds:DigestValue>${xadesStructure.object.qualifyingProperties.signedProperties.signedSignatureProperties.signingCertificate.cert.certDigest.digestValue}</ds:DigestValue>
+                            </xades:CertDigest>
+                            <xades:IssuerSerial>
+                                <ds:X509IssuerName>${xadesStructure.object.qualifyingProperties.signedProperties.signedSignatureProperties.signingCertificate.cert.issuerSerial.x509IssuerName}</ds:X509IssuerName>
+                                <ds:X509SerialNumber>${xadesStructure.object.qualifyingProperties.signedProperties.signedSignatureProperties.signingCertificate.cert.issuerSerial.x509SerialNumber}</ds:X509SerialNumber>
+                            </xades:IssuerSerial>
+                        </xades:Cert>
+                    </xades:SigningCertificate>
+                </xades:SignedSignatureProperties>
+            </xades:SignedProperties>
+        </xades:QualifyingProperties>
+    </ds:Object>
+</ds:Signature>`;
+
+    return formatXml(xml);
+}
+
+// Helper function to format XML
+function formatXml(xml) {
+    let formatted = '';
+    let indent = '';
+    const tab = '    ';
+    xml.split(/>\s*</).forEach(function(node) {
+        if (node.match(/^\/\w/)) indent = indent.substring(tab.length);
+        formatted += indent + '<' + node + '>\r\n';
+        if (node.match(/^<?\w[^>]*[^\/]$/)) indent += tab;
+    });
+    return formatted.substring(1, formatted.length-3);
+}
+
+// Add event listeners for form changes
+document.addEventListener('DOMContentLoaded', () => {
+    const certificateFile = document.getElementById('certificateFile');
+    const certificatePassword = document.getElementById('certificatePassword');
+    const lhdnRequirementsCheck = document.getElementById('lhdnRequirementsCheck');
+
+    // Reset validation state when form changes
+    const resetValidation = () => {
+        isValidated = false;
+        document.getElementById('saveCertBtn').disabled = true;
+    };
+
+    if (certificateFile) certificateFile.addEventListener('change', resetValidation);
+    if (certificatePassword) certificatePassword.addEventListener('input', resetValidation);
+    if (lhdnRequirementsCheck) lhdnRequirementsCheck.addEventListener('change', resetValidation);
 });

@@ -175,23 +175,22 @@ app.use((req, res) => {
 // Global error handler
 app.use(error);
 
-// Add this function before startServer
 async function ensureDirectories() {
-    const dirs = [
-        path.join(__dirname, 'public/temp'),
-        path.join(__dirname, 'uploads/company-logos')
-    ];
-    
-    for (const dir of dirs) {
-        try {
-            await fsPromises.access(dir);
-        } catch {
-            console.log(`Creating directory: ${dir}`);
-            await fsPromises.mkdir(dir, { recursive: true });
-        }
-    }
+  const dirs = [
+      path.join(__dirname, 'public/temp'),
+      path.join(__dirname, 'uploads/company-logos'),
+      path.join(process.env.TEMP || os.tmpdir(), 'jsreport') // Add jsreport temp directory
+  ];
+  
+  for (const dir of dirs) {
+      try {
+          await fsPromises.access(dir);
+      } catch {
+          console.log(`Creating directory: ${dir}`);
+          await fsPromises.mkdir(dir, { recursive: true });
+      }
+  }
 }
-
 // 6. Server Startup
 const startServer = async () => {
   try {
@@ -230,23 +229,53 @@ const startServer = async () => {
       process.exit(1);
     });
 
-    // Add error handler for uncaught exceptions
-    process.on('uncaughtException', (err) => {
+    // Modify the uncaught exception handler
+    process.on('uncaughtException', async (err) => {
       console.error('Uncaught Exception:', err);
-      if (jsreportInstance) {
-        jsreportInstance.close();
+      if (jsreportInstance && typeof jsreportInstance.close === 'function') {
+        try {
+          await jsreportInstance.close();
+        } catch (closeError) {
+          console.error('Error closing jsreport:', closeError);
+        }
       }
       process.exit(1);
     });
 
-    // Add error handler for unhandled promise rejections
-    process.on('unhandledRejection', (reason, promise) => {
+    // Modify the unhandled rejection handler
+    process.on('unhandledRejection', async (reason, promise) => {
       console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      if (jsreportInstance && typeof jsreportInstance.close === 'function') {
+        try {
+          await jsreportInstance.close();
+        } catch (closeError) {
+          console.error('Error closing jsreport:', closeError);
+        }
+      }
     });
     
+    process.on('SIGTERM', async () => {
+      console.log('Received SIGTERM signal. Shutting down gracefully...');
+      if (jsreportInstance && typeof jsreportInstance.close === 'function') {
+        try {
+          await jsreportInstance.close();
+        } catch (closeError) {
+          console.error('Error closing jsreport:', closeError);
+        }
+      }
+      process.exit(0);
+    });
+
 
   } catch (error) {
     console.error('Failed to start server:', error);
+    if (jsreportInstance && typeof jsreportInstance.close === 'function') {
+      try {
+        await jsreportInstance.close();
+      } catch (closeError) {
+        console.error('Error closing jsreport:', closeError);
+      }
+    }
     process.exit(1);
   }
 };
