@@ -617,7 +617,7 @@
 
                 <div class="credits fade-in" style="animation-delay: 0.4s">
                     Designed by <a href="https://pixelcareconsulting.com/"  rel="noopener">Pixelcare Consulting</a>
-                    <p class="mt-2 mb-0 text-muted">Version 1.0.0 2025.0207.0513.004</p>
+                    <p class="small text-muted">{{appFullVersion}}</p>
                 </div>
             </div>
         </div>
@@ -989,5 +989,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 150);
     }
 });
+
+// Create a version object
+const appVersion = new VersionControl({
+  major: '1',
+  minor: '0', 
+  patch: '0',
+  build: '004'
+});
+
+// Display version in your UI
+const versionElement = appVersion.createVersionElement({
+  elementType: 'p',
+  className: 'mt-2 mb-0 text-muted'
+});
+document.querySelector('footer').appendChild(versionElement);
 </script>
+
 {% endblock %}

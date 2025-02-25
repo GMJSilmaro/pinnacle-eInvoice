@@ -1743,52 +1743,54 @@ function showLHDNErrorModal(error) {
         console.warn('Error parsing error message:', e);
     }
 
-    // Extract error message and details from the new error format
-    let errorMessage, errorCode, details;
-    
-    if (Array.isArray(errorDetails)) {
-        // Handle array of validation errors
-        errorMessage = 'Validation Error';
-        errorCode = 'VALIDATION_ERROR';
-        details = errorDetails;
-    } else {
-        errorMessage = errorDetails.message || 'An unknown error occurred';
-        errorCode = errorDetails.code || 'ERROR';
-        details = Array.isArray(errorDetails.details) ? errorDetails.details : 
-                 (errorDetails.details ? [errorDetails.details] : []);
-    }
+    // Extract error details from the new error format
+    const errorData = errorDetails.error || errorDetails;
+    const mainError = {
+        code: errorData.code || 'VALIDATION_ERROR',
+        message: errorData.message || 'An unknown error occurred',
+        details: errorData.details || {}
+    };
+
+    // Format the validation error details
+    const validationDetails = mainError.details?.error?.details || [];
+    const invoiceNumber = mainError.details?.invoiceCodeNumber || 'Unknown';
 
     Swal.fire({
         title: 'LHDN Submission Error',
         html: `
-            <div class="content-card swal2-content" >
+            <div class="content-card swal2-content">
                 <div style="margin-bottom: 15px; text-align: center;">
                     <div class="error-icon" style="color: #dc3545; font-size: 28px; margin-bottom: 10%; animation: pulseError 1.5s infinite;">
                         <i class="fas fa-times-circle"></i>
                     </div>
                     <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
                         <i class="fas fa-exclamation-circle" style="color: #dc3545; margin-right: 5px;"></i>
-                        ${errorMessage}
+                        ${mainError.message}
                     </div>
                 </div>
     
                 <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05);">
                     <div style="margin-bottom: 8px;">
                         <span style="color: #595959; font-weight: 600;">Error Code:</span>
-                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${errorCode}</span>
+                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${mainError.code}</span>
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <span style="color: #595959; font-weight: 600;">Invoice Number:</span>
+                        <span style="color: #595959;">${invoiceNumber}</span>
                     </div>
     
-                    ${details.length > 0 ? `
+                    ${validationDetails.length > 0 ? `
                         <div>
                             <span style="color: #595959; font-weight: 600;">Validation Errors:</span>
                             <div style="margin-top: 4px; max-height: 200px; overflow-y: auto;">
-                                ${details.map(detail => `
+                                ${validationDetails.map(detail => `
                                     <div style="background: #fff; padding: 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid rgba(220, 53, 69, 0.2); font-size: 0.9em;">
                                         <div style="margin-bottom: 4px;">
-                                            <strong>Field:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
+                                            <strong>Path:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
                                         </div>
                                         <div>
-                                            <strong>Error:</strong> ${detail.message || detail.description || detail}
+                                            <strong>Error:</strong> ${formatValidationMessage(detail.message)}
                                         </div>
                                         ${detail.code ? `
                                             <div style="margin-top: 4px; font-size: 0.9em; color: #6c757d;">
@@ -1803,6 +1805,13 @@ function showLHDNErrorModal(error) {
                 </div>
             </div>
     
+            <style>
+                @keyframes pulseError {
+                    0% { transform: scale(1); }
+                    50% { transform: scale(1.15); }
+                    100% { transform: scale(1); }
+                }
+            </style>
         `,
         customClass: {
             confirmButton: 'outbound-action-btn submit',
@@ -1812,6 +1821,27 @@ function showLHDNErrorModal(error) {
         showCloseButton: true
     });
 }
+
+// Helper function to format validation messages
+function formatValidationMessage(message) {
+    if (!message) return 'Unknown error';
+    
+    // Remove technical details and format the message
+    return message
+        .split('\n')
+        .map(line => {
+            // Remove JSON-like formatting
+            line = line.replace(/[{}]/g, '');
+            // Remove technical prefixes
+            line = line.replace(/(ArrayItemNotValid|NoAdditionalPropertiesAllowed|#\/Invoice\[\d+\])/g, '');
+            // Clean up extra spaces and punctuation
+            line = line.trim().replace(/\s+/g, ' ').replace(/:\s+/g, ': ');
+            return line;
+        })
+        .filter(line => line.length > 0)
+        .join('<br>');
+}
+
 // Helper function to get next steps based on error code
 function getNextSteps(errorCode) {
     const commonSteps = `
@@ -2231,161 +2261,208 @@ class InvoiceTableManager {
   
     constructor() {
         if (InvoiceTableManager.instance) return InvoiceTableManager.instance;
+        
+        // Check if table element exists before initializing
+        const tableElement = document.getElementById('invoiceTable');
+        if (!tableElement) {
+            console.error('Table element #invoiceTable not found');
+            return;
+        }
+
+        // Ensure table has proper structure
+        if (!tableElement.querySelector('thead')) {
+            const thead = document.createElement('thead');
+            const tr = document.createElement('tr');
+            thead.appendChild(tr);
+            tableElement.insertBefore(thead, tableElement.firstChild);
+        }
+
+        if (!tableElement.querySelector('tbody')) {
+            const tbody = document.createElement('tbody');
+            tableElement.appendChild(tbody);
+        }
+
         this.initializeTable();
         InvoiceTableManager.instance = this;
     }
   
     initializeTable() {
-        // Destroy existing table if it exists
-        if ($.fn.DataTable.isDataTable('#invoiceTable')) {
-            this.table.destroy();
-            $('#invoiceTable').empty();
-        }
+        try {
+            // Destroy existing table if it exists
+            if ($.fn.DataTable.isDataTable('#invoiceTable')) {
+                $('#invoiceTable').DataTable().destroy();
+                $('#invoiceTable').empty();
+            }
 
-        // Initialize DataTable with minimal styling configuration
-        this.table = $('#invoiceTable').DataTable({
-            processing: true,
-            serverSide: false,
-            ajax: {
-                url: '/api/outbound-files/list-all',
-                method: 'GET',
-                dataSrc: (json) => {
-                    if (!json.success) {
-                        console.error('Error:', json.error);
-                        this.showEmptyState(json.error?.message || 'Failed to load data');
-                        return [];
-                    }
-                    
-                    if (!json.files || json.files.length === 0) {
-                        this.showEmptyState('No XML files found');
-                        return [];
-                    }
-                    
-                    // Process the files data
-                    const processedData = json.files.map(file => ({
-                        ...file,
-                        DT_RowId: file.fileName,
-                        invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
-                        fileName: file.fileName,
-                        documentType: file.documentType || 'Invoice',
-                        company: file.company,
-                        buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
-                        uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
-                        issueDate: file.issueDate,
-                        issueTime: file.issueTime,
-                        date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
-                        status: file.status || 'Pending',
-                        source: file.source,
-                        uuid: file.uuid || null
-                    }));
-
-                    console.log("Current Process Data", processedData);
-
-                    // Update card totals after data is loaded
-                    setTimeout(() => this.updateCardTotals(), 0);
-                    
-                    return processedData;
-                },
-                error: (xhr, error, thrown) => {
-                    console.error('Ajax error:', error);
-                    let errorMessage = 'Error loading data. Please try again.';
-                    
-                    try {
-                        const response = xhr.responseJSON;
-                        if (response && response.error) {
-                            errorMessage = response.error.message || errorMessage;
+            // Initialize DataTable with minimal styling configuration
+            this.table = $('#invoiceTable').DataTable({
+                processing: false,
+                serverSide: false,
+                ajax: {
+                    url: '/api/outbound-files/list-all',
+                    method: 'GET',
+                    dataSrc: (json) => {
+                        if (!json.success) {
+                            console.error('Error:', json.error);
+                            this.showEmptyState(json.error?.message || 'Failed to load data');
+                            return [];
                         }
-                    } catch (e) {
-                        console.error('Error parsing error response:', e);
+                        
+                        if (!json.files || json.files.length === 0) {
+                            this.showEmptyState('No EXCEL files found');
+                            return [];
+                        }
+                        
+                        // Process the files data
+                        const processedData = json.files.map(file => ({
+                            ...file,
+                            DT_RowId: file.fileName,
+                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
+                            fileName: file.fileName,
+                            documentType: file.documentType || 'Invoice',
+                            company: file.company,
+                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
+                            uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
+                            issueDate: file.issueDate,
+                            issueTime: file.issueTime,
+                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
+                            status: file.status || 'Pending',
+                            source: file.source,
+                            uuid: file.uuid || null,
+                            totalAmount: file.totalAmount || null
+                        }));
+
+                        console.log("Current Process Data", processedData);
+
+                        // Update card totals after data is loaded
+                        setTimeout(() => this.updateCardTotals(), 0);
+                        
+                        return processedData;
+                    },
+                    error: (xhr, error, thrown) => {
+                        console.error('Ajax error:', error);
+                        let errorMessage = 'Error loading data. Please try again.';
+                        
+                        try {
+                            const response = xhr.responseJSON;
+                            if (response && response.error) {
+                                errorMessage = response.error.message || errorMessage;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing error response:', e);
+                        }
+                        
+                        this.showEmptyState(errorMessage);
                     }
-                    
-                    this.showEmptyState(errorMessage);
+                },
+                columns: [
+                    {
+                        data: null,
+                        orderable: false,
+                        searchable: false,
+                        width: '5px',
+                        className: 'outbound-checkbox-column',
+                        defaultContent: `<div class="outbound-checkbox-header">
+                            <input type="checkbox" class="outbound-checkbox row-checkbox">
+                        </div>`
+                    },
+                    {
+                        data: null,
+                        orderable: false,
+                        searchable: false,
+                        width: '30px',
+                        className: 'text-center',
+                        render: function (data, type, row, meta) {
+                            // Calculate the correct index based on the current page and page length
+                            const pageInfo = meta.settings._iDisplayStart;
+                            const index = pageInfo + meta.row + 1;
+                            return `<span class="row-index">${index}</span>`;
+                        }
+                    },
+                    {
+                        data: 'invoiceNumber',
+                        title: 'INVOICE NO. / DOCUMENT',
+                        render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
+                    },
+                    {
+                        data: 'company',
+                        title: 'SUPPLIER',
+                        render: (data, type, row) => this.renderCompanyInfo(data, type, row)
+                    },
+                    {
+                        data: 'buyerInfo',
+                        title: 'BUYER',
+                        render: (data, type, row) => this.renderBuyerInfo(data, type, row)
+                    },
+                    {
+                        data: 'uploadedDate',
+                        title: 'FILE UPLOADED',
+                        render: (data, type, row) => this.renderUploadedDate(data, type, row)
+                    },
+                    {
+                        data: null,
+                        title: 'DATE INFO',
+                        render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row)
+                    },
+                    {
+                        data: 'status',
+                        title: 'STATUS',
+                        render: (data) => this.renderStatus(data)
+                    },
+                    {
+                        data: 'source',
+                        title: 'SOURCE',
+                        render: (data) => this.renderSource(data)
+                    },
+                    {
+                        data: 'totalAmount',
+                        title: 'TOTAL AMOUNT',
+                        width: '10%',
+                        render: (data) => this.renderTotalAmount(data)
+                    },
+                    {
+                        data: null,
+                        title: 'ACTION',
+                        className: 'outbound-action-column',
+                        width: '9%',
+                        orderable: false,
+                        render: (data, type, row) => this.renderActions(row)
+                    }
+                ],
+                responsive: false,
+                pageLength: 10,
+                dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+                language: {
+                    search: '',
+                    searchPlaceholder: 'Search...',
+                    lengthMenu: 'Show _MENU_ entries',
+                    info: 'Showing _START_ to _END_ of _TOTAL_ entries',
+                    infoEmpty: 'Showing 0 to 0 of 0 entries',
+                    infoFiltered: '(filtered from _MAX_ total entries)',
+                    paginate: {
+                        first: '<i class="bi bi-chevron-double-left"></i>',
+                        previous: '<i class="bi bi-chevron-left"></i>',
+                        next: '<i class="bi bi-chevron-right"></i>',
+                        last: '<i class="bi bi-chevron-double-right"></i>'
+                    },
+                    emptyTable: this.getEmptyStateHtml(),
+                    zeroRecords: this.getEmptyStateHtml('Searching for data...')
+                },
+                order: [[5, 'desc']], // Keep newest first sorting
+                drawCallback: function(settings) {
+                    // Update row indexes when table is redrawn (sorting, filtering, pagination)
+                    $(this).find('tbody tr').each(function(index) {
+                        const pageInfo = settings._iDisplayStart;
+                        $(this).find('.row-index').text(pageInfo + index + 1);
+                    });
                 }
-            },
-            columns: [
-                {
-                    data: null,
-                    orderable: false,
-                    searchable: false,
-                    width: '5px',
-                    className: 'outbound-checkbox-column',
-                    defaultContent: `<div class="outbound-checkbox-header">
-                        <input type="checkbox" class="outbound-checkbox row-checkbox">
-                    </div>`
-                },
-                {
-                    data: 'invoiceNumber',
-                    className: 'outbound-invoice-column',
-                    width: '10px',
-                    title: 'INVOICE NO. / DOCUMENT',
-                    render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
-                },
-                {
-                    data: 'company',
-                    className: 'outbound-supplier-column',
-                    title: 'SUPPLIER',
-                    render: (data, type, row) => this.renderCompanyInfo(data, type, row)
-                },
-                {
-                    data: 'buyerInfo',
-                    className: 'outbound-buyer-column',
-                    title: 'BUYER',
-                    render: (data, type, row) => this.renderBuyerInfo(data, type, row)
-                },
-                {
-                    data: 'uploadedDate',
-                    className: 'outbound-date-column',
-                    title: 'FILE UPLOADED',
-                    render: (data, type, row) => this.renderUploadedDate(data, type, row)
-                },
-                {
-                    data: null,
-                    className: 'outbound-date-column',
-                    title: 'DATE INFO',
-                    render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row)
-                },
-                {
-                    data: 'status',
-                    className: 'outbound-status-column',
-                    title: 'STATUS',
-                    render: (data) => this.renderStatus(data)
-                },
-                {
-                    data: 'source',
-                    className: 'outbound-source-column',
-                    title: 'SOURCE',
-                    render: (data) => this.renderSource(data)
-                },
-                {
-                    data: null,
-                    className: 'outbound-action-column',
-                    title: 'ACTION',
-                    orderable: false,
-                    render: (data, type, row) => this.renderActions(row)
-                }
-            ],
-            responsive: false,
-            pageLength: 10,
-            dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
-            language: {
-                search: '',
-                searchPlaceholder: 'Search...',
-                lengthMenu: 'Show _MENU_ entries',
-                info: 'Showing _START_ to _END_ of _TOTAL_ entries',
-                infoEmpty: 'Showing 0 to 0 of 0 entries',
-                infoFiltered: '(filtered from _MAX_ total entries)',
-                paginate: {
-                    first: '<i class="bi bi-chevron-double-left"></i>',
-                    previous: '<i class="bi bi-chevron-left"></i>',
-                    next: '<i class="bi bi-chevron-right"></i>',
-                    last: '<i class="bi bi-chevron-double-right"></i>'
-                },
-                emptyTable: this.getEmptyStateHtml(),
-                zeroRecords: this.getEmptyStateHtml('No matching records found')
-            },
-            order: [[4, 'asc']]
-        });
-        this.initializeFeatures();
+            });
+
+            this.initializeFeatures();
+        } catch (error) {
+            console.error('Error initializing DataTable:', error);
+            this.showEmptyState('Error initializing table. Please refresh the page.');
+        }
     }
   
     // Helper method to determine document type
@@ -2394,7 +2471,11 @@ class InvoiceTableManager {
             '01': 'Invoice',
             '02': 'Credit Note',
             '03': 'Debit Note',
-            '04': 'Refund Note'
+            '04': 'Refund Note',
+            '11': 'Self-billed Invoice',
+            '12': 'Self-billed Credit Note',
+            '13': 'Self-billed Debit Note',
+            '14': 'Self-billed Refund Note'
         };
         return types[type] || 'Invoice';
     }
@@ -2418,6 +2499,33 @@ class InvoiceTableManager {
             }
         });
     }
+
+    renderTotalAmount(data) {
+        if (!data) return '<span class="text-muted">N/A</span>';
+        
+        return `
+            <div class="total-amount-wrapper" style="
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+            ">
+                <span class="total-amount" style="
+                    font-weight: 500;
+                    color: #1e40af;
+                    font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                    background: rgba(30, 64, 175, 0.1);
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    display: inline-block;
+                    letter-spacing: 0.5px;
+                    white-space: nowrap;
+                    transition: all 0.2s ease;
+                ">
+                    ${data}
+                </span>
+            </div>
+        `;
+    }
   
     renderInvoiceNumber(data, type, row) {
         if (!data) return '<span class="text-muted">N/A</span>';
@@ -2428,7 +2536,11 @@ class InvoiceTableManager {
                 'Invoice': 'receipt',
                 'Credit Note': 'arrow-return-left',
                 'Debit Note': 'arrow-return-right',
-                'Refund Note': 'cash-stack'
+                'Refund Note': 'cash-stack',
+                'Self-billed Invoice': 'receipt',
+                'Self-billed Credit Note': 'arrow-return-left',
+                'Self-billed Debit Note': 'arrow-return-right',
+                'Self-billed Refund Note': 'cash-stack'
             };
             return icons[docType] || 'file-text';
         };
@@ -2439,7 +2551,11 @@ class InvoiceTableManager {
                 'Invoice': '#0d6efd',
                 'Credit Note': '#198754',
                 'Debit Note': '#dc3545',
-                'Refund Note': '#6f42c1'
+                'Refund Note': '#6f42c1',
+                'Self-billed Invoice': '#0d6efd',
+                'Self-billed Credit Note': '#198754',
+                'Self-billed Debit Note': '#dc3545',
+                'Self-billed Refund Note': '#6f42c1'
             };
             return colors[docType] || '#6c757d';
         };
@@ -2527,9 +2643,9 @@ class InvoiceTableManager {
         const buyerName = data.name || data.registrationName || data.buyerName || data.buyer?.name || data.buyer?.registrationName || 'N/A';
         return `
             <div class="cell-group">
-                <div class="cell-main text-truncate">
+                <div class="cell-main ">
                     <i class="bi bi-person-badge me-1"></i>
-                    <span class="buyer-text" title="${buyerName}">${buyerName}</span>
+                    <span title="${buyerName}">${buyerName}</span>
                 </div>
                 <div class="cell-sub">
                     <i class="bi bi-card-text me-1"></i>
@@ -2548,18 +2664,27 @@ class InvoiceTableManager {
         return `
             <div class="date-info"> 
                 ${submittedFormatted ? `
-                    <div class="date-row" data-bs-toggle="tooltip" title="Date and time when document was submitted to LHDN">
+                    <div class="date-row" 
+                         data-bs-toggle="tooltip" 
+                         data-bs-placement="top" 
+                         title="Date and time when document was submitted to LHDN">
                         <i class="bi bi-check-circle me-1 text-success"></i>
                         <span class="date-value">${submittedFormatted}</span>
                     </div>
                 ` : ''}
                 ${showTimeRemaining && timeRemaining ? `
-                    <div class="time-remaining" data-bs-toggle="tooltip" title="Time remaining before the 72-hour cancellation window expires">
+                    <div class="time-remaining" 
+                         data-bs-toggle="tooltip" 
+                         data-bs-placement="top" 
+                         title="Time remaining before the 72-hour cancellation window expires">
                         <i class="bi bi-clock${timeRemaining.hours < 24 ? '-fill' : ''} me-1"></i>
                         <span class="time-text">${timeRemaining.hours}h ${timeRemaining.minutes}m left</span>
                     </div>
                 ` : row.status !== 'Submitted' ? `
-                    <div class="time-not-applicable" data-bs-toggle="tooltip" title="Cancellation window not applicable for this document status">
+                    <div class="time-not-applicable" 
+                         data-bs-toggle="tooltip" 
+                         data-bs-placement="top" 
+                         title="Cancellation window not applicable for this document status">
                         <i class="bi bi-dash-circle me-1"></i>
                         <span class="text-muted">Not Applicable</span>
                     </div>
@@ -2790,8 +2915,32 @@ class InvoiceTableManager {
     }
   
     initializeTooltips() {
-        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-        tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+        const initTooltips = () => {
+            // First dispose any existing tooltips
+            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            tooltipTriggerList.forEach(element => {
+                const tooltip = bootstrap.Tooltip.getInstance(element);
+                if (tooltip) {
+                    tooltip.dispose();
+                }
+            });
+    
+            // Initialize new tooltips
+            tooltipTriggerList.forEach(tooltipTriggerEl => {
+                new bootstrap.Tooltip(tooltipTriggerEl, {
+                    trigger: 'hover',
+                    container: 'body'
+                });
+            });
+        };
+    
+        // Initialize tooltips on first load
+        initTooltips();
+    
+        // Reinitialize tooltips after table draw
+        this.table.on('draw', () => {
+            setTimeout(initTooltips, 100); // Small delay to ensure DOM is updated
+        });
     }
   
     updateExportButton() {
@@ -2948,7 +3097,6 @@ class InvoiceTableManager {
         this.initializeEventListeners();
         this.initializeSelectAll();
         this.addExportButton();
-     
     }
   
     initializeTableStyles() {
@@ -3094,56 +3242,252 @@ class InvoiceTableManager {
     `;
     }
 
-    showEmptyState(message = 'No XML files found') {
+    showEmptyState(message = 'No EXCEL files found') {
         const emptyState = `
-            <div class="empty-state-container text-center p-4">
-                <div class="empty-state-icon mb-3">
-                    <i class="fas fa-file-xml fa-3x text-muted"></i>
-                </div>
-                <h5 class="empty-state-title mb-2">No XML Files</h5>
-                <p class="empty-state-description text-muted mb-3">${message}</p>
-                <div class="empty-state-actions">
-                    <button class="btn btn-primary" onclick="window.location.reload()">
-                        <i class="fas fa-sync-alt me-1"></i>Refresh
-                    </button>
-                    <button class="btn btn-outline-secondary ms-2" onclick="this.dispatchEvent(new CustomEvent('show-help'))">
-                        <i class="fas fa-question-circle me-1"></i>Help
-                    </button>
-                </div>
-            </div>
+  <div class="empty-state">
+  <div class="empty-state-content">
+    <div class="icon-wrapper">
+      <div class="ring ring-1"></div>
+      <div class="ring ring-2"></div>
+      <div class="icon bounce">
+        <i class="fas fa-file-excel"></i>
+      </div>
+    </div>
+    
+    <div class="text-content">
+      <h3 class="title">No Documents Available</h3>
+      <p class="description">Upload an Excel file to start processing your invoices</p>
+      <p class="sub-description">Supported formats: .xlsx, .xls</p>
+    </div>
+
+    <div class="button-group">
+      <button class="btn-primary" onclick="window.location.reload()">
+        <i class="fas fa-sync-alt"></i>
+        Refresh
+      </button>
+      <button class="btn-secondary" onclick="this.dispatchEvent(new CustomEvent('show-help'))">
+        <i class="fas fa-question-circle"></i>
+        Help
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.empty-state-content {
+  text-align: center;
+}
+
+.icon-wrapper {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+}
+
+/* Animated rings */
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid #1e40af;
+  opacity: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ring-1 {
+  width: 100%;
+  height: 100%;
+  animation: ripple 2s infinite ease-out;
+}
+
+.ring-2 {
+  width: 90%;
+  height: 90%;
+  animation: ripple 2s infinite ease-out 0.5s;
+}
+
+/* Icon bounce animation */
+.icon {
+  position: relative;
+  color: #1e40af;
+  font-size: 48px;
+  animation: bounce 2s infinite;
+}
+
+.text-content {
+  margin-bottom: 24px;
+}
+
+.title {
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.description {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.sub-description {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.button-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-primary, .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #1e40af;
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #1e3a8a;
+}
+
+.btn-primary:hover i {
+  animation: spin 1s linear infinite;
+}
+
+.btn-secondary {
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+  background: #f3f4f6;
+}
+
+.btn-primary i, .btn-secondary i {
+  margin-right: 8px;
+}
+
+/* Animations */
+@keyframes ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+</style>
         `;
 
         const tableContainer = document.querySelector('.outbound-table-container');
         if (tableContainer) {
             tableContainer.innerHTML = emptyState;
             
-            // Add help button event listener
             const helpButton = tableContainer.querySelector('button[onclick*="show-help"]');
-            if (helpButton) {
-                helpButton.addEventListener('click', () => {
-                    Swal.fire({
-                        title: 'XML Files Help',
-                        html: `
-                            <div class="text-left">
-                                <p>If you're seeing no XML files, here are some things to check:</p>
-                                <ul class="text-left">
-                                    <li>Verify that XML files exist in the correct directory</li>
-                                    <li>Check file naming format (should be {fileName}.xml)</li>
-                                    <li>Ensure you have proper permissions to access the files</li>
-                                    <li>Contact your system administrator if the issue persists</li>
-                                </ul>
+if (helpButton) {
+    helpButton.addEventListener('click', () => {
+        Swal.fire({
+            title: '<div class="text-xl font-semibold mb-2">Excel Files Guide</div>',
+            html: `
+                <div class="text-left px-2">
+                    <div class="mb-4">
+                        <p class="text-gray-600 mb-3">Not seeing your Excel files? Here's a comprehensive checklist to help you:</p>
+                    </div>
 
-                            </div>
-                        `,
-                        icon: 'info',
-                        confirmButtonText: 'Got it'
-                    });
-                });
-            }
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+                        <h3 class="font-medium text-blue-800 mb-2">File Requirements:</h3>
+                        <ul class="list-disc pl-4 text-blue-700">
+                            <li>Accepted formats: .xls, .xlsx</li>
+                            <li>Maximum file size: 10MB</li>
+                            <li>File naming format: {fileName}.xls</li>
+                        </ul>
+                    </div>
+
+                    <div class="space-y-3">
+                        <h3 class="font-medium text-gray-700 mb-2">Troubleshooting Steps:</h3>
+                        <div class="flex items-start mb-2">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Verify Excel files are in the correct upload directory</p>
+                        </div>
+                        <div class="flex items-start mb-2">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Check if files follow the required naming convention</p>
+                        </div>
+                        <div class="flex items-start mb-2">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Confirm you have proper file access permissions</p>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Ensure files are not corrupted or password-protected</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="font-medium text-gray-700 mb-2">Still having issues?</h3>
+                        <p class="text-gray-600">Contact your system administrator or reach out to support at 
+                            <a href="mailto:ask@pixelcareconsulting.com" class="text-blue-600 hover:text-blue-800">ask@pixelcareconsulting.com</a>
+                        </p>
+                    </div>
+                </div>
+            `,
+            icon: 'info',
+            confirmButtonText: 'Got it',
+            confirmButtonColor: '#1e40af',
+            customClass: {
+                container: 'help-modal-container',
+                popup: 'help-modal-popup',
+                content: 'help-modal-content',
+                confirmButton: 'help-modal-confirm'
+            },
+            showCloseButton: true,
+            width: '600px'
+        });
+    });
+}
         }
     }
 
-    getEmptyStateHtml(message = 'No XML files found') {
+    getEmptyStateHtml(message = 'No EXCEL files found') {
         return `
             <div class="empty-state-container text-center p-4">
                 <div class="empty-state-icon mb-3">
@@ -3154,8 +3498,43 @@ class InvoiceTableManager {
         `;
     }
   }
+
+  const style = document.createElement('style');
+style.textContent = `
+    .help-modal-popup {
+        border-radius: 12px !important;
+        padding: 1.5rem !important;
+    }
+
+    .help-modal-content {
+        padding: 0 !important;
+        font-size: 14px !important;
+    }
+
+    .help-modal-confirm {
+        padding: 10px 24px !important;
+        font-weight: 500 !important;
+    }
+
+    .swal2-html-container {
+        margin: 1em 0 0 0 !important;
+    }
+
+    .swal2-icon {
+        border-color: #1e40af !important;
+        color: #1e40af !important;
+    }
+`;
+document.head.appendChild(style);
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    // Check if table element exists
+    const tableElement = document.getElementById('invoiceTable');
+    if (!tableElement) {
+        console.error('Table element #invoiceTable not found');
+        return;
+    }
+
     const manager = InvoiceTableManager.getInstance();
     DateTimeManager.updateDateTime();
 });
@@ -3811,52 +4190,54 @@ function showLHDNErrorModal(error) {
         console.warn('Error parsing error message:', e);
     }
 
-    // Extract error message and details from the new error format
-    let errorMessage, errorCode, details;
-    
-    if (Array.isArray(errorDetails)) {
-        // Handle array of validation errors
-        errorMessage = 'Validation Error';
-        errorCode = 'VALIDATION_ERROR';
-        details = errorDetails;
-    } else {
-        errorMessage = errorDetails.message || 'An unknown error occurred';
-        errorCode = errorDetails.code || 'ERROR';
-        details = Array.isArray(errorDetails.details) ? errorDetails.details : 
-                 (errorDetails.details ? [errorDetails.details] : []);
-    }
+    // Extract error details from the new error format
+    const errorData = errorDetails.error || errorDetails;
+    const mainError = {
+        code: errorData.code || 'VALIDATION_ERROR',
+        message: errorData.message || 'An unknown error occurred',
+        details: errorData.details || {}
+    };
+
+    // Format the validation error details
+    const validationDetails = mainError.details?.error?.details || [];
+    const invoiceNumber = mainError.details?.invoiceCodeNumber || 'Unknown';
 
     Swal.fire({
         title: 'LHDN Submission Error',
         html: `
-            <div class="content-card swal2-content" >
+            <div class="content-card swal2-content">
                 <div style="margin-bottom: 15px; text-align: center;">
                     <div class="error-icon" style="color: #dc3545; font-size: 28px; margin-bottom: 10%; animation: pulseError 1.5s infinite;">
                         <i class="fas fa-times-circle"></i>
                     </div>
                     <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
                         <i class="fas fa-exclamation-circle" style="color: #dc3545; margin-right: 5px;"></i>
-                        ${errorMessage}
+                        ${mainError.message}
                     </div>
                 </div>
     
                 <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05);">
                     <div style="margin-bottom: 8px;">
                         <span style="color: #595959; font-weight: 600;">Error Code:</span>
-                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${errorCode}</span>
+                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${mainError.code}</span>
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <span style="color: #595959; font-weight: 600;">Invoice Number:</span>
+                        <span style="color: #595959;">${invoiceNumber}</span>
                     </div>
     
-                    ${details.length > 0 ? `
+                    ${validationDetails.length > 0 ? `
                         <div>
                             <span style="color: #595959; font-weight: 600;">Validation Errors:</span>
                             <div style="margin-top: 4px; max-height: 200px; overflow-y: auto;">
-                                ${details.map(detail => `
+                                ${validationDetails.map(detail => `
                                     <div style="background: #fff; padding: 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid rgba(220, 53, 69, 0.2); font-size: 0.9em;">
                                         <div style="margin-bottom: 4px;">
-                                            <strong>Field:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
+                                            <strong>Path:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
                                         </div>
                                         <div>
-                                            <strong>Error:</strong> ${detail.message || detail.description || detail}
+                                            <strong>Error:</strong> ${formatValidationMessage(detail.message)}
                                         </div>
                                         ${detail.code ? `
                                             <div style="margin-top: 4px; font-size: 0.9em; color: #6c757d;">
@@ -3871,6 +4252,13 @@ function showLHDNErrorModal(error) {
                 </div>
             </div>
     
+            <style>
+                @keyframes pulseError {
+                    0% { transform: scale(1); }
+                    50% { transform: scale(1.15); }
+                    100% { transform: scale(1); }
+                }
+            </style>
         `,
         customClass: {
             confirmButton: 'outbound-action-btn submit',
@@ -3879,4 +4267,24 @@ function showLHDNErrorModal(error) {
         confirmButtonText: 'OK',
         showCloseButton: true
     });
+}
+
+// Helper function to format validation messages
+function formatValidationMessage(message) {
+    if (!message) return 'Unknown error';
+    
+    // Remove technical details and format the message
+    return message
+        .split('\n')
+        .map(line => {
+            // Remove JSON-like formatting
+            line = line.replace(/[{}]/g, '');
+            // Remove technical prefixes
+            line = line.replace(/(ArrayItemNotValid|NoAdditionalPropertiesAllowed|#\/Invoice\[\d+\])/g, '');
+            // Clean up extra spaces and punctuation
+            line = line.trim().replace(/\s+/g, ' ').replace(/:\s+/g, ': ');
+            return line;
+        })
+        .filter(line => line.length > 0)
+        .join('<br>');
 }

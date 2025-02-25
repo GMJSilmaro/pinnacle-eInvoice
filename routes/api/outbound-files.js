@@ -16,25 +16,7 @@ const { exec } = require('child_process');
 const LHDNSubmitter = require('../../services/lhdn/lhdnSubmitter');
 const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../services/lhdn/lhdnService');
 const { getActiveSAPConfig } = require('../../config/paths');
-const { formatLHDNError } = require('../../utils/lhdnErrorHandler');
 
-const handleLHDNResponse = async (response) => {
-    if (!response.ok) {
-        const errorData = await response.json();
-        
-        // Format error for frontend
-        const formattedError = {
-            status: response.status,
-            message: 'LHDN Validation Failed',
-            errors: Array.isArray(errorData.errors) 
-                ? errorData.errors.map(formatLHDNError)
-                : [formatLHDNError(errorData)]
-        };
-
-        throw formattedError;
-    }
-    return response.json();
-};
 /**
  * Helper function to read Excel file with detailed logging
  */
@@ -51,7 +33,7 @@ async function readExcelWithLogging(filePath) {
 
         const dataAsObjects = XLSX.utils.sheet_to_json(worksheet);
         const dataWithHeaders = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        //console.log(dataWithHeaders);
+        console.log(dataWithHeaders);
        //console.log(dataAsObjects);
 
         // Log all cell addresses in first few rows
@@ -124,191 +106,6 @@ async function logError(description, error, options = {}) {
     }
 }
 
-/**
- * Helper function to log success events
- * @param {string} description - Success description
- * @param {Object} options - Additional logging options
- */
-async function logSuccess(description, options = {}) {
-    try {
-        const logEntry = {
-            Description: description,
-            CreateTS: sequelize.literal('GETDATE()'),
-            LoggedUser: options.user || 'System',
-            IPAddress: options.ip || null,
-            LogType: 'INFO',
-            Module: 'OUTBOUND_FILES',
-            Action: options.action || 'LIST_ALL',
-            Status: 'SUCCESS',
-            UserID: options.userId || null
-        };
-
-        await WP_LOGS.create(logEntry);
-    } catch (logError) {
-        console.error('Error logging success to database:', logError);
-    }
-}
-
-/**
- * List all files from network directories
- */
-// router.get('/list-all', async (req, res) => {
-//     const processLog = {
-//         details: [],
-//         summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
-//     };
-
-//     try {
-//         await logDBOperation(req.app.get('models'), req, 'Started listing all outbound files', {
-//             module: 'OUTBOUND',
-//             action: 'LIST_ALL'
-//         });
-
-//         //console.log('Starting list-all endpoint...');
-        
-//         // Get active SAP configuration from database
-//         const config = await WP_CONFIGURATION.findOne({
-//             where: {
-//                 Type: 'SAP',
-//                 IsActive: 1
-//             },
-//             order: [['CreateTS', 'DESC']],
-//             raw: true
-//         });
-
-//         //console.log('SAP Configuration found:', config ? 'Yes' : 'No');
-
-//         if (!config || !config.Settings) {
-//             throw new Error('No active SAP configuration found');
-//         }
-
-//         // Parse Settings if it's a string
-//         let settings = config.Settings;
-//         if (typeof settings === 'string') {
-//             settings = JSON.parse(settings);
-//         }
-//         //console.log('Network Path from settings:', settings.networkPath);
-
-//         // Validate network path format
-//         const networkPath = await validateAndFormatNetworkPath(settings.networkPath);
-//         //console.log('Formatted Network Path:', networkPath);
-
-//         // Test network accessibility
-//         const networkValid = await testNetworkPathAccessibility(networkPath, {
-//             serverName: settings.domain || '',
-//             serverUsername: settings.username,
-//             serverPassword: settings.password
-//         });
-
-//        // console.log('Network accessibility test result:', networkValid.success);
-
-//         if (!networkValid.success) {
-//             throw new Error(`Network access failed: ${networkValid.error}`);
-//         }
-
-//         // Get existing submission statuses with new schema
-//         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
-//             attributes: [
-//                 'id',
-//                 'UUID',
-//                 'submissionUid',
-//                 'fileName',
-//                 'filePath',
-//                 'invoice_number',
-//                 'status',
-//                 'date_submitted',
-//                 'date_sync',
-//                 'date_cancelled',
-//                 'cancelled_by',
-//                 'cancellation_reason',
-//                 'created_at',
-//                 'updated_at'
-//             ],
-//             raw: true
-//         });
-
-//         //console.log('Found submission statuses:', submissionStatuses.length);
-
-//         // Create status lookup map with new schema
-//         const statusMap = new Map(
-//             submissionStatuses.flatMap(status => [
-//                 [status.fileName, {
-//                     UUID: status.UUID, // Use submissionUid here
-//                     SubmissionUID: status.submissionUid,
-//                     SubmissionStatus: status.status,
-//                     DateTimeSent: status.date_submitted,
-//                     DateTimeUpdated: status.updated_at,
-//                     FileName: status.fileName,
-//                     DocNum: status.invoice_number
-//                 }],
-//                 // [status.invoice_number, {
-//                 //     SubmissionUID: status.UUID, // Use submissionUid here
-//                 //     SubmissionStatus: status.status,
-//                 //     DateTimeSent: status.date_submitted,
-//                 //     DateTimeUpdated: status.updated_at,
-//                 //     FileName: status.fileName,
-//                 //     DocNum: status.invoice_number
-//                 // }]
-//             ])
-//         );
-
-//         //console.log('Status Map:', statusMap);
-
-//         const files = [];
-//         const types = ['Manual', 'Schedule'];
-
-//         for (const type of types) {
-//             //console.log(`Processing type directory: ${type}`);
-//             const typeDir = path.join(networkPath, type);
-//            // console.log('Type directory path:', typeDir);
-//             await processTypeDirectory(typeDir, type, files, processLog, statusMap);
-//         }
-
-//         // Merge file information with database status
-//         const mergedFiles = files.map(file => {
-//             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
-//             return {
-//                 ...file,
-//                 status: status?.SubmissionStatus || 'Pending',
-//                 date_submitted: status?.DateTimeSent || null,
-//                 uuid: status?.UUID || null,
-//                 submissionUid: status?.SubmissionUID || null
-//             };
-//         });
-
-//         //console.log('File processing complete');
-//         //console.log('Total files found:', mergedFiles.length);
-//         //console.log('Summary:', processLog.summary);
-
-//         // Log success
-//         await logDBOperation(req.app.get('models'), req, 'Successfully retrieved outbound files list', {
-//             module: 'OUTBOUND',
-//             action: 'LIST_ALL',
-//             status: 'SUCCESS'
-//         });
-
-//         res.json({
-//             success: true,
-//             files: mergedFiles,
-//             processLog
-//         });
-
-//     } catch (error) {
-//         console.error('Error in list-all:', error);
-//         await logDBOperation(req.app.get('models'), req, `Error listing outbound files: ${error.message}`, {
-//             module: 'OUTBOUND',
-//             action: 'LIST_ALL',
-//             status: 'FAILED',
-//             error
-//         });
-        
-//         res.status(500).json({
-//             success: false,
-//             error: error.message,
-//             processLog
-//         });
-//     }
-// });
 
 /**
  * List all files from network directories
@@ -754,7 +551,57 @@ function isValidFileFormat(fileName) {
     }
 }
 
+function extractTotalAmount(data) {
+    try {
+        // Find the row with 'F' identifier (footer row) which contains the total amounts
+        const footerRow = data.find(row => row[0] === 'F');
+        if (footerRow) {
+            // Looking at the raw data, LegalMonetaryTotal_PayableAmount is at index 108
+            const payableAmount = footerRow[108];
+            
+            // Format the amount with currency and handle number formatting
+            if (payableAmount !== undefined && payableAmount !== null) {
+                const amount = Number(payableAmount);
+                if (!isNaN(amount)) {
+                    return `MYR ${amount.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    })}`;
+                }
+            }
+        }
 
+        // Alternative: Look for the amount in the header mapping
+        const headerRow = data.find(row => 
+            row.includes('LegalMonetaryTotal_PayableAmount')
+        );
+        
+        if (headerRow) {
+            const amountIndex = headerRow.indexOf('LegalMonetaryTotal_PayableAmount');
+            // Get the value from the corresponding data row
+            const dataRow = data.find(row => row[0] === 'F');
+            if (dataRow && amountIndex >= 0) {
+                const amount = Number(dataRow[amountIndex]);
+                if (!isNaN(amount)) {
+                    return `MYR ${amount.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    })}`;
+                }
+            }
+        }
+
+        // Log the data structure for debugging
+        console.log('Footer row:', footerRow);
+        console.log('Data structure:', data);
+        
+        return null;
+    } catch (error) {
+        console.error('Error extracting total amount:', error);
+        console.error('Data structure:', data);
+        return null;
+    }
+}
 /**
  * Helper function to extract buyer information
  */
@@ -851,6 +698,7 @@ async function processFile(file, dateDir, date, company, type, files, processLog
         const excelData = await readExcelWithLogging(filePath);
         const buyerInfo = extractBuyerInfo(excelData.dataWithHeaders);
         const dates = extractDates(excelData.dataAsObjects);
+        const totalAmount = extractTotalAmount(excelData.dataWithHeaders);
 
         //console.log('Current Dates:', dates);
         const issueDate = dates.issueDate;
@@ -875,6 +723,7 @@ async function processFile(file, dateDir, date, company, type, files, processLog
             status: submissionStatus?.SubmissionStatus || 'Pending',
             uuid: submissionStatus?.UUID,
             buyerInfo,
+            totalAmount: totalAmount,
             invoiceNumber,
             documentType: docTypes[docType] || 'Unknown',
             documentTypeCode: docType,
@@ -1023,14 +872,29 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 console.log('Accepted Document:', acceptedDoc);
                 console.log('Full LHDN Response:', result.data);
             
-                const submissionDetails = await submitter.getSubmissionDetails(
-                    result.data.submissionUid, 
-                    req.session.accessToken
-                );
+                // // Add retry logic for submission details
+                // let submissionDetails;
+                // let retryCount = 0;
+                // const maxRetries = 3;
+                
+                // while (retryCount < maxRetries) {
+                //     submissionDetails = await submitter.getSubmissionDetails(
+                //         result.data.submissionUid, 
+                //         req.session.accessToken
+                //     );
+                    
+                //     if (submissionDetails.success && submissionDetails.longId) {
+                //         break;
+                //     }
+                    
+                //     await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                //     retryCount++;
+                // }
 
-                const longId = submissionDetails.success && submissionDetails.longId ? 
-    submissionDetails.longId : 
-    'NA'; 
+                // const longId = submissionDetails.success && submissionDetails.longId ? 
+                //     submissionDetails.longId : 
+                //     'NA';
+
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
                     invoice_number,
@@ -1048,12 +912,10 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     company,
                     date,
                     acceptedDoc.uuid,
-                    longId,  // This should now be either the real longId or 'NA'
+                    //longId,  // This should now be either the real longId or 'NA'
                     invoice_number
                 );
                 
-                console.log('Excel Update Result:', excelUpdateResult);
-
                 if (!excelUpdateResult.success) {
                     console.error('Failed to update Excel file:', excelUpdateResult.error);
                     return res.status(500).json({
@@ -1077,7 +939,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         ...(excelUpdateResult.success ? 
                             { 
                                 excelPath: excelUpdateResult.outgoingPath,
-                                jsonPath: excelUpdateResult.jsonPath 
+                                //jsonPath: excelUpdateResult.jsonPath 
                             } : 
                             { error: excelUpdateResult.error }
                         )
@@ -1089,26 +951,34 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             }
 
             // Handle rejected documents
-            if (result.data?.failedDocument?.length > 0) {
-                const rejectedDoc = result.data.failedDocument[0];
+            if (result.data?.rejectedDocuments?.length > 0) {
+                console.log('Rejected Documents:', JSON.stringify(result.data.rejectedDocuments, null, 2));
+                
+                const rejectedDoc = result.data.rejectedDocuments[0];
                 await submitter.updateSubmissionStatus({
                     invoice_number,
-                    uuid: rejectedDoc.uuid,
+                    uuid: rejectedDoc.uuid || 'NA',
                     submissionUid: 'NA',
                     fileName,
                     filePath: processedData.filePath || fileName,
                     status: 'Rejected',
-                    error: rejectedDoc.error
+                    error: JSON.stringify(rejectedDoc.error || rejectedDoc)
                 });
 
                 return res.status(400).json({
                     success: false,
-                    error: rejectedDoc.error,
-                    docNum: invoice_number
+                    error: rejectedDoc.error || rejectedDoc,
+                    docNum: invoice_number,
+                    rejectedDocuments: result.data.rejectedDocuments
                 });
             }
 
-            throw new Error('No documents were accepted or rejected by LHDN');
+            // Update the error handling section
+            if (!result.data?.acceptedDocuments?.length && !result.data?.rejectedDocuments?.length) {
+                console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
+                throw new Error(`No documents were accepted or rejected by LHDN. Response: ${JSON.stringify(result.data)}`);
+            }
+
         } catch (processingError) {
             console.error('Error processing document data:', processingError);
             // Handle specific errors as needed
@@ -1456,8 +1326,6 @@ router.post('/:fileName/content', async (req, res) => {
         });
     }
 });
-
-// Add this new route after existing routes
 
 /**
  * Get submission details and update longId

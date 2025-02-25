@@ -21,7 +21,9 @@ dist/
 build/
 logs/
 old/
-
+public/uploads/avatars/
+public/uploads/company-logos/
+public/uploads/company-profiles/
 # IDE specific files
 .idea/
 .vscode/
@@ -35,3 +37,8 @@ Thumbs.db
 
 # windsurf rules
 .windsurfrules
+eInvoice.rar
+public/uploads/company-profiles/company-1740399250191-717276967.png
+public/uploads/company-profiles/company-1740399229592-125826694.png
+public/uploads/company-profiles/company-1740399223584-716913335.jpg
+public/uploads/company-profiles/company-1740399234910-857262886.png

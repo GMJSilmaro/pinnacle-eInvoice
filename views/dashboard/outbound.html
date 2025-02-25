@@ -10,7 +10,7 @@
 
 <link href="/assets/css/pages/outbound/card.css" rel="stylesheet">
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
-<link href="/assets/css/pages/profile.css" rel="stylesheet">
+
 
 <!-- Scripts with correct order -->
 <script src="/assets/js/shared/utils.js"></script>
@@ -174,13 +174,15 @@
                                 <input type="checkbox" class="outbound-checkbox" id="selectAll">
                             </div>
                         </th>
-                        <th class="outbound-invoice-column">INVOICE NO.</th>
-                        <th class="outbound-supplier-column">SUPPLIER</th>
-                        <th class="outbound-buyer-column">BUYER</th>
-                        <th class="outbound-date-column">UPLOAD DATE</th>
-                        <th class="outbound-date-column">DATE INFO</th>
-                        <th class="outbound-status-column">STATUS</th>
-                        <th class="outbound-source-column">SOURCE</th>
+                        <th>#</th>
+                        <th>INVOICE NO.</th>
+                        <th>SUPPLIER</th>
+                        <th>BUYER</th>
+                        <th>UPLOAD DATE</th>
+                        <th>DATE INFO</th>
+                        <th>STATUS</th>
+                        <th>SOURCE</th>
+                        <th>TOTAL AMOUNT</th>
                         <th class="outbound-action-column">ACTION</th>
                     </tr>
                 </thead>
@@ -259,56 +261,6 @@
     </div>
 </div>
 
-<!-- Document Upload Progress Modal -->
-<!-- <div class="modal fade" id="documentUploadModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content upload-modal">
-            <div class="upload-modal-content">
-                <div class="upload-header">
-                    <div class="upload-icon">
-                        <i class="bi bi-cloud-arrow-up"></i>
-                    </div>
-                    <h5>Submitting Document to LHDN</h5>
-                    <p class="text-muted">Please wait while we process your request</p>
-                </div>
-                <div class="upload-progress">
-                    <div class="upload-step-wrapper">
-                        <div class="upload-steps">
-                            <div class="upload-step" id="upload-step1">
-                                <div class="step-icon">
-                                    <i class="bi bi-file-earmark-check"></i>
-                                </div>
-                                <div class="step-content">
-                                    <span class="step-label">Validating Document</span>
-                                    <span class="step-status">Waiting...</span>
-                                </div>
-                            </div>
-                            <div class="upload-step" id="upload-step2">
-                                <div class="step-icon">
-                                    <i class="bi bi-arrow-up-circle"></i>
-                                </div>
-                                <div class="step-content">
-                                    <span class="step-label">Uploading to LHDN</span>
-                                    <span class="step-status">Waiting...</span>
-                                </div>
-                            </div>
-                            <div class="upload-step" id="upload-step3">
-                                <div class="step-icon">
-                                    <i class="bi bi-check-circle"></i>
-                                </div>
-                                <div class="step-content">
-                                    <span class="step-label">Processing</span>
-                                    <span class="step-status">Waiting...</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div id="upload-message" class="upload-message"></div>
-            </div>
-        </div>
-    </div>
-</div> -->
 
 <!-- Alert Template -->
 <template id="alertTemplate">

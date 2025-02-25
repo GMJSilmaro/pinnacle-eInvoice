@@ -118,6 +118,30 @@
         .info-label {
             font-weight: bold;
         }
+        p {
+            white-space: normal;
+        }
+
+        /* Dashed border */
+        hr.dashed {
+            border-top: 3px dashed #bbb;
+        }
+
+        /* Dotted border */
+        hr.dotted {
+            border-top: 3px dotted #bbb;
+        }
+
+        /* Solid border */
+        hr.solid {
+            border-top: 1px solid #000;
+        }
+
+        /* Rounded border */
+        hr.rounded {
+            border-top: 8px solid #bbb;
+            border-radius: 5px;
+        }
 
         /* Table Styles */
         .details-table {
@@ -276,22 +300,6 @@
 
 <body>
     <div class="container">
-        <!-- Company Info -->
-        <!-- <div class="company-info">
-            {{if CompanyLogo}}
-                <img src="{{:CompanyLogo}}" alt="Company Logo">
-            {{/if}}
-            <p class="company-name">{{:companyName}}</p>
-            <p>Tax Identification Number (TIN): {{:SupplierTIN}}</p>
-            <p>Registration Number: {{:SupplierRegistrationNo}}</p>
-            <p>SST Registration Number: {{:SupplierSSTID}}</p>
-            <p>{{:companyAddress}}</p>
-            <p>{{:companyPhone}}</p>
-            <p><a href="mailto:{{:companyEmail}}" class="email-link">{{:companyEmail}}</a></p>
-            <p>MSIC Code: {{:SupplierMSICCode}}</p>
-            <p>Business Activity: {{:SupplierBusinessActivity}}</p>
-        </div> -->
-
         <div class="two-column">
             <!-- Left Column: Company Info -->
             <div class="column">
@@ -338,36 +346,30 @@
                         {{if qrCode}}
                         <img src="{{:qrCode}}" alt="QR Code" class="qr-code">
                         {{/if}}
+                     
                     </div>
                     <div class="invoice-details">
+                        <p><span class="info-label">UUID:</span> {{:UniqueIdentifier}}</p>
+                        <p><span class="info-label">LONG-ID:</span> {{:LHDNlongId}}
+                        </p>
+                    </div>
 
+                    <div class="invoice-details">
                         <p><span class="info-label">e-Invoice No:</span> {{:internalId}}</p>
-                        <p><span class="info-label">e-Invoice type:</span> {{:InvoiceType}}</p>
-                        <p><span class="info-label">e-Invoice version:</span> {{:InvoiceVersion}}</p>
-                        <p><span class="info-label">Unique Identifier No:</span> {{:UniqueIdentifier}}</p>
-                        <p><span class="info-label">Long ID:</span> {{:longID}}</p>
+                        <p><span class="info-label">e-Invoice Type:</span> {{:InvoiceTypeCode}}</p>
+                        <p><span class="info-label">e-Invoice Issue Date & Time:</span> {{:OriginalInvoiceDateTime}}</p>
+                        <!-- <p><span class="info-label">e-Invoice Version:</span> {{:InvoiceVersion}}</p> -->
+                        <hr class="dotted">
                         <p><span class="info-label">Original Invoice Ref. No.:</span> {{:OriginalInvoiceRef}}</p>
-                        <p><span class="info-label">Issue Date:</span> {{:issueDate}}</p>
+                        <p><span class="info-label">Original Invoice Start Date:</span> {{:OriginalInvoiceStartDate}}</p>
+                        <p><span class="info-label">Original Invoice End Date No:</span> {{:OriginalInvoiceEndDate}}</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Main Content -->
-        <!-- <div class="buyer-section">
-            <div class="info-row"><span class="info-label">TO:</span></div>
-            <p class="company-name">{{:BuyerName}}</p>
-            <p>Tax Identification Number (TIN): {{:BuyerTIN}}</p>
-            <p>Registration Number: {{:BuyerRegistrationNumber}}</p>
-            <p>SST Registration Number: {{:BuyerSSTNo}}</p>
-            <p>{{:BuyerAddress}}</p>
-            <p>{{:BuyerPhone}}</p>
-            <p><a href="mailto:{{:companyEmail}}" class="email-link">{{:BuyerEmail}}</a></p>
-            <p>MSIC Code: {{:BuyerMSICCode}}</p>
-            <p>Business Activity: {{:BuyerBusinessActivity}}</p>
-        </div> -->
-
         <!-- Main Table -->
+        <hr class="solid">
         <table class="details-table">
             <tr>
                 <th>No.</th>

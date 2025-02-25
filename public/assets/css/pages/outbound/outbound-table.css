@@ -114,13 +114,12 @@
 
 /* Column Widths - Using Percentages and Min-widths */
 .outbound-checkbox-column { width: 30px; min-width: 30px; }
-.outbound-invoice-column { width: 20%; min-width: 30px; }
 .outbound-supplier-column { width: 15%; min-width: 150px; }
 .outbound-buyer-column { width: 15%; min-width: 150px; }
 .outbound-date-column { width: 15%; min-width: 150px; }
 .outbound-status-column { width: 10%; min-width: 100px; }
 .outbound-source-column { width: 10%; min-width: 80px; }
-.outbound-action-column { width: 10%; min-width: 120px; }
+.outbound-action-column { width: 5%; min-width: 120px; }
 
 .inbound-checkbox-column { width: 30px; min-width: 30px; }
 .inbound-invoice-column { width: 10%; min-width: 100px; }
@@ -211,6 +210,7 @@
     gap: 6px;
     font-size: 0.8125rem;
     color: #495057;
+    cursor: pointer;
 }
 
 .date-row i {
@@ -236,6 +236,7 @@
     font-size: 0.8125rem;
     color: #dc3545;
     font-weight: 500;
+    cursor: pointer;
 }
 
 .time-remaining i {

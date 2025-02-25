@@ -11,6 +11,8 @@ const fsPromises = require('fs').promises;
 // 2. Local Dependencies
 const serverConfig = require('./config/server.config');
 const { auth, error, maintenance, validation, CONFIG } = require('./middleware');
+const versionHeader = require('./utils/versionHeader');
+const appVersion = require('./config/version');
 const { initJsReport } = require('./services/jsreport.service');
 const authRoutes = require('./routes/auth.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -21,6 +23,9 @@ const app = express();
 
 // Trust proxy headers from IIS
 app.set('trust proxy', 'loopback');
+
+// Version Header middleware
+app.use(versionHeader);
 
 // Enable CORS with specific options
 const corsOptions = {
@@ -52,6 +57,8 @@ app.use((req, res, next) => {
   }
 
   res.set(securityHeaders);
+  res.locals.appVersion = appVersion.getSemanticVersion();
+  res.locals.appFullVersion = appVersion.getFullVersion();
   next();
 });
 
@@ -119,6 +126,15 @@ app.use(session({
 app.use(maintenance); // Maintenance mode check
 app.use('/auth', authRoutes); // Auth routes (before auth middleware)
 app.use('/api/v1/auth', authRoutes);
+
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: appVersion.getSemanticVersion(),
+    fullVersion: appVersion.getFullVersion(),
+    timestamp: appVersion.buildDate
+  });
+});
+
 
 // Auth middleware for protected routes
 app.use((req, res, next) => {

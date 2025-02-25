@@ -273,7 +273,6 @@ class InvoiceTableManager {
                 {
                     data: null,
                     orderable: false,
-                    className: 'outbound-checkbox-column',
                     defaultContent: `
                         <div class="outbound-checkbox-header">
                             <input type="checkbox" class="outbound-checkbox row-checkbox">
@@ -281,17 +280,17 @@ class InvoiceTableManager {
                 },
                 {
                     data: 'uuid',
-                    className: 'inbound-uuid-column',
                     render: function (data) {
                         return `
                             <div class="flex flex-col">
-                                <div class="flex items-center gap-2">
+                                <div class="overflow-hidden text-ellipsis  flex items-center gap-2">
                                     <a href="#" class="inbound-badge-status copy-uuid" 
                                        data-bs-toggle="tooltip" 
                                        data-bs-placement="top" 
                                        title="${data}" 
                                        data-uuid="${data}"
                                        style="
+                                            max-width: 100px; 
                                               line-height: 1.2; /* Adjust line height */
                                               display: block; /* Ensure block display */
                                               padding: 4px 8px; /* Add some padding */
@@ -307,7 +306,6 @@ class InvoiceTableManager {
                 },
                 {
                     data: 'longId',
-                    className: 'inbound-uuid-column', // Changed from text-nowrap to text-wrap
                     render: function (data) {
                         // Split the longId into chunks of 40 characters
                         return `
@@ -333,13 +331,13 @@ class InvoiceTableManager {
                                 </div>
                             </div>`;
                     },
-                    width: '10%'
+          
                 },
                 {
                     data: 'internalId',
                     title: 'INTERNAL ID',
                     className: 'text-nowrap',
-                    width: '12%',
+        
                     render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                 },
                 {
@@ -370,12 +368,15 @@ class InvoiceTableManager {
                 {
                     data: 'status',
                     render: function (data) {
+
                         const statusClass = data.toLowerCase();
+                    
                         const icons = {
                             valid: 'check-circle-fill',
                             invalid: 'x-circle-fill',
                             pending: 'hourglass-split',
                             submitted: 'hourglass-split',
+                            queued: 'hourglass-split',
                             rejected: 'x-circle-fill',
                             cancelled: 'x-circle-fill'
                         };
@@ -383,13 +384,23 @@ class InvoiceTableManager {
                             valid: '#198754',
                             invalid: '#dc3545',
                             pending: '#ff8307',
-                            submitted: '#ff8307',
+                            submitted: 'gray',
+                            queued: '#0d6efd',
                             rejected: '#dc3545',
                             cancelled: '#ffc107'
                         };
                         const icon = icons[statusClass] || 'question-circle';
                         const color = statusColors[statusClass];
 
+                        if (statusClass === 'submitted' || statusClass === 'pending') {
+                            return `<span class="inbound-status ${statusClass}" 
+                                  style="display: inline-flex; align-items: center; gap: 6px; 
+                                         padding: 6px 12px; border-radius: 6px; 
+                                         background: ${color}15; color: ${color}; 
+                                         font-weight: 500; transition: all 0.2s ease;">
+                                <i class="bi bi-${icon}"></i>Queued
+                            </span>`;
+                        }
                         return `
                             <span class="inbound-status ${statusClass}" 
                                   style="display: inline-flex; align-items: center; gap: 6px; 
@@ -404,10 +415,35 @@ class InvoiceTableManager {
                     data: 'totalSales',
                     title: 'TOTAL SALES',
                     className: 'inbound-amount-column',
-                    render: data => `<span style="  font-family: monospace; /* Monospace font for better readability */" class="text-nowrap">MYR ${parseFloat(data || 0).toLocaleString('en-MY', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2
-                    })}</span>`
+                    render: data => {
+                        if (!data) return '<span class="text-muted">N/A</span>';
+                        
+                        return `
+                            <div class="total-amount-wrapper" style="
+                                display: flex;
+                                align-items: center;
+                                justify-content: flex-end;
+                            ">
+                                <span class="total-amount" style="
+                                    font-weight: 500;
+                                    color: #1e40af;
+                                    font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                                    background: rgba(30, 64, 175, 0.1);
+                                    padding: 4px 8px;
+                                    border-radius: 4px;
+                                    display: inline-block;
+                                    letter-spacing: 0.5px;
+                                    white-space: nowrap;
+                                    transition: all 0.2s ease;
+                                ">
+                                    MYR ${parseFloat(data || 0).toLocaleString('en-MY', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    })}
+                                </span>
+                            </div>
+                        `;
+                    }
                 },
                 {
                     data: null,
@@ -612,10 +648,14 @@ class InvoiceTableManager {
         // Get document type icon based on type
         const getDocTypeIcon = (docType) => {
             const icons = {
-                'Invoice 1.0': 'receipt',
-                'Credit Note 1.0': 'arrow-return-left',
-                'Debit Note 1.0': 'arrow-return-right',
-                'Refund Note 1.0': 'cash-stack'
+                'Invoice': 'receipt',
+                'Credit Note': 'arrow-return-left',
+                'Debit Note': 'arrow-return-right',
+                'Refund Note': 'cash-stack',
+                'Self-billed Invoice': 'receipt',
+                'Self-billed Credit Note': 'arrow-return-left',
+                'Self-billed Debit Note': 'arrow-return-right',
+                'Self-billed Refund Note': 'cash-stack'
             };
             return icons[docType] || 'file-text';
         };
@@ -623,15 +663,19 @@ class InvoiceTableManager {
         // Get document type color based on type
         const getDocTypeColor = (docType) => {
             const colors = {
-                'Invoice 1.0': '#0d6efd',
-                'Credit Note 1.0': '#198754',
-                'Debit Note 1.0': '#dc3545',
-                'Refund Note 1.0': '#6f42c1'
+                'Invoice': '#0d6efd',
+                'Credit Note': '#198754',
+                'Debit Note': '#dc3545',
+                'Refund Note': '#6f42c1',
+                'Self-billed Invoice': '#0d6efd',
+                'Self-billed Credit Note': '#198754',
+                'Self-billed Debit Note': '#dc3545',
+                'Self-billed Refund Note': '#6f42c1'
             };
             return colors[docType] || '#6c757d';
         };
-
-        const docType = row.typeName + ' ' + row.typeVersionName || 'Invoice 1.0';
+        const docType = row.typeName;
+        // + ' ' + row.typeVersionName || 'NA'
         const docTypeIcon = getDocTypeIcon(docType);
         const docTypeColor = getDocTypeColor(docType);
 
@@ -669,12 +713,39 @@ class InvoiceTableManager {
                             color: ${docTypeColor};
                         ">
                             <i class="bi bi-${docTypeIcon}"></i>
-                            ${docType}
+                            ${docType  + ' ' + row.typeVersionName} 
                         </span>
                     </div>
             </div>`;
     }
 
+    
+    renderTotalAmount(data) {
+        if (!data) return '<span class="text-muted">N/A</span>';
+        
+        return `
+            <div class="total-amount-wrapper" style="
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+            ">
+                <span class="total-amount" style="
+                    font-weight: 500;
+                    color: #1e40af;
+                    font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                    background: rgba(30, 64, 175, 0.1);
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    display: inline-block;
+                    letter-spacing: 0.5px;
+                    white-space: nowrap;
+                    transition: all 0.2s ease;
+                ">
+                    ${data}
+                </span>
+            </div>
+        `;
+    }
     renderCompanyInfo(data) {
         if (!data) return '<span class="text-muted">N/A</span>';
         return `
@@ -768,7 +839,7 @@ class InvoiceTableManager {
             'Pending': 'bg-warning',
             'Rejected': 'bg-danger',
             'Cancelled': 'bg-secondary',
-            'Queue': 'bg-info'
+            'Queued': 'bg-info'
         };
         const className = statusClasses[status] || 'bg-secondary';
         const reasonHtml = reason ? `<br><small class="text-muted">${reason}</small>` : '';
@@ -1160,6 +1231,33 @@ class InvoiceTableManager {
     }
 }
 
+const copyToClipboard = async (text, elementId) => {
+    try {
+        await navigator.clipboard.writeText(text);
+        
+        // Show success toast with a custom message
+        const customMessage = text.length > 20 ? `Copied ${text.substring(0, 20)}... to clipboard!` : `Copied ${text} to clipboard!`;
+        ToastManager.show(customMessage, 'success');
+        
+        // Update the element to show copied state
+        const element = document.getElementById(elementId);
+        const icon = element.querySelector('.copy-icon');
+        const originalHTML = icon.innerHTML;
+        
+        // Add animation class
+        element.classList.add('copy-animation');
+        icon.innerHTML = '<i class="bi bi-check-lg"></i>';
+        
+        // Reset after animation
+        setTimeout(() => {
+            element.classList.remove('copy-animation');
+            icon.innerHTML = originalHTML;
+        }, 2000);
+    } catch (err) {
+        ToastManager.show('Failed to copy text. Please try again.', 'error');
+    }
+};
+
 async function viewInvoiceDetails(uuid) {
     try {
         // Get the table row data first
@@ -1278,7 +1376,7 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
 
     // Prepare supplier info using rowData and supplierInfo
     const supplierInfo = {
-        company: rowData.supplierName || rowData.issuerName,
+        company: rowData.issuerName || rowData.supplierName || documentInfo.supplierName,
         tin: rowData.supplierTIN || rowData.issuerTin,
         registrationNo: rowData.issuerID || documentInfo.supplierRegistrationNo || 'N/A',
         taxRegNo: documentInfo.supplierSstNo || rowData.issuerTaxRegNo || 'N/A',
@@ -1288,10 +1386,10 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
 
     // Prepare buyer info using rowData and documentInfo
     const customerInfo = {
-        company: rowData.receiverName || rowData.buyerName,
-        tin: rowData.receiverTIN || rowData.buyerTIN,
-        registrationNo: rowData.receiverId || documentInfo.receiverRegistrationNo || 'N/A',
-        taxRegNo: documentInfo.receiverSstNo || rowData.receiverTaxRegNo || 'N/A',
+        company: rowData.receiverName || rowData.buyerName || rowData.customerName,
+        tin: rowData.receiverTIN || rowData.buyerTIN || rowData.customerTIN,
+        registrationNo: rowData.receiverId || documentInfo.receiverRegistrationNo ||  rowData.customerTIN || 'N/A',
+        taxRegNo: documentInfo.receiverSstNo || rowData.receiverTaxRegNo || rowData.receiverId || 'N/A',
         address: documentInfo.receiverAddress || rowData.receiverAddress || 'N/A'
     };
 
@@ -1300,7 +1398,9 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
         totalIncludingTax: result.paymentInfo?.totalIncludingTax || 0,
         totalExcludingTax: result.paymentInfo?.totalExcludingTax || 0,
         taxAmount: result.paymentInfo?.taxAmount || 0,
-        irbmUniqueNo: documentInfo.uuid
+        irbmUniqueNo: documentInfo.uuid,
+        irbmlongId: documentInfo.longId || documentInfo.irbmlongId || 'N/A',
+        irbmURL: 'https://preprod.myinvois.hasil.gov.my/'+documentInfo.uuid+'/share/'+documentInfo.longId
     };
 
     // Update info sections content
@@ -1366,49 +1466,250 @@ function createBuyerContent(customerInfo) {
             </div>
             <div class="info-row">
                 <div class="label">ADDRESS</div>
-                <div class="value text-wrap">${customerInfo?.address || 'N/A'}</div>
+                <div class="value text-wrap small">${customerInfo?.address || 'N/A'}</div>
             </div>
         </div>
     `;
 }
 
 function createPaymentContent(paymentInfo) {
-    // Ensure all values are properly parsed as numbers
     const totalAmount = parseFloat(paymentInfo?.totalIncludingTax || 0);
     const subtotal = parseFloat(paymentInfo?.totalExcludingTax || 0);
     const taxAmount = parseFloat(paymentInfo?.taxAmount || 0);
 
     return `
+        <style>
+            .custom-toast-container {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 1070;
+            }
+            .custom-toast {
+                display: flex;
+                align-items: center;
+                padding: 12px 20px;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                margin-bottom: 10px;
+                animation: slideInRight 0.1s ease-out;
+            }
+            @keyframes slideInRight {
+                from {
+                    opacity: 0;
+                    transform: translateX(100%);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateX(0);
+                }
+            }
+            @keyframes fadeOut {
+                to {
+                    opacity: 0;
+                    transform: translateX(100%);
+                }
+            }
+            .custom-toast.success {
+                border-left: 4px solid #10B981;
+            }
+            .custom-toast.error {
+                border-left: 4px solid #EF4444;
+            }
+            .custom-toast-icon {
+                margin-right: 12px;
+                font-size: 20px;
+            }
+            .custom-toast-icon.success {
+                color: #10B981;
+            }
+            .custom-toast-icon.error {
+                color: #EF4444;
+            }
+       
+            .badge {
+                display: inline-flex;
+                align-items: flex-start;
+                gap: 1px;
+                padding: 8px 12px; /* Reduced padding to fit more text */
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                color: #212529;
+                line-height: 1.2; /* Improved line height for readability */
+                max-width: 100%; /* Ensure badge doesn’t overflow container */
+                overflow-wrap: break-word; /* Allow words (or characters) to break at any point */
+                white-space: normal; /* Allow text to wrap to new lines */
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            }
+         
+            .info-row {
+                display: block; /* Maintain stacked layout */
+                margin-bottom: 1rem;
+                align-items: flex-start;
+            }
+            .info-row.highlight-row {
+                background-color: #f1f5f9;
+                padding: 0.8rem;
+                border-radius: 4px;
+                border-left: 4px solid #007bff;
+            }
+            .label {
+                font-weight: 300;
+                color: #6c757d;
+                text-align: left;
+                margin-bottom: 0.5rem;
+            }
+            .copy-icon {
+                opacity: 0.6;
+                transition: opacity 0.2s ease;
+                margin-top: 2px;
+            }
+            .badge:hover .copy-icon {
+                opacity: 1;
+            }
+            .value {
+                font-size: 1rem;
+                font-weight: 300;
+                color: #212529;
+                text-align: left; /* Changed to left-align for stacked layout */
+                word-break: break-word;
+            }
+            .value span {
+                font-size: 0.9rem;
+                font-weight: 400;
+            }
+
+            .card {
+                border: none;
+                border-radius: 8px;
+            }
+            .supplier-card, .buyer-card {
+                background-color: #ffffff;
+            }
+            .payment-card {
+                background-color: #f8f9fa;
+            }
+        </style>
         <div class="info-content">
             <div class="info-row highlight-row">
                 <div class="label">TOTAL AMOUNT</div>
-                <div class="value">
-                    ${formatCurrency(totalAmount)}
-                </div>
+                <div class="value">${formatCurrency(totalAmount)}</div>
             </div>
             <div class="info-row">
                 <div class="label">SUBTOTAL</div>
-                <div class="value">
-                    ${formatCurrency(subtotal)}
-                </div>
+                <div class="value">${formatCurrency(subtotal)}</div>
             </div>
             <div class="info-row">
                 <div class="label">TAX AMOUNT</div>
-                <div class="value">
-                    ${formatCurrency(taxAmount)}
+                <div class="value">${formatCurrency(taxAmount)}</div>
+            </div>
+            <div class="info-row highlight-row">
+                <div class="label">IRBM UNIQUE IDENTIFIER NO</div>
+                <div class="value text-align-left">
+                    <span 
+                        id="uniqueId"
+                        class="badge bg-light text-dark border"
+                        onclick="copyToClipboard('${paymentInfo?.irbmUniqueNo || 'N/A'}', 'uniqueId')"
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="top"
+                        title="${paymentInfo?.irbmUniqueNo || 'N/A'}"
+                    >
+                        ${paymentInfo?.irbmUniqueNo || 'N/A'}
+                        <span class="copy-icon">
+                            <i class="bi bi-clipboard"></i>
+                        </span>
+                    </span>
                 </div>
             </div>
-            <div class="info-row">
-                <div class="label">IRBM UNIQUE NO</div>
+            <div class="info-row highlight-row">
+                <div class="label">IRBM LONG ID NO</div>
                 <div class="value">
-                    <span class="badge bg-light text-dark border">${paymentInfo?.irbmUniqueNo || 'N/A'}</span>
+                    <span 
+                        id="longId"
+                        class="badge bg-light text-dark border"
+                        onclick="copyToClipboard('${paymentInfo?.irbmlongId || 'N/A'}', 'longId'); showToast('success', 'Copied to clipboard!')"
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="top"
+                        title="${paymentInfo?.irbmlongId || 'N/A'}"
+                    >
+                        ${paymentInfo?.irbmlongId || 'N/A'}
+                        <span class="copy-icon">
+                            <i class="bi bi-clipboard"></i>
+                        </span>
+                    </span>
                 </div>
             </div>
+<div class="info-row highlight-row">
+    <div class="label">IRBM VALIDATION LINK</div>
+    <div class="value">
+        <span 
+            id="irbmURL"
+            class="badge bg-light text-dark border"
+            onclick="showCustomAlert('${paymentInfo?.irbmURL || 'N/A'}')"
+            data-bs-toggle="tooltip"
+            data-bs-placement="top"
+            title="${paymentInfo?.irbmURL || 'N/A'}"
+        >
+            ${paymentInfo?.irbmURL || 'N/A'}
+            <span class="copy-icon">
+                <i class="bi bi-clipboard"></i>
+            </span>
+        </span>
+    </div>
+</div>
+
+<!-- Custom Confirmation Box -->
+<div id="confirmationPopup" class="confirmation-popup">
+    <div class="confirmation-box">
+        <div class="popup-header">
+            <h4>Confirm Navigation</h4>
+            <span class="close-popup" onclick="closePopup()">×</span>
+        </div>
+        <div class="popup-body">
+            Are you sure you want to open this link in a new tab?
+        </div>
+        <div class="popup-footer">
+            <button class="outbound-action-btn cancel btn-sm ms-2" onclick="closePopup()">Cancel</button>
+            <button class="outbound-action-btn submit btn-sm ms-2" id="confirmButton">Yes, Open Link</button>
+        </div>
+    </div>
+</div>
+
         </div>
     `;
 }
+function showCustomAlert(url) {
+    if (url === 'N/A') {
+        return; // Don't show anything if the URL is 'N/A'
+    }
 
-// Helper function for formatting address from parts
+    // Show the custom confirmation popup
+    const popup = document.getElementById('confirmationPopup');
+    const confirmButton = document.getElementById('confirmButton');
+
+    popup.style.display = 'flex';  // Show the popup
+
+    // When the "Yes" button is clicked, open the link in a new tab
+    confirmButton.onclick = function () {
+        window.open(url, '_blank');  // Open in a new tab
+        closePopup();  // Close the popup
+    };
+}
+
+// Close the popup when "Cancel" or the "×" button is clicked
+function closePopup() {
+    const popup = document.getElementById('confirmationPopup');
+    popup.style.display = 'none';  // Hide the popup
+}
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-MY', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+}
+
 function formatAddressFromParts(address) {
     if (!address) return 'N/A';
 
@@ -1423,14 +1724,14 @@ function formatAddressFromParts(address) {
     return parts.length > 0 ? parts.join(', ') : 'N/A';
 }
 
-// Helper function for currency formatting
-function formatCurrency(amount) {
-    if (!amount || isNaN(amount)) return 'RM 0.00';
-    return `RM ${parseFloat(amount).toLocaleString('en-MY', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    })}`;
-}
+// // Helper function for currency formatting
+// function formatCurrency(amount) {
+//     if (!amount || isNaN(amount)) return 'RM 0.00';
+//     return `RM ${parseFloat(amount).toLocaleString('en-MY', {
+//         minimumFractionDigits: 2,
+//         maximumFractionDigits: 2
+//     })}`;
+// }
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {

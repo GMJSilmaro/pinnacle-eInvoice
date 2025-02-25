@@ -453,67 +453,58 @@ class LHDNSubmitter {
     }
   }
 
-  async getSubmissionDetails(submissionUid, accessToken) {
+  async getSubmissionDetails(submissionUid, token) {
     try {
-        // Get config first
-        const lhdnConfig = await getLHDNConfig();
-        
-        // Add delay before calling the API (5 seconds)
-        await new Promise(resolve => setTimeout(resolve, 5000));
-    
-        // Make multiple attempts
-        let attempts = lhdnConfig.maxRetries;
-        let response;
-        
-        while (attempts > 0) {
-            try {
-                const url = `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`;
-                console.log('Calling API:', url);
-                
-                response = await axios.get(url, {
-                    params: {
-                        pageNo: 1
-                    },
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: lhdnConfig.timeout
-                });
-                break; // If successful, exit the loop
-            } catch (error) {
-                console.log(`Attempt ${lhdnConfig.maxRetries - attempts + 1} failed:`, error.message);
-                attempts--;
-                if (attempts === 0) throw error;
-                // Wait based on config retryDelay
-                await new Promise(resolve => setTimeout(resolve, lhdnConfig.retryDelay));
-            }
+      const lhdnConfig = await getLHDNConfig();
+      const response = await axios.get(
+        `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         }
-    
-        console.log('Raw submission details:', response.data);
-        
-     
-        const documentSummary = response.data?.documentSummary?.[0];
-        const longId = documentSummary?.longId || 'NA';
-    
-        console.log('Document Summary:', documentSummary);
-        console.log('Extracted longId:', longId);
-        
+      );
+
+      if (response.data?.documents?.[0]?.longId) {
         return {
+          success: true,
+          longId: response.data.documents[0].longId
+        };
+      }
+
+      // Add retry logic for longId
+      let retries = 0;
+      const maxRetries = 3;
+      while (retries < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+        const retryResponse = await axios.get(
+          `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+        
+        if (retryResponse.data?.documents?.[0]?.longId) {
+          return {
             success: true,
-            data: response.data,
-            status: response.data?.overallStatus,
-            documentCount: response.data?.documentCount,
-            longId: longId,
-            documentDetails: documentSummary
-        };
+            longId: retryResponse.data.documents[0].longId
+          };
+        }
+        retries++;
+      }
+
+      return {
+        success: false,
+        error: 'Could not retrieve longId after multiple attempts'
+      };
     } catch (error) {
-        console.error('Error getting submission details:', error);
-        return {
-            success: false,
-            error: error.message,
-            longId: 'NA'
-        };
+      console.error('Error getting submission details:', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
   
@@ -539,14 +530,8 @@ class LHDNSubmitter {
 
       // Generate JSON file in the same folder as Excel
       const baseFileName = fileName.replace('.xls', '');
-      const jsonFileName = `${baseFileName}.json`;
-      const jsonFilePath = path.join(outgoingBasePath, jsonFileName);
-
-      console.log('File Paths:', {
-        outgoingBasePath,
-        outgoingFilePath,
-        jsonFilePath
-      });
+      // const jsonFileName = `${baseFileName}.json`;
+      // const jsonFilePath = path.join(outgoingBasePath, jsonFileName);
 
       // Create directory structure recursively
       await fsPromises.mkdir(outgoingBasePath, { recursive: true });
@@ -583,36 +568,22 @@ class LHDNSubmitter {
       const processedData = await this.getProcessedData(fileName, type, company, date);
       console.log('Processed Data:', processedData);
 
-      // Get config for version
-      const lhdnConfig = await require('../../models').WP_CONFIGURATION.findOne({
-        where: {
-          Type: 'LHDN',
-          IsActive: 1
-        },
-        raw: true
-      });
-
-      const lhdnSettings = lhdnConfig?.Settings ?
-        (typeof lhdnConfig.Settings === 'string' ?
-          JSON.parse(lhdnConfig.Settings) :
-          lhdnConfig.Settings) : {};
-
-      // Create JSON content with simplified structure
-      const jsonContent = {
-        "issueDate": moment(date).format('YYYY-MM-DD'),
-        "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
-        "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
-        "invoiceNo": invoice_number,
-        "uuid": uuid,
-        "longId": longId 
-      };
-      // Write JSON file
-      await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
+      // // Create JSON content with simplified structure
+      // const jsonContent = {
+      //   "issueDate": moment(date).format('YYYY-MM-DD'),
+      //   "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
+      //   "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
+      //   "invoiceNo": invoice_number,
+      //   "uuid": uuid,
+      //   "longId": longId,
+      // };
+      // // Write JSON file
+      // await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
 
       const response = {
         success: true,
         outgoingPath: outgoingFilePath,
-        jsonPath: jsonFilePath
+        //jsonPath: jsonFilePath
       };
 
       console.log('=== updateExcelWithResponse Response ===', response);

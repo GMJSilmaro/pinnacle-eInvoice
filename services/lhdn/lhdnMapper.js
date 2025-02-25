@@ -257,29 +257,15 @@ const mapTaxCategory = (taxCategory, taxScheme) => {
   }];
 };
 
-// const mapTaxTotal = (tax, currency) => {
-//   const taxScheme = tax?.category?.scheme || DEFAULT_VALUES.TAX_SCHEME;
-//   const taxCategory = tax?.category || DEFAULT_VALUES.TAX_CATEGORY;
 
-//   return [{
-//     "TaxAmount": wrapValue(tax?.taxAmount || 0, currency),
-//     "TaxSubtotal": [{
-//       "TaxableAmount": wrapValue(tax?.taxableAmount || 0, currency),
-//       "TaxAmount": wrapValue(tax?.taxAmount || 0, currency),
-//       "Percent": tax?.taxRate ? wrapNumericValue(tax.taxRate) : undefined,
-//       "TaxCategory": mapTaxCategory(taxCategory, taxScheme)
-//     }]
-//   }];
-// };
-
-const mapTaxTotal = (taxTotal, currency) => {
+const mapTaxTotal = (taxTotal, documentCurrencyCode, taxCurrencyCode, exchangeRate) => {
   if (!taxTotal) return [];
 
   return [{
-      "TaxAmount": wrapValue(taxTotal.taxAmount || 0, currency),
+      "TaxAmount": wrapValue(taxTotal.taxAmount, taxCurrencyCode || 0, taxCurrencyCode),
       "TaxSubtotal": taxTotal.taxSubtotal?.map(subtotal => ({
-          "TaxableAmount": wrapValue(subtotal.taxableAmount || 0, currency),
-          "TaxAmount": wrapValue(subtotal.taxAmount || 0, currency),
+          "TaxableAmount": wrapValue(subtotal.taxableAmount, documentCurrencyCode || 0, documentCurrencyCode),
+          "TaxAmount": wrapValue(subtotal.taxAmount, taxCurrencyCode || 0, taxCurrencyCode),
           "TaxCategory": [{
               "ID": [{
                   "_": subtotal.taxCategory?.id || DEFAULT_VALUES.TAX_CATEGORY.id
@@ -289,7 +275,7 @@ const mapTaxTotal = (taxTotal, currency) => {
                   wrapValue(subtotal.taxCategory.exemptionReason) : undefined,
               "TaxScheme": [{
                   "ID": [{
-                      "_": subtotal.taxCategory?.taxScheme?.id || "VAT", // This should be "OTH"
+                      "_": subtotal.taxCategory?.taxScheme?.id || "OTH", // This should be "OTH"
                       "schemeID": "UN/ECE 5153",
                       "schemeAgencyID": "6"
                   }]
@@ -299,7 +285,7 @@ const mapTaxTotal = (taxTotal, currency) => {
   }];
 };
 
-const mapLineItem = (item, currency) => {
+const mapLineItem = (item, documentCurrencyCode, taxCurrencyCode, exchangeRate) => {
   if (!item) return null;
 
   return {
@@ -308,14 +294,14 @@ const mapLineItem = (item, currency) => {
       "_": Number(item.quantity),
       "unitCode": item.unitCode
     }],
-    "LineExtensionAmount": wrapValue(item.lineExtensionAmount, currency),
+    "LineExtensionAmount": wrapValue(item.lineExtensionAmount, documentCurrencyCode),
     "AllowanceCharge": item.allowanceCharges.map(charge => ({
       "ChargeIndicator": wrapBoolean(charge.chargeIndicator),
       "AllowanceChargeReason": wrapValue(charge.reason || 'NA'),
       "MultiplierFactorNumeric": charge.multiplierFactorNumeric ? wrapNumericValue(charge.multiplierFactorNumeric) : undefined,
-      "Amount": wrapValue(charge.amount || 0, currency)
+      "Amount": wrapValue(charge.amount, documentCurrencyCode || 0, documentCurrencyCode)
     })),
-    "TaxTotal": mapTaxTotal(item.taxTotal, currency),
+    "TaxTotal": mapTaxTotal(item.taxTotal, documentCurrencyCode, taxCurrencyCode, exchangeRate),
     "Item": [{
       "CommodityClassification": mapCommodityClassifications(item.item),
       "Description": wrapValue(item.item.description),
@@ -328,19 +314,20 @@ const mapLineItem = (item, currency) => {
       }]
     }],
     "Price": [{
-      "PriceAmount": wrapValue(item.price.amount, currency)
+      "PriceAmount": wrapValue(item.price.amount, documentCurrencyCode)
     }],
     "ItemPriceExtension": [{
-      "Amount": wrapValue(item.price.extension, currency)
-    }]
+      "Amount": wrapValue(item.price.extension, documentCurrencyCode)
+    }],
+   
   };
 };
 
-const mapInvoiceLines = (items, currency = 'MYR') => {
+const mapInvoiceLines = (items, documentCurrencyCode, taxCurrencyCode, exchangeRate) => {
   if (!items || !Array.isArray(items)) {
     return [];
   }
-  return items.map(item => mapLineItem(item, currency)).filter(Boolean);
+  return items.map(item => mapLineItem(item, documentCurrencyCode, taxCurrencyCode, exchangeRate)).filter(Boolean);
 };
 
 // Add this helper function for document references
@@ -402,8 +389,8 @@ const mapToLHDNFormat = (excelData, version) => {
           "_": doc.header.invoiceType,
           "listVersionID": version
         }],
-        "DocumentCurrencyCode": wrapValue(doc.header.currency),
-        "TaxCurrencyCode": wrapValue(doc.header.currency),
+        "DocumentCurrencyCode": wrapValue(doc.header.documentCurrencyCode),
+        "TaxCurrencyCode": wrapValue(doc.header.taxCurrencyCode),
         "InvoicePeriod": [{
           "StartDate": wrapValue(doc.header.invoicePeriod.startDate),
           "EndDate": wrapValue(doc.header.invoicePeriod.endDate),
@@ -411,12 +398,21 @@ const mapToLHDNFormat = (excelData, version) => {
         }],
         "BillingReference": doc.header.documentReference?.billingReference ? [{
           "InvoiceDocumentReference": [{
-            "ID": wrapValue(doc.header.documentReference.billingReference || "")
-          }]
+            "ID": wrapValue(doc.header.InvoiceDocumentReference_ID || ""),
+            "UUID": wrapValue(doc.header.invoiceDocumentReference || "")
+          }],
         }] : [{
-          "InvoiceDocumentReference": [{
-            "ID": wrapValue("")
-          }]
+          "AdditionalDocumentReference": [
+          // Main document reference
+          mapDocumentReference({
+            id: doc.header.documentReference?.billingReference || "",
+            type: doc.header.documentReference?.billingReferenceType || ""
+          }),
+          // Additional references if they exist
+          ...(doc.header.documentReference?.additionalRefs || [])
+            .map(ref => mapDocumentReference(ref))
+            .filter(Boolean)
+        ],
         }],
         "AdditionalDocumentReference": [
           // Main document reference
@@ -459,10 +455,10 @@ const mapToLHDNFormat = (excelData, version) => {
           "Party": [{
             "PartyIdentification": mapPartyIdentifications(doc.buyer.identifications),
             "PostalAddress": [{
-              "CityName": wrapValue(doc.buyer.address.city),
+              "CityName": wrapValue(doc.buyer.address.city) || "NA",
               "PostalZone": wrapValue(doc.buyer.address.postcode),
-              "CountrySubentityCode": wrapValue(doc.buyer.address.state),
-              "AddressLine": mapAddressLines(doc.buyer.address.line),
+              "CountrySubentityCode": wrapValue(doc.buyer.address.state) || "NA",
+              "AddressLine": mapAddressLines(doc.buyer.address.line) || "NA",
               "Country": [{
                 "IdentificationCode": [{
                   "_": doc.buyer.address.country || "MYS",
@@ -491,22 +487,33 @@ const mapToLHDNFormat = (excelData, version) => {
         }],
         "PrepaidPayment": [{
           "ID": wrapValue(doc.payment.prepaidPayment.id),
-          "PaidAmount": wrapValue(doc.payment.prepaidPayment.amount, doc.header.currency),
+          "PaidAmount": wrapValue(doc.payment.prepaidPayment.amount, doc.header.documentCurrencyCode),
           "PaidDate": wrapValue(doc.payment.prepaidPayment.date),
           "PaidTime": wrapValue(doc.payment.prepaidPayment.time)
         }],
         "AllowanceCharge": mapAllowanceCharges(doc.allowanceCharge),
-        "TaxTotal": mapTaxTotal(doc.summary?.taxTotal, doc.header.currency),
+        "TaxTotal": mapTaxTotal(doc.summary?.taxTotal, doc.header.DocumentCurrencyCode, doc.header.taxCurrencyCode),
         "LegalMonetaryTotal": [{
-          "LineExtensionAmount": wrapValue(doc.summary.amounts.lineExtensionAmount, doc.header.currency),
-          "TaxExclusiveAmount": wrapValue(doc.summary.amounts.taxExclusiveAmount, doc.header.currency),
-          "TaxInclusiveAmount": wrapValue(doc.summary.amounts.taxInclusiveAmount, doc.header.currency),
-          "AllowanceTotalAmount": wrapValue(doc.summary.amounts.allowanceTotalAmount, doc.header.currency),
-          "ChargeTotalAmount": wrapValue(doc.summary.amounts.chargeTotalAmount, doc.header.currency),
-          "PayableRoundingAmount": wrapValue(doc.summary.amounts.payableRoundingAmount, doc.header.currency),
-          "PayableAmount": wrapValue(doc.summary.amounts.payableAmount, doc.header.currency)
+          "LineExtensionAmount": wrapValue(doc.summary.amounts.lineExtensionAmount, doc.header.documentCurrencyCode),
+          "TaxExclusiveAmount": wrapValue(doc.summary.amounts.taxExclusiveAmount, doc.header.documentCurrencyCode),
+          "TaxInclusiveAmount": wrapValue(doc.summary.amounts.taxInclusiveAmount, doc.header.documentCurrencyCode),
+          "AllowanceTotalAmount": wrapValue(doc.summary.amounts.allowanceTotalAmount, doc.header.documentCurrencyCode),
+          "ChargeTotalAmount": wrapValue(doc.summary.amounts.chargeTotalAmount, doc.header.documentCurrencyCode),
+          "PayableRoundingAmount": wrapValue(doc.summary.amounts.payableRoundingAmount, doc.header.documentCurrencyCode),
+          "PayableAmount": wrapValue(doc.summary.amounts.payableAmount, doc.header.documentCurrencyCode)
         }],
-        "InvoiceLine": mapInvoiceLines(doc.items, doc.header.currency)
+        "InvoiceLine": mapInvoiceLines(doc.items, doc.header.documentCurrencyCode, doc.header.taxCurrencyCode, doc.header.exchangeRate),
+        "TaxExchangeRate": doc.header.taxCurrencyCode !== 'MYR' ? [{
+          "SourceCurrencyCode": [{
+            "_": doc.header.documentCurrencyCode
+          }],
+          "TargetCurrencyCode": [{
+            "_": doc.header.taxCurrencyCode
+          }],
+          "CalculationRate": [{
+            "_": Number(doc.header.exchangeRate) || 0
+          }],
+        }] : undefined,
       }]
     };
 
@@ -614,7 +621,7 @@ const mapToLHDNFormat = (excelData, version) => {
                         "FreightAllowanceCharge": [{
                             "ChargeIndicator": wrapBoolean(doc.delivery.shipment.freightAllowanceCharge.indicator),
                             "AllowanceChargeReason": wrapValue(doc.delivery.shipment.freightAllowanceCharge.reason),
-                            "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, "MYR")
+                            "Amount": wrapValue(doc.delivery.shipment.freightAllowanceCharge.amount, doc.header.documentCurrencyCode)
                         }]
                     }]
                 })
@@ -624,15 +631,15 @@ const mapToLHDNFormat = (excelData, version) => {
 
     // Update tax and totals mapping
     const taxAndTotals = {
-        "TaxTotal": mapTaxTotal(doc.summary?.taxTotal, doc.header.currency),
+        "TaxTotal": mapTaxTotal(doc.summary?.taxTotal, doc.header.documentCurrencyCode, doc.header.taxCurrencyCode),
         "LegalMonetaryTotal": [{
-            "LineExtensionAmount": wrapValue(doc.summary.amounts.lineExtensionAmount, doc.header.currency),
-            "TaxExclusiveAmount": wrapValue(doc.summary.amounts.taxExclusiveAmount, doc.header.currency),
-            "TaxInclusiveAmount": wrapValue(doc.summary.amounts.taxInclusiveAmount, doc.header.currency),
-            "AllowanceTotalAmount": wrapValue(doc.summary.amounts.allowanceTotalAmount, doc.header.currency),
-            "ChargeTotalAmount": wrapValue(doc.summary.amounts.chargeTotalAmount, doc.header.currency),
-            "PayableRoundingAmount": wrapValue(doc.summary.amounts.payableRoundingAmount, doc.header.currency),
-            "PayableAmount": wrapValue(doc.summary.amounts.payableAmount, doc.header.currency)
+            "LineExtensionAmount": wrapValue(doc.summary.amounts.lineExtensionAmount, doc.header.documentCurrencyCode),
+            "TaxExclusiveAmount": wrapValue(doc.summary.amounts.taxExclusiveAmount, doc.header.documentCurrencyCode),
+            "TaxInclusiveAmount": wrapValue(doc.summary.amounts.taxInclusiveAmount, doc.header.documentCurrencyCode),
+            "AllowanceTotalAmount": wrapValue(doc.summary.amounts.allowanceTotalAmount, doc.header.documentCurrencyCode),
+            "ChargeTotalAmount": wrapValue(doc.summary.amounts.chargeTotalAmount, doc.header.documentCurrencyCode),
+            "PayableRoundingAmount": wrapValue(doc.summary.amounts.payableRoundingAmount, doc.header.documentCurrencyCode),
+            "PayableAmount": wrapValue(doc.summary.amounts.payableAmount, doc.header.documentCurrencyCode)
         }]
     };
 

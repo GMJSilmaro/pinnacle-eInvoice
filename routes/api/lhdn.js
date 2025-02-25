@@ -7,10 +7,9 @@ const fs = require('fs').promises;
 const jsrender = require('jsrender');
 const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
-const { createCanvas, loadImage } = require('canvas');
-const xml2js = require('xml2js');
 const { logger, apiLogger, versionLogger } = require('../../utils/logger');
 const { getUnitType } = require('../../utils/UOM');
+const { getInvoiceTypes } = require('../../utils/EInvoiceTypes');
 const axiosRetry = require('axios-retry');
 
 // Initialize cache with 5 minutes standard TTL
@@ -133,6 +132,16 @@ async function getLHDNConfig() {
         retryDelay: settings.retryDelay || 1000, // Base delay for exponential backoff
         maxRetryDelay: settings.maxRetryDelay || 60000 // Maximum retry delay
     };
+}
+
+async function ensureTempDirectory() {
+    const tempDir = path.join(__dirname, '../../public/temp');
+    try {
+        await fs.access(tempDir);
+    } catch {
+        // Directory doesn't exist, create it
+        await fs.mkdir(tempDir, { recursive: true });
+    }
 }
 
 // Enhanced document fetching function with smart caching
@@ -760,10 +769,11 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                 documentInfo: {
                     uuid: documentData.uuid,
                     submissionUid: documentData.submissionUid,
-                    longId: documentData.longId,
+                    longId: detailsData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
                     validationResults: detailsData.validationResults,
+                    supplierName: documentData.supplierName,
                     supplierSstNo: documentData.supplierSstNo,
                     supplierMsicCode: documentData.supplierMsicCode,
                     supplierAddress: documentData.supplierAddress,
@@ -790,7 +800,8 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     totalIncludingTax: documentData.totalSales,
                     totalExcludingTax: documentData.totalExcludingTax,
                     taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
-                    irbmUniqueNo: documentData.uuid
+                    irbmUniqueNo: documentData.uuid,
+                    irbmlongId: documentData.longId
                 }
             });
         }
@@ -808,10 +819,71 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                 documentInfo: {
                     uuid: documentData.uuid,
                     submissionUid: documentData.submissionUid,
-                    longId: documentData.longId,
+                    longId: detailsData.longId,
+                    irbmlongId: documentData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
                     validationResults: validationResults,
+                    supplierName: documentData.issuerName,
+                    supplierTIN: documentData.issuerTin,
+                    supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+                    supplierAddress: supplierParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.supplierAddress,
+                    receiverName: documentData.receiverName,
+                    receiverId: documentData.receiverTin,
+                    receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    receiverAddress: customerParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.receiverAddress
+                },
+                supplierInfo: {
+                    company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
+                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
+                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
+                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+                    address: supplierParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.supplierAddress
+                },
+                customerInfo: {
+                    company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
+                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
+                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    address: customerParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.receiverAddress
+                },
+                paymentInfo: {
+                    totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
+                    totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
+                    taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
+                    irbmUniqueNo: documentData.uuid,
+                    irbmlongId: documentData.longId
+                }
+            });
+        } catch (parseError) {
+            console.error('Error parsing document:', parseError);
+            // Return basic document info if parsing fails
+            return res.json({
+                success: true,
+                documentInfo: {
+                    uuid: documentData.uuid,
+                    submissionUid: documentData.submissionUid,
+                    longId: documentData.longId,
+                    irbmlongId: documentData.longId,
+                    internalId: documentData.internalId,
+                    status: documentData.status,
+                    validationResults: validationResults,
+                    supplierName: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
                     supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
                     supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
                     supplierAddress: supplierParty.PostalAddress[0].AddressLine
@@ -850,47 +922,8 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
                     totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
                     taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
-                    irbmUniqueNo: documentData.uuid
-                }
-            });
-        } catch (parseError) {
-            console.error('Error parsing document:', parseError);
-            // Return basic document info if parsing fails
-            return res.json({
-                success: true,
-                documentInfo: {
-                    uuid: documentData.uuid,
-                    submissionUid: documentData.submissionUid,
-                    longId: documentData.longId,
-                    internalId: documentData.internalId,
-                    status: documentData.status,
-                    supplierSstNo: documentData.supplierSstNo,
-                    supplierMsicCode: documentData.supplierMsicCode,
-                    supplierAddress: documentData.supplierAddress,
-                    receiverSstNo: documentData.receiverSstNo,
-                    receiverRegistrationNo: documentData.receiverRegistrationNo,
-                    receiverAddress: documentData.receiverAddress
-                },
-                supplierInfo: {
-                    company: documentData.supplierName,
-                    tin: documentData.supplierTin,
-                    registrationNo: documentData.supplierRegistrationNo,
-                    taxRegNo: documentData.supplierSstNo,
-                    msicCode: documentData.supplierMsicCode,
-                    address: documentData.supplierAddress
-                },
-                customerInfo: {
-                    company: documentData.receiverName,
-                    tin: documentData.receiverTin,
-                    registrationNo: documentData.receiverRegistrationNo,
-                    taxRegNo: documentData.receiverSstNo,
-                    address: documentData.receiverAddress
-                },
-                paymentInfo: {
-                    totalIncludingTax: documentData.totalSales,
-                    totalExcludingTax: documentData.totalExcludingTax,
-                    taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
-                    irbmUniqueNo: documentData.uuid
+                    irbmUniqueNo: documentData.uuid,
+                    irbmlongId: documentData.longId
                 }
             });
         }
@@ -948,17 +981,20 @@ async function getTemplateData(uuid, accessToken, user) {
     const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
     const customerParty = invoice.AccountingCustomerParty[0].Party[0];
 
-    // Generate QR code
-    const longId = rawData.longId || rawData.longID;
-    const lhdnUuid = rawData.uuid;
-    const lhdnLongId = longId;
-    const qrCodeUrl = `${lhdnConfig.baseUrl}/${lhdnUuid}/share/${longId}`;
+   // Generate QR code
+   console.log('Generating QR code...');
+   const longId = rawData.longId || rawData.longID;
+   const lhdnUuid = rawData.uuid;
+   const qrCodeUrl = `https://preprod.myinvois.hasil.gov.my/${lhdnUuid}/share/${longId}`;
+   console.log('QR Code URL:', qrCodeUrl);
 
-    const qrCodeDataUrl = await QRCode.toDataURL(qrCodeUrl, {
-        width: 200,
-        margin: 2,
-        color: { dark: '#000000', light: '#ffffff' }
-    });
+   const qrCodeDataUrl = await QRCode.toDataURL(qrCodeUrl, {
+       width: 200,
+       margin: 2,
+       color: { dark: '#000000', light: '#ffffff' }
+   });
+   console.log('✓ QR code generated successfully');
+
 
     // Get tax information from UBL structure
     const taxTotal = invoice.TaxTotal?.[0];
@@ -999,6 +1035,8 @@ async function getTemplateData(uuid, accessToken, user) {
     const supplierIdInfo = getIdTypeAndNumber(supplierParty.PartyIdentification, idTypes);
     const customerIdInfo = getIdTypeAndNumber(customerParty.PartyIdentification, idTypes);
 
+    
+
     // Process tax information for each line item
     const taxSummary = {};
     const items = await Promise.all(invoice.InvoiceLine?.map(async (line, index) => {
@@ -1013,7 +1051,7 @@ async function getTemplateData(uuid, accessToken, user) {
     
         // Get unit type name
         const unitType = await getUnitType(unitCode);
-    
+
         // Extract tax information for this line
         const lineTaxCategory = line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0];
         const taxTypeCode = lineTaxCategory?.ID?.[0]._ || '06';
@@ -1062,7 +1100,10 @@ async function getTemplateData(uuid, accessToken, user) {
             TaxType: getTaxTypeDescription(taxTypeCode)
         };
     }) || []);
-    
+
+    const currentInvoiceType = invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA';
+    const einvoiceType = await getInvoiceTypes(currentInvoiceType);
+
     const taxSummaryArray = Object.values(taxSummary).map(summary => ({
         baseAmount: parseFloat(summary.baseAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         taxType: getTaxTypeDescription(summary.taxType),
@@ -1074,6 +1115,8 @@ async function getTemplateData(uuid, accessToken, user) {
     const taxTypeOrder = ['Service Tax', 'Sales Tax', 'Tourism Tax', 'High-Value Goods Tax', 'Sales Tax on Low Value Goods', 'Not Applicable', 'Tax exemption', 'Other'];
     taxSummaryArray.sort((a, b) => taxTypeOrder.indexOf(a.taxType) - taxTypeOrder.indexOf(b.taxType));
 
+    
+
     const templateData = {
         CompanyLogo: logoBase64,
         companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
@@ -1082,22 +1125,27 @@ async function getTemplateData(uuid, accessToken, user) {
         companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
 
         internalId: rawData.internalId || 'NA',
-        InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
-        InvoiceTypeCode: invoice.InvoiceTypeCode?.[0]._ || 'NA',
+
+        InvoiceTypeCode: einvoiceType,
         InvoiceTypeName: rawData.typeName || 'NA',
         InvoiceVersion: rawData.typeVersionName || 'NA',
         InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
         UniqueIdentifier: rawData.uuid || 'NA',
-        longID: lhdnLongId || 'NA',
         lhdnLink: qrCodeUrl,
-
-        OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
+        
         dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString(),
         documentCurrency: invoice.DocumentCurrencyCode?.[0]._ || 'MYR',
         taxCurrency: invoice.TaxCurrencyCode?.[0]._ || 'MYR',
         TaxExchangeRate: invoice.TaxExchangeRate?.[0]?.CalculationRate?.[0]._ || '----',
         issueDate: invoice.IssueDate?.[0]._ || 'NA',
         issueTime: invoice.IssueTime?.[0]._ || 'NA',
+
+        
+        OriginalInvoiceRef: invoice.BillingReference?.[0]?.InvoiceDocumentReference?.[0]?.ID?.[0]._ || 'Not Applicable',
+        OriginalInvoiceDateTime: invoice.IssueDate?.[0]._ ? new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString() : 'Not Applicable',
+        OriginalInvoiceStartDate: invoice.InvoicePeriod?.[0]?.StartDate?.[0]._ || '-- / -- / --',
+        OriginalInvoiceEndDate: invoice.InvoicePeriod?.[0]?.EndDate?.[0]._ || '-- / -- / --',
+        OriginalInvoiceDescription: invoice.InvoicePeriod?.[0]?.Description?.[0]._ || '',
 
         SupplierTIN: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || 'NA',
         SupplierRegistrationNumber: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || 'NA',
@@ -1135,11 +1183,6 @@ async function getTemplateData(uuid, accessToken, user) {
         TaxType: taxCategory?.ID?.[0]._ || '06',
         TaxSchemeId: getTaxTypeDescription(taxCategory?.ID?.[0]._ || '06'),
 
-        qrCode: qrCodeDataUrl,
-        QRLink: qrCodeUrl,
-        DigitalSignature: rawData.digitalSignature || '-',
-        validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString(),
-
         taxSummary: taxSummaryArray.map(item => ({
             taxType: item.taxType,
             taxRate: item.taxRate,
@@ -1147,28 +1190,29 @@ async function getTemplateData(uuid, accessToken, user) {
             totalTaxAmount: item.taxAmount || '0.00'
         })),
 
-        companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NA',
-        companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'NA',
-        companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'NA',
-        companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'NA',
-        InvoiceType: invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice 1.0' : invoice.InvoiceTypeCode?.[0]._ || 'NA',
-        InvoiceVersionCode: invoice.InvoiceTypeCode?.[0].listVersionID || 'NA',
+        companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NNot ApplicableA',
+        companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'Not Applicable',
+        companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'Not Applicable',
+        companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'Not Applicable',
+        
+        InvoiceVersionCode: invoice.InvoiceTypeCode?.[0].listVersionID || 'Not Applicable',
         InvoiceVersion: rawData.typeVersionName || 'NA',
-        InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
-        UniqueIdentifier: rawData.uuid || 'NA',
-        LHDNlongId: rawData.longId || 'NA',
-        OriginalInvoiceRef: invoice.BillingReference?.[0]?.AdditionalDocumentReference?.[0]?.ID?.[0]._ || 'NA',
-        dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleDateString('en-GB'),
-        issueDate: invoice.IssueDate?.[0]._ ? new Date(invoice.IssueDate[0]._).toLocaleDateString('en-GB') : 'NA',
-        issueTime: invoice.IssueTime?.[0]._ || 'NA',
+        InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'Not Applicable',
+        UniqueIdentifier: rawData.uuid || 'Not Applicable',
+        LHDNlongId: longId || 'Not Applicable',
 
-        startPeriodDate: invoice.InvoicePeriod?.[0]?.StartDate?.[0]._ || 'NA',
-        endPeriodDate: invoice.InvoicePeriod?.[0]?.EndDate?.[0]._ || 'NA',
-        dateDescription: invoice.InvoicePeriod?.[0]?.Description?.[0]._ || 'NA',
+        dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleDateString('en-GB'),
+        issueDate: invoice.IssueDate?.[0]._ ? new Date(invoice.IssueDate[0]._).toLocaleDateString('en-GB') : 'Not Applicable',
+        issueTime: invoice.IssueTime?.[0]._ || 'Not Applicable',
+
+        startPeriodDate: invoice.InvoicePeriod?.[0]?.StartDate?.[0]._ || 'Not Applicable',
+        endPeriodDate: invoice.InvoicePeriod?.[0]?.EndDate?.[0]._ || 'Not Applicable',
+        dateDescription: invoice.InvoicePeriod?.[0]?.Description?.[0]._ || 'Not Applicable',
 
         qrCode: qrCodeDataUrl,
+        QRLink: qrCodeUrl,
         DigitalSignature: rawData.digitalSignature || '-',
-        validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString()
+        validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString(),
     };
    
    return templateData;
@@ -1176,7 +1220,7 @@ async function getTemplateData(uuid, accessToken, user) {
 
 //route to check if PDF exists
 router.get('/documents/:uuid/check-pdf', async (req, res) => {
-    const { uuid } = req.params;
+    const { uuid, longId } = req.params;
     const requestId = req.requestId;
     
     try {
@@ -1211,8 +1255,8 @@ router.get('/documents/:uuid/check-pdf', async (req, res) => {
     }
 });
 
-// Apply rate limiting to PDF routes
-router.use('/documents/:uuid/pdf', limiter);
+// // Apply rate limiting to PDF routes
+// router.use('/documents/:uuid/pdf', limiter);
 
 // Update PDF generation route
 router.post('/documents/:uuid/pdf', async (req, res) => {

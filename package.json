@@ -1,27 +1,15 @@
 {
-  "name": "einvoiceportal",
-  "version": "2.0.0",
+  "name": "pxceinvoiceportal",
+  "version": "1.1.1",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
     "test": "jest",
     "dev": "cross-env NODE_ENV=development EXCEL_DEBUG=false nodemon server.js --ignore-watch 'logs/' --ignore-watch '*.log' --ignore-watch 'generated/' --ignore-watch 'temp/' --ignore-watch 'excel/' --ignore-watch 'output/'",
     "start": "nodemon server.js",
-    "build-css": "postcss public/css/tailwind.css -o public/css/styles.css",
-    "build-css-prod": "NODE_ENV=production postcss public/css/tailwind.css -o production/public/css/styles.css --minify",
-    "watch-css": "postcss public/css/tailwind.css -o public/css/styles.css --watch",
-    "build:prod": "npm run clean:prod && npm run create:prod-dirs && npm run copy:prod && npm run build-css-prod",
-    "clean:prod": "rm -rf production || true",
-    "create:prod-dirs": "mkdir -p production/public/css production/public/js production/views",
-    "copy:prod": "cp -r public/assets production/public/ && cp -r views/* production/views/ && cp -r public/images production/public/",
-    "version:patch": "npm version patch",
-    "version:minor": "npm version minor",
     "version:major": "npm version major",
-    "prepare": "git config core.hooksPath .git/hooks/",
-    "preversion": "npm test",
-    "postversion": "git push && git push --tags",
-    "update": "npm update && npm audit fix",
-    "deploy": "git pull && npm install && npm run build-css-prod"
+    "version:minor": "npm version minor", 
+    "version:patch": "npm version patch"
   },
   "keywords": [
     "eInvoice",
