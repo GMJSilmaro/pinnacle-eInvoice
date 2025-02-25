@@ -85,15 +85,21 @@
               <i class="bi bi-file-earmark-text"></i>
               <span>Audit Logs</span>
             </a>
-
-            <a href="/settings/user/admin/profile/{{ user.id }}" class="pinnacle-header__dropdown-item admin-only">
-              <i class="bi bi-person"></i>
-              <span>Settings</span>
+       
+            <a href="/changelog" class="pinnacle-header__dropdown-item">
+              <i class="bi bi-clock-history"></i>
+              <span>Changelog</span>
+              <span class="pinnacle-header__badge pinnacle-header__badge--new">New</span>
             </a>
 
             <a href="/help" class="pinnacle-header__dropdown-item">
               <i class="bi bi-question-circle"></i>
               <span>Help & Support</span>
+            </a>
+
+            <a href="/settings/user/admin/profile/{{ user.id }}" class="pinnacle-header__dropdown-item admin-only">
+              <i class="bi bi-person"></i>
+              <span>Settings</span>
             </a>
             
             <div class="pinnacle-header__dropdown-divider"></div>

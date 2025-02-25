@@ -1,0 +1,202 @@
+{% extends "layout.html" %}
+{% block head %}
+<title>Update Logs - Pinnacle e-Invoice Portal</title>
+<style>
+.changelog-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px 40px;
+}
+
+.changelog-version {
+  background: white;
+  border-radius: 12px;
+  padding: 2.5rem;
+  margin-bottom: 2.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.changelog-version:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.12), 0 3px 6px -1px rgba(0, 0, 0, 0.08);
+}
+
+.changelog-version::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #3b82f6;
+  border-radius: 4px 0 0 4px;
+}
+
+.changelog-version h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+
+.changelog-version > p {
+  color: #6b7280;
+  font-size: 0.95rem;
+  margin-bottom: 2rem;
+}
+
+.version-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.version-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.changelog-date {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+  background: #f3f4f6;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+}
+
+.changelog-date i {
+  font-size: 0.875rem;
+}
+
+.changelog-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0.25rem 0;
+  gap: 0.5rem;
+}
+
+.type-feature {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.type-fix {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.type-improvement {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.changelog-list {
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-top: 1rem;
+  margin-bottom: 2rem;
+}
+
+.changelog-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.changelog-list li {
+  padding: 0.625rem 0;
+  display: flex;
+  align-items: center;
+  color: #374151;
+  font-size: 0.9375rem;
+}
+
+.changelog-list li::before {
+  content: '•';
+  margin-right: 1rem;
+  color: #3b82f6;
+  font-size: 1.25rem;
+  line-height: 0;
+}
+
+.mt-4 {
+  margin-top: 1rem;
+}
+
+.space-y-4 > * + * {
+  margin-top: 1.5rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="changelog-container">
+  <div class="changelog-version">
+    <h1>Changelog</h1>
+    <p>Track all updates and improvements to our platform</p>
+    
+    <div class="version-header">
+      <h2>Version 1.1.5</h2>
+      <p class="changelog-date">
+        <i class="bi bi-calendar3"></i>
+        February 25, 2025
+      </p>
+    </div>
+
+    <div class="mt-4 space-y-4">
+      <div>
+        <span class="changelog-type type-feature">
+          <i class="bi bi-star-fill"></i>
+          New Feature
+        </span>
+        <div class="changelog-list">
+          <ul>
+            <li>Added bulk invoice processing capability</li>
+            <li>Implemented new dashboard analytics</li>
+          </ul>
+        </div>
+      </div>
+
+      <div>
+        <span class="changelog-type type-fix">
+          <i class="bi bi-bug-fill"></i>
+          Bug Fix
+        </span>
+        <div class="changelog-list">
+          <ul>
+            <li>Fixed issue with PDF generation on Safari browsers</li>
+            <li>Resolved session timeout notifications</li>
+          </ul>
+        </div>
+      </div>
+
+      <div>
+        <span class="changelog-type type-improvement">
+          <i class="bi bi-arrow-up-circle-fill"></i>
+          Improvement
+        </span>
+        <div class="changelog-list">
+          <ul>
+            <li>Enhanced loading performance for large datasets</li>
+            <li>Updated UI elements for better accessibility</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

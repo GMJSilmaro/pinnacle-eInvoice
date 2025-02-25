@@ -919,26 +919,6 @@ textarea.form-control {
   color: #6c757d;
 }
 
-/* Button Styles */
-.btn {
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.btn-primary {
-  background: #0d6efd;
-  border: 1px solid #0d6efd;
-  color: #fff;
-}
-
-.btn-primary:hover {
-  background: #0b5ed7;
-  border-color: #0a58ca;
-}
-
 /* Responsive */
 @media (max-width: 992px) {
   .settings-content {
@@ -1092,31 +1072,6 @@ select.form-control {
   background-color: #fff;
   border-color: #0d6efd;
   box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.25);
-}
-
-/* Enhanced Buttons */
-.btn {
-  position: relative;
-  overflow: hidden;
-  transform: translate3d(0, 0, 0);
-}
-
-.btn::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  transition: width 0.3s ease-out, height 0.3s ease-out;
-}
-
-.btn:active::after {
-  width: 200%;
-  height: 200%;
 }
 
 /* Enhanced Info Items */

@@ -244,10 +244,7 @@ const startServer = async () => {
       console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     });
     
-    // // Cleanup handlers
-    // process.on('SIGTERM', () => require('./utils/cleanup').handleShutdown(jsreportInstance));
-    // process.on('SIGINT', () => require('./utils/cleanup').handleShutdown(jsreportInstance));
-    
+
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

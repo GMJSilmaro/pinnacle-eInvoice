@@ -42,6 +42,15 @@ router.get('/help', auth.middleware, (req, res) => {
     });
 });
 
+// Changelog route
+router.get('/changelog', auth.middleware,  (req, res) => {
+    res.render('dashboard/changelog.html', {
+        title: 'Changelog',
+        user: req.session.user || null,
+        layout: 'layout'
+    });
+});
+
 // Profile redirect
 router.get('/profile', auth.middleware, (req, res) => {
     res.render('dashboard/profile.html', {

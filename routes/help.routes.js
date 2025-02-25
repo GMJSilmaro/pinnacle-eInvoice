@@ -10,4 +10,11 @@ router.get('/', isAuthenticated, (req, res) => {
     });
 });
 
+router.get('/changelog', (req, res) => {
+    res.render('changelog', {
+        title: 'Changelog',
+        user: req.user
+    });
+});
+
 module.exports = router; 
