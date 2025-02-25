@@ -2,28 +2,6 @@
     padding: 1.125rem;
 }
 
-/* Welcome Card */
-.profile-welcome-card {
-    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-    color: #fff;
-    padding: 2rem;
-    border-radius: 15px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    margin-top: 2rem;
-    margin-bottom: 25px;
-}
-  
-.profile-welcome-card h2 {
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
-}
-  
-.profile-welcome-card p {
-    margin: 5px 0 0;
-    opacity: 0.9;
-}
-
 .profile-avatar {
     position: relative;
     width: 120px;

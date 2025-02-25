@@ -3,9 +3,7 @@
 {% block head %}
 
 <title>Inbound - eInvoice Portal</title>
-
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-
 
 <link href="/assets/css/pages/inbound/card.css" rel="stylesheet">
 
@@ -23,64 +21,61 @@
 
 
 {% endblock %}
-
 {% block content %}
-<div class="container-fluid px-3 px-md-4 px-lg-5">
-    <!-- Welcome Card - Full width -->
-    <div class="profile-welcome-section">
+<div class="container-fluid px-2 px-md-2 px-lg-2">
 <!-- Welcome Card - Full width -->
-<div class="profile-welcome-card">
-    <div class="d-flex align-items-center justify-content-between">
-      <div class="d-flex align-items-center">
-        <div class="welcome-icon">
-          <i class="bi bi-box-arrow-in-left"></i>
+    <div class="profile-welcome-card">
+        <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+            <div class="welcome-icon">
+            <i class="bi bi-box-arrow-in-left"></i>
+            </div>
+            <div class="welcome-content">
+                <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">
+                    Inbound
+                </h3>
+                        <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" 
+                        title="<div class='tooltip-content'>
+                                    <div class='tooltip-row'>
+                                    <i class='bi bi-info-circle'></i>
+                                    <span><b>LHDN Response Information:</b></span>
+                                    </div>
+                                    <div class='tooltip-row'>
+                                    <i class='bi bi-1-circle'></i>
+                                    <span>View submission results from LHDN</span>
+                                    </div>
+                                    <div class='tooltip-row'>
+                                    <i class='bi bi-2-circle'></i>
+                                    <span>Check validation results</span>
+                                    </div>
+                                    <div class='tooltip-row'> 
+                                    <i class='bi bi-3-circle'></i>
+                                    <span>Review any error messages</span>
+                                    </div>
+                                    <div class='tooltip-row'>
+                                    <i class='bi bi-4-circle'></i>
+                                    <span>Track submission timestamps</span>
+                                    </div>
+                                </div>">
+                View and manage your inbound responses from LHDN. Track the status and results of your IRBM submissions here.
+            </p>
+            </div>
         </div>
-        <div class="welcome-content">
-            <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">
-                Inbound
-              </h3>
-                    <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" 
-                      title="<div class='tooltip-content'>
-                                <div class='tooltip-row'>
-                                  <i class='bi bi-info-circle'></i>
-                                  <span><b>LHDN Response Information:</b></span>
-                                </div>
-                                <div class='tooltip-row'>
-                                  <i class='bi bi-1-circle'></i>
-                                  <span>View submission results from LHDN</span>
-                                </div>
-                                <div class='tooltip-row'>
-                                  <i class='bi bi-2-circle'></i>
-                                  <span>Check validation results</span>
-                                </div>
-                                <div class='tooltip-row'> 
-                                  <i class='bi bi-3-circle'></i>
-                                  <span>Review any error messages</span>
-                                </div>
-                                <div class='tooltip-row'>
-                                  <i class='bi bi-4-circle'></i>
-                                  <span>Track submission timestamps</span>
-                                </div>
-                              </div>">
-            View and manage your inbound responses from LHDN. Track the status and results of your IRBM submissions here.
-          </p>
+        <div class="d-flex align-items-start">
+            <!-- Existing datetime section -->
+            <div class="welcome-datetime text-end">
+            <div class="current-time">
+                <i class="bi bi-clock"></i>
+                <span id="currentTime">00:00:00 AM</span>
+            </div>
+            <div class="current-date">
+                <i class="bi bi-calendar3"></i>
+                <span id="currentDate">Loading...</span>
+            </div>
         </div>
-      </div>
-      <div class="d-flex align-items-start">
-        <!-- Existing datetime section -->
-        <div class="welcome-datetime text-end">
-          <div class="current-time">
-              <i class="bi bi-clock"></i>
-              <span id="currentTime">00:00:00 AM</span>
-          </div>
-          <div class="current-date">
-              <i class="bi bi-calendar3"></i>
-              <span id="currentDate">Loading...</span>
         </div>
-      </div>
     </div>
-  </div>
-  </div>
+    </div>
   
     <!-- Content Section - With margins -->
     <div class="content-section">
@@ -276,9 +271,6 @@
       </div>
     </div>
         
-
-
-  </div>
 </div>
 <!-- View Details Modal -->
 <div class="modal fade lhdn-inbound-modal" id="documentDetailsModal" tabindex="-1">

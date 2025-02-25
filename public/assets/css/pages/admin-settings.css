@@ -12,10 +12,11 @@
     background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
     color: #fff;
     padding: 2rem;
+    padding-top: 2.5rem;
     border-radius: 15px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    margin-top: 2rem;
-    margin-bottom: 25px;
+    margin-bottom: 2rem;
+    margin-top: -1.5rem;
   }
   
   .profile-welcome-card h2 {

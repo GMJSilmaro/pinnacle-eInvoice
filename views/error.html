@@ -1,4 +1,4 @@
-{% extends "./layouts/error-layout.html" %}
+{% extends "./error-layout.html" %}
 
 {% block content %}
 <div class="d-flex align-items-center" style="min-height: 100vh; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);">
@@ -6,14 +6,7 @@
     <div class="row justify-content-center">
       <div class="col-md-8 text-center">
         <!-- Floating image with hover effect -->
-        <div class="error-image-container mb-4 floating">
-          <img
-            src="/assets/images/404_Error.png"
-            alt="Error Illustration"
-            class="error-image hover-scale"
-            style="max-width: 300px; height: auto; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.15));"
-          >
-        </div>
+       
 
         {% if errorCode %}
         <div class="error-code mb-3">
@@ -27,6 +20,14 @@
         <h1 class="display-4 fw-bold mb-3 text-dark"
             style="text-shadow: 2px 2px 4px rgba(0,0,0,0.1);">
           {{ title }}
+          <div class="error-image-container floating">
+            <img
+              src="/assets/images/404_Error.png"
+              alt="Error Illustration"
+              class="error-image hover-scale text-center"
+              style="margin-left: 20%; max-width: 500px; height: auto; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.15));"
+            >
+          </div>
         </h1>
 
         <p class="lead text-secondary mb-4"

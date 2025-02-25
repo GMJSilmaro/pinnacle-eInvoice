@@ -1,116 +1,171 @@
 <!-- ======= Header ======= -->
 <link rel="stylesheet" href="/assets/css/header.css">
-
-<header class="pinnacle-header">
-  <div class="pinnacle-header__container">
-    <div class="pinnacle-header__wrapper">
-      <!-- Left Section: Logo + Navigation -->
-      <div class="pinnacle-header__logo-section">
-        <!-- Logo -->
-        <a href="/dashboard" style="display: flex; align-items: center; text-decoration: none;">
-          <img src="/assets/img/logo4.png" alt="E-Invoice Portal Logo" class="pinnacle-header__logo">
-        </a>
-
-        <!-- Navigation Menu -->
-        <nav class="pinnacle-header__nav">
-          <ul class="pinnacle-header__nav-list">
-            <li>
-              <a href="/dashboard" class="pinnacle-header__nav-link nav-item-link" id="nav-dashboard">
-                <i class="bi bi-grid-1x2"></i>
-                Dashboard
-              </a>
-            </li>
-            <li>
-              <a href="/outbound" class="pinnacle-header__nav-link nav-item-link" id="nav-outbound">
-                <i class="bi bi-send"></i>
-                Outbound
-              </a>
-            </li>
-            <!-- Inbound -->
-             <li>
-              <a href="/inbound" class="pinnacle-header__nav-link nav-item-link" id="nav-inbound">
-                <i class="bi bi-download"></i>
-                Inbound
-              </a>
-             </li>
-          </ul>
-        </nav>
-      </div>
-
-      <!-- Right Section: Actions + Profile -->
-      <div class="pinnacle-header__actions">
-        <!-- Profile Section -->
-        <div class="pinnacle-header__profile">
-          <button class="pinnacle-header__profile-btn">
-            <img src="/assets/img/noimage.png" alt="Profile" class="pinnacle-header__profile-img profile-logo">
-            <div class="pinnacle-header__profile-info">
-              <div style="display: flex; align-items: center;">
-                <span class="pinnacle-header__profile-name profile-username">Loading...</span>
-                <span class="pinnacle-header__profile-badge admin-badge admin-only">Admin</span>
-              </div>
-            
-            </div>
-            <i class="bi bi-chevron-down pinnacle-header__profile-arrow"></i>
-          </button>
-
-          <!-- Enhanced Dropdown Menu -->
-          <div class="pinnacle-header__dropdown">
-            <div class="pinnacle-header__dropdown-header">
-              <h4 class="pinnacle-header__dropdown-title">Account Settings</h4>
-              <p class="pinnacle-header__dropdown-subtitle">Manage your account preferences</p>
-            </div>
-            
-            <a href="/profile" class="pinnacle-header__dropdown-item admin-only">
-              <i class="bi bi-building"></i>
-              <span>Company Profile</span>
-            </a>
-
-            <a href="/users" class="pinnacle-header__dropdown-item admin-only">
-              <i class="bi bi-people"></i>
-              <span>User Management</span>
-            </a>
-      
-            <a href="/company/profile/:companyName" class="pinnacle-header__dropdown-item normal-user-only">
-              <i class="bi bi-building"></i>
-              <span>Company Profile</span>
-            </a>
-
-            <a href="/settings/user/profile/:id" class="pinnacle-header__dropdown-item normal-user-only">
-              <i class="bi bi-gear"></i>
-              <span>Settings</span>
-            </a>
-
-            <div class="pinnacle-header__dropdown-divider"></div>
-            <a href="/dashboard/audit-trail" class="pinnacle-header__dropdown-item admin-only">
-              <i class="bi bi-file-earmark-text"></i>
-              <span>Audit Logs</span>
-            </a>
-       
-            <a href="/changelog" class="pinnacle-header__dropdown-item">
-              <i class="bi bi-clock-history"></i>
-              <span>Changelog</span>
-              <span class="pinnacle-header__badge pinnacle-header__badge--new">New</span>
-            </a>
-
-            <a href="/help" class="pinnacle-header__dropdown-item">
-              <i class="bi bi-question-circle"></i>
-              <span>Help & Support</span>
-            </a>
-
-            <a href="/settings/user/admin/profile/{{ user.id }}" class="pinnacle-header__dropdown-item admin-only">
-              <i class="bi bi-person"></i>
-              <span>Settings</span>
-            </a>
-            
-            <div class="pinnacle-header__dropdown-divider"></div>
-            
-            <a href="/auth/logout" class="pinnacle-header__dropdown-item pinnacle-header__dropdown-item--danger">
-              <i class="bi bi-box-arrow-right"></i>
-              <span>Sign Out</span>
+<div id="webcrumbs">
+  <header class="bg-white shadow-lg border-b">
+    <div class="px-2 py-1">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-8">
+          <div class="pinnacle-header__logo-section">
+            <a
+              href="/dashboard"
+              class="transform hover:scale-105 transition-transform duration-200"
+              style="display: flex; align-items: center; text-decoration: none;"
+            >
+              <img
+                src="/assets/img/logo4.png"
+                alt="Logo"
+                class="pinnacle-header__logo"
+              />
             </a>
           </div>
+          <nav class="flex gap-6">
+            <a
+              href="/dashboard"
+              class="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-blue-50 transition-all duration-200 group"
+            >
+              <span
+                class="material-symbols-outlined text-blue-600 group-hover:scale-110 transition-transform"
+                >dashboard</span
+              >
+              <span>Dashboard</span>
+            </a>
+            <a
+              href="/outbound"
+              class="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-blue-50 transition-all duration-200 group"
+            >
+              <span
+                class="material-symbols-outlined text-blue-600 group-hover:scale-110 transition-transform"
+                >send</span
+              >
+              <span>Outbound</span>
+            </a>
+            <a
+              href="/inbound"
+              class="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-blue-50 transition-all duration-200 group"
+            >
+              <span
+                class="material-symbols-outlined text-blue-600 group-hover:scale-110 transition-transform"
+                >download</span
+              >
+              <span>Inbound</span>
+            </a>
+          </nav>
+        </div>
+        <div class="relative">
+          <details class="group">
+            <summary
+              class="flex items-center gap-4 cursor-pointer list-none"
+            >
+              <div
+                class="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-slate-50 transition-all duration-200"
+              >
+                <img
+                  src="https://webcrumbs.cloud/placeholder"
+                  alt="Profile"
+                  class="w-10 h-10 rounded-full ring-2 ring-blue-100 profile-logo"
+                  loading="lazy"
+                />
+                <div class="text-left">
+                  <div class="flex items-center gap-2">
+                    <span class="font-medium profile-username">Loading...</span>
+                    <span
+                      class="px-2 py-0.5 text-xs bg-red-600 text-white font-100 rounded-full"
+                      >Admin</span
+                    >
+                  </div>
+                </div>
+                <span
+                  class="material-symbols-outlined group-open:rotate-180 transition-transform duration-200"
+                  >expand_more</span
+                >
+              </div>
+            </summary>
+            <div
+              class="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border p-2 z-50"
+            >
+              <div class="p-3 border-b">
+                <h4 class="font-medium">Account Settings</h4>
+                <p class="text-sm text-slate-600">
+                  Manage your account preferences
+                </p>
+              </div>
+              <div class="py-1">
+                <a
+                  href="/profile"
+                  class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-50 transition-all duration-200 group"
+                >
+                  <span
+                    class="material-symbols-outlined text-slate-600 group-hover:scale-110 transition-transform"
+                    >business</span
+                  >
+                  <span>Company Profile</span>
+                </a>
+                <a
+                  href="/users"
+                  class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-50 transition-all duration-200 group"
+                >
+                  <span
+                    class="material-symbols-outlined text-slate-600 group-hover:scale-110 transition-transform"
+                    >group</span
+                  >
+                  <span>User Management</span>
+                </a>
+                <div class="h-px bg-slate-100 my-2"></div>
+                <a
+                  href="/changelog"
+                  class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-50 transition-all duration-200 group"
+                >
+                  <span
+                    class="material-symbols-outlined text-slate-600 group-hover:scale-110 transition-transform"
+                    >history</span
+                  >
+                  <span class="flex-1">Changelog</span>
+                  <span
+                    class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full"
+                    >New</span
+                  >
+                </a>
+                <a
+                href="/help"
+                class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-50 transition-all duration-200 group"
+              >
+                <span
+                  class="material-symbols-outlined text-slate-600 group-hover:scale-110 transition-transform"
+                  >help</span
+                >
+                <span class="flex-1">Help & Support</span>
+                <span
+                  class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full"
+                  >New</span
+                >
+              </a>
+              
+              <a
+              href="/settings/user/admin/profile/{{ user.id }}"
+              class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-50 transition-all duration-200 group"
+            >
+              <span
+                class="material-symbols-outlined text-slate-600 group-hover:scale-110 transition-transform"
+                >settings</span
+              >
+              <span>Settings</span>
+            </a>
+                <div class="h-px bg-slate-100 my-2"></div>
+                <a
+                  href="/auth/logout"
+                  class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-red-50 text-red-600 transition-all duration-200 group"
+                >
+                  <span
+                    class="material-symbols-outlined group-hover:scale-110 transition-transform"
+                    >logout</span
+                  >
+                  <span>Sign Out</span>
+                </a>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>
-  </div>
-</header>
+  </header>
+  </div>  

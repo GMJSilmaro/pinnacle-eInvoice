@@ -27,15 +27,6 @@
     margin: 0 auto;
     min-height: calc(100vh - 80px);
 }
-/* Welcome Card */
-.dashboard-header {
-    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-    color: #fff;
-    padding: 2rem;
-    border-radius: 15px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    margin-bottom: 25px;
-  }
   
   .profile-welcome-card h2 {
     margin: 0;

@@ -14,10 +14,11 @@
   background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
   color: #fff;
   padding: 2rem;
+  padding-top: 2.5rem;
   border-radius: 15px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  margin-top: 2rem;
-  margin-bottom: 25px;
+  margin-bottom: 2rem;
+  margin-top: -1.5rem;
 }
 
 .profile-welcome-card h2 {
@@ -755,12 +756,6 @@ textarea.form-control {
   opacity: 0.9;
 }
 
-/* Content Layout */
-.settings-content {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 25px;
-}
 
 /* Left Sidebar */
 .settings-nav-card {
@@ -919,12 +914,6 @@ textarea.form-control {
   color: #6c757d;
 }
 
-/* Responsive */
-@media (max-width: 992px) {
-  .settings-content {
-    grid-template-columns: 1fr;
-  }
-}
 
 @media (max-width: 768px) {
   .settings-container {

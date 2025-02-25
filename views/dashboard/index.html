@@ -11,7 +11,6 @@
 <link href="/assets/css/pages/profile.css" rel="stylesheet">
 <link href="/assets/css/welcome-card.css" rel="stylesheet">
 
-
 <style>
   /* Card Base Styles */
   .card {
@@ -103,12 +102,305 @@
     letter-spacing: 0.1em;
     margin: 0;
   }
+/* New Analytics Styles */
+.invoice-stats-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
 
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.status-pending { background: #f4a100; }
+.status-approved { background: #00ac69; }
+.status-submitted { background: #0061f2; }
+.status-rejected { background: #dc3545; }
+
+.mini-chart {
+  height: 40px;
+  width: 100px;
+  margin-left: auto;
+}
+
+.payment-status-card {
+  background: linear-gradient(45deg, #2962ff0d 0%, #2962ff03 100%);
+  border-left: 4px solid #2962ff;
+}
+
+.invoice-amount-card {
+  background: linear-gradient(45deg, #00ac690d 0%, #00ac6903 100%);
+  border-left: 4px solid #00ac69;
+}
+
+.progress-thin {
+  height: 4px;
+  border-radius: 2px;
+}
+
+.customer-logo {
+  width: 40px;
+  height: 40px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fallback-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.company-initial {
+  background: linear-gradient(45deg, #2962ff, #2962ff80);
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.company-initial::after {
+  content: attr(data-initial);
+  position: absolute;
+  color: white;
+}
+
+.hover-bg:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+  transition: background-color 0.2s ease;
+}
+
+.customer-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.badge {
+  padding: 0.35em 0.65em;
+  font-size: 0.75em;
+  font-weight: 500;
+}
+
+.bg-success-subtle {
+  background-color: rgba(0, 172, 105, 0.1);
+}
+
+.bg-warning-subtle {
+  background-color: rgba(255, 171, 0, 0.1);
+}
+
+.customer-list > div:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Customer List Styling */
+.customer-item {
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.customer-item:hover {
+  background-color: var(--bs-gray-100);
+  border-color: var(--bs-gray-200);
+  transform: translateX(3px);
+}
+
+/* Avatar Styling */
+.customer-avatar {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+
+.avatar-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: var(--bs-gray-100);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.customer-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.2rem;
+  color: white;
+  background: linear-gradient(45deg, #2196F3, #3F51B5);
+}
+
+/* Badge Styling */
+.badge {
+  padding: 0.5em 0.8em;
+  font-weight: 500;
+  font-size: 0.75rem;
+}
+
+.bg-success-subtle {
+  background-color: rgba(25, 135, 84, 0.1);
+}
+
+.bg-warning-subtle {
+  background-color: rgba(255, 193, 7, 0.1);
+}
+
+/* Customer Info Styling */
+.customer-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--bs-gray-900);
+}
+
+.customer-info small {
+  font-size: 0.8rem;
+}
+
+.text-primary {
+  color: #2196F3 !important;
+}
+
+/* Activity Log Container */
+.activity-log-container {
+  max-height: 650px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bs-gray-400) transparent;
+}
+
+/* Activity Item Styling */
+.activity-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 0;
+  position: relative;
+}
+
+.activity-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 48px;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--bs-gray-200);
+}
+
+/* Icon Styling */
+.activity-icon {
+  flex-shrink: 0;
+  margin-right: 1rem;
+}
+
+.icon-wrapper {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.bg-info-subtle {
+  background-color: rgba(13, 202, 240, 0.1);
+}
+
+.bg-success-subtle {
+  background-color: rgba(25, 135, 84, 0.1);
+}
+
+/* Content Styling */
+.activity-content {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.activity-text {
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-meta {
+  display: flex;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+/* Date Filter Styling */
+.date-filter .btn-group {
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.date-filter .btn {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  border-color: var(--bs-gray-300);
+}
+
+.date-filter .btn.active {
+  background-color: var(--bs-primary);
+  border-color: var(--bs-primary);
+  color: white;
+}
+
+/* View All Button */
+.view-all-btn {
+  transition: all 0.2s ease;
+  border: 1px solid var(--bs-gray-300);
+}
+
+.view-all-btn:hover {
+  background-color: var(--bs-gray-200);
+  transform: translateY(-1px);
+}
+
+/* Scrollbar Styling */
+.activity-log-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.activity-log-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activity-log-container::-webkit-scrollbar-thumb {
+  background-color: var(--bs-gray-400);
+  border-radius: 3px;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid px-3 px-md-4 px-lg-5">
+<div class="container-fluid px-2 px-md-2 px-lg-2">
   <!-- Welcome Card -->
     <div class="profile-welcome-card">
       <div class="d-flex align-items-center justify-content-between">
@@ -211,6 +503,99 @@
         </div>
       </div>
 
+        <!-- New Analytics Row -->
+        <div class="row g-3 mb-4">
+          <!-- Invoice Status Distribution -->
+          <div class="col-md-6">
+            <div class="card h-100">
+              <div class="card-body p-3">
+                <h5 class="card-title-new mb-3">INVOICE STATUS</h5>
+                <div class="d-flex align-items-center mb-2">
+                  <span class="status-indicator status-submitted"></span>
+                  <span class="text-muted">Submitted</span>
+                  <div class="progress progress-thin ms-auto" style="width: 100px;">
+                    <div class="progress-bar bg-blue" style="width: 55%"></div>
+                  </div>
+                  <span class="ms-2">55%</span>
+                </div>
+                <div class="d-flex align-items-center mb-2">
+                  <span class="status-indicator status-pending"></span>
+                  <span class="text-muted">Pending</span>
+                  <div class="progress progress-thin ms-auto" style="width: 100px;">
+                    <div class="progress-bar bg-warning" style="width: 35%"></div>
+                  </div>
+                  <span class="ms-2">35%</span>
+                </div>
+                <div class="d-flex align-items-center mb-2">
+                  <span class="status-indicator status-approved"></span>
+                  <span class="text-muted">Valid</span>
+                  <div class="progress progress-thin ms-auto" style="width: 100px;">
+                    <div class="progress-bar bg-success" style="width: 55%"></div>
+                  </div>
+                  <span class="ms-2">55%</span>
+                </div>
+                <div class="d-flex align-items-center">
+                  <span class="status-indicator status-rejected"></span>
+                  <span class="text-muted">Invalid</span>
+                  <div class="progress progress-thin ms-auto" style="width: 100px;">
+                    <div class="progress-bar bg-danger" style="width: 10%"></div>
+                  </div>
+                  <span class="ms-2">10%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+  
+          <!-- LHDN SYSTEM STATUS -->
+          <div class="col-md-6">
+            <div class="card h-100">
+              <div class="card-body p-3">
+                <!-- LHDN System Status Section -->
+                <div class="system-status mb-4">
+                  <h5 class="card-title-new mb-4">LHDN SYSTEM STATUS</h5>
+                  <div class="d-flex flex-wrap gap-3">
+                    <div class="status-item p-3 rounded bg-light">
+                      <div class="d-flex align-items-center">
+                        <div class="status-icon me-2">
+                          <i class="fas fa-cloud text-primary"></i>
+                        </div>
+                        <div>
+                          <h6 class="mb-1">API Endpoint</h6>
+                          <small id="apiStatus" class="badge bg-success">Connected</small>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="status-item p-3 rounded bg-light">
+                      <div class="d-flex align-items-center">
+                        <div class="status-icon me-2">
+                          <i class="fas fa-sync text-warning"></i>
+                        </div>
+                        <div>
+                          <h6 class="mb-1">Queue Status</h6>
+                          <small id="queueCount" class="text-muted">32 Pending</small>
+                        </div>
+                      </div>
+                    </div>
+            
+                    <div class="status-item p-3 rounded bg-light">
+                      <div class="d-flex align-items-center">
+                        <div class="status-icon me-2">
+                          <i class="fas fa-clock text-info"></i>
+                        </div>
+                        <div>
+                          <h6 class="mb-1">Last Sync</h6>
+                          <small id="lastSync" class="text-muted">2 mins ago</small>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+            
+              </div>
+            </div>
+          </div>
+        </div>
       <!-- Reports Chart -->
       <div class="card h-90" style="height: 550px;">
         <div class="card-body p-3">
@@ -224,25 +609,160 @@
     </div>
 
     <!-- Right Column - Activity -->
-    <div class="col-lg-4">
-      <div class="card h-90">
-        <div class="card-body p-3">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="card-title-new mb-0">RECENT ACTIVITY</h5>
-            <span class="badge bg-primary rounded-pill">Today</span>
+     
+<div class="col-lg-4">
+     <!-- Top Customers Card -->
+    <div class="card mb-4">
+      <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title-new mb-0">TOP CUSTOMERS</h5>
+          <div class="dropdown">
+            <button class="btn btn-link p-0" type="button" data-bs-toggle="dropdown">
+              <i class="fas fa-ellipsis-v"></i>
+            </button>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="#"><i class="fas fa-users me-2"></i>View All Customers</a></li>
+              <li><a class="dropdown-item" href="#"><i class="fas fa-file-export me-2"></i>Export List</a></li>
+            </ul>
           </div>
-          <div class="activity-log-container" id="activity-log">
-            <!-- Activity logs will be dynamically populated by JavaScript -->
+        </div>
+        <div class="customer-list">
+          <!-- Customer Item Template -->
+          <div class="d-flex align-items-center mb-3 p-2 rounded customer-item">
+            <div class="customer-avatar me-3">
+              <div class="avatar-wrapper">
+                <img src="/assets/img/customers/acme-logo.png"
+                    alt="Acme Corp"
+                    class="customer-logo"
+                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="avatar-fallback">
+                  <span>AC</span>
+                </div>
+              </div>
+            </div>
+            <div class="customer-info flex-grow-1">
+              <div class="d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 customer-name">Acme Corporation</h6>
+                <span class="badge bg-success-subtle text-success">Active</span>
+              </div>
+              <div class="d-flex justify-content-between align-items-center mt-1">
+                <small class="text-muted"><i class="fas fa-file-invoice me-1"></i>32 Invoices</small>
+                <span class="fw-semibold text-secondary">$45,200</span>
+              </div>
+            </div>
+            
           </div>
-          <div class="text-center mt-3">
-            <a href="/dashboard/audit-trail" class="btn btn-light btn-sm w-100">
-              View All Activities
+  <!-- Customer Item Template -->
+  <div class="d-flex align-items-center mb-3 p-2 rounded customer-item">
+    <div class="customer-avatar me-3">
+      <div class="avatar-wrapper">
+        <img src="/assets/img/customers/acme-logo.png"
+            alt="Acme Corp"
+            class="customer-logo"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="avatar-fallback">
+          <span>AC</span>
+        </div>
+      </div>
+    </div>
+    <div class="customer-info flex-grow-1">
+      <div class="d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 customer-name">Acme Corporation</h6>
+        <span class="badge bg-success-subtle text-success">Active</span>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-1">
+        <small class="text-muted"><i class="fas fa-file-invoice me-1"></i>32 Invoices</small>
+        <span class="fw-semibold text-secondary">$45,200</span>
+      </div>
+    </div>
+    
+  </div>
+    <!-- Customer Item Template -->
+    <div class="d-flex align-items-center mb-3 p-2 rounded customer-item">
+      <div class="customer-avatar me-3">
+        <div class="avatar-wrapper">
+          <img src="/assets/img/customers/acme-logo.png"
+              alt="Acme Corp"
+              class="customer-logo"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+          <div class="avatar-fallback">
+            <span>AC</span>
+          </div>
+        </div>
+      </div>
+      <div class="customer-info flex-grow-1">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="mb-0 customer-name">Acme Corporation</h6>
+          <span class="badge bg-success-subtle text-success">Active</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mt-1">
+          <small class="text-muted"><i class="fas fa-file-invoice me-1"></i>32 Invoices</small>
+          <span class="fw-semibold text-secondary">$45,200</span>
+        </div>
+      </div>
+      
+    </div>
+        </div>
+      </div>
+    </div>
+
+<!-- Recent Activity Card -->
+<div class="card h-90">
+  <div class="card-body p-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="card-title-new mb-0">RECENT ACTIVITY</h5>
+      <div class="date-filter d-flex align-items-center">
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-secondary active btn-sm">Today</button>
+          <button class="btn btn-outline-secondary btn-sm">Week</button>
+        </div>
+      </div>
+    </div>
+    
+    <div class="activity-log-container" id="activity-log">
+      <!-- Activity Item Template -->
+      <div class="activity-item">
+        <div class="activity-icon">
+          <div class="icon-wrapper bg-info-subtle">
+            <i class="fas fa-file-invoice text-info"></i>
+          </div>
+        </div>
+        <div class="activity-content">
+          <div class="activity-text">
+            <strong>New Invoice Created</strong>
+            <span class="text-muted">for Acme Corp</span>
+          </div>
+          <div class="activity-meta">
+            <small class="text-muted">
+              <i class="far fa-clock me-1"></i>2 hours ago
+            </small>
+            <a href="#" class="ms-2 text-primary">
+              <small>View</small>
             </a>
           </div>
         </div>
       </div>
+
+      <div class="activity-item">
+        <div class="activity-icon">
+          <div class="icon-wrapper bg-success-subtle">
+            <i class="fas fa-user-check text-success"></i>
+          </div>
+        </div>
+        <div class="activity-content">
+          <!-- ... existing code ... -->
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-3">
+      <a href="/dashboard/audit-trail" class="btn btn-light btn-sm w-100 view-all-btn">
+        <span>View All Activities</span>
+        <i class="fas fa-arrow-right ms-2"></i>
+      </a>
     </div>
   </div>
+</div>
 </div>
 {% endblock %}
 
@@ -285,4 +805,61 @@ function updateDateTime() {
 // Call when the document is ready
 document.addEventListener('DOMContentLoaded', updateDateTime);
 </script>
-{% endblock %} 
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const avatarFallbacks = document.querySelectorAll('.avatar-fallback');
+  
+  avatarFallbacks.forEach(fallback => {
+    const initial = fallback.textContent.trim();
+    fallback.style.background = generateGradientFromString(initial);
+  });
+});
+
+function generateGradientFromString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  const hue1 = hash % 360;
+  const hue2 = (hue1 + 40) % 360;
+  
+  return `linear-gradient(45deg, 
+    hsl(${hue1}, 70%, 50%), 
+    hsl(${hue2}, 70%, 45%)
+  )`;
+}
+</script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+  // Date filter buttons
+  const filterButtons = document.querySelectorAll('.date-filter .btn');
+  filterButtons.forEach(button => {
+    button.addEventListener('click', function() {
+      filterButtons.forEach(btn => btn.classList.remove('active'));
+      this.classList.add('active');
+      // Add your filter logic here
+      loadActivities(this.textContent.toLowerCase());
+    });
+  });
+  
+  // Function to load activities
+  function loadActivities(timeframe) {
+    const container = document.getElementById('activity-log');
+    // Add your API call or data loading logic here
+  }
+  
+  // Optional: Add smooth scroll behavior
+  const container = document.querySelector('.activity-log-container');
+  if (container) {
+    container.addEventListener('scroll', function() {
+      // Add infinite scroll logic here if needed
+    });
+  }
+});
+</script>
+
+
+{% endblock %}  
