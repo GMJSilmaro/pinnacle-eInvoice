@@ -1,6 +1,6 @@
 {
   "name": "pxceinvoiceportal",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -8,7 +8,7 @@
     "dev": "cross-env NODE_ENV=development EXCEL_DEBUG=false nodemon server.js --ignore-watch 'logs/' --ignore-watch '*.log' --ignore-watch 'generated/' --ignore-watch 'temp/' --ignore-watch 'excel/' --ignore-watch 'output/'",
     "start": "nodemon server.js",
     "version:major": "npm version major",
-    "version:minor": "npm version minor", 
+    "version:minor": "npm version minor",
     "version:patch": "npm version patch"
   },
   "keywords": [
