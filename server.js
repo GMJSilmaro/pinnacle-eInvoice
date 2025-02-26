@@ -2,12 +2,16 @@
 require('dotenv').config();
 const express = require('express');
 const https = require('https');
+const http = require('http');  // Added for HTTP to HTTPS redirection
 const session = require('express-session');
 const cors = require('cors');
 const swig = require('swig');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
+const os = require('os');  // Added os module which was missing
+const helmet = require('helmet');  // Added for security headers
+
 // 2. Local Dependencies
 const serverConfig = require('./config/server.config');
 const authConfig = require('./config/auth.config');
@@ -31,6 +35,22 @@ app.set('trust proxy', 'loopback');
 // Version Header middleware
 app.use(versionHeader);
 
+// Add Helmet for better security headers (alternative to manual implementation)
+app.use(helmet({
+  contentSecurityPolicy: false,  // Configure based on your needs
+  crossOriginEmbedderPolicy: false  // Modify as needed
+}));
+
+// Add HSTS for HTTPS
+app.use((req, res, next) => {
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
+  res.locals.appVersion = appVersion.getSemanticVersion();
+  res.locals.appFullVersion = appVersion.getFullVersion();
+  next();
+});
+
 // Enable CORS with specific options
 const corsOptions = {
   origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
@@ -46,26 +66,6 @@ app.use(cors(corsOptions));
 // Handle preflight requests
 app.options('*', cors(corsOptions));
 
-// Security headers middleware
-app.use((req, res, next) => {
-  const securityHeaders = {
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'SAMEORIGIN',
-    'X-XSS-Protection': '1; mode=block',
-    'Referrer-Policy': 'strict-origin-when-cross-origin'
-  };
-
-  // Add HSTS only for HTTPS requests
-  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
-    securityHeaders['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
-  }
-
-  res.set(securityHeaders);
-  res.locals.appVersion = appVersion.getSemanticVersion();
-  res.locals.appFullVersion = appVersion.getFullVersion();
-  next();
-});
-
 // Configure Swig
 swig.setDefaults({ 
   cache: process.env.NODE_ENV === 'production',
@@ -78,7 +78,6 @@ swig.setDefaults({
 app.engine('html', swig.renderFile);
 app.set('view engine', 'html');
 app.set('views', path.join(__dirname, 'views'));
-
 
 // 4. Core Middleware Setup
 app.use(express.json({limit: '50mb'}));
@@ -108,11 +107,9 @@ app.use('/assets', staticFileMiddleware, express.static(path.join(__dirname, 'pu
 app.use('/temp', express.static(path.join(__dirname, 'public/temp'))); 
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/reports', express.static(path.join(__dirname, 'src/reports')));
-
-
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session configuration
+// Session configuration with secure cookies
 app.use(session({
   ...serverConfig.sessionConfig,
   cookie: {
@@ -120,7 +117,8 @@ app.use(session({
     secure: process.env.NODE_ENV !== 'development',
     sameSite: 'lax',
     maxAge: authConfig.session.timeout,
-    rolling: false
+    rolling: false,
+    httpOnly: true   // Ensure cookies are HTTP only
   },
   resave: false,
   saveUninitialized: false
@@ -142,7 +140,6 @@ app.get('/api/version', (req, res) => {
     timestamp: appVersion.buildDate
   });
 });
-
 
 // Auth middleware for protected routes
 app.use((req, res, next) => {
@@ -187,48 +184,36 @@ app.use(error);
 
 async function ensureDirectories() {
   const dirs = [
-      path.join(__dirname, 'public/temp'),
-      path.join(__dirname, 'uploads/company-logos'),
-      path.join(process.env.TEMP || os.tmpdir(), 'jsreport') // Add jsreport temp directory
+    path.join(__dirname, 'public/temp'),
+    path.join(__dirname, 'uploads/company-logos'),
+    path.join(process.env.TEMP || os.tmpdir(), 'jsreport'), // Add jsreport temp directory
+    path.join(__dirname, 'ssl')  // Ensure SSL directory exists
   ];
   
   for (const dir of dirs) {
-      try {
-          await fsPromises.access(dir);
-      } catch {
-          console.log(`Creating directory: ${dir}`);
-          await fsPromises.mkdir(dir, { recursive: true });
-      }
+    try {
+      await fsPromises.access(dir);
+    } catch {
+      console.log(`Creating directory: ${dir}`);
+      await fsPromises.mkdir(dir, { recursive: true });
+    }
   }
 }
-// 6. Server Startup
+
+// 7. Server Startup
 const startServer = async () => {
+  let jsreportInstance;
+
   try {
     await ensureDirectories();
-    
-    const jsreportInstance = await initJsReport();
-    
-    const port = serverConfig.port;
-    // Create HTTPS server
-    const httpsOptions = {
-      key: fs.readFileSync(path.join(__dirname, 'ssl', 'client-key.pem')),
-      cert: fs.readFileSync(path.join(__dirname, 'ssl', 'client-cert.pem')),
-      requestCert: false,
-      rejectUnauthorized: false
-    };
 
-    const server = https.createServer(httpsOptions, app);
+    jsreportInstance = await initJsReport();
 
-    // Add middleware to redirect HTTP to HTTPS - but not for static files
-    app.use((req, res, next) => {
-      if (!req.secure && !req.path.startsWith('/assets/') && !req.path.startsWith('/public/')) {
-        return res.redirect(['https://', req.get('Host'), req.url].join(''));
-      }
-      next();
-    });
+    const port = process.env.PORT || 3000; // Use a high port, not 80/443
 
-    server.listen(port, () => {
-      console.log(`HTTPS Server started on https://localhost:${port}`);
+    // Start the Express app (no HTTPS setup here—IIS handles it)
+    app.listen(port, () => {
+      console.log(`Server started on http://localhost:${port}`);
     }).on('error', (err) => {
       console.error('Server error:', err);
       if (err.code === 'EACCES') {
@@ -239,43 +224,39 @@ const startServer = async () => {
       process.exit(1);
     });
 
-    // Modify the uncaught exception handler
+    // Graceful shutdown
+    const gracefulShutdown = async (signal) => {
+      console.log(`Received ${signal} signal. Shutting down gracefully...`);
+
+      // Close the Express server
+      app.close(() => {
+        console.log('Server closed.');
+      });
+
+      // Close jsreport
+      if (jsreportInstance && typeof jsreportInstance.close === 'function') {
+        try {
+          await jsreportInstance.close();
+          console.log('jsreport closed.');
+        } catch (closeError) {
+          console.error('Error closing jsreport:', closeError);
+        }
+      }
+
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
     process.on('uncaughtException', async (err) => {
       console.error('Uncaught Exception:', err);
-      if (jsreportInstance && typeof jsreportInstance.close === 'function') {
-        try {
-          await jsreportInstance.close();
-        } catch (closeError) {
-          console.error('Error closing jsreport:', closeError);
-        }
-      }
-      process.exit(1);
+      await gracefulShutdown('uncaughtException');
     });
 
-    // Modify the unhandled rejection handler
-    process.on('unhandledRejection', async (reason, promise) => {
+    process.on('unhandledRejection', (reason, promise) => {
       console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-      if (jsreportInstance && typeof jsreportInstance.close === 'function') {
-        try {
-          await jsreportInstance.close();
-        } catch (closeError) {
-          console.error('Error closing jsreport:', closeError);
-        }
-      }
     });
-    
-    process.on('SIGTERM', async () => {
-      console.log('Received SIGTERM signal. Shutting down gracefully...');
-      if (jsreportInstance && typeof jsreportInstance.close === 'function') {
-        try {
-          await jsreportInstance.close();
-        } catch (closeError) {
-          console.error('Error closing jsreport:', closeError);
-        }
-      }
-      process.exit(0);
-    });
-
 
   } catch (error) {
     console.error('Failed to start server:', error);

@@ -7,14 +7,14 @@ const sessionConfig = {
   resave: false,
   saveUninitialized: false,
   name: 'connect.sid',
-  proxy: true, // Trust the reverse proxy
+  proxy: false, // Trust the reverse proxy
   cookie: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'development',
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: authConfig.session.cookie.maxAge
   },
-  rolling: true // Refresh cookie on each request
+  rolling: false // Refresh cookie on each request
 };
 
 module.exports = {
