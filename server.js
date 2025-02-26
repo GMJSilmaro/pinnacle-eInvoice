@@ -18,6 +18,8 @@ const authRoutes = require('./routes/auth.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const apiRoutes = require('./routes/api/index');
 const webRoutes = require('./routes/web/index');
+const dashboardAnalyticsRouter = require('./routes/api/dashboard-analytics');
+
 // 3. Initialize Express
 const app = express();
 
@@ -157,6 +159,7 @@ app.use((req, res, next) => {
 // Protected routes
 app.use('/dashboard', dashboardRoutes);
 app.use('/api', auth.isApiAuthenticated, apiRoutes);
+app.use('/api/dashboard-analytics', auth.isApiAuthenticated, dashboardAnalyticsRouter); 
 app.use('/', webRoutes);
 
 // 6. Error Handling

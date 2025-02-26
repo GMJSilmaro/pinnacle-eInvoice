@@ -47,7 +47,7 @@ async function logError(description, error, options = {}) {
     try {
         const logEntry = {
             Description: `${description}: ${error.message}`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: options.user || 'System',
             IPAddress: options.ip || null,
             LogType: 'ERROR',
@@ -76,7 +76,7 @@ async function logSuccess(description, options = {}) {
     try {
         const logEntry = {
             Description: description,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: options.user || 'System',
             IPAddress: options.ip || null,
             LogType: 'INFO',
@@ -1119,7 +1119,7 @@ router.post('/cancel/:uuid', async (req, res) => {
                     // Log the cancellation
                     WP_LOGS.create({
                         Description: `Document cancelled: ${fileName || uuid}`,
-                        CreateTS: sequelize.literal('GETDATE()'),
+                        CreateTS: new Date().toISOString(),
                         LoggedUser: req.user?.username || 'System',
                         LogType: 'INFO',
                         Module: 'XML_FILES',

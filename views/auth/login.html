@@ -990,20 +990,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Create a version object
-const appVersion = new VersionControl({
-  major: '1',
-  minor: '0', 
-  patch: '0',
-  build: '004'
-});
-
-// Display version in your UI
-const versionElement = appVersion.createVersionElement({
-  elementType: 'p',
-  className: 'mt-2 mb-0 text-muted'
-});
-document.querySelector('footer').appendChild(versionElement);
 </script>
 
 {% endblock %}

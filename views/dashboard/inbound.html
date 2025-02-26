@@ -11,12 +11,9 @@
 
 <link href="/assets/css/pages/inbound/validation-modal.css" rel="stylesheet">
 <link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
-
 <!-- Template Main CSS Files -->
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
 
-<!-- Scripts with correct order -->
-<script src="/assets/js/shared/utils.js"></script>
 <script src="/assets/js/config/validation-translations.js"></script>
 
 
@@ -236,10 +233,8 @@
     </div> -->
 
      <div class="table-section">
-      
             <div class="outbound-table-container">
                 <div class="d-flex justify-content-between align-items-center p-3">
-                    
                     <div class="table-filter"></div>
                 </div>
                 <div>
@@ -362,9 +357,9 @@
   </div>
 </div>
 
-<!-- Add Loading Modal -->
-<div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+<!-- Replace the existing loading modal with this updated version -->
+<div class="modal" id="loadingModal" data-bs-keyboard="false" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-dialog-centered" role="document">
         <div class="modal-content">
             <div class="modal-body p-4">
                 <div class="text-center mb-4">

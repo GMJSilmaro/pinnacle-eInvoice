@@ -96,7 +96,7 @@ class LHDNSubmitter {
     try {
       await WP_LOGS.create({
         Description: description,
-        CreateTS: now,
+        CreateTS: new Date().toISOString(),
         LoggedUser: this.req.session?.user?.username || 'System',
         IPAddress: this.req.ip,
         LogType: options.logType || 'INFO',

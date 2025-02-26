@@ -183,8 +183,8 @@ router.put('/profile', auth.isAdmin, async (req, res) => {
           BRN: user.IDValue,
           UserID: user.ID,
           ValidStatus: 1,
-          CreateTS: sequelize.literal('GETDATE()'),
-          UpdateTS: sequelize.literal('GETDATE()')
+          CreateTS: new Date().toISOString(),
+          UpdateTS: new Date().toISOString(),
         },
         transaction
       });
@@ -199,14 +199,14 @@ router.put('/profile', auth.isAdmin, async (req, res) => {
           Phone: phone,
           Address: address,
           About: about,
-          UpdateTS: sequelize.literal('GETDATE()')
+          UpdateTS: new Date().toISOString(),
         }, { transaction });
       }
 
       // Log the action
       await WP_LOGS.create({
         Description: created ? 'Company profile created' : 'Company profile updated',
-        CreateTS: sequelize.literal('GETDATE()'),
+        CreateTS: new Date().toISOString(),
         LoggedUser: user.Username,
         LogType: 'INFO',
         Module: 'Company Management',
@@ -342,8 +342,8 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
           BRN: user.IDValue,
           UserID: user.ID,
           ValidStatus: 1,
-          CreateTS: sequelize.literal('GETDATE()'),
-          UpdateTS: sequelize.literal('GETDATE()')
+          CreateTS: new Date().toISOString(),
+          UpdateTS: new Date().toISOString(),
         },
         transaction
       });
@@ -363,7 +363,7 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
       // Log the action
       await WP_LOGS.create({
         Description: 'Tax Identification Number (TIN) updated',
-        CreateTS: sequelize.literal('GETDATE()'),
+        CreateTS: new Date().toISOString(),
         LoggedUser: user.Username,
         LogType: 'INFO',
         Module: 'Company Management',
@@ -469,7 +469,7 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
           IDValue: user.IDValue,
           UserID: user.ID,
           ValidStatus: 0,
-          CreateTS: sequelize.literal('GETDATE()'),
+          CreateTS: new Date().toISOString(),
 
         },
         transaction
@@ -490,7 +490,7 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
       // Log the action
       await WP_LOGS.create({
         Description: 'Business Registration Number (BRN) updated',
-        CreateTS: sequelize.literal('GETDATE()'),
+        CreateTS: new Date().toISOString(),
         LoggedUser: user.Username,
         LogType: 'INFO',
         Module: 'Company Management',
@@ -584,7 +584,7 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
     // Log the action
     await WP_LOGS.create({
       Description: 'LHDN credentials updated by ' + user.Username,
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: user.Username,
       LogType: 'INFO',
       Module: 'Company Management',
@@ -624,7 +624,7 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
     if (req.session?.user) {
       await WP_LOGS.create({
         Description: 'Failed to update LHDN credentials',
-        CreateTS: sequelize.literal('GETDATE()'),
+        CreateTS: new Date().toISOString(),
         LoggedUser: req.session.user.username,
         LogType: 'ERROR',
         Module: 'Company Management',
@@ -702,7 +702,7 @@ router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async
     // Log the action
     await WP_LOGS.create({
       Description: 'Company profile image updated',
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: user.Username,
       LogType: 'INFO',
       Module: 'Company Management',
@@ -778,7 +778,7 @@ router.delete('/profile-image', auth.isAdmin, async (req, res) => {
     // Log the action
     await WP_LOGS.create({
       Description: 'Company profile image removed',
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: user.Username,
       LogType: 'INFO',
       Module: 'Company Management',

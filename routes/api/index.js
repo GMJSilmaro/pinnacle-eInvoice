@@ -1464,13 +1464,13 @@ router.post('/savePortalSettings', async (req, res) => {
     await db.PortalSettings.upsert({
       UserID: user.ID,
       Settings: req.body,
-      UpdateTS: sequelize.literal('GETDATE()')
+      UpdateTS: new Date().toISOString(),
     });
 
     // Log the action
     await WP_LOGS.create({
       Description: `User ${user.Username} updated portal settings`,
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: user.Username
     });
 

@@ -85,7 +85,7 @@ router.post('/settings', auth.isAdmin, async (req, res) => {
     // Log the action
     await WP_LOGS.create({
       Description: `Admin ${req.user.Username} updated setting: ${key}`,
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: req.user.Username
     });
 
@@ -120,7 +120,7 @@ router.post('/settings/bulk', auth.isAdmin, async (req, res) => {
     // Log the action
     await WP_LOGS.create({
       Description: `Admin ${req.user.Username} performed bulk settings update`,
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: req.user.Username
     });
 
@@ -147,7 +147,7 @@ router.post('/settings/initialize', auth.isAdmin, async (req, res) => {
     // Log the action
     await WP_LOGS.create({
       Description: `Admin ${req.user.Username} initialized default settings`,
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: req.user.Username
     });
 

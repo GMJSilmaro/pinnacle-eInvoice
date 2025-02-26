@@ -46,7 +46,7 @@ async function saveLog(description, loggedUser, uuid = null, additionalData = {}
     const user = typeof loggedUser === 'string' ? { Username: loggedUser } : (loggedUser || {});
     await WP_LOGS.create({
       Description: description + (uuid ? ' ' + uuid : ''),
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: user.Username,
       IPAddress: additionalData.ipAddress || null,
       LogType: 'SUBMISSION',

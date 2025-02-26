@@ -27,7 +27,7 @@ router.post('/', async (req, res) => {
             LoggedUser,
             UserID,
             IPAddress,
-            CreateTS: sequelize.literal('GETDATE()')
+            CreateTS: new Date().toISOString(),
         });
 
         res.json({

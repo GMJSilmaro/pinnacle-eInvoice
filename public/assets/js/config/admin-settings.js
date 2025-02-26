@@ -895,12 +895,12 @@ async function loadLHDNConfig() {
 
                 console.log('Parsed settings:', settings); // Debug log
                 
-                // Store the saved configuration
-                savedLHDNConfig = {
-                    clientId: settings.clientId || '',
-                    clientSecret: settings.clientSecret || '',
-                    middlewareUrl: settings.middlewareUrl || (settings.environment === 'production' ? 'https://api.myinvois.hasil.gov.my' : 'https://preprod-api.myinvois.hasil.gov.my')
-                };
+                // // Store the saved configuration
+                // savedLHDNConfig = {
+                //     clientId: settings.clientId || '',
+                //     clientSecret: settings.clientSecret || '',
+                //     middlewareUrl: settings.middlewareUrl || (settings.environment === 'production' ? 'https://api.myinvois.hasil.gov.my' : 'https://preprod-api.myinvois.hasil.gov.my')
+                // };
 
                 // Update last modified info if available
                 const lastModifiedInfo = document.getElementById('lastModifiedInfo');
@@ -942,7 +942,7 @@ async function loadLHDNConfig() {
             // Update test connection button state
             updateTestConnectionButtonState();
             // After loading config, update the access token
-            await updateAccessToken();
+            //await updateAccessToken();
         }
     } catch (error) {
         console.error('Error loading LHDN config:', error);
@@ -1500,8 +1500,8 @@ async function updateAccessToken(force = false) {
     }
 }
 
-// Add auto-refresh of access token
-setInterval(updateAccessToken, 5 * 60 * 1000); // Refresh every 5 minutes
+// // Add auto-refresh of access token
+// setInterval(updateAccessToken, 5 * 60 * 1000); // Refresh every 5 minutes
 
 // Template preview functionality
 async function previewTemplate(templateName) {
@@ -1873,11 +1873,11 @@ function copyXmlNetworkPath() {
     });
 }
 
-// Add XML config initialization to the DOMContentLoaded event
-document.addEventListener('DOMContentLoaded', () => {
-    // Initialize XML configuration
-    loadXMLConfig();
-});
+// // Add XML config initialization to the DOMContentLoaded event
+// document.addEventListener('DOMContentLoaded', () => {
+//     // Initialize XML configuration
+//     loadXMLConfig();
+// });
 
 // Digital Certificate Management Functions
 let currentCertificate = null;

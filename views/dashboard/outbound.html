@@ -11,10 +11,6 @@
 <link href="/assets/css/pages/outbound/card.css" rel="stylesheet">
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
 
-
-<!-- Scripts with correct order -->
-<script src="/assets/js/shared/utils.js"></script>
-
 {% endblock %}
 
 {% block content %}
@@ -73,143 +69,143 @@
         </div>
         </div>
   
-    <!-- Content Section - With margins -->
-    <div class="content-section">
-      <!-- Cards Section -->
-      <div class="cards-container">
-        <!-- Invoices Card -->
-        <div class="info-card total-invoice-card">
-            <div class="card-info">
-                <div class="card-icon position-relative">
-                    <i class="bi bi-file-earmark-text"></i>
-                </div>
-                <div class="count-info">
-                    <div class="spinner-border text-primary loading-spinner" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <h6 class="total-invoice-count" style="display: none;">0</h6>
-                    <span class="text-muted">Total</span>
-                </div>
-            </div>
-            <span class="card-title-new">INVOICES</span>
-        </div>
-
-        <!-- Submitted Card -->
-        <div class="info-card total-submitted-card">
-            <div class="card-info">
-                <div class="card-icon position-relative">
-                    <i class="bi bi-check2-circle"></i>
-                </div>
-                <div class="count-info">
-                    <div class="spinner-border text-success loading-spinner" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <h6 class="total-submitted-count" style="display: none;">0</h6>
-                    <span class="text-muted">Total</span>
-                </div>
-            </div>
-            <span class="card-title-new">SUBMITTED</span>
-        </div>
-
-        <!-- Rejected Card -->
-        <div class="info-card total-rejected-card">
-            <div class="card-info">
-                <div class="card-icon position-relative">
-                    <i class="bi bi-file-earmark-excel-fill"></i>
-                </div>
-                <div class="count-info">
-                    <div class="spinner-border text-danger loading-spinner" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <h6 class="total-rejected-count" style="display: none;">0</h6>
-                    <span class="text-muted">Total</span>
-                </div>
-            </div>
-            <span class="card-title-new">REJECTED</span>
-        </div>
-
-        <!-- Cancelled Card -->
-        <div class="info-card total-cancelled-card">
-            <div class="card-info">
-                <div class="card-icon position-relative">
-                    <i class="bi bi-exclamation-triangle-fill"></i>
-                </div>
-                <div class="count-info">
-                    <div class="spinner-border text-warning loading-spinner" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <h6 class="total-cancelled-count" style="display: none;">0</h6>
-                    <span class="text-muted">Total</span>
-                </div>
-            </div>
-            <span class="card-title-new">CANCELLED</span>
-        </div>
-
-        <!-- Pending Card -->
-        <div class="info-card total-pending-card">
-            <div class="card-info">
-                <div class="card-icon position-relative">
-                    <i class="bi bi-hourglass-split"></i>
-                </div>
-                <div class="count-info">
-                    <div class="spinner-border text-warning loading-spinner" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <h6 class="total-pending-count" style="display: none;">0</h6>
-                    <span class="text-muted">Total</span>
-                </div>
-            </div>
-            <span class="card-title-new">PENDING</span>
-        </div>
-    </div>
-
-      <!-- Table Container -->
-      <div class="table-section">
-        <div class="outbound-table-container">
-            <table id="invoiceTable" class="outbound-table">
-                <thead>
-                    <tr>
-                        <th class="outbound-checkbox-column">
-                            <div class="outbound-checkbox-header">
-                                <input type="checkbox" class="outbound-checkbox" id="selectAll">
+        <!-- Content Section - With margins -->
+        <div class="content-section">
+        <!-- Cards Section -->
+            <div class="cards-container">
+                <!-- Invoices Card -->
+                <div class="info-card total-invoice-card">
+                    <div class="card-info">
+                        <div class="card-icon position-relative">
+                            <i class="bi bi-file-earmark-text"></i>
+                        </div>
+                        <div class="count-info">
+                            <div class="spinner-border text-primary loading-spinner" role="status">
+                                <span class="visually-hidden">Loading...</span>
                             </div>
-                        </th>
-                        <th>#</th>
-                        <th>INVOICE NO.</th>
-                        <th>SUPPLIER</th>
-                        <th>BUYER</th>
-                        <th>UPLOAD DATE</th>
-                        <th>DATE INFO</th>
-                        <th>STATUS</th>
-                        <th>SOURCE</th>
-                        <th>TOTAL AMOUNT</th>
-                        <th class="outbound-action-column">ACTION</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- Table body will be populated by DataTables -->
-                </tbody>
-            </table>
-
-            <!-- Loading Overlay -->
-            <div id="tableLoadingOverlay" class="outbound-loading-overlay d-none">
-                <div class="outbound-loading-content">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
+                            <h6 class="total-invoice-count" style="display: none;">0</h6>
+                            <span class="text-muted">Total</span>
+                        </div>
                     </div>
-                    <p class="mt-2">Fetching invoices...</p>
+                    <span class="card-title-new">INVOICES</span>
+                </div>
+
+                <!-- Submitted Card -->
+                <div class="info-card total-submitted-card">
+                    <div class="card-info">
+                        <div class="card-icon position-relative">
+                            <i class="bi bi-check2-circle"></i>
+                        </div>
+                        <div class="count-info">
+                            <div class="spinner-border text-success loading-spinner" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <h6 class="total-submitted-count" style="display: none;">0</h6>
+                            <span class="text-muted">Total</span>
+                        </div>
+                    </div>
+                    <span class="card-title-new">SUBMITTED</span>
+                </div>
+
+                <!-- Rejected Card -->
+                <div class="info-card total-rejected-card">
+                    <div class="card-info">
+                        <div class="card-icon position-relative">
+                            <i class="bi bi-file-earmark-excel-fill"></i>
+                        </div>
+                        <div class="count-info">
+                            <div class="spinner-border text-danger loading-spinner" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <h6 class="total-rejected-count" style="display: none;">0</h6>
+                            <span class="text-muted">Total</span>
+                        </div>
+                    </div>
+                    <span class="card-title-new">REJECTED</span>
+                </div>
+
+                <!-- Cancelled Card -->
+                <div class="info-card total-cancelled-card">
+                    <div class="card-info">
+                        <div class="card-icon position-relative">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                        </div>
+                        <div class="count-info">
+                            <div class="spinner-border text-warning loading-spinner" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <h6 class="total-cancelled-count" style="display: none;">0</h6>
+                            <span class="text-muted">Total</span>
+                        </div>
+                    </div>
+                    <span class="card-title-new">CANCELLED</span>
+                </div>
+
+                <!-- Pending Card -->
+                <div class="info-card total-pending-card">
+                    <div class="card-info">
+                        <div class="card-icon position-relative">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                        <div class="count-info">
+                            <div class="spinner-border text-warning loading-spinner" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <h6 class="total-pending-count" style="display: none;">0</h6>
+                            <span class="text-muted">Total</span>
+                        </div>
+                    </div>
+                    <span class="card-title-new">PENDING</span>
                 </div>
             </div>
-        </div>
-      </div>
-    </div>
+
+            <!-- Table Container -->
+            <div class="table-section">
+                <div class="outbound-table-container">
+                    <div class="d-flex justify-content-between align-items-center p-3">
+                        <div class="table-filter"></div>
+                    </div>
+                    <div>
+                        <table id="invoiceTable" class="outbound-table">
+                        <thead>
+                            <tr>
+                                <th class="outbound-checkbox-column">
+                                    <div class="outbound-checkbox-header">
+                                        <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                                    </div>
+                                </th>
+                                <th>#</th>
+                                <th>INVOICE NO.</th>
+                                <th>SUPPLIER</th>
+                                <th>BUYER</th>
+                                <th>UPLOAD DATE</th>
+                                <th>DATE INFO</th>
+                                <th>STATUS</th>
+                                <th>SOURCE</th>
+                                <th>TOTAL AMOUNT</th>
+                                <th class="outbound-action-column">ACTION</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Table body will be populated by DataTables -->
+                        </tbody>
+                    </table>
+
+                    <!-- Loading Overlay -->
+                    <div id="tableLoadingOverlay" class="outbound-loading-overlay d-none">
+                        <div class="outbound-loading-content">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Fetching invoices...</p>
+                        </div>
+                    </div>
+                </div>
+                </div>    
+            </div>
         
-
-
-  </div>
-  
+        </div>
 </div>
-
 
 <!-- Modal for Validation Results -->
 <div class="modal fade lhdn-validation-modal" id="validationResultsModal" tabindex="-1" aria-labelledby="validationResultsModalLabel" aria-hidden="true">

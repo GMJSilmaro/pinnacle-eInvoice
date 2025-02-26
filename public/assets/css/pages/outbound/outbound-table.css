@@ -37,12 +37,6 @@
     width: 100%;
 }
 
-.table-responsive {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
 /* Table Styles */
 .outbound-table {
     width: 100%;

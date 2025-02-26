@@ -140,10 +140,6 @@ const tableStyles = `
     }
 </style>`;
 
-// Add styles to document
-document.head.insertAdjacentHTML('beforeend', tableStyles);
-
-// Add additional styles to document
 const additionalStyles = `
 <style>
     /* Table Container */
@@ -215,8 +211,8 @@ const additionalStyles = `
     }
 </style>`;
 
-// Add additional styles to document
 document.head.insertAdjacentHTML('beforeend', additionalStyles);
+document.head.insertAdjacentHTML('beforeend', tableStyles);
 
 // Create a class for managing inbound invoices
 class InvoiceTableManager {
@@ -307,16 +303,15 @@ class InvoiceTableManager {
                 {
                     data: 'longId',
                     render: function (data) {
-                        // Split the longId into chunks of 40 characters
                         return `
                             <div class="flex flex-col">
-                                <div class="overflow-hidden text-ellipsis  flex items-center gap-2">
+                                <div class="overflow-hidden text-ellipsis flex items-center gap-2">
                                     <a href="#" 
                                        class="inbound-badge-status copy-longId" 
                                        data-bs-toggle="tooltip" 
                                        data-bs-placement="top" 
-                                       title="${data}" 
-                                       data-longId="${data}"
+                                       title="${data || 'N/A'}" 
+                                       data-longId="${data || ''}"
                                        style="
                                               max-width: 200px; 
                                               line-height: 1.2; 
@@ -326,12 +321,11 @@ class InvoiceTableManager {
                                               font-family: monospace;
                                               font-size: 0.875rem; 
                                               ">
-                                        ${data}
+                                        ${data || 'N/A'} 
                                     </a>
                                 </div>
                             </div>`;
-                    },
-          
+                    }
                 },
                 {
                     data: 'internalId',
@@ -414,7 +408,6 @@ class InvoiceTableManager {
                 {
                     data: 'totalSales',
                     title: 'TOTAL SALES',
-                    className: 'inbound-amount-column',
                     render: data => {
                         if (!data) return '<span class="text-muted">N/A</span>';
                         
@@ -447,7 +440,6 @@ class InvoiceTableManager {
                 },
                 {
                     data: null,
-                    className: 'inbound-action-column',
                     orderable: false,
                     render: function (row) {
                         return `
@@ -534,7 +526,7 @@ class InvoiceTableManager {
         $('#refreshLHDNData').on('click', async () => {
             try {
                 const button = $('#refreshLHDNData');
-                const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+                const loadingModal = document.getElementById('loadingModal');
                 const progressBar = document.querySelector('#loadingModal .progress-bar');
                 const statusText = document.getElementById('loadingStatus');
                 const detailsText = document.getElementById('loadingDetails');
@@ -559,7 +551,14 @@ class InvoiceTableManager {
                 button.prop('disabled', true);
 
                 // Show loading modal with improved progress tracking
-                loadingModal.show();
+                loadingModal.classList.add('show');
+                loadingModal.style.display = 'block';
+                document.body.classList.add('modal-open');
+
+                // Add backdrop
+                const backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                document.body.appendChild(backdrop);
 
                 // Update progress bar and status
                 progressBar.style.width = '10%';
@@ -593,7 +592,10 @@ class InvoiceTableManager {
 
                 // Close modal after a short delay
                 setTimeout(() => {
-                    loadingModal.hide();
+                    loadingModal.classList.remove('show');
+                    loadingModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                    backdrop.remove();
                     progressBar.style.width = '0%';
                     detailsText.textContent = '';
 
@@ -612,7 +614,11 @@ class InvoiceTableManager {
                 document.getElementById('loadingDetails').textContent = error.message || 'Please try again in a few moments.';
 
                 setTimeout(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('loadingModal')).hide();
+                    const loadingModal = document.getElementById('loadingModal');
+                    loadingModal.classList.remove('show');
+                    loadingModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                    document.querySelector('.modal-backdrop')?.remove();
                     ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
                 }, 2000);
             } finally {
@@ -1540,7 +1546,7 @@ function createPaymentContent(paymentInfo) {
                 border: 1px solid #dee2e6;
                 color: #212529;
                 line-height: 1.2; /* Improved line height for readability */
-                max-width: 100%; /* Ensure badge doesn’t overflow container */
+                max-width: 100%; /* Ensure badge doesn't overflow container */
                 overflow-wrap: break-word; /* Allow words (or characters) to break at any point */
                 white-space: normal; /* Allow text to wrap to new lines */
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -1724,22 +1730,13 @@ function formatAddressFromParts(address) {
     return parts.length > 0 ? parts.join(', ') : 'N/A';
 }
 
-// // Helper function for currency formatting
-// function formatCurrency(amount) {
-//     if (!amount || isNaN(amount)) return 'RM 0.00';
-//     return `RM ${parseFloat(amount).toLocaleString('en-MY', {
-//         minimumFractionDigits: 2,
-//         maximumFractionDigits: 2
-//     })}`;
-// }
-
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing managers...');
     try {
         // Initialize invoice table using singleton
         const invoiceManager = InvoiceTableManager.getInstance();
-
+     
         // Initialize date/time display
         DateTimeManager.updateDateTime();
 
@@ -1760,12 +1757,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Cleanup on page unload
-window.addEventListener('unload', () => {
-    if (window.invoiceTable) {
-        window.invoiceTable.cleanup();
-    }
-});
 
 async function loadPDF(uuid, documentData) {
     // Only proceed if document is Valid or Cancelled
@@ -2030,3 +2021,10 @@ async function openValidationResultsModal(uuid) {
         });
     }
 }
+
+// Cleanup on page unload
+window.addEventListener('unload', () => {
+    if (window.invoiceTable) {
+        window.invoiceTable.cleanup();
+    }
+});

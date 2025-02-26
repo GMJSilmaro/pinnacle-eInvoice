@@ -84,7 +84,7 @@ async function logError(description, error, options = {}) {
     try {
         const logEntry = {
             Description: `${description}: ${error.message}`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: options.user || 'System',
             IPAddress: options.ip || null,
             LogType: options.logType || 'ERROR',
@@ -1167,7 +1167,7 @@ router.post('/:uuid/cancel', async (req, res) => {
         // Log the error
         await WP_LOGS.create({
             Description: `Failed to cancel invoice: ${error.message}`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: loggedUser || 'System',
             LogType: 'ERROR',
             Module: 'OUTBOUND',
@@ -1400,6 +1400,69 @@ router.get('/submission/:submissionUid', async (req, res) => {
             error: {
                 code: 'SUBMISSION_DETAILS_ERROR',
                 message: 'Failed to get submission details',
+                details: error.message
+            }
+        });
+    }
+});
+
+
+router.delete('/:fileName', async (req, res) => {
+    try {
+        const { fileName } = req.params;
+        const { type, company, date } = req.query;
+
+        // Get active SAP configuration
+        const config = await getActiveSAPConfig();
+        if (!config.success) {
+            throw new Error('Failed to get SAP configuration');
+        }
+
+        // Construct file path
+        const formattedDate = moment(date).format('YYYY-MM-DD');
+        const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'FILE_NOT_FOUND',
+                    message: 'File not found'
+                }
+            });
+        }
+
+        // Delete file
+        await fsPromises.unlink(filePath);
+
+        // Log the deletion
+        await logDBOperation(req.app.get('models'), req, `Deleted file: ${fileName}`, {
+            module: 'OUTBOUND',
+            action: 'DELETE',
+            status: 'SUCCESS'
+        });
+
+        res.json({
+            success: true,
+            message: 'File deleted successfully'
+        });
+
+    } catch (error) {
+        console.error('Error deleting file:', error);
+        
+        await logDBOperation(req.app.get('models'), req, `Error deleting file: ${error.message}`, {
+            module: 'OUTBOUND',
+            action: 'DELETE',
+            status: 'FAILED',
+            error
+        });
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'DELETE_ERROR',
+                message: 'Failed to delete file',
                 details: error.message
             }
         });

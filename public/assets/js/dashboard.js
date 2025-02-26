@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    
     // Add event listeners
     document.getElementById('outbound-today')?.addEventListener('click', () => filterData('outbound', 'today'));
     document.getElementById('outbound-this-month')?.addEventListener('click', () => filterData('outbound', 'this-month'));
@@ -12,27 +13,62 @@ document.addEventListener('DOMContentLoaded', async () => {
       await fetchInitialData();
       sessionStorage.setItem('initialDataFetched', 'true');
     }
+
+    initializeTooltips();
   });
   
-  async function fetchInitialData() {
-    try {
-      const response = await fetch('/api/dashboard/stats');
-      const data = await response.json();
-      
-      // Safely update elements
-      const updateElement = (id, value) => {
-        const element = document.getElementById(id);
-        if (element) {
-          element.innerText = value;
-        }
-      };
+  function showLoadingState(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+      element.classList.add('is-loading');
+      element.classList.remove('no-data');
+    }
+  }
   
-      updateElement('fileCount', data.fileCount || 0);
-      updateElement('inboundCount', data.inboundCount || 0);
-      updateElement('companyCount', data.companyCount || 0);
-      
+  function showNoDataState(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+      element.classList.remove('is-loading');
+      element.classList.add('no-data');
+    }
+  }
+  
+  function hideLoadingState(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+      element.classList.remove('is-loading');
+      element.classList.remove('no-data');
+    }
+  }
+  
+  async function fetchInitialData() {
+    showLoadingState('stats-cards');
+    
+    try {
+        const response = await fetch('/api/dashboard/stats');
+        const data = await response.json();
+        
+        if (!data || (!data.fileCount && !data.inboundCount && !data.companyCount)) {
+            showNoDataState('stats-cards');
+            return;
+        }
+
+        // Safely update elements
+        const updateElement = (id, value) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.innerText = value || '0';
+            }
+        };
+
+        updateElement('fileCount', data.fileCount);
+        updateElement('inboundCount', data.inboundCount);
+        updateElement('companyCount', data.companyCount);
+        
+        hideLoadingState('stats-cards');
     } catch (error) {
-      console.error('Error fetching initial data:', error);
+        console.error('Error fetching initial data:', error);
+        showNoDataState('stats-cards');
     }
   }
   
@@ -65,125 +101,130 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Fetch and update dashboard statistics
   async function updateDashboardStats() {
-      try {
-          // Show loading state
-          document.getElementById('fileCount').textContent = '...';
-          document.getElementById('inboundCount').textContent = '...';
-          document.getElementById('companyCount').textContent = '...';
-  
-          const response = await fetch('/api/dashboard/stats');
-          const data = await response.json();
-          
-          if (!data.success) {
-              throw new Error(data.message || 'Failed to fetch statistics');
-          }
-  
-          // Update card counts
-          requestAnimationFrame(() => {
-              document.getElementById('fileCount').textContent = data.stats.outbound || '0';
-              document.getElementById('inboundCount').textContent = data.stats.inbound || '0';
-              document.getElementById('companyCount').textContent = data.stats.companies || '0';
-          });
-  
-          // Initialize chart data for Monday to Saturday
-          const chartData = {
-              valid: new Array(6).fill(0),    // Green
-              invalid: new Array(6).fill(0),   // Orange
-              rejected: new Array(6).fill(0),  // Red
-              cancelled: new Array(6).fill(0), // Purple
-              pending: new Array(6).fill(0),   // Blue
-              queue: new Array(6).fill(0)      // Dark Gray
-          };
-  
-          // Helper function to get day index (0 = Monday, 5 = Saturday)
-          function getDayIndex(dateStr) {
-              const date = new Date(dateStr);
-              let day = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-              return day === 0 ? 5 : day - 1; // Convert to 0 = Monday, ..., 5 = Saturday
-          }
-  
-          // Process outbound stats (pending, submitted)
-          if (Array.isArray(data.stats.outboundStats)) {
-              data.stats.outboundStats.forEach(stat => {
-                  if (!stat.date) return;
-                  
-                  const dayIndex = getDayIndex(stat.date);
-                  if (dayIndex < 0 || dayIndex > 5) return; // Skip invalid days
-                  
-                  const status = stat.status?.toLowerCase() || '';
-                  const count = parseInt(stat.count) || 0;
-                  
-                  // Map outbound statuses
-                  switch(status) {
-                      case 'pending':
-                          chartData.pending[dayIndex] += count;
-                          break;
-                      case 'submitted':
-                          chartData.valid[dayIndex] += count;
-                          break;
-                      case 'queue':
-                          chartData.queue[dayIndex] += count;
-                          break;
-                  }
-              });
-          }
-  
-          // Process inbound stats (valid, invalid, cancelled, rejected)
-          if (Array.isArray(data.stats.inboundStats)) {
-              data.stats.inboundStats.forEach(stat => {
-                  if (!stat.date) return;
-                  
-                  const dayIndex = getDayIndex(stat.date);
-                  if (dayIndex < 0 || dayIndex > 5) return; // Skip invalid days
-                  
-                  const status = stat.status?.toLowerCase() || '';
-                  const count = parseInt(stat.count) || 0;
-                  
-                  // Map inbound statuses
-                  switch(status) {
-                      case 'valid':
-                      case 'validated':
-                          chartData.valid[dayIndex] += count;
-                          break;
-                      case 'invalid':
-                      case 'failed validation':
-                          chartData.invalid[dayIndex] += count;
-                          break;
-                      case 'cancelled':
-                      case 'cancel request':
-                          chartData.cancelled[dayIndex] += count;
-                          break;
-                      case 'rejected':
-                      case 'reject request':
-                          chartData.rejected[dayIndex] += count;
-                          break;
-                  }
-              });
-          }
-  
-          // Get current week's dates
-          const today = new Date();
-          const monday = new Date(today);
-          monday.setDate(today.getDate() - today.getDay() + 1);
-          
-          const dates = Array.from({length: 6}, (_, i) => {
-              const date = new Date(monday);
-              date.setDate(monday.getDate() + i);
-              return date.toISOString().split('T')[0];
-          });
-  
-          // Update chart using stackbar.js functions
-          requestAnimationFrame(() => {
-              updateChartData(dates, chartData);
-          });
-  
-      } catch (error) {
-          console.error('Error updating dashboard stats:', error);
-          // Show error state
-          document.getElementById('fileCount').textContent = '-';
-          document.getElementById('inboundCount').textContent = '-';
-          document.getElementById('companyCount').textContent = '-';
-      }
+    showLoadingState('stackedBarChart');
+    
+    try {
+        const response = await fetch('/api/dashboard/stats');
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.message || 'Failed to fetch statistics');
+        }
+
+        // Update card counts
+        requestAnimationFrame(() => {
+            document.getElementById('fileCount').textContent = data.stats.outbound || '0';
+            document.getElementById('inboundCount').textContent = data.stats.inbound || '0';
+            document.getElementById('companyCount').textContent = data.stats.companies || '0';
+        });
+
+        // Check if there's chart data
+        const hasChartData = Object.values(data.stats).some(stat => 
+            Array.isArray(stat) && stat.length > 0
+        );
+
+        if (!hasChartData) {
+            showNoDataState('stackedBarChart');
+            return;
+        }
+
+        // Initialize chart data for Monday to Saturday
+        const chartData = {
+            valid: new Array(6).fill(0),    // Green
+            invalid: new Array(6).fill(0),   // Orange
+            rejected: new Array(6).fill(0),  // Red
+            cancelled: new Array(6).fill(0), // Purple
+            pending: new Array(6).fill(0),   // Blue
+            queue: new Array(6).fill(0)      // Dark Gray
+        };
+
+        // Helper function to get day index (0 = Monday, 5 = Saturday)
+        function getDayIndex(dateStr) {
+            const date = new Date(dateStr);
+            let day = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            return day === 0 ? 5 : day - 1; // Convert to 0 = Monday, ..., 5 = Saturday
+        }
+
+        // Process outbound stats (pending, submitted)
+        if (Array.isArray(data.stats.outboundStats)) {
+            data.stats.outboundStats.forEach(stat => {
+                if (!stat.date) return;
+                
+                const dayIndex = getDayIndex(stat.date);
+                if (dayIndex < 0 || dayIndex > 5) return; // Skip invalid days
+                
+                const status = stat.status?.toLowerCase() || '';
+                const count = parseInt(stat.count) || 0;
+                
+                // Map outbound statuses
+                switch(status) {
+                    case 'pending':
+                        chartData.pending[dayIndex] += count;
+                        break;
+                    case 'submitted':
+                        chartData.valid[dayIndex] += count;
+                        break;
+                    case 'queue':
+                        chartData.queue[dayIndex] += count;
+                        break;
+                }
+            });
+        }
+
+        // Process inbound stats (valid, invalid, cancelled, rejected)
+        if (Array.isArray(data.stats.inboundStats)) {
+            data.stats.inboundStats.forEach(stat => {
+                if (!stat.date) return;
+                
+                const dayIndex = getDayIndex(stat.date);
+                if (dayIndex < 0 || dayIndex > 5) return; // Skip invalid days
+                
+                const status = stat.status?.toLowerCase() || '';
+                const count = parseInt(stat.count) || 0;
+                
+                // Map inbound statuses
+                switch(status) {
+                    case 'valid':
+                    case 'validated':
+                        chartData.valid[dayIndex] += count;
+                        break;
+                    case 'invalid':
+                    case 'failed validation':
+                        chartData.invalid[dayIndex] += count;
+                        break;
+                    case 'cancelled':
+                    case 'cancel request':
+                        chartData.cancelled[dayIndex] += count;
+                        break;
+                    case 'rejected':
+                    case 'reject request':
+                        chartData.rejected[dayIndex] += count;
+                        break;
+                }
+            });
+        }
+
+        // Get current week's dates
+        const today = new Date();
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - today.getDay() + 1);
+        
+        const dates = Array.from({length: 6}, (_, i) => {
+            const date = new Date(monday);
+            date.setDate(monday.getDate() + i);
+            return date.toISOString().split('T')[0];
+        });
+
+        // Update chart using stackbar.js functions
+        requestAnimationFrame(() => {
+            updateChartData(dates, chartData);
+        });
+
+        hideLoadingState('stackedBarChart');
+    } catch (error) {
+        console.error('Error updating dashboard stats:', error);
+        showNoDataState('stackedBarChart');
+    }
   }
   
   // Show help guide popup
@@ -384,22 +425,320 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
   }
   
-  // Initialize dashboard when page loads
-  document.addEventListener('DOMContentLoaded', function() {
-     
-  
-      // Initialize the chart first
-      initStackedBarChart();
-      
-      // Then fetch and update the data
-      updateDashboardStats();
-      
-      // Show help guide popup
-      setTimeout(showHelpGuidePopup, 1000);
-      
-      // Update stats every 5 minutes
-      setInterval(updateDashboardStats, 5 * 60 * 1000);
-  });
-  
-  // Add this to make closeHelpGuide available globally
-  window.closeHelpGuide = closeHelpGuide;
+
+async function updateAnalytics() {
+    showLoadingState('invoice-status');
+    showLoadingState('customer-list');
+    
+    try {
+        // Fetch Invoice Status
+        const invoiceStatusResponse = await fetch('/api/dashboard-analytics/invoice-status');
+        const invoiceStatusData = await invoiceStatusResponse.json();
+        
+        if (!invoiceStatusData || invoiceStatusData.length === 0) {
+            showNoDataState('invoice-status');
+        } else {
+            hideLoadingState('invoice-status');
+            // Update Invoice Status UI
+            invoiceStatusData.forEach(status => {
+                const percentage = Math.round(status.percentage) || 0;
+                const count = status.count || 0;
+                
+                const statusKey = status.status.toLowerCase();
+                const progressBar = document.querySelector(`.progress-bar[data-status="${statusKey}"]`);
+                const percentageSpan = document.querySelector(`.percentage[data-status="${statusKey}"]`);
+                const countSpan = document.querySelector(`.count[data-status="${statusKey}"]`);
+                
+                if (progressBar) {
+                    progressBar.style.width = `${percentage}%`;
+                    // Add color classes based on status
+                    progressBar.className = `progress-bar ${getStatusColorClass(statusKey)}`;
+                }
+                if (percentageSpan) {
+                    percentageSpan.textContent = `${percentage}%`;
+                }
+                if (countSpan) {
+                    countSpan.textContent = count;
+                }
+            });
+        }
+
+        // Fetch System Status with error handling
+        const systemStatusResponse = await fetch('/api/dashboard-analytics/system-status');
+        if (!systemStatusResponse.ok) {
+            throw new Error(`HTTP error! status: ${systemStatusResponse.status}`);
+        }
+        const systemStatusData = await systemStatusResponse.json();
+        
+        // Update System Status UI
+        const apiStatusElement = document.getElementById('apiStatus');
+        console.log(systemStatusData);
+        if (apiStatusElement) {
+            const statusClass = systemStatusData.apiHealthy ? 'bg-success' : 'bg-warning';
+            apiStatusElement.className = `badge ${statusClass}`;
+            apiStatusElement.innerHTML = `
+                <i class="fas fa-${systemStatusData.apiHealthy ? 'check-circle' : 'exclamation-circle'} me-1"></i>
+                ${systemStatusData.apiStatus}
+            `;
+        }
+        
+        const queueCountElement = document.getElementById('queueCount');
+        if (queueCountElement) {
+            queueCountElement.textContent = `${systemStatusData.queueCount || 0} Total Queue`;
+        }
+        
+        const lastSyncElement = document.getElementById('lastSync');
+        if (lastSyncElement && systemStatusData.lastSync) {
+            const lastSyncTime = new Date(systemStatusData.lastSync);
+            const timeDiff = Math.round((Date.now() - lastSyncTime.getTime()) / 60000);
+            lastSyncElement.textContent = `${timeDiff} mins ago`;
+        }
+
+        // Fetch Top Customers with error handling
+        const topCustomersResponse = await fetch('/api/dashboard-analytics/top-customers');
+        if (!topCustomersResponse.ok) {
+            throw new Error(`HTTP error! status: ${topCustomersResponse.status}`);
+        }
+        const topCustomersData = await topCustomersResponse.json();
+        
+        if (!topCustomersData || topCustomersData.length === 0) {
+            showNoDataState('customer-list');
+        } else {
+            hideLoadingState('customer-list');
+            // Update Top Customers UI
+            const customerList = document.querySelector('.customer-list');
+            if (customerList && Array.isArray(topCustomersData)) {
+                customerList.innerHTML = topCustomersData.map(customer => `
+                    <div class="d-flex align-items-center mb-3 p-2 rounded customer-item">
+                        <div class="customer-avatar me-3">
+                            <div class="avatar-wrapper">
+                                <img src="${customer.CompanyImage || '/assets/img/customers/default-logo.png'}"
+                                    alt="${customer.CompanyName}"
+                                    class="customer-logo"
+                                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                <div class="avatar-fallback">
+                                    <span>${(customer.CompanyName || '').substring(0, 2).toUpperCase()}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="customer-info flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0 customer-name">${customer.CompanyName || 'Unknown Company'}</h6>
+                                <span class="badge ${customer.ValidStatus === '1' ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning'}">
+                                    ${customer.ValidStatus === '1' ? 'Active' : 'Inactive'}
+                                </span>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <small class="text-muted">
+                                    <i class="fas fa-file-invoice me-1"></i>${customer.invoiceCount || 0} Invoices
+                                </small>
+                                <span class="fw-semibold text-secondary">
+                                    MYR ${Number(customer.totalAmount || 0).toLocaleString()}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+    } catch (error) {
+        console.error('Error updating analytics:', error);
+        showNoDataState('invoice-status');
+        showNoDataState('customer-list');
+    }
+}
+
+// Add helper function for status colors
+function getStatusColorClass(status) {
+    const colorMap = {
+        submitted: 'bg-primary',
+        pending: 'bg-warning',
+        valid: 'bg-success',
+        invalid: 'bg-danger',
+        cancelled: 'bg-secondary'
+    };
+    return colorMap[status] || 'bg-secondary';
+}
+
+// Function to update invoice status
+async function updateInvoiceStatus() {
+    try {
+        const button = document.querySelector('.refresh-button .fa-sync-alt');
+        button.style.animation = 'spin 1s linear';
+
+        const response = await fetch('/api/dashboard-analytics/invoice-status');
+        const data = await response.json();
+
+        data.forEach(status => {
+            const statusKey = status.status.toLowerCase();
+            const percentage = Math.round(status.percentage) || 0;
+            const count = status.count || 0;
+            // Update progress bar
+            const progressBar = document.querySelector(`.progress-bar[data-status="${statusKey}"]`);
+            if (progressBar) {
+                progressBar.style.width = `${count} documents`;
+            }
+
+            // Update percentage
+            const percentageElement = document.querySelector(`.percentage[data-status="${statusKey}"]`);
+            if (percentageElement) {
+                percentageElement.textContent = `${count} documents`;
+            }
+
+            // Update count
+            const countElement = document.querySelector(`.count[data-status="${statusKey}"]`);
+            if (countElement) {
+                countElement.textContent = ``;
+            }
+        });
+
+        setTimeout(() => {
+            button.style.animation = '';
+        }, 1000);
+    } catch (error) {
+        console.error('Error updating invoice status:', error);
+    }
+}
+
+// Function to update system status
+async function updateSystemStatus() {
+    showLoadingState('system-status');
+    
+    try {
+        const response = await fetch('/api/dashboard-analytics/system-status');
+        const data = await response.json();
+
+        if (!data) {
+            showNoDataState('system-status');
+            return;
+        }
+
+        hideLoadingState('system-status');
+        // Update API Status with more details
+        const apiStatus = document.getElementById('apiStatus');
+        const apiLastCheck = document.getElementById('apiLastCheck');
+        const apiEndpointUrl = document.getElementById('apiEndpointUrl');
+        
+        if (data.apiHealthy) {
+            apiStatus.className = 'badge bg-success';
+            apiStatus.innerHTML = '<i class="fas fa-check-circle me-1"></i>Connected';
+        } else {
+            apiStatus.className = 'badge bg-warning';
+            apiStatus.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i>Connection Issues';
+        }
+
+        // Show environment info
+        apiEndpointUrl.textContent = `Environment: ${data.environment || 'Production'}`;
+        apiLastCheck.textContent = `Last checked: ${new Date().toLocaleTimeString()}`;
+
+        // Update Queue Status with details
+        const queueCount = document.getElementById('queueCount');
+        const queueDetails = document.getElementById('queueDetails');
+        
+        queueCount.textContent = `${data.queueCount} Queue`;
+        queueCount.className = `badge ${data.queueCount > 0 ? 'bg-success text-dark' : 'bg-warning text-dark'}`;
+        queueDetails.textContent = data.queueCount > 0 
+            ? `Processing ${data.queueCount} document(s)` 
+            : 'Queue is empty';
+
+        // Update Last Sync with enhanced status
+        const lastSync = document.getElementById('lastSync');
+        const syncStatus = document.getElementById('syncStatus');
+        const syncDetails = document.getElementById('syncDetails');
+        
+        if (data.lastSync) {
+            const timeDiff = Math.round((Date.now() - new Date(data.lastSync).getTime()) / 60000);
+            lastSync.textContent = `${timeDiff} mins ago`;
+
+            if (timeDiff < 60) {
+                syncStatus.className = 'fas fa-circle ms-2 recent';
+                syncDetails.textContent = 'Sync is up to date';
+            } else if (timeDiff > 60) {
+                syncStatus.className = 'fas fa-circle ms-2 warning';
+                syncDetails.textContent = 'Sync is slightly delayed';
+            } else {
+                syncStatus.className = 'fas fa-circle ms-2 danger';
+                syncDetails.textContent = 'Sync needs attention please check the Inbound Page to sync latest data.';
+            }
+        } else {
+            lastSync.textContent = 'No sync data';
+            syncStatus.className = 'fas fa-circle ms-2 danger';
+            syncDetails.textContent = 'No synchronization recorded';
+        }
+
+    } catch (error) {
+        console.error('Error updating system status:', error);
+        showNoDataState('system-status');
+    }
+}
+
+// Add refresh queue function
+async function refreshQueue() {
+    const button = document.querySelector('.status-item button .fa-sync-alt');
+    button.style.animation = 'spin 1s linear';
+    
+    try {
+        await updateSystemStatus();
+    } finally {
+        setTimeout(() => {
+            button.style.animation = '';
+        }, 1000);
+    }
+}
+
+// Initialize and set up auto-refresh
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize loading states
+    ['stats-cards', 'stackedBarChart', 'invoice-status', 'customer-list', 'system-status'].forEach(id => {
+        showLoadingState(id);
+    });
+
+    // Initialize the chart
+    initStackedBarChart();
+    
+    // Fetch initial data
+    Promise.all([
+        updateDashboardStats(),
+        updateAnalytics(),
+        updateSystemStatus()
+    ]).catch(error => {
+        console.error('Error initializing dashboard:', error);
+    });
+
+    // Set up refresh intervals
+    setInterval(updateSystemStatus, 30000);
+    setInterval(updateInvoiceStatus, 120000);
+    setInterval(updateDashboardStats, 5 * 60 * 1000);
+
+    // Show help guide popup
+    setTimeout(showHelpGuidePopup, 1000);
+});
+
+window.closeHelpGuide = closeHelpGuide;
+
+// Add this function after the existing code
+function initializeTooltips() {
+    // Define tooltip content
+    const tooltipContent = {
+        'outbound-card': 'Track outbound e-invoices sent to LHDN for processing',
+        'inbound-card': 'Monitor inbound e-invoices received from your suppliers',
+        'companies-card': 'View all active companies in your network',
+        'invoice-status-card': 'Real-time status distribution of your e-invoices',
+        'system-status-card': 'Monitor LHDN system connectivity and queue status',
+        'api-status': 'Shows current connection status with LHDN API',
+        'queue-status': 'Displays number of documents waiting to be processed',
+        'last-sync': 'Indicates when data was last synchronized with LHDN',
+        'top-customers': 'View your most active customers based on transaction volume',
+        'recent-activity': 'Track recent e-invoice related activities',
+        'chart-section': 'Weekly breakdown of e-invoice processing status'
+    };
+
+    // Initialize Bootstrap tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl, {
+            template: '<div class="tooltip guide-tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>'
+        });
+    });
+}

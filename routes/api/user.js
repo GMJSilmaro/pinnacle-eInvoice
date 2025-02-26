@@ -165,14 +165,14 @@ router.post('/users-add', checkAdmin, async (req, res) => {
             TwoFactorEnabled: twoFactorEnabled ? 1 : 0,
             NotificationsEnabled: notificationsEnabled ? 1 : 0,
             ProfilePicture: profilePicture || null,
-            CreateTS: sequelize.literal('GETDATE()'),
-            UpdateTS: sequelize.literal('GETDATE()')
+            CreateTS: new Date().toISOString(),
+            UpdateTS: new Date().toISOString(),
         });
 
         // Log the action
         await WP_LOGS.create({
             Description: `User ${req.session.user.username} created new user: ${username}`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: req.session.user.username,
             Action: 'CREATE_USER',
             IPAddress: req.ip
@@ -273,7 +273,7 @@ router.put('/users-update/:id', checkAdmin, async (req, res) => {
         // Log the update
         await WP_LOGS.create({
             Description: `Admin ${req.session.user.username} updated user profile id ${id}`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: req.session.user.username,
             Action: 'UPDATE_USER',
             IPAddress: req.ip,
@@ -337,7 +337,7 @@ router.delete('/users-delete/:id', checkAdmin, async (req, res) => {
         // Log the action
         await WP_LOGS.create({
             Description: `User ${req.session.user.username} deleted user: ${user.Username}`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: req.session.user.username,
             Action: 'DELETE_USER',
             IPAddress: req.ip
@@ -498,7 +498,7 @@ router.post('/update-profile', async (req, res) => {
         // Log the update
         await WP_LOGS.create({
             Description: `User ${req.session.user.Username || req.session.user.username} updated their profile`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: req.session.user.Username || req.session.user.username,
             Action: 'UPDATE_PROFILE',
             Details: JSON.stringify({
@@ -708,7 +708,7 @@ router.post('/change-password', async (req, res) => {
         // Log the password change
         await WP_LOGS.create({
             Description: `User ${user.Username} changed their password`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: user.Username,
             Action: 'CHANGE_PASSWORD',
             IPAddress: req.ip
@@ -842,7 +842,7 @@ router.post('/security-settings', async (req, res) => {
     // Log the action
     await db.WP_LOGS.create({
       Description: `User ${req.user.Username} updated security settings`,
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LoggedUser: req.user.Username
     });
 

@@ -333,7 +333,6 @@ const fetchRecentDocuments = async (req) => {
 const getCachedDocuments = async (req) => {
     const cacheKey = `recentDocuments_${req.session?.user?.TIN || 'default'}`;
     const forceRefresh = req.query.forceRefresh === 'true';
-    
     // Get from cache if not forcing refresh
     let data = forceRefresh ? null : cache.get(cacheKey);
 
@@ -341,7 +340,6 @@ const getCachedDocuments = async (req) => {
         try {
             // If not in cache or forcing refresh, fetch from source
             data = await fetchRecentDocuments(req);
-            
             // Store in cache
             cache.set(cacheKey, data);
             console.log(forceRefresh ? 'Force refreshed documents and cached the result' : 'Fetched documents and cached the result');

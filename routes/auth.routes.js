@@ -45,7 +45,7 @@ async function logAuthEvent(type, details, req) {
     };
 
     const baseLogData = {
-        CreateTS: moment().format('YYYY-MM-DD HH:mm:ss'),
+        CreateTS: new Date().toISOString(),
         LoggedUser: username,
         IPAddress: clientIP || '-1',
         Module: 'Authentication', // Add Module field
@@ -318,7 +318,7 @@ router.post('/register', async (req, res) => {
       IDValue: idValue,
       Admin: '0', // Default to non-admin
       ValidStatus: '1', // Set as active
-      CreateTS: Sequelize.literal('GETDATE()'),
+      CreateTS: new Date().toISOString(),
       LastLoginTime: null
     });
 

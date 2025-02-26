@@ -24,7 +24,11 @@ old/
 public/uploads/avatars/
 public/uploads/company-logos/
 public/uploads/company-profiles/
-
+certificates/
+docs/
+scripts/
+sessions/
+uploads/
 # IDE specific files
 .idea/
 .vscode/

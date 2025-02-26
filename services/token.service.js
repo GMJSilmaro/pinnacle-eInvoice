@@ -44,7 +44,7 @@ const generateTokenWithCredentials = async (settings) => {
     params.append('scope', 'InvoicingAPI');
 
     // Ensure proper URL construction
-    let baseUrl = settings.middlewareUrl || process.env.ID_SRV_BASE_URL;
+    let baseUrl = settings.middlewareUrl;
     
     // Remove any trailing slashes
     baseUrl = baseUrl.replace(/\/+$/, '');
@@ -75,16 +75,15 @@ const generateTokenWithCredentials = async (settings) => {
 };
 
 // Helper function to generate token with default credentials
-const generateDefaultToken = async () => {
+const generateDefaultToken = async (settings) => {
   try {
     const params = new URLSearchParams();
     params.append('grant_type', 'client_credentials');
-    params.append('client_id', process.env.CLIENT_ID);
-    params.append('client_secret', process.env.CLIENT_SECRET);
+    params.append('client_id', settings.clientId);
+    params.append('client_secret', settings.clientSecret);
     params.append('scope', 'InvoicingAPI');
-
     // Ensure proper URL construction for default URL
-    let baseUrl = process.env.ID_SRV_BASE_URL;
+    let baseUrl = settings.middlewareUrl;
     
     // Remove any trailing slashes
     baseUrl = baseUrl.replace(/\/+$/, '');
@@ -240,28 +239,6 @@ async function getLHDNConfig() {
         retryEnabled: settings.retryEnabled || false
     };
 }
-
-// const getAccessToken = async (req) => {
-//   try {
-//     // Check if we have a valid token
-//     if (checkTokenExpiry(req)) {
-//       return req.session.accessToken;
-//     }
-
-//     // Generate new token if expired or not exists
-//     const accessToken = await generateAccessToken(req);
-    
-//     // Store the new token in session
-//     if (req.session) {
-//       req.session.accessToken = accessToken;
-//       req.session.tokenExpiryTime = Date.now() + (3600 * 1000); // Default 1 hour expiry
-//     }
-    
-//     return accessToken;
-//   } catch (error) {
-//     throw error;
-//   }
-// };
 
 async function getAccessToken(req) {
     try {

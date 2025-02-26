@@ -294,7 +294,7 @@ router.post('/lhdn/save-config', async (req, res) => {
         // Log the configuration change
         await db.WP_LOGS.create({
             Description: `LHDN configuration ${currentConfig ? 'updated' : 'created'} by ${req.user.username}`,
-            CreateTS: sequelize.literal('GETDATE()'),
+            CreateTS: new Date().toISOString(),
             LoggedUser: req.user.username,
             LogType: 'CONFIG',
             Module: 'LHDN',

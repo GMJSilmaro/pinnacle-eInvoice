@@ -82,7 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     logs.sort((a, b) => new Date(b.CreateTS) - new Date(a.CreateTS));
-    const limitedLogs = logs.slice(0, 10);
+    const limitedLogs = logs.slice(0, 15);
 
     limitedLogs.forEach(log => {
       const date = new Date(Date.parse(log.CreateTS));
