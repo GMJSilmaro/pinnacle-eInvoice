@@ -14,6 +14,7 @@ const XLSX = require('xlsx');
 const { getActiveSAPConfig } = require('../../config/paths');
 const { processExcelData } = require('./processExcelData');
 const { parseStringPromise } = require('xml2js');
+const { getTokenSession } = require('../token.service');
 
 async function getLHDNConfig() {
     const config = await WP_CONFIGURATION.findOne({
@@ -400,11 +401,14 @@ class LHDNSubmitter {
 
   async submitToLHDNDocument(docs) {
     try {
-      const token = this.req.session.accessToken;
+      // Get token from session
+      const token = await getTokenSession();
+      if (!token) {
+        throw new Error('No valid authentication token found');
+      }
+
       const result = await submitDocument(docs, token);
-      console.log('Token used for submission:', token);
-      console.log('Current token session:', token);
-      console.log('Submission result:', result);
+      console.log('Submission result:', JSON.stringify(result, null, 2));
 
       // Check if there are rejected documents
       if (result.data?.rejectedDocuments?.length > 0) {
@@ -421,8 +425,22 @@ class LHDNSubmitter {
 
       return result;
     } catch (error) {
-      console.error('Error submitting document:', error);
-      throw error;
+      // Improved error logging
+      console.error('Error submitting document:', {
+        message: error.message,
+        code: error.response?.data?.code,
+        details: error.response?.data?.error?.details || error.response?.data?.details,
+        fullError: JSON.stringify(error.response?.data, null, 2)
+      });
+
+      return {
+        status: 'failed',
+        error: {
+          code: error.response?.data?.code || 'SUBMISSION_ERROR',
+          message: error.message || 'Failed to submit document to LHDN',
+          details: error.response?.data?.error?.details || error.response?.data?.details || error.response?.data
+        }
+      };
     }
   }
 
@@ -508,10 +526,10 @@ class LHDNSubmitter {
     }
   }
   
-  async updateExcelWithResponse(fileName, type, company, date, uuid, longId, invoice_number) {
+  async updateExcelWithResponse(fileName, type, company, date, uuid, invoice_number) {
     try {
       console.log('=== updateExcelWithResponse Start ===');
-      console.log('Input Parameters:', { fileName, type, company, date, uuid, longId, invoice_number });
+      console.log('Input Parameters:', { fileName, type, company, date, uuid, invoice_number });
 
       // Get network path from config
       const config = await getActiveSAPConfig();

@@ -912,7 +912,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     company,
                     date,
                     acceptedDoc.uuid,
-                    //longId,  // This should now be either the real longId or 'NA'
                     invoice_number
                 );
                 
@@ -931,7 +930,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 const response = {
                     success: true,
                     submissionUID: result.data.submissionUid,
-                    longId: longId, 
                     acceptedDocuments: result.data.acceptedDocuments,
                     docNum: invoice_number,
                     fileUpdates: {

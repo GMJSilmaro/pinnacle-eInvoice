@@ -562,10 +562,10 @@ async getSubmissionDetails(submissionUid, accessToken) {
     }
 }
   
-  async updateExcelWithResponse(fileName, type, company, date, uuid, longId, invoice_number) {
+  async updateExcelWithResponse(fileName, type, company, date, uuid, invoice_number) {
     try {
       console.log('=== updateExcelWithResponse Start ===');
-      console.log('Input Parameters:', { fileName, type, company, date, uuid, longId, invoice_number });
+      console.log('Input Parameters:', { fileName, type, company, date, uuid, invoice_number });
 
       // Get network path from config
       const config = await getActiveSAPConfig();
@@ -649,7 +649,6 @@ async getSubmissionDetails(submissionUid, accessToken) {
         "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
         "invoiceNo": invoice_number,
         "uuid": uuid,
-        "longId": longId 
       };
       // Write JSON file
       await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));

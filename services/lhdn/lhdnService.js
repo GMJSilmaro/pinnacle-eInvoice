@@ -7,8 +7,8 @@ const forge = require('node-forge');
 const jsonminify = require('jsonminify');
 const crypto = require('crypto');
 require('dotenv').config();
-const tokenService = require('../token.service');
 const { WP_CONFIGURATION } = require('../../models');
+const { getTokenSession } = require('../token.service');
 
 async function getConfig() {
   const config = await WP_CONFIGURATION.findOne({
@@ -29,52 +29,6 @@ async function getConfig() {
   }
 
   return settings;
-}
-
-async function getTokenAsTaxPayer() {
-  try {
-    const settings = await getConfig();
-    const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
-
-    const httpOptions = {
-      client_id: settings.clientId,
-      client_secret: settings.clientSecret,
-      grant_type: 'client_credentials',
-      scope: 'InvoicingAPI'
-    };
-
-    const response = await axios.post(
-      `${baseUrl}/connect/token`, 
-      httpOptions, 
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
-
-    if(response.status === 200) return response.data;
-  } catch (err) {
-    if (err.response?.status === 429) {
-      const rateLimitReset = err.response.headers["x-rate-limit-reset"];
-      if (rateLimitReset) {
-        const resetTime = new Date(rateLimitReset).getTime();
-        const currentTime = Date.now();
-        const waitTime = resetTime - currentTime;
-
-        if (waitTime > 0) {
-          console.log('=======================================================================================');
-          console.log('              LHDN Taxpayer Token API hitting rate limit HTTP 429                  ');
-          console.log(`              Refetching................. (Waiting time: ${waitTime} ms)                  `);
-          console.log('=======================================================================================');
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          return await getTokenAsTaxPayer();
-        }            
-      }
-    }
-    throw new Error(`Failed to get token: ${err.message}`);
-  }
 }
 
 async function getTokenAsIntermediary() {
@@ -126,6 +80,10 @@ async function getTokenAsIntermediary() {
 
 async function submitDocument(docs, token) {
   try {
+    if (!token) {
+      throw new Error('Authentication token is required');
+    }
+
     const settings = await getConfig();
     const baseUrl = settings.environment === 'production' ? 
       settings.productionUrl : settings.middlewareUrl;
@@ -143,6 +101,14 @@ async function submitDocument(docs, token) {
 
     return { status: 'success', data: response.data };
   } catch (err) {
+    // Improved error logging
+    console.error('LHDN Submission Error:', {
+      status: err.response?.status,
+      message: err.message,
+      details: err.response?.data?.error?.details || err.response?.data?.details,
+      fullResponse: JSON.stringify(err.response?.data, null, 2)
+    });
+
     // Handle rate limiting
     if (err.response?.status === 429) {
       const rateLimitReset = err.response.headers["x-rate-limit-reset"];
@@ -190,13 +156,7 @@ async function submitDocument(docs, token) {
       return { status: 'failed', error: errorData };
     }
     
-    return { 
-      status: 'failed', 
-      error: err.response?.data || {
-        code: String(err.response?.status || 'UNKNOWN'),
-        message: err.message || 'An unknown error occurred during submission'
-      }
-    };
+    throw err;
   }
 } 
 
@@ -686,7 +646,6 @@ async function validateCustomerTin(tin, idType, idValue, token) {
 module.exports = { 
     submitDocument,
     validateCustomerTin,
-    getTokenAsTaxPayer,
     getTokenAsIntermediary,
     cancelValidDocumentBySupplier,
     getDocumentDetails,

@@ -10,6 +10,7 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 // 2. Local Dependencies
 const serverConfig = require('./config/server.config');
+const authConfig = require('./config/auth.config');
 const { auth, error, maintenance, validation, CONFIG } = require('./middleware');
 const versionHeader = require('./utils/versionHeader');
 const appVersion = require('./config/version');
@@ -19,6 +20,7 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const apiRoutes = require('./routes/api/index');
 const webRoutes = require('./routes/web/index');
 const dashboardAnalyticsRouter = require('./routes/api/dashboard-analytics');
+const passport = require('./config/passport.config');
 
 // 3. Initialize Express
 const app = express();
@@ -117,12 +119,16 @@ app.use(session({
     ...serverConfig.sessionConfig.cookie,
     secure: process.env.NODE_ENV !== 'development',
     sameSite: 'lax',
-    maxAge: CONFIG.SESSION_TIMEOUT,
-    rolling: true
+    maxAge: authConfig.session.timeout,
+    rolling: false
   },
-  resave: true,
+  resave: false,
   saveUninitialized: false
 }));
+
+// Add after session middleware and before routes
+app.use(passport.initialize());
+app.use(passport.session());
 
 // 5. Application Middleware
 app.use(maintenance); // Maintenance mode check
@@ -160,6 +166,7 @@ app.use((req, res, next) => {
 app.use('/dashboard', dashboardRoutes);
 app.use('/api', auth.isApiAuthenticated, apiRoutes);
 app.use('/api/dashboard-analytics', auth.isApiAuthenticated, dashboardAnalyticsRouter); 
+app.use('/api/dashboard-analytics', require('./routes/api/dashboard-analytics'));
 app.use('/', webRoutes);
 
 // 6. Error Handling

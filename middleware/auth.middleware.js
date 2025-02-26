@@ -1,30 +1,6 @@
-const { WP_USER_REGISTRATION } = require('../models');
+const { WP_USER_REGISTRATION, sequelize } = require('../models');
 const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../services/logging.service');
-
-// Configuration constants
-const CONFIG = {
-  SESSION_TIMEOUT: 30 * 60 * 1000, // 30 minutes
-  MAX_LOGIN_ATTEMPTS: 5,
-  LOGIN_COOLDOWN_TIME: 5 * 60 * 1000, // 5 minutes cooldown
-  PUBLIC_PATHS: [
-    '/auth/login',
-    '/auth/register',
-    '/auth/logout',
-    '/api/v1/auth/login',
-    '/api/v1/auth/register',
-    '/api/v1/auth/logout',
-    '/assets',
-    '/favicon.ico',
-    '/public',
-    '/uploads',
-    '/vendor',
-    '/api/health',
-    '/',  // Root path
-    '/login',
-    '/register',
-    '/auth'  // Allow access to auth pages
-  ]
-};
+const authConfig = require('../config/auth.config');
 
 // Active sessions and login attempts tracking
 const activeSessions = new Map();
@@ -34,11 +10,11 @@ const loginAttempts = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [key, data] of loginAttempts.entries()) {
-    if (now >= data.cooldownUntil) {
+    if (data.cooldownUntil && data.cooldownUntil < now) {
       loginAttempts.delete(key);
     }
   }
-}, 60000); // Clean up every minute
+}, authConfig.login.cleanupInterval);
 
 // Helper function to handle unauthorized access
 const handleUnauthorized = async (req, res, reason = 'unauthorized') => {
@@ -113,8 +89,8 @@ const trackLoginAttempt = async (username, ip, success) => {
     attempts.count++;
     attempts.lastAttempt = now;
     
-    if (attempts.count >= CONFIG.MAX_LOGIN_ATTEMPTS) {
-      attempts.cooldownUntil = now + CONFIG.LOGIN_COOLDOWN_TIME;
+    if (attempts.count >= authConfig.login.maxAttempts) {
+      attempts.cooldownUntil = now + authConfig.login.lockoutDuration;
     }
   }
 
@@ -138,6 +114,7 @@ const trackLoginAttempt = async (username, ip, success) => {
   return attempts;
 };
 
+// Check login attempts
 const checkLoginAttempts = (username, ip) => {
   const key = `${username}:${ip}`;
   const attempts = loginAttempts.get(key);
@@ -157,7 +134,7 @@ const checkLoginAttempts = (username, ip) => {
 
   return { 
     allowed: true,
-    attemptsRemaining: CONFIG.MAX_LOGIN_ATTEMPTS - attempts.count
+    attemptsRemaining: authConfig.login.maxAttempts - attempts.count
   };
 };
 
@@ -166,7 +143,7 @@ const checkActiveSession = (username) => {
   const existingSession = activeSessions.get(username);
   if (existingSession) {
     const now = Date.now();
-    if (now - existingSession.lastActivity < CONFIG.SESSION_TIMEOUT) {
+    if (now - existingSession.lastActivity < authConfig.session.timeout) {
       return true;
     }
     activeSessions.delete(username);
@@ -184,170 +161,119 @@ const removeActiveSession = (username) => {
   activeSessions.delete(username);
 };
 
-// Main middleware functions
-const authMiddleware = async (req, res, next) => {
-  try {
-    const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
-                    req.headers['x-real-ip'] || 
-                    req.connection.remoteAddress || 
-                    req.ip;
+// Authentication middleware
+const authMiddleware = (req, res, next) => {
+  // Check if path is public
+  if (authConfig.publicPaths.some(path => req.path.startsWith(path))) {
+    return next();
+  }
 
-    const isPublicPath = CONFIG.PUBLIC_PATHS.some(path => 
-      req.path.startsWith(path) || 
-      req.path === '/' ||
-      (req.method === 'POST' && req.path === '/auth/login')
-    );
-
-    if (isPublicPath) return next();
-
-    if (!req.session?.user?.id) {
-      return handleUnauthorized(req, res, 'no_session');
-    }
-
-    const lastActivity = req.session.user.lastActivityTime || req.session.user.lastLoginTime;
-    const sessionAge = Date.now() - new Date(lastActivity).getTime();
-
-    if (sessionAge > CONFIG.SESSION_TIMEOUT) {
-      return handleSessionExpiry(req, res, 'session_timeout');
-    }
-
-    const user = await WP_USER_REGISTRATION.findOne({
-      where: {
-        ID: req.session.user.id,
-        ValidStatus: '1'
-      },
-      attributes: [
-        'ID', 'Username', 'Email', 'Admin', 'ValidStatus', 
-        'LastLoginTime', 'TIN', 'IDType', 'IDValue', 'FullName',
-        'Phone', 'TwoFactorEnabled', 'NotificationsEnabled', 'ProfilePicture'
-      ]
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
     });
+  }
+  
+  res.redirect('/auth/login');
+};
 
-    if (!user) {
-      return handleSessionExpiry(req, res, 'user_not_found');
-    }
+const isAdmin = (req, res, next) => {
+  if (req.isAuthenticated() && req.user.Admin === 1) {
+    return next();
+  }
+  
+  res.status(403).json({
+    success: false,
+    message: 'Admin access required'
+  });
+};
 
-    // Update session with latest user data
-    req.session.user = {
-      ...req.session.user,
-      admin: user.Admin === 1,
-      lastActivityTime: Date.now()
+// Update to handle cases where req object isn't available
+async function updateUserActivity(userId, isActive = true, req = null) {
+  try {
+    const updateData = {
+      LastLoginTime: isActive ? sequelize.literal('GETDATE()') : null,
+      isActive: isActive
     };
 
-    updateActiveSession(user.Username);
+    // Only include IP address if req object is available
+    if (req) {
+      const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
+                      req.headers['x-real-ip'] || 
+                      req.connection.remoteAddress || 
+                      req.ip;
+      updateData.LastIPAddress = clientIP;
+    }
+
+    await WP_USER_REGISTRATION.update(updateData, {
+      where: { ID: userId }
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error updating user activity:', error);
+    return false;
+  }
+}
+
+const handleLogout = async (req, res) => {
+    try {
+        if (req.session?.user?.id) {
+            // Update user's active status to false on logout
+            req.session.user.isActive = false;
+            await updateUserActivity(req.session.user.id, false);
+            
+            // Remove from active sessions
+            removeActiveSession(req.session.user.username);
+            
+            // Log the logout
+            await LoggingService.log({
+                description: 'User logged out',
+                username: req.session.user.username,
+                userId: req.session.user.id,
+                ipAddress: req.ip,
+                logType: LOG_TYPES.INFO,
+                module: MODULES.AUTH,
+                action: ACTIONS.LOGOUT,
+                status: STATUS.SUCCESS
+            });
+        }
+
+        req.session.destroy(() => {
+            if (req.xhr || req.headers.accept?.includes('application/json')) {
+                res.json({ success: true });
+            } else {
+                res.redirect('/auth/login');
+            }
+        });
+    } catch (error) {
+        console.error('Error during logout:', error);
+        res.status(500).json({ success: false, error: 'Logout failed' });
+    }
+};
+
+// Update the isApiAuthenticated middleware to pass the req object
+async function isApiAuthenticated(req, res, next) {
+  try {
+    if (!req.session?.user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Pass the req object when updating activity
+    await updateUserActivity(req.session.user.id, true, req);
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
-    await LoggingService.log({
-      description: 'Authentication middleware error',
-      username: req.session?.user?.username || 'anonymous',
-      userId: req.session?.user?.id,
-      ipAddress: req.ip,
-      logType: LOG_TYPES.ERROR,
-      module: MODULES.AUTH,
-      action: ACTIONS.READ,
-      status: STATUS.ERROR,
-      details: { error: error.message }
-    });
-    next(error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
-};
-
-const isAdmin = async (req, res, next) => {
-  try {
-    if (!req.session?.user) {
-      return handleUnauthorized(req, res, 'no_session');
-    }
-
-    const user = await WP_USER_REGISTRATION.findOne({
-      where: { 
-        ID: req.session.user.id,
-        ValidStatus: '1'
-      }
-    });
-
-    if (!user || user.Admin !== 1) {
-      await LoggingService.log({
-        description: 'Admin access denied',
-        username: req.session.user.username,
-        userId: req.session.user.id,
-        ipAddress: req.ip,
-        logType: LOG_TYPES.WARNING,
-        module: MODULES.AUTH,
-        action: ACTIONS.READ,
-        status: STATUS.FAILED,
-        details: {
-          path: req.path,
-          method: req.method,
-          reason: 'insufficient_privileges'
-        }
-      });
-
-      return res.status(403).json({
-        success: false,
-        message: 'Admin access required'
-      });
-    }
-
-    next();
-  } catch (error) {
-    console.error('Admin middleware error:', error);
-    await LoggingService.log({
-      description: 'Admin middleware error',
-      username: req.session?.user?.username || 'anonymous',
-      userId: req.session?.user?.id,
-      ipAddress: req.ip,
-      logType: LOG_TYPES.ERROR,
-      module: MODULES.AUTH,
-      action: ACTIONS.READ,
-      status: STATUS.ERROR,
-      details: { error: error.message }
-    });
-    next(error);
-  }
-};
-
-const isApiAuthenticated = async (req, res, next) => {
-  if (!req.session?.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'API authentication required'
-    });
-  }
-
-  const lastActivity = req.session.user.lastActivityTime || req.session.user.lastLoginTime;
-  const sessionAge = Date.now() - new Date(lastActivity).getTime();
-
-  if (sessionAge > CONFIG.SESSION_TIMEOUT) {
-    await LoggingService.log({
-      description: 'API session expired',
-      username: req.session.user.username,
-      userId: req.session.user.id,
-      ipAddress: req.ip,
-      logType: LOG_TYPES.WARNING,
-      module: MODULES.API,
-      action: ACTIONS.READ,
-      status: STATUS.FAILED,
-      details: {
-        path: req.path,
-        method: req.method,
-        reason: 'session_timeout'
-      }
-    });
-
-    return res.status(401).json({
-      success: false,
-      message: 'API session expired',
-      reason: 'timeout'
-    });
-  }
-
-  req.session.user.lastActivityTime = Date.now();
-  next();
-};
+}
 
 module.exports = {
-  CONFIG,
   authMiddleware,
   isAdmin,
   isApiAuthenticated,
@@ -357,5 +283,7 @@ module.exports = {
   updateActiveSession,
   removeActiveSession,
   handleSessionExpiry,
-  handleUnauthorized
+  handleUnauthorized,
+  handleLogout,
+  updateUserActivity
 }; 

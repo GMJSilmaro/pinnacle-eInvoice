@@ -123,6 +123,12 @@ importers:
         specifier: ^1.3.1
         version: 1.3.1
       os: {specifier: ^0.1.2, version: 0.1.2}
+      passport:
+        specifier: ^0.7.0
+        version: 0.7.0
+      passport-local:
+        specifier: ^1.0.0
+        version: 1.0.0
       prettyjson:
         specifier: ^1.2.5
         version: 1.2.5
@@ -5201,6 +5207,10 @@ packages:
 
   passport@0.4.0:
     resolution: {integrity: sha512-q6UQeX3ay/WkZmPwtc+Wi21NVPNggkbupE+swmsJsTptFi9cr6SiqUtfFkgfOth58gGKsooNSYajrEt9VF5IQg==}
+    engines: {node: '>= 0.4.0'}
+
+  passport@0.7.0:
+    resolution: {integrity: sha512-cPLl+qZpSc+ireUvt+IzqbED1cHHkDoVYMo30jbJIdOOjQ1MQYZBPiNvmi8UM6lJuOpTPXJGZQk0DtC4y61MYQ==}
     engines: {node: '>= 0.4.0'}
 
   password-hash@1.2.2:
@@ -13180,6 +13190,12 @@ snapshots:
     dependencies:
       passport-strategy: 1.0.0
       pause: 0.0.1
+
+  passport@0.7.0:
+    dependencies:
+      passport-strategy: 1.0.0
+      pause: 0.0.1
+      utils-merge: 1.0.1
 
   password-hash@1.2.2: {}
 

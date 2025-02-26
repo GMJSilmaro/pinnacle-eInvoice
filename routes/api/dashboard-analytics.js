@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { WP_INBOUND_STATUS, WP_OUTBOUND_STATUS, sequelize, WP_CONFIGURATION } = require('../../models');
+const { WP_INBOUND_STATUS, WP_OUTBOUND_STATUS, sequelize, WP_CONFIGURATION, WP_USER_REGISTRATION } = require('../../models');
 const { Op } = require('sequelize');
 const { getAccessToken, checkTokenExpiry } = require('../../services/token.service');
 
@@ -93,7 +93,7 @@ router.get('/invoice-status', async (req, res) => {
 router.get('/system-status', async (req, res) => {
     try {
         const lhdnConfig = await getLHDNConfig();
-        console.log(lhdnConfig);
+       // console.log(lhdnConfig);
 
         const baseUrl = lhdnConfig.baseUrl;
         const environment = lhdnConfig.environment;
@@ -101,7 +101,7 @@ router.get('/system-status', async (req, res) => {
         const retryEnabled = lhdnConfig.retryEnabled;
         const maxRetries = lhdnConfig.maxRetries;
         const retryDelay = lhdnConfig.retryDelay;
-        const maxRetryDelay = lhdnConfig.maxRetryDelay;
+   
         // Check API connection status
         const apiStatus = await checkTokenExpiry(req);
         let apiHealthy = null;
@@ -111,7 +111,6 @@ router.get('/system-status', async (req, res) => {
         } else {
             apiHealthy = false;
         }
-        console.log('Getting LHDN System Status', apiHealthy);
         // Get queue status
         const queueCount = await WP_INBOUND_STATUS.count({
             where: {
@@ -128,7 +127,7 @@ router.get('/system-status', async (req, res) => {
            ORDER BY last_sync_date DESC
         `);
 
-        console.log(lastSyncResult);
+        //console.log(lastSyncResult);
 
         let latestSync = lastSyncResult?.[0]?.last_sync_date;
         if (latestSync === null) {    
@@ -136,7 +135,7 @@ router.get('/system-status', async (req, res) => {
         }else{
             latestSync = new Date(latestSync).toISOString();
         }
-        console.log(latestSync);
+       // console.log(latestSync);
 
         res.json({
             apiStatus: apiStatus === null ? 'Connection Issues' : 'Connected',
@@ -199,6 +198,56 @@ router.get('/top-customers', async (req, res) => {
             details: error.message 
         });
     }
+});
+
+router.get('/online-users', async (req, res) => {
+    try {
+        console.log('Fetching online users', req.session.user);
+        const onlineUsers = await WP_USER_REGISTRATION.getOnlineUsers();
+        res.json(onlineUsers);
+    } catch (error) {
+        console.error('Error fetching online users:', error);
+        // Send a more graceful error response
+        res.status(500).json({ 
+            count: 0,
+            users: [],
+            error: 'Failed to fetch online users'
+        });
+    }
+});
+
+// Update user status endpoint
+router.post('/update-user-status', async (req, res) => {
+  try {
+    const { userID, isActive } = req.body;
+    console.log(userID, isActive);
+    if (!userID) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId is required'
+      });
+    }
+
+    const success = await WP_USER_REGISTRATION.updateUserStatus(userID, isActive);
+    
+    if (!success) {
+      return res.status(400).json({
+        success: false,
+        message: 'Failed to update user status'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User status updated successfully'
+    });
+  } catch (error) {
+    console.error('Error in update-user-status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
 });
 
 module.exports = router; 

@@ -1,20 +1,27 @@
 const express = require('express');
 const router = express.Router();
-const { WP_USER_REGISTRATION, WP_LOGS } = require('../models');
+const { WP_USER_REGISTRATION, WP_LOGS, sequelize } = require('../models');
 const bcrypt = require('bcryptjs');
 const moment = require('moment');
-const path = require('path');
-const { generateAccessToken } = require('../services/token.service');
-const { Sequelize } = require('sequelize');
 const loggingConfig = require('../config/logging.config');
-const { checkActiveSession, updateActiveSession, removeActiveSession, checkLoginAttempts } = require('../middleware/auth.middleware');
+const { checkActiveSession, updateActiveSession, removeActiveSession, checkLoginAttempts, trackLoginAttempt } = require('../middleware/auth.middleware');
+const passport = require('passport');
+const { LoggingService } = require('../services/logging.service');
+const { getTokenAsTaxPayer } = require('../services/token.service');
+const { LOG_TYPES, ACTIONS, STATUS } = require('../services/logging.service');
+const { updateUserActivity } = require('../middleware/auth.middleware');
 
-// Login route
-const loginAttempts = new Map(); // Store for tracking failed attempts per username
-const maxFailedAttempts = 5;
-const blockDuration = 5 * 60 * 1000; // 5 minutes in milliseconds
+// Move constants to top
+const LOGIN_CONSTANTS = {
+  MAX_ATTEMPTS: 3,
+  BLOCK_DURATION: 5 * 60 * 1000, // 5 minutes
+  CLEANUP_INTERVAL: 60000 // 1 minute
+};
 
-// Cleanup old login attempts periodically
+// Store for tracking failed attempts
+const loginAttempts = new Map();
+
+// Cleanup old login attempts
 setInterval(() => {
   const now = Date.now();
   for (const [username, data] of loginAttempts.entries()) {
@@ -22,55 +29,50 @@ setInterval(() => {
       loginAttempts.delete(username);
     }
   }
-}, 60000); // Clean up every minute
+}, LOGIN_CONSTANTS.CLEANUP_INTERVAL);
 
 // Enhanced logging function
 async function logAuthEvent(type, details, req) {
-    if (!loggingConfig.auth[type]) return;
+  if (!loggingConfig.auth[type]) return;
 
-    const username = details.username || 'unknown';
-    const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
-                    req.headers['x-real-ip'] || 
-                    req.connection.remoteAddress || 
-                    req.ip;
-    
-    // Map event types to specific actions for better display
-    const actionMap = {
-        loginAttempts: 'Unknown',
-        successfulLogins: 'LOGIN',
-        failedLogins: 'LOGIN_FAILED',
-        logouts: 'LOGOUT',
-        errors: 'ERROR',
-        sessionActivity: 'SESSION',
-    };
+  const username = details.username || 'unknown';
+  const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
+                  req.headers['x-real-ip'] || 
+                  req.connection.remoteAddress || 
+                  req.ip;
 
-    const baseLogData = {
-        CreateTS: new Date().toISOString(),
-        LoggedUser: username,
-        IPAddress: clientIP || '-1',
-        Module: 'Authentication', // Add Module field
-        Action: actionMap[type] || 'Unknown', // Add Action field
-        Status: details.status || 'Unknown',
-        Details: JSON.stringify({
-            eventType: type,
-            timestamp: new Date().toISOString(),
-            ...details,
-            ...(loggingConfig.auth.ipTracking && { ip: clientIP }),
-            ...(loggingConfig.auth.userAgentTracking && { userAgent: req.headers['user-agent'] }),
-            sessionId: req.session?.id,
-            requestPath: req.path,
-            requestMethod: req.method
-        })
-    };
+  const actionMap = {
+    loginAttempts: 'Unknown',
+    successfulLogins: 'LOGIN',
+    failedLogins: 'LOGIN_FAILED',
+    logouts: 'LOGOUT',
+    errors: 'ERROR',
+    sessionActivity: 'SESSION',
+  };
 
-    try {
-        await WP_LOGS.create({
-            ...baseLogData,
-            Description: details.description || `Auth event: ${type}`
-        });
-    } catch (error) {
-        console.error('Error logging auth event:', error);
-    }
+  try {
+    await WP_LOGS.create({
+      CreateTS: new Date(),
+      LoggedUser: username,
+      IPAddress: clientIP || '-1',
+      Module: 'Authentication',
+      Action: actionMap[type] || 'Unknown',
+      Status: details.status || 'Unknown',
+      Description: details.description || `Auth event: ${type}`,
+      Details: JSON.stringify({
+        eventType: type,
+        timestamp: new Date().toISOString(),
+        ...details,
+        ...(loggingConfig.auth.ipTracking && { ip: clientIP }),
+        ...(loggingConfig.auth.userAgentTracking && { userAgent: req.headers['user-agent'] }),
+        sessionId: req.session?.id,
+        requestPath: req.path,
+        requestMethod: req.method
+      })
+    });
+  } catch (error) {
+    console.error('Error logging auth event:', error);
+  }
 }
 
 // Login page route (HTML)
@@ -89,192 +91,96 @@ router.get('/login', (req, res) => {
   });
 });
 
-router.post('/login', async (req, res) => {
-  console.log('Auth Route - Login request received:', {
-    body: req.body,
-    hasUsername: !!req.body.username,
-    hasPassword: !!req.body.password,
-    method: req.method,
-    path: req.path
-  });
-
-  const { username, password } = req.body;
-  const currentTime = Date.now();
+// Login handler with Passport
+router.post('/login', async (req, res, next) => {
+  const { username } = req.body;
   const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
                   req.headers['x-real-ip'] || 
-                  req.connection.remoteAddress || 
-                  req.ip;
-
+                  req.connection.remoteAddress;
   try {
-    // Check if user is already logged in
-    if (checkActiveSession(username)) {
-      return res.status(400).json({
-        success: false,
-        message: 'This user is already logged in. Please log out from other sessions first.',
-        sessionExists: true // Add this flag for frontend handling
-      });
-    }
-
     // Check login attempts
     const attemptCheck = checkLoginAttempts(username, clientIP);
     if (!attemptCheck.allowed) {
-      return res.status(429).json({
-        success: false,
-        message: attemptCheck.message
-      });
-    }
-
-    // Initial login attempt logging
-    await logAuthEvent('loginAttempts', {
-        username,
-        description: `Login attempt for user "${username}"`,
-        status: 'Unknown',
-        action: 'Unknown'
-    }, req);
-
-    // Get user's login attempts
-    const userAttempts = loginAttempts.get(username) || { count: 0, blockedUntil: 0 };
-
-    // Check if the user is currently blocked
-    if (userAttempts.blockedUntil > currentTime) {
-      const remainingTime = Math.ceil((userAttempts.blockedUntil - currentTime) / 60000);
-      console.log('Auth Route - User is blocked:', { username, remainingTime });
-      await logAuthEvent('failedLogins', {
-        username,
-        description: `Login attempt for user "${username}"`,
-        status: 'Unknown',
-        action: 'LOGIN'
-      }, req);
-      return res.status(403).json({ 
+      return res.status(429).json({ 
         success: false, 
-        message: `Account temporarily locked. Please try again in ${remainingTime} minute(s).` 
+        message: attemptCheck.message 
       });
     }
-
-    console.log('Auth Route - Finding user in database');
-    const user = await WP_USER_REGISTRATION.findOne({
-      where: { Username: username },
-      attributes: ['ID', 'Username', 'Password', 'Admin', 'TIN', 'IDType', 'IDValue', 'Email', 'LastLoginTime', 'ValidStatus']
-    });
-
-    if (!user) {
-      console.log('Auth Route - User not found:', { username });
-      await logAuthEvent('failedLogins', {
-        username,
-        description: `Login attempt for user "${username}"`,
-        status: 'Unknown',
-        action: 'LOGIN'
-      }, req);
-      const remainingAttempts = maxFailedAttempts - (userAttempts.count + 1);
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid credentials',
-        remainingAttempts: Math.max(0, remainingAttempts)
-      });
-    }
-
-    // Check if account is active
-    if (user.ValidStatus === '0') {
-      console.log('Auth Route - Account inactive:', { username });
-      await logAuthEvent('failedLogins', {
-        username,
-        description: `Login attempt for user "${username}"`,
-        status: 'Unknown',
-        action: 'LOGIN'
-      }, req);
-      return res.status(401).json({
-        success: false,
-        message: 'Account is inactive. Please contact administrator.'
-      });
-    }
-
-    console.log('Auth Route - Validating password');
-    const isPasswordValid = await bcrypt.compare(password, user.Password);
-    if (!isPasswordValid) {
-      console.log('Auth Route - Invalid password:', { username });
-      await logAuthEvent('failedLogins', {
-        username,
-        description: `Login attempt for user "${username}"`,
-        status: 'Unknown',
-        action: 'LOGIN'
-      }, req);
-      const remainingAttempts = maxFailedAttempts - (userAttempts.count + 1);
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid credentials',
-        remainingAttempts: Math.max(0, remainingAttempts)
-      });
-    }
-
-    console.log('Auth Route - Login successful, setting up session');
-    // Successful login - Reset failed attempts
-    loginAttempts.delete(username);
-
-    // Update last login time and set user as active
-    const currentLoginTime = moment().format('YYYY-MM-DD HH:mm:ss');
-    await WP_USER_REGISTRATION.update({
-      LastLoginTime: Sequelize.literal('GETDATE()'),
-      ValidStatus: '1'
-    }, {
-      where: { ID: user.ID }
-    });
-
-    // Set up user session
-    req.session.user = {
-      id: user.ID,
-      username: user.Username,
-      admin: user.Admin,
-      IDType: user.IDType,
-      IDValue: user.IDValue,
-      TIN: user.TIN,
-      Email: user.Email,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-      sessionId: req.session.id,
-      lastLoginTime: currentLoginTime,
-      isActive: true
-    };
-
-    // Generate access token and store it in session
-    const accessToken = await generateAccessToken(req, user.ID);
-    req.session.accessToken = accessToken; // Store access token in session
-    req.session.tokenExpiryTime = Date.now() + (24 * 60 * 60 * 1000); // Set token expiry time
-
-    // Log successful login
-    await logAuthEvent('successfulLogins', {
-      username,
-      description: `Login successful for user ${username}`,
-      status: 'Unknown',
-      action: 'LOGIN',
-      userId: user.ID,
-      admin: user.Admin,
-      lastLoginTime: user.LastLoginTime
-    }, req);
-
-    updateActiveSession(username);
-
-    return res.json({ 
-      success: true, 
-      message: 'Login successful', 
-      accessToken, 
-      user: {
-        ...req.session.user,
-        lastLoginTime: user.LastLoginTime
+    // Use Passport authentication
+    passport.authenticate('local', async (err, user, info) => {
+      if (err) {
+        await trackLoginAttempt(username, clientIP, false);
+        return next(err);
       }
-    });
+
+      if (!user) {
+        await trackLoginAttempt(username, clientIP, false);
+        return res.status(401).json({
+          success: false,
+          message: info.message || 'Invalid credentials'
+        });
+      }
+
+      // Log successful login
+      await trackLoginAttempt(username, clientIP, true);
+
+
+      // Update last login time
+      await WP_USER_REGISTRATION.update({
+        LastLoginTime: sequelize.literal('GETDATE()'),
+        ValidStatus: '1'
+      }, {
+        where: { ID: user.ID }
+      });
+
+      // Login with Passport
+      req.logIn(user, async (loginErr) => {
+        if (loginErr) {
+          return next(loginErr);
+        }
+
+        try {
+          // Get token from LHDN
+          const tokenData = await getTokenAsTaxPayer();
+          
+          // Set up session
+          req.session.user = {
+            id: user.ID,
+            username: user.Username,
+            admin: user.Admin === 1,
+            IDType: user.IDType,
+            IDValue: user.IDValue,
+            TIN: user.TIN,
+            Email: user.Email,
+            lastLoginTime: new Date(),
+            isActive: true
+          };
+
+          // Store token separately in session
+          if (tokenData && tokenData.access_token) {
+            req.session.accessToken = tokenData.access_token;
+            req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
+          }
+
+          return res.json({
+            success: true,
+            message: 'Login successful',
+            accessToken: tokenData?.access_token,
+            user: req.session.user
+          });
+        } catch (error) {
+          console.error('Token acquisition error:', error);
+          return res.status(500).json({
+            success: false,
+            message: 'Login successful but failed to get access token'
+          });
+        }
+      });
+    })(req, res, next);
+
   } catch (error) {
     console.error('Login error:', error);
-    await logAuthEvent('errors', {
-      username,
-      description: `Login error occurred for user ${username}`,
-      error: error.message,
-      stack: error.stack
-    }, req);
-
-    return res.status(500).json({ 
-      success: false, 
-      message: 'An error occurred while processing your login request. Please try again.' 
-    });
+    next(error);
   }
 });
 
@@ -318,7 +224,7 @@ router.post('/register', async (req, res) => {
       IDValue: idValue,
       Admin: '0', // Default to non-admin
       ValidStatus: '1', // Set as active
-      CreateTS: new Date().toISOString(),
+      CreateTS: new Date(),
       LastLoginTime: null
     });
 
@@ -352,6 +258,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
+
 // Enhanced logout endpoint
 router.get('/logout', async (req, res) => {
     const username = req.session?.user?.username;
@@ -360,8 +267,22 @@ router.get('/logout', async (req, res) => {
     if (req.session) {
         try {
             if (username) {
-                // Remove active session first
-                removeActiveSession(username);
+                    // Update user's last activity time to null on logout
+          await updateUserActivity(userId, false);
+          
+          // Remove from active sessions
+          removeActiveSession(username || req.session.user.username);
+          
+          // Log the logout
+          await LoggingService.log({
+              description: 'User logged out',
+              username: req.session.user.username,
+              userId: req.session.user.id,
+              ipAddress: req.ip,
+              logType: LOG_TYPES.INFO,
+              action: ACTIONS.LOGOUT,
+              status: STATUS.SUCCESS
+          });
                 
                 await logAuthEvent('logouts', {
                     username,

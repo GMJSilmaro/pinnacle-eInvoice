@@ -429,7 +429,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function updateAnalytics() {
     showLoadingState('invoice-status');
     showLoadingState('customer-list');
-    
+    showLoadingState('system-status');
     try {
         // Fetch Invoice Status
         const invoiceStatusResponse = await fetch('/api/dashboard-analytics/invoice-status');
@@ -673,7 +673,7 @@ async function updateSystemStatus() {
     }
 }
 
-// Add refresh queue function
+
 async function refreshQueue() {
     const button = document.querySelector('.status-item button .fa-sync-alt');
     button.style.animation = 'spin 1s linear';
@@ -687,38 +687,13 @@ async function refreshQueue() {
     }
 }
 
-// Initialize and set up auto-refresh
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize loading states
-    ['stats-cards', 'stackedBarChart', 'invoice-status', 'customer-list', 'system-status'].forEach(id => {
-        showLoadingState(id);
-    });
 
-    // Initialize the chart
-    initStackedBarChart();
-    
-    // Fetch initial data
-    Promise.all([
-        updateDashboardStats(),
-        updateAnalytics(),
-        updateSystemStatus()
-    ]).catch(error => {
-        console.error('Error initializing dashboard:', error);
-    });
 
-    // Set up refresh intervals
-    setInterval(updateSystemStatus, 30000);
-    setInterval(updateInvoiceStatus, 120000);
-    setInterval(updateDashboardStats, 5 * 60 * 1000);
-
-    // Show help guide popup
-    setTimeout(showHelpGuidePopup, 1000);
-});
-
-window.closeHelpGuide = closeHelpGuide;
-
-// Add this function after the existing code
 function initializeTooltips() {
+    // Clean up any existing tooltips first
+    const existingTooltips = document.querySelectorAll('.guide-tooltip');
+    existingTooltips.forEach(tooltip => tooltip.remove());
+
     // Define tooltip content
     const tooltipContent = {
         'outbound-card': 'Track outbound e-invoices sent to LHDN for processing',
@@ -734,11 +709,121 @@ function initializeTooltips() {
         'chart-section': 'Weekly breakdown of e-invoice processing status'
     };
 
-    // Initialize Bootstrap tooltips
+    // Initialize Bootstrap tooltips with additional options
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl, {
-            template: '<div class="tooltip guide-tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>'
+            template: '<div class="tooltip guide-tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>',
+            trigger: 'hover focus',
+            container: 'body',
+            animation: true,
+            delay: { show: 200, hide: 100 }
         });
     });
+
+    // Add global event listeners to handle tooltip cleanup
+    document.addEventListener('scroll', hideAllTooltips, true);
+    window.addEventListener('resize', hideAllTooltips);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            hideAllTooltips();
+        }
+    });
+
+    // Hide tooltips when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!e.target.hasAttribute('data-bs-toggle')) {
+            hideAllTooltips();
+        }
+    });
 }
+
+// Helper function to hide all tooltips
+function hideAllTooltips() {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(element => {
+        const tooltip = bootstrap.Tooltip.getInstance(element);
+        if (tooltip) {
+            tooltip.hide();
+        }
+    });
+}
+
+
+async function updateOnlineUsers() {
+    const onlineUsersElement = document.getElementById('onlineUsers');
+    const onlineUsersStatus = document.getElementById('onlineUsersStatus');
+    const onlineUsersDetails = document.getElementById('onlineUsersDetails');
+
+    try {
+        const response = await fetch('/api/dashboard-analytics/online-users');
+        const data = await response.json();
+
+        if (onlineUsersElement && data) {
+            onlineUsersElement.textContent = data.total;
+            
+            // Update status indicator
+            if (data.active > 0) {
+                onlineUsersStatus.className = 'fas fa-circle ms-2 text-success';
+                onlineUsersStatus.title = 'Users are currently registered';
+            } else {
+                onlineUsersStatus.className = 'fas fa-circle ms-2 text-secondary';
+                onlineUsersStatus.title = 'No users currently registered';
+            }
+
+            // Update details text
+            //onlineUsersDetails.textContent = `${data.total} total users`;
+        }
+    } catch (error) {
+        console.error('Error updating online users:', error);
+        if (onlineUsersElement) {
+            onlineUsersElement.textContent = '--';
+            onlineUsersStatus.className = 'fas fa-circle ms-2 text-danger';
+            onlineUsersStatus.title = 'Error fetching online users';
+            onlineUsersDetails.textContent = 'Unable to fetch online users';
+        }
+    }
+}
+
+window.addEventListener('beforeunload', function() {
+    hideAllTooltips();
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(element => {
+        const tooltip = bootstrap.Tooltip.getInstance(element);
+        if (tooltip) {
+            tooltip.dispose();
+        }
+    });
+});
+
+// Initialize and set up auto-refresh
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize loading states
+    ['stats-cards', 'stackedBarChart', 'invoice-status', 'customer-list', 'system-status'].forEach(id => {
+        showLoadingState(id);
+    });
+
+    // Initialize the chart
+    initStackedBarChart();
+    
+    // Fetch initial data
+    Promise.all([
+        updateDashboardStats(),
+        updateAnalytics(),
+        updateSystemStatus(),
+        updateOnlineUsers()
+    ]).catch(error => {
+        console.error('Error initializing dashboard:', error);
+    });
+
+    // Set up refresh intervals
+    setInterval(updateSystemStatus, 30000);
+    setInterval(updateInvoiceStatus, 120000);
+    setInterval(updateDashboardStats, 5 * 60 * 1000);
+    setInterval(updateOnlineUsers, 30000);
+
+    // Show help guide popup
+    setTimeout(showHelpGuidePopup, 1000);
+});
+
+window.closeHelpGuide = closeHelpGuide;

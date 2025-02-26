@@ -1,4 +1,7 @@
 // models/WP_USER_REGISTRATION.js
+const { Op } = require('sequelize');
+const authConfig = require('../config/auth.config');
+
 module.exports = (sequelize, DataTypes) => {
   const WP_USER_REGISTRATION = sequelize.define('WP_USER_REGISTRATION', {
     ID: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -102,6 +105,63 @@ module.exports = (sequelize, DataTypes) => {
         await transaction.rollback();
         throw error;
     }
+};
+
+WP_USER_REGISTRATION.updateUserStatus = async function(userId, isActive = false) {
+  if (!userId) {
+    console.warn('Attempted to update user status with undefined userId');
+    return false;
+  }
+
+  try {
+    await this.update(
+      {
+        LastLoginTime: isActive ? sequelize.literal('GETDATE()') : null,
+        isActive: isActive
+      },
+      {
+        where: {
+          ID: userId
+        }
+      }
+    );
+    return true;
+  } catch (error) {
+    console.error('Error updating user status:', error);
+    return false;
+  }
+};
+
+WP_USER_REGISTRATION.getOnlineUsers = async function() {
+  try {
+    const result = await sequelize.query(`
+      SELECT 
+        COUNT(1) as total,
+        SUM(CASE 
+          WHEN LastLoginTime IS NOT NULL AND CONVERT(bit, ValidStatus) = 1 
+          THEN 1 
+          ELSE 0 
+        END) as active,
+        SUM(CASE 
+          WHEN LastLoginTime IS NOT NULL AND CONVERT(bit, ValidStatus) = 1 
+          THEN 1 
+          ELSE 0 
+        END) as online_count
+      FROM WP_USER_REGISTRATION 
+      WHERE ValidStatus = '1'
+    `, {
+      type: sequelize.QueryTypes.SELECT
+    });
+
+    return result[0];
+  } catch (error) {
+    console.error('Error getting online users:', error);
+    return {
+      total: 0,
+      active: 0,
+      online_count: 0
+    };
+  }
 };
 
   return WP_USER_REGISTRATION;

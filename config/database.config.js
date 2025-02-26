@@ -16,7 +16,7 @@ const config = {
     options: {
       useUTC: false,
       dateFirst: 1,
-      enableArithAbort: true,
+      enableArithAbort: false,
       trustServerCertificate: true
     },
     useUTC: false,
