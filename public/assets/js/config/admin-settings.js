@@ -92,8 +92,8 @@ async function saveSAPConfig() {
     try {
         // Show loading state
         Swal.fire({
-            title: 'Validating Configuration',
-            text: 'Please wait while we validate the network path...',
+            title: 'Saving Configuration',
+            text: 'Please wait while we save your configuration...',
             allowOutsideClick: false,
             allowEscapeKey: false,
             allowEnterKey: false,
@@ -103,109 +103,183 @@ async function saveSAPConfig() {
             }
         });
 
-        // Get form values
-        const networkPath = document.getElementById('networkPath').value;
-        const domain = document.getElementById('serverName').value;
-        const username = document.getElementById('serverUsername').value;
-        const password = document.getElementById('serverPassword').value;
+        // Get form values for both SAP and outgoing paths
+        const sapConfig = {
+            networkPath: document.getElementById('networkPath').value,
+            domain: document.getElementById('serverName').value,
+            username: document.getElementById('serverUsername').value,
+            password: document.getElementById('serverPassword').value
+        };
+
+        const outgoingConfig = {
+            networkPath: document.getElementById('outgoingPath').value,
+            domain: document.getElementById('serverName').value, // Use same server credentials
+            username: document.getElementById('serverUsername').value,
+            password: document.getElementById('serverPassword').value
+        };
 
         // Validate required fields
-        if (!networkPath) {
-            throw new Error('Network path is required');
+        if (!sapConfig.networkPath || !outgoingConfig.networkPath) {
+            throw new Error('Both network paths are required');
         }
 
-        if (!username || !password) {
+        if (!sapConfig.username || !sapConfig.password) {
             throw new Error('Username and password are required');
         }
 
-        // First validate the network path
-        const validationResponse = await fetch('/api/config/sap/validate-path', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                networkPath,
-                domain,
-                username,
-                password
+        // Save both configurations
+        const [sapResponse, outgoingResponse] = await Promise.all([
+            fetch('/api/config/sap/save-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(sapConfig)
+            }),
+            fetch('/api/config/outgoing/save-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(outgoingConfig)
             })
-        });
+        ]);
 
-        if (validationResponse.status === 401) {
-            throw new Error('Your session has expired. Please log in again.');
+        if (!sapResponse.ok || !outgoingResponse.ok) {
+            throw new Error('Failed to save one or more configurations');
         }
 
-        const validationResult = await validationResponse.json();
+        const [sapResult, outgoingResult] = await Promise.all([
+            sapResponse.json(),
+            outgoingResponse.json()
+        ]);
 
-        if (!validationResult.success) {
-            throw new Error(validationResult.error || 'Network path validation failed');
+        if (!sapResult.success || !outgoingResult.success) {
+            throw new Error(sapResult.error || outgoingResult.error || 'Failed to save configuration');
         }
 
-        // If validation successful, save the configuration
-        const saveResponse = await fetch('/api/config/sap/save-config', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                networkPath: validationResult.formattedPath || networkPath,
-                domain,
-                username,
-                password
-            })
-        });
-
-        if (saveResponse.status === 401) {
-            throw new Error('Your session has expired. Please log in again.');
-        }
-
-        const saveResult = await saveResponse.json();
-
-        if (!saveResult.success) {
-            throw new Error(saveResult.error || 'Failed to save SAP configuration');
-        }
-
-        // Close loading dialog and show success
-        Swal.fire({
+        // Show success message
+        await Swal.fire({
             icon: 'success',
             title: 'Configuration Saved',
-            text: 'SAP configuration has been validated and saved successfully',
+            text: 'SAP and outgoing path configurations have been saved successfully',
             timer: 3000,
             timerProgressBar: true,
             showConfirmButton: false,
             position: 'top-end',
-            toast: true,
-            customClass: {
-                popup: 'animated fadeInRight'
-            }
+            toast: true
         });
 
     } catch (error) {
-        console.error('Error saving SAP config:', error);
-        
-        // Close loading dialog if open
-        Swal.close();
-        
-        // Show error message
-        Swal.fire({
+        console.error('Error saving configuration:', error);
+        await Swal.fire({
             icon: 'error',
             title: 'Error',
-            text: error.message || 'Failed to save SAP configuration',
+            text: error.message || 'Failed to save configuration',
             timer: 5000,
             timerProgressBar: true,
             showConfirmButton: true,
             position: 'top',
             toast: false
-        }).then(() => {
-            // If session expired, redirect to login
-            if (error.message.includes('session has expired')) {
-                window.location.href = '/login';
-            }
         });
     }
 }
 
+async function validatePaths() {
+    try {
+        // Show loading state
+        Swal.fire({
+            title: 'Validating Paths',
+            text: 'Please wait while we validate the network paths...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            allowEnterKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        const credentials = {
+            domain: document.getElementById('serverName').value,
+            username: document.getElementById('serverUsername').value,
+            password: document.getElementById('serverPassword').value
+        };
+
+        // Get paths and format them
+        let sapPath = document.getElementById('networkPath').value;
+        let outgoingPath = document.getElementById('outgoingPath').value;
+        
+        // Basic validation
+        if (!sapPath || !outgoingPath) {
+            throw new Error('Both network paths are required');
+        }
+        
+        // Format paths to ensure proper structure
+        sapPath = sapPath.replace(/\//g, '\\');
+        outgoingPath = outgoingPath.replace(/\//g, '\\');
+        
+        // Ensure paths start with double backslash if they're network paths
+        if (!sapPath.startsWith('C:') && !sapPath.startsWith('\\\\')) {
+            sapPath = '\\\\' + sapPath;
+        }
+        if (!outgoingPath.startsWith('C:') && !outgoingPath.startsWith('\\\\')) {
+            outgoingPath = '\\\\' + outgoingPath;
+        }
+
+        // Validate both paths
+        const [sapValidation, outgoingValidation] = await Promise.all([
+            validateAndFormatNetworkPath(sapPath),
+            validateAndFormatNetworkPath(outgoingPath)
+        ]);
+
+        // Test accessibility for both paths
+        const [sapAccess, outgoingAccess] = await Promise.all([
+            testNetworkPathAccessibility(sapValidation, credentials),
+            testNetworkPathAccessibility(outgoingValidation, credentials)
+        ]);
+
+        // Handle validation results separately for better error messages
+        if (!sapAccess.success) {
+            throw new Error(`SAP path validation failed: ${sapAccess.error}`);
+        }
+        if (!outgoingAccess.success) {
+            throw new Error(`Outgoing path validation failed: ${outgoingAccess.error}`);
+        }
+
+        await Swal.fire({
+            icon: 'success',
+            title: 'Validation Successful',
+            text: 'All network paths are valid and accessible',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            position: 'top-end',
+            toast: true
+        });
+
+    } catch (error) {
+        console.error('Error validating paths:', error);
+        // Show a more detailed error message with suggestions
+        await Swal.fire({
+            icon: 'error',
+            title: 'Validation Failed',
+            html: `
+                <p>${error.message}</p>
+                <div class="mt-3">
+                    <small class="text-muted">
+                        <strong>Tips:</strong><br>
+                        - Ensure the server name is correct<br>
+                        - Check if the network path exists<br>
+                        - Verify your credentials<br>
+                        - Make sure you have proper network access
+                    </small>
+                </div>
+            `,
+            timer: 8000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            position: 'top',
+            toast: false
+        });
+    }
+}
 
 // Consolidate all DOM ready event listeners into a single function
 document.addEventListener('DOMContentLoaded', async function initializeAdminSettings() {
@@ -263,7 +337,8 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
         await Promise.all([
             loadLHDNConfig().catch(err => console.error('Error loading LHDN config:', err)),
             loadSAPConfig().catch(err => console.error('Error loading SAP config:', err)),
-            loadCertificateConfig().catch(err => console.error('Error loading certificate config:', err))
+            loadOutgoingConfig().catch(err => console.error('Error loading outgoing config:', err)),
+           // loadCertificateConfig().catch(err => console.error('Error loading certificate config:', err))
         ]);
         
         // Initial token fetch
@@ -302,6 +377,8 @@ document.addEventListener('DOMContentLoaded', async function initializeAdminSett
             });
         }
 
+        // Initialize outgoing path configuration
+        await loadOutgoingConfig().catch(err => console.error('Error loading outgoing config:', err));
 
     } catch (error) {
         console.error('Error initializing admin settings:', error);
@@ -1893,7 +1970,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Load existing certificate configuration
-    loadCertificateConfig();
+   // loadCertificateConfig();
 });
 
 async function handleCertificateSelection(event) {
@@ -2686,3 +2763,172 @@ document.addEventListener('DOMContentLoaded', () => {
     if (certificatePassword) certificatePassword.addEventListener('input', resetValidation);
     if (lhdnRequirementsCheck) lhdnRequirementsCheck.addEventListener('change', resetValidation);
 });
+
+// Add these functions to handle outgoing path configuration
+async function loadOutgoingConfig() {
+    try {
+        const response = await fetch('/api/config/outgoing/get-config');
+        const data = await response.json();
+        
+        if (data.success && data.settings) {
+            const outgoingPath = document.getElementById('outgoingPath');
+            const serverName = document.getElementById('serverName'); // Note: Using shared server credentials
+            const serverUsername = document.getElementById('serverUsername');
+            
+            if (outgoingPath) outgoingPath.value = data.settings.networkPath || '';
+            if (serverName) serverName.value = data.settings.domain || '';
+            if (serverUsername) serverUsername.value = data.settings.username || '';
+            // Don't populate password for security reasons
+        }
+    } catch (error) {
+        console.error('Error loading outgoing config:', error);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to load outgoing path configuration',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            position: 'top-end',
+            toast: true
+        });
+    }
+}
+
+async function validateOutgoingPath() {
+    try {
+        const networkPath = document.getElementById('outgoingPath').value;
+        const domain = document.getElementById('outgoingServerName').value;
+        const username = document.getElementById('outgoingUsername').value;
+        const password = document.getElementById('outgoingPassword').value;
+
+        if (!networkPath || !username || !password) {
+            throw new Error('Network path, username and password are required');
+        }
+
+        // Show loading state
+        Swal.fire({
+            title: 'Validating Path',
+            text: 'Please wait while we validate the network path...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            allowEnterKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        const response = await fetch('/api/config/outgoing/validate-path', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                networkPath,
+                domain,
+                username,
+                password
+            })
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.error || 'Network path validation failed');
+        }
+
+        await Swal.fire({
+            icon: 'success',
+            title: 'Validation Successful',
+            text: 'Network path is valid and accessible',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            position: 'top-end',
+            toast: true
+        });
+
+    } catch (error) {
+        console.error('Error validating outgoing path:', error);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Validation Failed',
+            text: error.message,
+            timer: 5000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            position: 'top',
+            toast: false
+        });
+    }
+}
+
+async function saveOutgoingConfig() {
+    try {
+        const networkPath = document.getElementById('outgoingPath').value;
+        const domain = document.getElementById('outgoingServerName').value;
+        const username = document.getElementById('outgoingUsername').value;
+        const password = document.getElementById('outgoingPassword').value;
+
+        if (!networkPath || !username || !password) {
+            throw new Error('Network path, username and password are required');
+        }
+
+        // Show loading state
+        Swal.fire({
+            title: 'Saving Configuration',
+            text: 'Please wait while we save your configuration...',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            allowEnterKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        const response = await fetch('/api/config/outgoing/save-config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                networkPath,
+                domain,
+                username,
+                password
+            })
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to save configuration');
+        }
+
+        await Swal.fire({
+            icon: 'success',
+            title: 'Configuration Saved',
+            text: 'Outgoing path configuration has been saved successfully',
+            timer: 3000,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            position: 'top-end',
+            toast: true
+        });
+
+    } catch (error) {
+        console.error('Error saving outgoing config:', error);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: error.message || 'Failed to save outgoing path configuration',
+            timer: 5000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            position: 'top',
+            toast: false
+        });
+    }
+}

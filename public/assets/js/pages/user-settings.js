@@ -265,34 +265,43 @@ function togglePasswordVisibility(inputId) {
 async function testConnection() {
     try {
         const button = document.querySelector('button[onclick="testConnection()"]');
+        const environment = document.getElementById('environment').value;
+        const clientId = document.getElementById('clientId').value;
+        const clientSecret = document.getElementById('clientSecret').value;
         const middlewareUrl = document.getElementById('middlewareUrl').value;
         
-        if (!middlewareUrl) {
-            throw new Error('Middleware URL is required');
+        if (!middlewareUrl || !clientId || !clientSecret) {
+            throw new Error('Middleware URL, Client ID, and Client Secret are required');
         }
 
         button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
         button.disabled = true;
 
-        // Add your middleware connection test logic here
-        const response = await fetch('/api/middleware/test-connection', {
+        const response = await fetch('/api/lhdn/test-connection', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                url: middlewareUrl,
-                environment: document.getElementById('environment').value,
-                clientId: document.getElementById('clientId').value,
-                timeout: document.getElementById('timeout').value
+                environment,
+                middlewareUrl,
+                clientId,
+                clientSecret
             })
         });
 
         if (!response.ok) {
-            throw new Error('Connection test failed');
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Connection test failed');
         }
 
-        showSuccess('Successfully connected to middleware');
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess(`Successfully connected to LHDN API. Token expires in ${data.expiresIn} minutes.`);
+        } else {
+            throw new Error(data.error || 'Connection test failed');
+        }
     } catch (error) {
         showError('Connection test failed: ' + error.message);
     } finally {

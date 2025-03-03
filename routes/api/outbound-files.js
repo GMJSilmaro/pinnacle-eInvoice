@@ -17,6 +17,28 @@ const LHDNSubmitter = require('../../services/lhdn/lhdnSubmitter');
 const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../services/lhdn/lhdnService');
 const { getActiveSAPConfig } = require('../../config/paths');
 
+
+async function getOutgoingConfig() {
+    const config = await WP_CONFIGURATION.findOne({
+        where: {
+            Type: 'OUTGOING',
+            IsActive: 1
+        },
+        order: [['CreateTS', 'DESC']]
+    });
+
+    if (!config || !config.Settings) {
+        throw new Error('Outgoing path configuration not found');
+    }
+
+    let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
+    
+    if (!settings.networkPath) {
+        throw new Error('Outgoing network path not configured');
+    }
+
+    return settings;
+};
 /**
  * Helper function to read Excel file with detailed logging
  */
@@ -872,28 +894,28 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 console.log('Accepted Document:', acceptedDoc);
                 console.log('Full LHDN Response:', result.data);
             
-                // // Add retry logic for submission details
-                // let submissionDetails;
-                // let retryCount = 0;
-                // const maxRetries = 3;
+                // Add retry logic for submission details
+                let submissionDetails;
+                let retryCount = 0;
+                const maxRetries = 3;
                 
-                // while (retryCount < maxRetries) {
-                //     submissionDetails = await submitter.getSubmissionDetails(
-                //         result.data.submissionUid, 
-                //         req.session.accessToken
-                //     );
+                while (retryCount < maxRetries) {
+                    submissionDetails = await submitter.getSubmissionDetails(
+                        result.data.submissionUid, 
+                        req.session.accessToken
+                    );
                     
-                //     if (submissionDetails.success && submissionDetails.longId) {
-                //         break;
-                //     }
+                    if (submissionDetails.success && submissionDetails.longId) {
+                        break;
+                    }
                     
-                //     await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-                //     retryCount++;
-                // }
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                    retryCount++;
+                }
 
-                // const longId = submissionDetails.success && submissionDetails.longId ? 
-                //     submissionDetails.longId : 
-                //     'NA';
+                const longId = submissionDetails.success && submissionDetails.longId ? 
+                    submissionDetails.longId : 
+                    'NA';
 
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
@@ -937,7 +959,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         ...(excelUpdateResult.success ? 
                             { 
                                 excelPath: excelUpdateResult.outgoingPath,
-                                //jsonPath: excelUpdateResult.jsonPath 
+                                jsonPath: excelUpdateResult.jsonPath 
                             } : 
                             { error: excelUpdateResult.error }
                         )
@@ -1029,6 +1051,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
         res.status(500).json(errorResponse);
     }
 });
+
 
 /**
  * Cancel document
@@ -1274,7 +1297,8 @@ router.post('/:fileName/content', async (req, res) => {
         // console.log('\nExcel data processed successfully');
 
         // 9. Create outgoing directory structure
-        const outgoingBasePath = path.join('C:\\SFTPRoot\\MindValley\\Outgoing', type, company, formattedDate);
+        const outgoingConfig = await getOutgoingConfig();
+        const outgoingBasePath = path.join(outgoingConfig.networkPath, type, company, formattedDate);
         await ensureDirectoryExists(outgoingBasePath);
 
         // 10. Copy the original Excel file to the outgoing directory

@@ -97,16 +97,6 @@
           </div>
         </a>
 
-        <!-- <a href="#xml-settings" class="settings-nav-item" data-section="xml-settings">
-          <div class="settings-nav-icon">
-            <i class="fas fa-file-code"></i>
-          </div>
-          <div class="settings-nav-details">
-            <h4>XML Configuration</h4>
-            <p>Configure XML file storage</p>
-          </div>
-        </a> -->
-
         <a href="#lhdn-settings" class="settings-nav-item" data-section="lhdn-settings">
           <div class="settings-nav-icon">
             <i class="fas fa-globe"></i>
@@ -534,12 +524,28 @@
        
               <label>STES Template Generation System (.XLS/.XLSX) Network Path</label>
               <div class="input-group">
-                <input type="text" class="form-control" id="networkPath" placeholder="C:/Users/Public/Documents/e-Invoice/Generated">
+                <input type="text" class="form-control" id="networkPath" placeholder="\\SERVER\Share\e-Invoice\Generated">
                 <button class="btn btn-outline-secondary" type="button" onclick="copyNetworkPath()">
                   <i class="fas fa-copy"></i>
                 </button>
               </div>
               <small class="text-muted">Configure the path where the STES Template Generation System (STES) is located</small>
+            </div>
+
+            <h4 class="section-title mt-4">Outgoing Files Path Configuration</h4>
+            <small class="text-muted">Configure the network path for outgoing files storage</small>
+            
+            <div class="form-group mt-4">
+              <label>Outgoing Network Path</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="outgoingPath" placeholder="\\SERVER\Share\Outgoing">
+                <button class="btn btn-outline-secondary" type="button" onclick="copyOutgoingPath()">
+                  <i class="fas fa-copy"></i>
+                </button>
+              </div>
+              <small class="text-muted">
+                Example: \\SERVER\Share\Outgoing or C:\SFTPRoot\Outgoing
+              </small>
             </div>
 
             <div class="form-group mt-4">
@@ -584,6 +590,9 @@
             </div>
 
             <div class="sap-actions mt-4 text-end">
+              <button type="button" class="btn btn-outline-secondary me-2" onclick="validatePaths()">
+                <i class="fas fa-check-circle"></i> Validate Paths
+              </button>
               <button type="button" class="btn btn-primary" onclick="saveSAPConfig()">
                 <i class="fas fa-save"></i> Save Configuration
               </button>

@@ -337,19 +337,22 @@ router.post('/lhdn/save-config', async (req, res) => {
 // Test LHDN connection
 router.post('/lhdn/test-connection', async (req, res) => {
     try {
-        const { clientId, clientSecret, environment, middlewareUrl } = req.body;
+        const { environment, middlewareUrl, clientId, clientSecret } = req.body;
 
         // Input validation
-        if (!clientId || !clientSecret) {
-            throw new Error('Client ID and Client Secret are required');
+        if (!middlewareUrl || !clientId || !clientSecret) {
+            return res.status(400).json({
+                success: false,
+                error: 'Middleware URL, Client ID, and Client Secret are required'
+            });
         }
 
         // Validate the credentials
         const validationResult = await tokenService.validateCredentials({
+            baseUrl: middlewareUrl,
             clientId,
             clientSecret,
-            environment,
-            middlewareUrl
+            environment
         });
 
         if (!validationResult.success) {
@@ -368,7 +371,7 @@ router.post('/lhdn/test-connection', async (req, res) => {
         console.error('Error testing LHDN connection:', error);
         res.status(500).json({ 
             success: false,
-            error: error.message 
+            error: error.message || 'Internal server error'
         });
     }
 });
@@ -877,6 +880,125 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
     } catch (error) {
         await t.rollback();
         console.error('Error saving certificate:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Add this new route to handle outgoing path configuration
+router.post('/outgoing/save-config', async (req, res) => {
+    const t = await sequelize.transaction();
+    
+    try {
+        const { networkPath, domain, username, password } = req.body;
+
+        // Input validation
+        if (!networkPath || !username || !password) {
+            throw new Error('Network path, username and password are required');
+        }
+
+        // Format and validate the network path
+        const formattedPath = await validateAndFormatNetworkPath(networkPath);
+
+        // Test network path accessibility
+        const accessResult = await testNetworkPathAccessibility(formattedPath, {
+            serverName: domain || '',
+            serverUsername: username,
+            serverPassword: password
+        });
+
+        if (!accessResult.success) {
+            throw new Error(accessResult.error || 'Network path validation failed');
+        }
+
+        // Find current active configuration
+        const currentConfig = await WP_CONFIGURATION.findOne({
+            where: {
+                Type: 'OUTGOING',
+                IsActive: 1
+            },
+            order: [['CreateTS', 'DESC']]
+        });
+
+        // Save configuration
+        const settings = {
+            networkPath: formattedPath,
+            domain: domain || '',
+            username,
+            password
+        };
+
+        if (currentConfig) {
+            await currentConfig.update({
+                Settings: settings,
+                UpdateTS: sequelize.literal('GETDATE()')
+            }, {
+                transaction: t
+            });
+        } else {
+            await WP_CONFIGURATION.create({
+                Type: 'OUTGOING',
+                Settings: settings,
+                IsActive: 1,
+                UserID: req.user.id,
+                CreateTS: sequelize.literal('GETDATE()'),
+                UpdateTS: sequelize.literal('GETDATE()')
+            }, {
+                transaction: t
+            });
+        }
+
+        await t.commit();
+
+        res.json({ 
+            success: true,
+            message: 'Outgoing path configuration saved successfully',
+            config: {
+                networkPath: formattedPath,
+                domain: domain || '',
+                username
+                // Don't send password back
+            }
+        });
+    } catch (error) {
+        await t.rollback();
+        console.error('Error saving outgoing path config:', error);
+        res.status(500).json({ 
+            success: false,
+            error: error.message 
+        });
+    }
+});
+
+// Add this route to get outgoing path configuration
+router.get('/outgoing/get-config', async (req, res) => {
+    try {
+        const config = await WP_CONFIGURATION.findOne({
+            where: {
+                Type: 'OUTGOING',
+                IsActive: 1
+            },
+            order: [['CreateTS', 'DESC']]
+        });
+
+        let settings = config?.Settings;
+        if (typeof settings === 'string') {
+            settings = JSON.parse(settings);
+        }
+
+        res.json({
+            success: true,
+            networkPath: settings?.networkPath || '',
+            settings: settings || {
+                networkPath: '',
+                domain: '',
+                username: ''
+            }
+        });
+    } catch (error) {
+        console.error('Error getting outgoing path config:', error);
         res.status(500).json({
             success: false,
             error: error.message

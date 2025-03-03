@@ -526,10 +526,10 @@ class LHDNSubmitter {
     }
   }
   
-  async updateExcelWithResponse(fileName, type, company, date, uuid, invoice_number) {
+  async updateExcelWithResponse(fileName, type, company, date, uuid, longId, invoice_number) {
     try {
       console.log('=== updateExcelWithResponse Start ===');
-      console.log('Input Parameters:', { fileName, type, company, date, uuid, invoice_number });
+      console.log('Input Parameters:', { fileName, type, company, date, uuid, longId, invoice_number });
 
       // Get network path from config
       const config = await getActiveSAPConfig();
@@ -543,13 +543,14 @@ class LHDNSubmitter {
       const formattedDate = moment(date).format('YYYY-MM-DD');
 
       // Construct base paths for outgoing files
-      const outgoingBasePath = path.join('C:\\SFTPRoot\\MindValley\\Outgoing', type, company, formattedDate);
+      const outgoingBasePath = path.join('C:\\SFTPRoot\\Outgoing', type, company, formattedDate);
+      const outgoingJSONPath = path.join('C:\\SFTPRoot\\Outgoing', type, company);
       const outgoingFilePath = path.join(outgoingBasePath, fileName);
 
       // Generate JSON file in the same folder as Excel
       const baseFileName = fileName.replace('.xls', '');
-      // const jsonFileName = `${baseFileName}.json`;
-      // const jsonFilePath = path.join(outgoingBasePath, jsonFileName);
+      const jsonFileName = `${baseFileName}.json`;
+      const jsonFilePath = path.join(outgoingJSONPath, jsonFileName);
 
       // Create directory structure recursively
       await fsPromises.mkdir(outgoingBasePath, { recursive: true });
@@ -559,7 +560,8 @@ class LHDNSubmitter {
 
       console.log('File Paths:', {
         incomingPath,
-        outgoingFilePath
+        outgoingFilePath,
+        jsonFilePath
       });
 
       // Read source Excel file
@@ -586,22 +588,21 @@ class LHDNSubmitter {
       const processedData = await this.getProcessedData(fileName, type, company, date);
       console.log('Processed Data:', processedData);
 
-      // // Create JSON content with simplified structure
-      // const jsonContent = {
-      //   "issueDate": moment(date).format('YYYY-MM-DD'),
-      //   "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
-      //   "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
-      //   "invoiceNo": invoice_number,
-      //   "uuid": uuid,
-      //   "longId": longId,
-      // };
-      // // Write JSON file
-      // await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
+      // Create JSON content with simplified structure
+      const jsonContent = {
+        "issueDate": moment(date).format('YYYY-MM-DD'),
+        "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
+        "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
+        "invoiceNo": invoice_number,
+        "uuid": uuid,
+      };
+      // Write JSON file
+      await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
 
       const response = {
         success: true,
         outgoingPath: outgoingFilePath,
-        //jsonPath: jsonFilePath
+        jsonPath: jsonFilePath
       };
 
       console.log('=== updateExcelWithResponse Response ===', response);
