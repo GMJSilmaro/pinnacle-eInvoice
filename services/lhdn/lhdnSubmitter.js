@@ -475,9 +475,9 @@ class LHDNSubmitter {
     try {
         console.log(`Retrieving submission details for ${submissionUid}`);
         const lhdnConfig = await getLHDNConfig();
-        
-        // Add timeout to prevent hanging requests
+
         const response = await axios.get(
+            //`${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
             `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
             {
                 headers: {
@@ -560,98 +560,78 @@ class LHDNSubmitter {
     }
   }
   
+  extractInvoiceTypeCode(fileName) {
+    const match = fileName.match(/^(\d{2})_/);
+    return match ? match[1] : null;
+  }
+
   async updateExcelWithResponse(fileName, type, company, date, uuid, longId, invoice_number) {
     try {
-      console.log('=== updateExcelWithResponse Start ===');
-      console.log('Input Parameters:', { fileName, type, company, date, uuid, longId, invoice_number });
+        console.log('=== updateExcelWithResponse Start ===');
+        console.log('Input Parameters:', { fileName, type, company, date, uuid, longId, invoice_number });
 
-      // Get network path from config
-      const config = await getActiveSAPConfig();
-      console.log('SAP Config:', config);
+        // Get network path from config
+        const config = await getActiveSAPConfig();
+        console.log('SAP Config:', config);
 
-      if (!config.success) {
-        throw new Error('Failed to get SAP configuration');
-      }
-
-      // Format date properly for folder structure
-      const formattedDate = moment(date).format('YYYY-MM-DD');
-
-      // Construct base paths for outgoing files
-      const outgoingBasePath = path.join('C:\\SFTPRoot\\Outgoing', type, company, formattedDate);
-      const outgoingJSONPath = path.join('C:\\SFTPRoot\\Outgoing', type, company);
-      const outgoingFilePath = path.join(outgoingBasePath, fileName);
-
-      // Generate JSON file in the same folder as Excel
-      const baseFileName = fileName.replace('.xls', '');
-      const jsonFileName = `${baseFileName}.json`;
-      const jsonFilePath = path.join(outgoingJSONPath, jsonFileName);
-
-      // Create directory structure recursively
-      await fsPromises.mkdir(outgoingBasePath, { recursive: true });
-
-      // Construct incoming file path
-      const incomingPath = path.join(config.networkPath, type, company, formattedDate, fileName);
-
-      console.log('File Paths:', {
-        incomingPath,
-        outgoingFilePath,
-        jsonFilePath
-      });
-
-      // Read source Excel file
-      const workbook = XLSX.readFile(incomingPath);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-
-      // Find header row and update UUID and invoice_number
-      const range = XLSX.utils.decode_range(worksheet['!ref']);
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        const typeCell = XLSX.utils.encode_cell({ r: R, c: 0 });
-        if (worksheet[typeCell] && worksheet[typeCell].v === 'H') {
-          const uuidCell = XLSX.utils.encode_cell({ r: R, c: 2 });
-          worksheet[uuidCell] = { t: 's', v: uuid };
-          const invoiceCell = XLSX.utils.encode_cell({ r: R, c: 3 });
-          worksheet[invoiceCell] = { t: 's', v: invoice_number };
-          break;
+        if (!config.success) {
+            throw new Error('Failed to get SAP configuration');
         }
-      }
 
-      // Write updated Excel file
-      XLSX.writeFile(workbook, outgoingFilePath);
+        // Format date properly for folder structure
+        const formattedDate = moment(date).format('YYYY-MM-DD');
 
-      // Get processed data
-      const processedData = await this.getProcessedData(fileName, type, company, date);
-      console.log('Processed Data:', processedData);
+        // Construct base paths for outgoing files
+        const outgoingBasePath = path.join('C:\\SFTPRoot\\Outgoing', type, company, formattedDate);
+        
+        // Create directory structure recursively
+        await fsPromises.mkdir(outgoingBasePath, { recursive: true });
 
-      // Create JSON content with simplified structure
-      const jsonContent = {
-        "issueDate": moment(date).format('YYYY-MM-DD'),
-        "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
-        "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
-        "invoiceNo": invoice_number,
-        "uuid": uuid,
-        "longId": longId || "PENDING"
-      };
-      
-      // Write JSON file
-      await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
+        // Construct incoming file path
+        const incomingPath = path.join(config.networkPath, type, company, formattedDate, fileName);
+        const outgoingFilePath = path.join(outgoingBasePath, fileName);
 
-      const response = {
-        success: true,
-        outgoingPath: outgoingFilePath,
-        jsonPath: jsonFilePath
-      };
+        console.log('File Paths:', {
+            incomingPath,
+            outgoingFilePath
+        });
 
-      console.log('=== updateExcelWithResponse Response ===', response);
-      return response;
+        // Read source Excel file
+        const workbook = XLSX.readFile(incomingPath);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+        // Find header row and update UUID and invoice_number
+        const range = XLSX.utils.decode_range(worksheet['!ref']);
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+            const typeCell = XLSX.utils.encode_cell({ r: R, c: 0 });
+            if (worksheet[typeCell] && worksheet[typeCell].v === 'H') {
+                const uuidCell = XLSX.utils.encode_cell({ r: R, c: 2 });
+                worksheet[uuidCell] = { t: 's', v: uuid };
+                const invoiceCell = XLSX.utils.encode_cell({ r: R, c: 3 });
+                worksheet[invoiceCell] = { t: 's', v: invoice_number };
+                break;
+            }
+        }
+
+        // Write updated Excel file
+        XLSX.writeFile(workbook, outgoingFilePath);
+
+        const response = {
+            success: true,
+            outgoingPath: outgoingFilePath
+        };
+
+        console.log('=== updateExcelWithResponse Response ===', response);
+        return response;
 
     } catch (error) {
-      console.error('=== updateExcelWithResponse Error ===', error);
-      return {
-        success: false,
-        error: error.message
-      };
+        console.error('=== updateExcelWithResponse Error ===', error);
+        return {
+            success: false,
+            error: error.message
+        };
     }
-  }
+}
 
 }
 

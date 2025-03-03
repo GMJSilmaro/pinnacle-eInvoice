@@ -11,12 +11,13 @@ const { logger, apiLogger, versionLogger } = require('../../utils/logger');
 const { getUnitType } = require('../../utils/UOM');
 const { getInvoiceTypes } = require('../../utils/EInvoiceTypes');
 const axiosRetry = require('axios-retry');
+const moment = require('moment');
 
 // Initialize cache with 5 minutes standard TTL
 const cache = new NodeCache({ stdTTL: 300 }); // 5 minutes in seconds
 
 // Database models
-const { WP_INBOUND_STATUS, WP_USER_REGISTRATION, WP_COMPANY_SETTINGS, WP_CONFIGURATION } = require('../../models');
+const { WP_INBOUND_STATUS, WP_USER_REGISTRATION, WP_COMPANY_SETTINGS, WP_CONFIGURATION, WP_OUTBOUND_STATUS } = require('../../models');
 
 // Helper function for delays
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -464,6 +465,83 @@ const saveInboundStatus = async (data) => {
         return null;
     };
 
+    // Helper function to generate JSON response file
+    const generateResponseFile = async (item) => {
+        try {
+            // Only generate for valid documents with required fields
+            if (!item.uuid || !item.submissionUid || !item.longId || item.status !== 'Valid') {
+                console.log(`Skipping response file generation for ${item.uuid}: missing required fields or invalid status`);
+                return;
+            }
+
+            // Get document details from outbound status
+            const outboundDoc = await WP_OUTBOUND_STATUS.findOne({
+                where: { UUID: item.uuid }
+            });
+
+            if (!outboundDoc) {
+                console.log(`No outbound document found for UUID: ${item.uuid}`);
+                return;
+            }
+
+            const { fileName, filePath } = outboundDoc;
+            if (!fileName || !filePath) {
+                console.log(`Missing file information for UUID: ${item.uuid}`);
+                return;
+            }
+
+            // Extract type, company, and date from filePath
+            const pathParts = filePath.split(path.sep);
+            const dateIndex = pathParts.length - 2;
+            const companyIndex = pathParts.length - 3;
+            const typeIndex = pathParts.length - 4;
+
+            const type = pathParts[typeIndex];
+            const company = pathParts[companyIndex];
+            const date = pathParts[dateIndex];
+
+            // Construct paths for outgoing files
+            const outgoingBasePath = path.join('C:\\SFTPRoot\\Outgoing', type, company, date);
+            const outgoingJSONPath = path.join('C:\\SFTPRoot\\Outgoing', type, company);
+            
+            // Create directory structure recursively
+            await fsPromises.mkdir(outgoingBasePath, { recursive: true });
+
+            // Generate JSON filename
+            const baseFileName = fileName.replace('.xls', '');
+            const jsonFileName = `${baseFileName}.json`;
+            const jsonFilePath = path.join(outgoingJSONPath, jsonFileName);
+
+            // Check if JSON response file already exists
+            if (await fsPromises.access(jsonFilePath).then(() => true).catch(() => false)) {
+                console.log(`Response file already exists for ${item.uuid}, skipping generation`);
+                return;
+            }
+
+            // Extract invoice type code from filename
+            const invoiceTypeCode = fileName.match(/^(\d{2})_/)?.[1];
+
+            // Create JSON content
+            const jsonContent = {
+                "issueDate": moment(date).format('YYYY-MM-DD'),
+                "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
+                "invoiceTypeCode": invoiceTypeCode,
+                "invoiceNo": item.internalId,
+                "uuid": item.uuid,
+                "submissionUid": item.submissionUid,
+                "longId": item.longId,
+                "status": item.status
+            };
+
+            // Write JSON file
+            await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
+            console.log(`Generated response file: ${jsonFilePath}`);
+
+        } catch (error) {
+            console.error(`Error generating response file for ${item.uuid}:`, error);
+        }
+    };
+
     // Helper function to handle a single document with retries
     const saveDocument = async (item, retryCount = 0) => {
         try {
@@ -490,6 +568,12 @@ const saveInboundStatus = async (data) => {
                 last_sync_date: formatDate(new Date()),
                 sync_status: 'success'
             });
+
+            // Generate response file only for valid documents
+            if (item.status === 'Valid') {
+                await generateResponseFile(item);
+            }
+
             successCount++;
             return true;
         } catch (error) {
@@ -520,7 +604,6 @@ const saveInboundStatus = async (data) => {
     return { successCount, errorCount };
 };
 
-// Add better request logging middleware
 const requestLogger = async (req, res, next) => {
     const requestId = Math.random().toString(36).substring(7);
     console.log(`[${requestId}] New request:`, {

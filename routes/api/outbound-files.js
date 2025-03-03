@@ -955,7 +955,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     company,
                     date,
                     acceptedDoc.uuid,
-                    longId,
                     invoice_number
                 );
                 
@@ -976,8 +975,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     submissionUID: result.data.submissionUid,
                     acceptedDocuments: result.data.acceptedDocuments,
                     docNum: invoice_number,
-                    longIdStatus: submissionDetails?.success ? 'retrieved' : 'pending',
-                    longId: longId,
                     fileUpdates: {
                         success: excelUpdateResult.success,
                         ...(excelUpdateResult.success ? 
