@@ -24,6 +24,29 @@ const { WP_INBOUND_STATUS, WP_USER_REGISTRATION, WP_COMPANY_SETTINGS, WP_CONFIGU
 // Helper function for delays
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper function to map invoice type names to codes
+const getInvoiceTypeCode = (typeName) => {
+    const typeMapping = {
+        'Invoice': '01',
+        'Credit Note': '02',
+        'Debit Note': '03',
+        'Refund Note': '04',
+        'Self-billed Invoice': '11',
+        'Self-billed Credit Note': '12',
+        'Self-billed Debit Note': '13',
+        'Self-billed Refund Note': '14'
+    };
+
+    // If typeName already starts with a valid code (e.g. "01 - Invoice"), extract it
+    const codeMatch = typeName?.match(/^(0[1-4]|1[1-4])/);
+    if (codeMatch) {
+        return codeMatch[1];
+    }
+
+    // Otherwise look up the code from the mapping
+    return typeMapping[typeName] || '01'; // Default to '01' if not found
+};
+
 // Enhanced delay function with exponential backoff
 const calculateBackoff = (retryCount, baseDelay = 1000, maxDelay = 60000) => {
     const backoff = Math.min(maxDelay, baseDelay * Math.pow(2, retryCount));
@@ -137,14 +160,14 @@ async function getLHDNConfig() {
     };
 }
 
-async function ensureTempDirectory() {
-    const tempDir = path.join(__dirname, '../../public/temp');
-    try {
-        await fsPromises.access(tempDir);
-    } catch {
-        // Directory doesn't exist, create it
-        await fsPromises.mkdir(tempDir, { recursive: true });
-    }
+// Helper function to get portal URL based on environment
+function getPortalUrl(environment) {
+    const portalUrls = {
+        production: 'myinvois.hasil.gov.my',
+        sandbox: 'preprod.myinvois.hasil.gov.my'
+    };
+    
+    return portalUrls[environment] || portalUrls.sandbox; // Default to sandbox if environment not specified
 }
 
 // Enhanced document fetching function with smart caching
@@ -473,6 +496,9 @@ const generateResponseFile = async (item) => {
             return { success: false, message: 'Skipped: Missing required fields or invalid status' };
         }
 
+         // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+
         // Get outgoing path configuration
         const outgoingConfig = await WP_CONFIGURATION.findOne({
             where: {
@@ -551,13 +577,8 @@ const generateResponseFile = async (item) => {
         });
 
         if (inboundDoc) {
-            // Try to get invoice type code from typeName if available
-            if (inboundDoc.typeName) {
-                const typeMatch = inboundDoc.typeName.match(/^(\d{2})/);
-                if (typeMatch) {
-                    invoiceTypeCode = typeMatch[1];
-                }
-            }
+            // Use the helper function to get invoice type code from typeName
+            invoiceTypeCode = getInvoiceTypeCode(inboundDoc.typeName);
             invoiceNo = inboundDoc.internalId || item.internalId || "";
         }
 
@@ -620,8 +641,8 @@ const generateResponseFile = async (item) => {
         date = sanitizePath(date);
 
         // Construct paths for outgoing files using configured network path
-        const outgoingBasePath = path.join(settings.networkPath, type, company, date);
-        const outgoingJSONPath = path.join(settings.networkPath, type, company, date);
+        const outgoingBasePath = path.join(settings.networkPath, type, company);
+        const outgoingJSONPath = path.join(settings.networkPath, type, company);
         
         // Create directory structure recursively
         await fsPromises.mkdir(outgoingBasePath, { recursive: true });
@@ -643,6 +664,9 @@ const generateResponseFile = async (item) => {
             // File doesn't exist, continue with creation
         }
 
+        const portalUrl = getPortalUrl(lhdnConfig.environment);
+        const LHDNUrl = `https://${portalUrl}/${item.uuid}/share/${item.longId}`;
+
         // Create JSON content
         const jsonContent = {
             "issueDate": moment(date).format('YYYY-MM-DD'),
@@ -653,6 +677,7 @@ const generateResponseFile = async (item) => {
             "submissionUid": item.submissionUid,
             "longId": item.longId,
             "status": item.status,
+            "lhdnUrl": LHDNUrl,
         };
 
         // Write JSON file
@@ -1351,7 +1376,8 @@ async function getTemplateData(uuid, accessToken, user) {
    console.log('Generating QR code...');
    const longId = rawData.longId || rawData.longID;
    const lhdnUuid = rawData.uuid;
-   const qrCodeUrl = `https://preprod.myinvois.hasil.gov.my/${lhdnUuid}/share/${longId}`;
+   const portalUrl = getPortalUrl(lhdnConfig.environment);
+   const qrCodeUrl = `https://${portalUrl}/${lhdnUuid}/share/${longId}`;
    console.log('QR Code URL:', qrCodeUrl);
 
    const qrCodeDataUrl = await QRCode.toDataURL(qrCodeUrl, {
