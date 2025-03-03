@@ -185,148 +185,170 @@ const fetchRecentDocuments = async (req) => {
 
     console.log('Fetching fresh data from LHDN API...');
 
-    const documents = [];
-    let pageNo = 1;
-    const pageSize = 100; // MyInvois recommended page size
-    let hasMorePages = true;
-    let consecutiveErrors = 0;
-    const maxConsecutiveErrors = 3;
+    try {
+        const documents = [];
+        let pageNo = 1;
+        const pageSize = 100; // MyInvois recommended page size
+        let hasMorePages = true;
+        let consecutiveErrors = 0;
+        const maxConsecutiveErrors = 3;
 
-    // Track rate limiting
-    let rateLimitRemaining = null;
-    let rateLimitReset = null;
+        // Track rate limiting
+        let rateLimitRemaining = null;
+        let rateLimitReset = null;
 
-    while (hasMorePages) {
-        let retryCount = 0;
-        let success = false;
+        while (hasMorePages) {
+            let retryCount = 0;
+            let success = false;
 
-        while (!success && retryCount < lhdnConfig.maxRetries) {
-            try {
-                // Check rate limit before making request
-                if (rateLimitRemaining !== null && rateLimitRemaining <= 0) {
-                    const waitTime = (new Date(rateLimitReset).getTime() - Date.now()) + 1000; // Add 1s buffer
-                    if (waitTime > 0) {
-                        console.log(`Rate limit reached. Waiting ${Math.round(waitTime/1000)}s before continuing...`);
-                        await delay(waitTime);
+            while (!success && retryCount < lhdnConfig.maxRetries) {
+                try {
+                    // Check rate limit before making request
+                    if (rateLimitRemaining !== null && rateLimitRemaining <= 0) {
+                        const waitTime = (new Date(rateLimitReset).getTime() - Date.now()) + 1000; // Add 1s buffer
+                        if (waitTime > 0) {
+                            console.log(`Rate limit reached. Waiting ${Math.round(waitTime/1000)}s before continuing...`);
+                            await delay(waitTime);
+                        }
                     }
-                }
 
-                const response = await axios.get(
-                    `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
-                    {
-                        params: {
-                            pageNo: pageNo,
-                            pageSize: pageSize,
-                            sortBy: 'dateTimeReceived',
-                            sortOrder: 'desc'
-                        },
-                        headers: {
-                            'Authorization': `Bearer ${req.session.accessToken}`,
-                            'Accept': 'application/json',
-                            'Content-Type': 'application/json'
-                        },
-                        timeout: lhdnConfig.timeout
-                    }
-                );
+                    const response = await axios.get(
+                        `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
+                        {
+                            params: {
+                                pageNo: pageNo,
+                                pageSize: pageSize,
+                                sortBy: 'dateTimeReceived',
+                                sortOrder: 'desc'
+                            },
+                            headers: {
+                                'Authorization': `Bearer ${req.session.accessToken}`,
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json'
+                            },
+                            timeout: lhdnConfig.timeout
+                        }
+                    );
 
-                // Update rate limit tracking from headers
-                rateLimitRemaining = parseInt(response.headers['x-rate-limit-remaining'] || '-1');
-                rateLimitReset = response.headers['x-rate-limit-reset'];
+                    // Update rate limit tracking from headers
+                    rateLimitRemaining = parseInt(response.headers['x-rate-limit-remaining'] || '-1');
+                    rateLimitReset = response.headers['x-rate-limit-reset'];
 
-                // Handle pagination
-                const { result, pagination } = response.data;
-                
-                if (!result || result.length === 0) {
-                    console.log(`No more documents found after page ${pageNo-1}`);
-                    hasMorePages = false;
-                    break;
-                }
-
-                documents.push(...result);
-                console.log(`Successfully fetched page ${pageNo} with ${result.length} documents`);
-
-                // Check if we have more pages based on pagination info
-                if (pagination) {
-                    hasMorePages = pageNo < pagination.totalPages;
-                } else {
-                    hasMorePages = result.length === pageSize;
-                }
-
-                // Reset consecutive errors counter on success
-                consecutiveErrors = 0;
-                success = true;
-                pageNo++;
-
-                // Add a small delay between requests to be considerate
-                if (hasMorePages) {
-                    await delay(500);
-                }
-
-            } catch (error) {
-                retryCount++;
-                console.error(`Error fetching page ${pageNo}:`, error.message);
-
-                // Handle authentication errors
-                if (error.response?.status === 401 || error.response?.status === 403) {
-                    throw new Error('Authentication failed. Please log in again.');
-                }
-
-                // Handle rate limiting
-                if (error.response?.status === 429) {
-                    const resetTime = error.response.headers["x-rate-limit-reset"];
-                    rateLimitRemaining = 0;
-                    rateLimitReset = resetTime;
+                    // Handle pagination
+                    const { result, pagination } = response.data;
                     
-                    const waitTime = new Date(resetTime).getTime() - Date.now();
-                    if (waitTime > 0) {
-                        console.log(`Rate limited. Waiting ${Math.round(waitTime/1000)}s before retry...`);
-                        await delay(waitTime);
-                        retryCount--; // Don't count rate limit retries
-                        continue;
-                    }
-                }
-
-                // Track consecutive errors
-                if (retryCount >= lhdnConfig.maxRetries) {
-                    consecutiveErrors++;
-                    if (consecutiveErrors >= maxConsecutiveErrors) {
-                        console.error(`Max consecutive errors (${maxConsecutiveErrors}) reached. Stopping fetch.`);
+                    if (!result || result.length === 0) {
+                        console.log(`No more documents found after page ${pageNo-1}`);
                         hasMorePages = false;
                         break;
                     }
-                    console.log(`Moving to next page after max retries for page ${pageNo}`);
-                    pageNo++;
-                    break;
-                }
 
-                // Exponential backoff for other errors
-                const backoffDelay = Math.min(
-                    lhdnConfig.maxRetryDelay,
-                    lhdnConfig.retryDelay * Math.pow(2, retryCount)
-                );
-                console.log(`Retrying page ${pageNo} after ${backoffDelay/1000}s delay (attempt ${retryCount + 1}/${lhdnConfig.maxRetries})...`);
-                await delay(backoffDelay);
+                    documents.push(...result);
+                    console.log(`Successfully fetched page ${pageNo} with ${result.length} documents`);
+
+                    // Check if we have more pages based on pagination info
+                    if (pagination) {
+                        hasMorePages = pageNo < pagination.totalPages;
+                    } else {
+                        hasMorePages = result.length === pageSize;
+                    }
+
+                    // Reset consecutive errors counter on success
+                    consecutiveErrors = 0;
+                    success = true;
+                    pageNo++;
+
+                    // Add a small delay between requests to be considerate
+                    if (hasMorePages) {
+                        await delay(500);
+                    }
+
+                } catch (error) {
+                    retryCount++;
+                    console.error(`Error fetching page ${pageNo}:`, error.message);
+
+                    // Handle authentication errors
+                    if (error.response?.status === 401 || error.response?.status === 403) {
+                        throw new Error('Authentication failed. Please log in again.');
+                    }
+
+                    // Handle rate limiting
+                    if (error.response?.status === 429) {
+                        const resetTime = error.response.headers["x-rate-limit-reset"];
+                        rateLimitRemaining = 0;
+                        rateLimitReset = resetTime;
+                        
+                        const waitTime = new Date(resetTime).getTime() - Date.now();
+                        if (waitTime > 0) {
+                            console.log(`Rate limited. Waiting ${Math.round(waitTime/1000)}s before retry...`);
+                            await delay(waitTime);
+                            retryCount--; // Don't count rate limit retries
+                            continue;
+                        }
+                    }
+
+                    // Track consecutive errors
+                    if (retryCount >= lhdnConfig.maxRetries) {
+                        consecutiveErrors++;
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            console.error(`Max consecutive errors (${maxConsecutiveErrors}) reached. Stopping fetch.`);
+                            hasMorePages = false;
+                            break;
+                        }
+                        console.log(`Moving to next page after max retries for page ${pageNo}`);
+                        pageNo++;
+                        break;
+                    }
+
+                    // Exponential backoff for other errors
+                    const backoffDelay = Math.min(
+                        lhdnConfig.maxRetryDelay,
+                        lhdnConfig.retryDelay * Math.pow(2, retryCount)
+                    );
+                    console.log(`Retrying page ${pageNo} after ${backoffDelay/1000}s delay (attempt ${retryCount + 1}/${lhdnConfig.maxRetries})...`);
+                    await delay(backoffDelay);
+                }
+            }
+
+            if (!success && consecutiveErrors >= maxConsecutiveErrors) {
+                hasMorePages = false;
             }
         }
 
-        if (!success && consecutiveErrors >= maxConsecutiveErrors) {
-            hasMorePages = false;
+        if (documents.length === 0) {
+            throw new Error('No documents could be fetched from the API');
         }
+
+        console.log(`Fetch complete. Total documents retrieved: ${documents.length}`);
+        
+        // Save the fetched documents to database
+        await saveInboundStatus({ result: documents });
+
+        return { 
+            result: documents,
+            cached: false
+        };
+    } catch (error) {
+        console.error('Error fetching from LHDN API, falling back to database:', error.message);
+        
+        // Fallback to database if API fails
+        const fallbackDocuments = await WP_INBOUND_STATUS.findAll({
+            order: [['dateTimeReceived', 'DESC']],
+            limit: 1000 // Limit to latest 1000 records
+        });
+        
+        if (fallbackDocuments && fallbackDocuments.length > 0) {
+            console.log(`Fallback successful. Retrieved ${fallbackDocuments.length} documents from database.`);
+            return {
+                result: fallbackDocuments,
+                cached: true,
+                fallback: true
+            };
+        }
+        
+        // If no fallback data is available, rethrow the error
+        throw error;
     }
-
-    if (documents.length === 0) {
-        throw new Error('No documents could be fetched from the API');
-    }
-
-    console.log(`Fetch complete. Total documents retrieved: ${documents.length}`);
-    
-    // Save the fetched documents to database
-    await saveInboundStatus({ result: documents });
-
-    return { 
-        result: documents,
-        cached: false
-    };
 };
 
 // Caching function
@@ -345,6 +367,28 @@ const getCachedDocuments = async (req) => {
             console.log(forceRefresh ? 'Force refreshed documents and cached the result' : 'Fetched documents and cached the result');
         } catch (error) {
             console.error('Error fetching documents:', error);
+            
+            // Try to get data from database as a last resort
+            try {
+                console.log('Attempting final fallback to database...');
+                const fallbackDocuments = await WP_INBOUND_STATUS.findAll({
+                    order: [['dateTimeReceived', 'DESC']],
+                    limit: 1000
+                });
+                
+                if (fallbackDocuments && fallbackDocuments.length > 0) {
+                    console.log(`Final fallback successful. Retrieved ${fallbackDocuments.length} documents from database.`);
+                    return {
+                        result: fallbackDocuments,
+                        cached: true,
+                        fallback: true,
+                        error: error.message
+                    };
+                }
+            } catch (dbError) {
+                console.error('Database fallback also failed:', dbError.message);
+            }
+            
             throw error;
         }
     } else {
@@ -495,7 +539,7 @@ router.get('/documents/recent', async (req, res) => {
         
         try {
             const data = await getCachedDocuments(req);
-            console.log('Got documents, count:', data.result.length, 'cached:', data.cached);
+            console.log('Got documents, count:', data.result.length, 'cached:', data.cached, 'fallback:', data.fallback || false);
             
             const documents = data.result.map(doc => ({
                 uuid: doc.uuid,
@@ -552,7 +596,9 @@ router.get('/documents/recent', async (req, res) => {
                 metadata: {
                     total: documents.length,
                     cached: data.cached,
-                    timestamp: new Date().toISOString()
+                    fallback: data.fallback || false,
+                    timestamp: new Date().toISOString(),
+                    error: data.error || null
                 }
             });
         } catch (error) {
@@ -598,6 +644,56 @@ router.get('/documents/recent', async (req, res) => {
             error.response?.status === 401 || 
             error.response?.status === 403) {
             return handleAuthError(req, res);
+        }
+
+        // Final fallback - try to get data directly from database
+        try {
+            console.log('Final route fallback - querying database directly');
+            const fallbackDocuments = await WP_INBOUND_STATUS.findAll({
+                order: [['dateTimeReceived', 'DESC']],
+                limit: 1000
+            });
+            
+            if (fallbackDocuments && fallbackDocuments.length > 0) {
+                console.log(`Emergency fallback successful. Retrieved ${fallbackDocuments.length} documents from database.`);
+                
+                const documents = fallbackDocuments.map(doc => ({
+                    uuid: doc.uuid,
+                    submissionUid: doc.submissionUid,
+                    longId: doc.longId,
+                    internalId: doc.internalId,
+                    dateTimeIssued: doc.dateTimeIssued,
+                    dateTimeReceived: doc.dateTimeReceived,
+                    status: doc.status,
+                    totalSales: doc.totalSales || 0,
+                    totalExcludingTax: doc.totalExcludingTax || 0,
+                    totalDiscount: doc.totalDiscount || 0,
+                    totalNetAmount: doc.totalNetAmount || 0,
+                    totalPayableAmount: doc.totalPayableAmount || 0,
+                    issuerTin: doc.issuerTin,
+                    receiverId: doc.receiverId,
+                    supplierName: doc.issuerName,
+                    receiverName: doc.receiverName,
+                    typeName: doc.typeName,
+                    typeVersionName: doc.typeVersionName,
+                    documentStatusReason: doc.documentStatusReason
+                }));
+                
+                return res.json({
+                    success: true,
+                    result: documents,
+                    metadata: {
+                        total: documents.length,
+                        cached: true,
+                        fallback: true,
+                        emergency: true,
+                        timestamp: new Date().toISOString(),
+                        error: error.message
+                    }
+                });
+            }
+        } catch (dbError) {
+            console.error('Emergency database fallback also failed:', dbError.message);
         }
 
         const statusCode = error.response?.status || 500;
@@ -1099,7 +1195,7 @@ async function getTemplateData(uuid, accessToken, user) {
         };
     }) || []);
 
-    const currentInvoiceType = invoice.InvoiceTypeCode?.[0]._ === '01' ? 'Invoice' : invoice.InvoiceTypeCode?.[0]._ || 'NA';
+    const currentInvoiceType = invoice.InvoiceTypeCode?.[0]._ || 'NA';
     const einvoiceType = await getInvoiceTypes(currentInvoiceType);
 
     const taxSummaryArray = Object.values(taxSummary).map(summary => ({
