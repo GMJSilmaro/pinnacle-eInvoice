@@ -3,7 +3,7 @@ const {
   validateCustomerTin,
   submitDocument
 } = require('./lhdnService');
-const { WP_OUTBOUND_STATUS, WP_LOGS, sequelize, WP_CONFIGURATION } = require('../../models');
+const { WP_OUTBOUND_STATUS, WP_LOGS, sequelize, WP_CONFIGURATION, WP_INBOUND_STATUS } = require('../../models');
 const moment = require('moment');
 const { Op } = require('sequelize');
 const axios = require('axios');
@@ -500,13 +500,51 @@ class LHDNSubmitter {
             };
         }
         
-        console.log('LongId not found in initial response');
+        // If longId not found in API response, try to get it from WP_INBOUND_STATUS
+        console.log('LongId not found in API response, checking WP_INBOUND_STATUS table');
+        const inboundRecord = await WP_INBOUND_STATUS.findOne({
+            where: { submissionUid: submissionUid },
+            attributes: ['longId', 'uuid']
+        });
+        
+        if (inboundRecord && inboundRecord.longId) {
+            console.log(`Found longId in WP_INBOUND_STATUS: ${inboundRecord.longId}`);
+            return {
+                success: true,
+                longId: inboundRecord.longId,
+                status: 'Retrieved from database',
+                source: 'database'
+            };
+        }
+        
+        console.log('LongId not found in database either');
         return {
             success: false,
-            error: 'LongId not found in response',
+            error: 'LongId not found in response or database',
             responseData: response.data
         };
     } catch (error) {
+        // If API call fails, try database as fallback
+        try {
+            console.log('API call failed, trying database as fallback');
+            const inboundRecord = await WP_INBOUND_STATUS.findOne({
+                where: { submissionUid: submissionUid },
+                attributes: ['longId', 'uuid']
+            });
+            
+            if (inboundRecord && inboundRecord.longId) {
+                console.log(`Found longId in WP_INBOUND_STATUS: ${inboundRecord.longId}`);
+                return {
+                    success: true,
+                    longId: inboundRecord.longId,
+                    status: 'Retrieved from database',
+                    source: 'database'
+                };
+            }
+        } catch (dbError) {
+            console.error('Database fallback also failed:', dbError);
+        }
+        
         console.error('Error getting submission details:', {
             message: error.message,
             code: error.code,
@@ -591,6 +629,7 @@ class LHDNSubmitter {
         "invoiceTypeCode": processedData.invoiceType || processedData.header?.invoiceType || "01",
         "invoiceNo": invoice_number,
         "uuid": uuid,
+        "longId": longId || "PENDING"
       };
       
       // Write JSON file
