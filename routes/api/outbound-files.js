@@ -897,25 +897,45 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 // Add retry logic for submission details
                 let submissionDetails;
                 let retryCount = 0;
-                const maxRetries = 3;
+                const maxRetries = 5; // Increase from 3 to 5
+                const initialRetryDelay = 2000; // 2 seconds
+
+                // Use exponential backoff for retries
+                let retryDelay = initialRetryDelay;
                 
                 while (retryCount < maxRetries) {
-                    submissionDetails = await submitter.getSubmissionDetails(
-                        result.data.submissionUid, 
-                        req.session.accessToken
-                    );
-                    
-                    if (submissionDetails.success && submissionDetails.longId) {
-                        break;
+                    try {
+                        console.log(`Attempt ${retryCount + 1} to retrieve longId for submission ${result.data.submissionUid}`);
+                        
+                        submissionDetails = await submitter.getSubmissionDetails(
+                            result.data.submissionUid, 
+                            req.session.accessToken
+                        );
+                        
+                        if (submissionDetails.success && submissionDetails.longId) {
+                            console.log(`Successfully retrieved longId: ${submissionDetails.longId}`);
+                            break;
+                        }
+                        
+                        console.log(`LongId not available yet, retrying in ${retryDelay/1000} seconds...`);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                        
+                        // Exponential backoff with a cap
+                        retryDelay = Math.min(retryDelay * 1.5, 10000); // Cap at 10 seconds
+                        retryCount++;
+                    } catch (retryError) {
+                        console.error(`Error during longId retrieval attempt ${retryCount + 1}:`, retryError);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                        retryDelay = Math.min(retryDelay * 1.5, 10000);
+                        retryCount++;
                     }
-                    
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-                    retryCount++;
                 }
 
-                const longId = submissionDetails.success && submissionDetails.longId ? 
-                    submissionDetails.longId : 
-                    'NA';
+                // Use a default value if longId couldn't be retrieved
+                const longId = submissionDetails?.success && submissionDetails?.longId ? 
+                    submissionDetails.longId : 'PENDING';
+
+                console.log(`Final longId value: ${longId}`);
 
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
@@ -924,7 +944,8 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     submissionUid: result.data.submissionUid,
                     fileName,
                     filePath: processedData.filePath || fileName,
-                    status: 'Submitted'
+                    status: 'Submitted',
+                    longId // Include longId in the status update
                 });
             
                 // Then update the Excel file
@@ -934,6 +955,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     company,
                     date,
                     acceptedDoc.uuid,
+                    longId,
                     invoice_number
                 );
                 
@@ -954,6 +976,8 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     submissionUID: result.data.submissionUid,
                     acceptedDocuments: result.data.acceptedDocuments,
                     docNum: invoice_number,
+                    longIdStatus: submissionDetails?.success ? 'retrieved' : 'pending',
+                    longId: longId,
                     fileUpdates: {
                         success: excelUpdateResult.success,
                         ...(excelUpdateResult.success ? 

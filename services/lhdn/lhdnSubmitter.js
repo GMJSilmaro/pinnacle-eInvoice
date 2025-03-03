@@ -473,56 +473,52 @@ class LHDNSubmitter {
 
   async getSubmissionDetails(submissionUid, token) {
     try {
-      const lhdnConfig = await getLHDNConfig();
-      const response = await axios.get(
-        `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-
-      if (response.data?.documents?.[0]?.longId) {
-        return {
-          success: true,
-          longId: response.data.documents[0].longId
-        };
-      }
-
-      // Add retry logic for longId
-      let retries = 0;
-      const maxRetries = 3;
-      while (retries < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-        const retryResponse = await axios.get(
-          `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          }
-        );
+        console.log(`Retrieving submission details for ${submissionUid}`);
+        const lhdnConfig = await getLHDNConfig();
         
-        if (retryResponse.data?.documents?.[0]?.longId) {
-          return {
-            success: true,
-            longId: retryResponse.data.documents[0].longId
-          };
-        }
-        retries++;
-      }
+        // Add timeout to prevent hanging requests
+        const response = await axios.get(
+            `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                timeout: 15000 // 15 second timeout
+            }
+        );
 
-      return {
-        success: false,
-        error: 'Could not retrieve longId after multiple attempts'
-      };
+        console.log(`Submission details response status: ${response.status}`);
+        
+        if (response.data?.documents?.[0]?.longId) {
+            const longId = response.data.documents[0].longId;
+            console.log(`Found longId: ${longId}`);
+            return {
+                success: true,
+                longId: longId,
+                status: response.data.status,
+                documents: response.data.documents
+            };
+        }
+        
+        console.log('LongId not found in initial response');
+        return {
+            success: false,
+            error: 'LongId not found in response',
+            responseData: response.data
+        };
     } catch (error) {
-      console.error('Error getting submission details:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+        console.error('Error getting submission details:', {
+            message: error.message,
+            code: error.code,
+            response: error.response?.data
+        });
+        
+        return {
+            success: false,
+            error: error.message,
+            errorCode: error.code,
+            responseData: error.response?.data
+        };
     }
   }
   
@@ -596,6 +592,7 @@ class LHDNSubmitter {
         "invoiceNo": invoice_number,
         "uuid": uuid,
       };
+      
       // Write JSON file
       await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
 

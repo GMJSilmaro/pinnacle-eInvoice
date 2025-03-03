@@ -156,36 +156,48 @@ const fetchRecentDocuments = async (req) => {
         timeout: lhdnConfig.timeout
     });
 
-    // First, check if we have recent data in the database
-    const lastSyncedDocument = await WP_INBOUND_STATUS.findOne({
+    // First, check if we have data in the database
+    const dbDocuments = await WP_INBOUND_STATUS.findAll({
         order: [['dateTimeReceived', 'DESC']],
-        attributes: ['dateTimeReceived', 'last_sync_date']
+        limit: 1000 // Limit to latest 1000 records
     });
 
-    const currentTime = new Date();
-    const syncThreshold = 15 * 60 * 1000; // 15 minutes in milliseconds
-
-    // If we have recent data that's been synced within the threshold, return from database
-    if (lastSyncedDocument && lastSyncedDocument.last_sync_date) {
-        const timeSinceLastSync = currentTime - new Date(lastSyncedDocument.last_sync_date);
-        if (timeSinceLastSync < syncThreshold && !req.query.forceRefresh) {
-            console.log('Using cached data from database - last sync was', Math.round(timeSinceLastSync/1000/60), 'minutes ago');
-            
-            const cachedDocuments = await WP_INBOUND_STATUS.findAll({
-                order: [['dateTimeReceived', 'DESC']],
-                limit: 1000 // Limit to latest 1000 records
-            });
-
-            return {
-                result: cachedDocuments,
-                cached: true
-            };
+    // If we have database records, use them as the initial data source
+    if (dbDocuments && dbDocuments.length > 0) {
+        console.log(`Found ${dbDocuments.length} documents in database`);
+        
+        // Check if we need to refresh from API
+        const lastSyncedDocument = await WP_INBOUND_STATUS.findOne({
+            order: [['last_sync_date', 'DESC']],
+            attributes: ['last_sync_date']
+        });
+        
+        const currentTime = new Date();
+        const syncThreshold = 15 * 60 * 1000; // 15 minutes in milliseconds
+        const forceRefresh = req.query.forceRefresh === 'true';
+        
+        // Only fetch from API if forced or if last sync is older than threshold
+        if (!forceRefresh && lastSyncedDocument && lastSyncedDocument.last_sync_date) {
+            const timeSinceLastSync = currentTime - new Date(lastSyncedDocument.last_sync_date);
+            if (timeSinceLastSync < syncThreshold) {
+                console.log('Using database records - last sync was', Math.round(timeSinceLastSync/1000/60), 'minutes ago');
+                return {
+                    result: dbDocuments,
+                    cached: true,
+                    fromDatabase: true
+                };
+            }
         }
+        
+        // If we're here, we need to refresh from API but still have DB records as fallback
+        console.log('Database records exist but need refresh from API');
+    } else {
+        console.log('No documents found in database, will fetch from API');
     }
 
-    console.log('Fetching fresh data from LHDN API...');
-
+    // Attempt to fetch from API
     try {
+        console.log('Fetching fresh data from LHDN API...');
         const documents = [];
         let pageNo = 1;
         const pageSize = 100; // MyInvois recommended page size
@@ -326,27 +338,25 @@ const fetchRecentDocuments = async (req) => {
 
         return { 
             result: documents,
-            cached: false
+            cached: false,
+            fromApi: true
         };
     } catch (error) {
-        console.error('Error fetching from LHDN API, falling back to database:', error.message);
+        console.error('Error fetching from LHDN API:', error.message);
         
-        // Fallback to database if API fails
-        const fallbackDocuments = await WP_INBOUND_STATUS.findAll({
-            order: [['dateTimeReceived', 'DESC']],
-            limit: 1000 // Limit to latest 1000 records
-        });
-        
-        if (fallbackDocuments && fallbackDocuments.length > 0) {
-            console.log(`Fallback successful. Retrieved ${fallbackDocuments.length} documents from database.`);
+        // If we have database records, use them as fallback
+        if (dbDocuments && dbDocuments.length > 0) {
+            console.log(`Using ${dbDocuments.length} database records as fallback`);
             return {
-                result: fallbackDocuments,
+                result: dbDocuments,
                 cached: true,
-                fallback: true
+                fromDatabase: true,
+                fallback: true,
+                error: error.message
             };
         }
         
-        // If no fallback data is available, rethrow the error
+        // If no database records, rethrow the error
         throw error;
     }
 };
@@ -355,6 +365,7 @@ const fetchRecentDocuments = async (req) => {
 const getCachedDocuments = async (req) => {
     const cacheKey = `recentDocuments_${req.session?.user?.TIN || 'default'}`;
     const forceRefresh = req.query.forceRefresh === 'true';
+    
     // Get from cache if not forcing refresh
     let data = forceRefresh ? null : cache.get(cacheKey);
 
@@ -381,6 +392,7 @@ const getCachedDocuments = async (req) => {
                     return {
                         result: fallbackDocuments,
                         cached: true,
+                        fromDatabase: true,
                         fallback: true,
                         error: error.message
                     };
