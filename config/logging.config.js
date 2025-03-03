@@ -7,21 +7,21 @@ const loggingConfig = {
     // Application logging levels
     app: {
         errors: true,      // Always log errors
-        warnings: true,    // Log warnings
-        info: true,        // Enable general info logging
+        warnings: false,    // Log warnings
+        info: false,        // Enable general info logging
         debug: false,      // Don't log debug info
         queries: false     // Don't log database queries
     },
 
     // Authentication logging
     auth: {
-        loginAttempts: true,      // Log all login attempts
-        successfulLogins: true,    // Log successful logins
-        failedLogins: true,       // Log failed logins
-        logouts: true,            // Log logouts
-        sessionActivity: true,     // Log session activities
-        ipTracking: true,         // Track IP addresses
-        userAgentTracking: true   // Track user agents
+        loginAttempts: false,      // Log all login attempts
+        successfulLogins: false,    // Log successful logins
+        failedLogins: false,       // Log failed logins
+        logouts: false,            // Log logouts
+        sessionActivity: false,     // Log session activities
+        ipTracking: false,         // Track IP addresses
+        userAgentTracking: false   // Track user agents
     }
 };
 

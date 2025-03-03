@@ -16,7 +16,67 @@ const { exec } = require('child_process');
 const LHDNSubmitter = require('../../services/lhdn/lhdnSubmitter');
 const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../services/lhdn/lhdnService');
 const { getActiveSAPConfig } = require('../../config/paths');
+const NodeCache = require('node-cache');
+const fileCache = new NodeCache({ stdTTL: 300 }); // 5 minutes cache
 
+// Add cache helper functions at the top after fileCache declaration
+const CACHE_KEY_PREFIX = 'outbound_files';
+
+function generateCacheKey() {
+    return `${CACHE_KEY_PREFIX}_list`;
+}
+
+function invalidateFileCache() {
+    const cacheKey = generateCacheKey();
+    fileCache.del(cacheKey);
+}
+
+// Add new function to check for new files
+async function checkForNewFiles(networkPath, lastCheck) {
+    try {
+        const types = ['Manual', 'Schedule'];
+        let hasNewFiles = false;
+
+        for (const type of types) {
+            const typeDir = path.join(networkPath, type);
+            
+            // Skip if directory doesn't exist
+            if (!fs.existsSync(typeDir)) continue;
+
+            const companies = await fsPromises.readdir(typeDir);
+            for (const company of companies) {
+                const companyDir = path.join(typeDir, company);
+                
+                // Skip if not a directory
+                if (!(await fsPromises.stat(companyDir)).isDirectory()) continue;
+
+                const dates = await fsPromises.readdir(companyDir);
+                for (const date of dates) {
+                    const dateDir = path.join(companyDir, date);
+                    
+                    // Skip if not a directory
+                    if (!(await fsPromises.stat(dateDir)).isDirectory()) continue;
+
+                    const files = await fsPromises.readdir(dateDir);
+                    for (const file of files) {
+                        const filePath = path.join(dateDir, file);
+                        const stats = await fsPromises.stat(filePath);
+                        
+                        // If any file is newer than our last check, return true
+                        if (new Date(stats.mtime) > new Date(lastCheck)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return hasNewFiles;
+    } catch (error) {
+        console.error('Error checking for new files:', error);
+        return false;
+    }
+}
 
 async function getOutgoingConfig() {
     const config = await WP_CONFIGURATION.findOne({
@@ -55,7 +115,7 @@ async function readExcelWithLogging(filePath) {
 
         const dataAsObjects = XLSX.utils.sheet_to_json(worksheet);
         const dataWithHeaders = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        console.log(dataWithHeaders);
+       // console.log(dataWithHeaders);
        //console.log(dataAsObjects);
 
         // Log all cell addresses in first few rows
@@ -130,7 +190,7 @@ async function logError(description, error, options = {}) {
 
 
 /**
- * List all files from network directories
+ * List all files from network directories with caching and duplicate filtering
  */
 router.get('/list-all', async (req, res) => {
     const processLog = {
@@ -139,12 +199,17 @@ router.get('/list-all', async (req, res) => {
     };
 
     try {
-        await logDBOperation(req.app.get('models'), req, 'Started listing all outbound files', {
-            module: 'OUTBOUND',
-            action: 'LIST_ALL'
+        const cacheKey = generateCacheKey();
+        const { forceRefresh } = req.query;
+        
+        // Get the latest status update timestamp
+        const latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
+            attributes: ['updated_at'],
+            order: [['updated_at', 'DESC']],
+            raw: true
         });
 
-        // Get active SAP configuration from database
+        // Get active SAP configuration for network path check
         const config = await WP_CONFIGURATION.findOne({
             where: {
                 Type: 'SAP',
@@ -164,21 +229,36 @@ router.get('/list-all', async (req, res) => {
             settings = JSON.parse(settings);
         }
 
-        // Validate network path format
-        const networkPath = await validateAndFormatNetworkPath(settings.networkPath);
-
-        // Test network accessibility
-        const networkValid = await testNetworkPathAccessibility(networkPath, {
-            serverName: settings.domain || '',
-            serverUsername: settings.username,
-            serverPassword: settings.password
-        });
-
-        if (!networkValid.success) {
-            throw new Error(`Network access failed: ${networkValid.error}`);
+        // Check cache first if not forcing refresh
+        if (!forceRefresh) {
+            const cachedData = fileCache.get(cacheKey);
+            if (cachedData) {
+                // Check if there are new files since last cache
+                const hasNewFiles = await checkForNewFiles(settings.networkPath, cachedData.timestamp);
+                
+                // If no new files and status hasn't changed, return cached data
+                if (!hasNewFiles && 
+                    cachedData.lastStatusUpdate && 
+                    latestStatusUpdate && 
+                    new Date(cachedData.lastStatusUpdate) >= new Date(latestStatusUpdate.updated_at)) {
+                    return res.json({
+                        success: true,
+                        files: cachedData.files,
+                        processLog: cachedData.processLog,
+                        fromCache: true,
+                        cachedAt: cachedData.timestamp,
+                        lastStatusUpdate: cachedData.lastStatusUpdate
+                    });
+                }
+            }
         }
 
-        // Get existing submission statuses with new schema
+        // await logDBOperation(req.app.get('models'), req, 'Started listing all outbound files', {
+        //     module: 'OUTBOUND',
+        //     action: 'LIST_ALL'
+        // });
+
+        // Get existing submission statuses with new schema and include recent updates
         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
             attributes: [
                 'id',
@@ -196,13 +276,16 @@ router.get('/list-all', async (req, res) => {
                 'created_at',
                 'updated_at'
             ],
+            order: [['updated_at', 'DESC']],
             raw: true
         });
 
         // Create status lookup map with new schema
-        const statusMap = new Map(
-            submissionStatuses.flatMap(status => [
-                [status.fileName, {
+        const statusMap = new Map();
+        submissionStatuses.forEach(status => {
+            // Use both fileName and invoice_number as keys for better matching
+            if (status.fileName) {
+                statusMap.set(status.fileName, {
                     UUID: status.UUID,
                     SubmissionUID: status.submissionUid,
                     SubmissionStatus: status.status,
@@ -210,41 +293,81 @@ router.get('/list-all', async (req, res) => {
                     DateTimeUpdated: status.updated_at,
                     FileName: status.fileName,
                     DocNum: status.invoice_number
-                }]
-            ])
-        );
+                });
+            }
+            if (status.invoice_number) {
+                statusMap.set(status.invoice_number, {
+                    UUID: status.UUID,
+                    SubmissionUID: status.submissionUid,
+                    SubmissionStatus: status.status,
+                    DateTimeSent: status.date_submitted,
+                    DateTimeUpdated: status.updated_at,
+                    FileName: status.fileName,
+                    DocNum: status.invoice_number
+                });
+            }
+        });
 
         const files = [];
         const types = ['Manual', 'Schedule'];
 
         for (const type of types) {
-            const typeDir = path.join(networkPath, type);
+            const typeDir = path.join(settings.networkPath, type);
             await processTypeDirectory(typeDir, type, files, processLog, statusMap);
         }
 
-        // Merge file information with database status
-        const mergedFiles = files.map(file => {
+        // Create a map to store the latest version of each document
+        const latestDocuments = new Map();
+
+        // Process files to keep only the latest version of each document
+        files.forEach(file => {
+            const documentKey = file.invoiceNumber || file.fileName;
+            const existingDoc = latestDocuments.get(documentKey);
+
+            if (!existingDoc || new Date(file.modifiedTime) > new Date(existingDoc.modifiedTime)) {
+                latestDocuments.set(documentKey, file);
+            }
+        });
+
+        // Convert map back to array and merge with status
+        const mergedFiles = Array.from(latestDocuments.values()).map(file => {
             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
+            const fileStatus = status?.SubmissionStatus || 'Pending';
+            
             return {
                 ...file,
-                status: status?.SubmissionStatus || 'Pending',
+                status: fileStatus,
+                statusUpdateTime: status?.DateTimeUpdated || null,
                 date_submitted: status?.DateTimeSent || null,
                 uuid: status?.UUID || null,
                 submissionUid: status?.SubmissionUID || null
             };
         });
 
-        // Log success
-        await logDBOperation(req.app.get('models'), req, 'Successfully retrieved outbound files list', {
-            module: 'OUTBOUND',
-            action: 'LIST_ALL',
-            status: 'SUCCESS'
-        });
+        // Sort by modified time descending
+        mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+
+        // Store in cache with status update timestamp
+        const cacheData = {
+            files: mergedFiles,
+            processLog,
+            timestamp: new Date().toISOString(),
+            lastStatusUpdate: latestStatusUpdate?.updated_at
+        };
+        fileCache.set(cacheKey, cacheData);
+
+        // // Log success
+        // await logDBOperation(req.app.get('models'), req, 'Successfully retrieved outbound files list', {
+        //     module: 'OUTBOUND',
+        //     action: 'LIST_ALL',
+        //     status: 'SUCCESS'
+        // });
 
         res.json({
             success: true,
             files: mergedFiles,
-            processLog
+            processLog,
+            fromCache: false
         });
 
     } catch (error) {
@@ -894,49 +1017,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 console.log('Accepted Document:', acceptedDoc);
                 console.log('Full LHDN Response:', result.data);
             
-                // Add retry logic for submission details
-                let submissionDetails;
-                let retryCount = 0;
-                const maxRetries = 5; // Increase from 3 to 5
-                const initialRetryDelay = 2000; // 2 seconds
-
-                // Use exponential backoff for retries
-                let retryDelay = initialRetryDelay;
-                
-                while (retryCount < maxRetries) {
-                    try {
-                        console.log(`Attempt ${retryCount + 1} to retrieve longId for submission ${result.data.submissionUid}`);
-                        
-                        submissionDetails = await submitter.getSubmissionDetails(
-                            result.data.submissionUid, 
-                            req.session.accessToken
-                        );
-                        
-                        if (submissionDetails.success && submissionDetails.longId) {
-                            console.log(`Successfully retrieved longId: ${submissionDetails.longId}`);
-                            break;
-                        }
-                        
-                        console.log(`LongId not available yet, retrying in ${retryDelay/1000} seconds...`);
-                        await new Promise(resolve => setTimeout(resolve, retryDelay));
-                        
-                        // Exponential backoff with a cap
-                        retryDelay = Math.min(retryDelay * 1.5, 10000); // Cap at 10 seconds
-                        retryCount++;
-                    } catch (retryError) {
-                        console.error(`Error during longId retrieval attempt ${retryCount + 1}:`, retryError);
-                        await new Promise(resolve => setTimeout(resolve, retryDelay));
-                        retryDelay = Math.min(retryDelay * 1.5, 10000);
-                        retryCount++;
-                    }
-                }
-
-                // Use a default value if longId couldn't be retrieved
-                const longId = submissionDetails?.success && submissionDetails?.longId ? 
-                    submissionDetails.longId : 'PENDING';
-
-                console.log(`Final longId value: ${longId}`);
-
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
                     invoice_number,
@@ -945,7 +1025,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     fileName,
                     filePath: processedData.filePath || fileName,
                     status: 'Submitted',
-                    longId // Include longId in the status update
                 });
             
                 // Then update the Excel file
@@ -980,7 +1059,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         ...(excelUpdateResult.success ? 
                             { 
                                 excelPath: excelUpdateResult.outgoingPath,
-                                jsonPath: excelUpdateResult.jsonPath 
                             } : 
                             { error: excelUpdateResult.error }
                         )
@@ -988,6 +1066,10 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 };
 
                 console.log('=== Final Response ===', response);
+
+                // Invalidate the cache after successful submission
+                invalidateFileCache();
+
                 return res.json(response);
             }
 

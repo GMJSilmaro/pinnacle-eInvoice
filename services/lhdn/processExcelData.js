@@ -387,7 +387,7 @@ const processExcelData = (rawData) => {
             }
           },
           payment: {
-            paymentMeansCode: getField(headerRow, 'PaymentMeans') || DEFAULT_VALUES.NOT_APPLICABLE,
+            paymentMeansCode: getField(headerRow, 'PaymentMeans') || '',
             payeeFinancialAccount: getField(headerRow, '52') || DEFAULT_VALUES.NOT_APPLICABLE,
             paymentTerms: getField(headerRow, 'PaymentTerms') || DEFAULT_VALUES.NOT_APPLICABLE,
             prepaidPayment: {

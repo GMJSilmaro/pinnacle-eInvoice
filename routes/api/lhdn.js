@@ -3,7 +3,8 @@ const router = express.Router();
 const axios = require('axios');
 const NodeCache = require('node-cache'); // Change to NodeCache
 const path = require('path');
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsPromises = fs.promises;
 const jsrender = require('jsrender');
 const puppeteer = require('puppeteer');
 const QRCode = require('qrcode');
@@ -12,6 +13,7 @@ const { getUnitType } = require('../../utils/UOM');
 const { getInvoiceTypes } = require('../../utils/EInvoiceTypes');
 const axiosRetry = require('axios-retry');
 const moment = require('moment');
+const { Op } = require('sequelize');
 
 // Initialize cache with 5 minutes standard TTL
 const cache = new NodeCache({ stdTTL: 300 }); // 5 minutes in seconds
@@ -138,10 +140,10 @@ async function getLHDNConfig() {
 async function ensureTempDirectory() {
     const tempDir = path.join(__dirname, '../../public/temp');
     try {
-        await fs.access(tempDir);
+        await fsPromises.access(tempDir);
     } catch {
         // Directory doesn't exist, create it
-        await fs.mkdir(tempDir, { recursive: true });
+        await fsPromises.mkdir(tempDir, { recursive: true });
     }
 }
 
@@ -256,8 +258,33 @@ const fetchRecentDocuments = async (req) => {
                         break;
                     }
 
-                    documents.push(...result);
-                    console.log(`Successfully fetched page ${pageNo} with ${result.length} documents`);
+                    // Map the required fields from the API response
+                    const mappedDocuments = result.map(doc => ({
+                        ...doc,
+                        issuerTin: doc.issuerTin || doc.supplierTin || doc.supplierTIN,
+                        issuerName: doc.issuerName || doc.supplierName,
+                        receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN,
+                        receiverName: doc.receiverName || doc.buyerName,
+                        // Ensure other required fields are mapped
+                        uuid: doc.uuid,
+                        submissionUid: doc.submissionUid,
+                        longId: doc.longId,
+                        internalId: doc.internalId,
+                        typeName: doc.typeName,
+                        typeVersionName: doc.typeVersionName,
+                        dateTimeReceived: doc.dateTimeReceived,
+                        dateTimeValidated: doc.dateTimeValidated,
+                        status: doc.status,
+                        documentStatusReason: doc.documentStatusReason,
+                        totalSales: doc.totalSales || doc.total || doc.netAmount || 0,
+                        totalExcludingTax: doc.totalExcludingTax || 0,
+                        totalDiscount: doc.totalDiscount || 0,
+                        totalNetAmount: doc.totalNetAmount || 0,
+                        totalPayableAmount: doc.totalPayableAmount || 0
+                    }));
+
+                    documents.push(...mappedDocuments);
+                    console.log(`Successfully fetched page ${pageNo} with ${mappedDocuments.length} documents`);
 
                     // Check if we have more pages based on pagination info
                     if (pagination) {
@@ -437,6 +464,219 @@ const generateTemplateHash = (templateData) => {
     return crypto.createHash('md5').update(keyData).digest('hex');
 };
 
+// Helper function to generate JSON response file
+const generateResponseFile = async (item) => {
+    try {
+        // Only generate for valid documents with required fields
+        if (!item.uuid || !item.submissionUid || !item.longId || item.status !== 'Valid') {
+            console.log(`Skipping response file generation for ${item.uuid}: missing required fields or invalid status`);
+            return { success: false, message: 'Skipped: Missing required fields or invalid status' };
+        }
+
+        // Get outgoing path configuration
+        const outgoingConfig = await WP_CONFIGURATION.findOne({
+            where: {
+                Type: 'OUTGOING',
+                IsActive: 1
+            },
+            order: [['CreateTS', 'DESC']]
+        });
+
+        if (!outgoingConfig || !outgoingConfig.Settings) {
+            console.log(`No outgoing path configuration found, skipping response file generation for ${item.uuid}`);
+            return { success: false, message: 'No outgoing path configuration found' };
+        }
+
+        let settings = typeof outgoingConfig.Settings === 'string' 
+            ? JSON.parse(outgoingConfig.Settings) 
+            : outgoingConfig.Settings;
+
+        if (!settings.networkPath) {
+            console.log(`No network path configured in outgoing settings for ${item.uuid}`);
+            return { success: false, message: 'No network path configured' };
+        }
+
+        // Try to get user registration details
+        const userRegistration = await WP_USER_REGISTRATION.findOne({
+            where: { ValidStatus: 1 },
+            order: [['CreateTS', 'DESC']]
+        });
+
+        if (!userRegistration || !userRegistration.TIN) {
+            console.log(`No active user registration found with TIN`);
+            return { success: false, message: 'No active user registration found' };
+        }
+
+        // Try to get company settings based on user's TIN
+        let companySettings = await WP_COMPANY_SETTINGS.findOne({
+            where: { TIN: userRegistration.TIN }
+        });
+
+        // If no company settings found with user's TIN, try with document TINs
+        if (!companySettings) {
+            console.log(`No company settings found for user TIN: ${userRegistration.TIN}, trying document TINs`);
+            
+            // Check if the document's issuerTin or receiverId matches any company settings
+            if (item.issuerTin === userRegistration.TIN || item.receiverId === userRegistration.TIN) {
+                companySettings = await WP_COMPANY_SETTINGS.findOne({
+                    where: { 
+                        TIN: {
+                            [Op.in]: [item.issuerTin, item.receiverId].filter(Boolean)
+                        }
+                    }
+                });
+            }
+        }
+
+        if (!companySettings) {
+            console.log(`No matching company settings found for TINs: User(${userRegistration.TIN}), Issuer(${item.issuerTin}), Receiver(${item.receiverId})`);
+            return { success: false, message: 'No matching company settings found' };
+        }
+
+        // Set company name from settings
+        const companyName = companySettings.CompanyName;
+
+        // Get document details from outbound status
+        const outboundDoc = await WP_OUTBOUND_STATUS.findOne({
+            where: { UUID: item.uuid }
+        });
+
+        let type, company, date;
+        let invoiceTypeCode = "01"; // Default invoice type code
+        let invoiceNo = item.internalId || "";
+
+        // Always try to get inbound data first
+        const inboundDoc = await WP_INBOUND_STATUS.findOne({
+            where: { uuid: item.uuid }
+        });
+
+        if (inboundDoc) {
+            // Try to get invoice type code from typeName if available
+            if (inboundDoc.typeName) {
+                const typeMatch = inboundDoc.typeName.match(/^(\d{2})/);
+                if (typeMatch) {
+                    invoiceTypeCode = typeMatch[1];
+                }
+            }
+            invoiceNo = inboundDoc.internalId || item.internalId || "";
+        }
+
+        // Try to use outbound data if available
+        if (outboundDoc && outboundDoc.filePath) {
+            try {
+                // Extract type, company, and date from filePath
+                const pathParts = outboundDoc.filePath.split(path.sep);
+                if (pathParts.length >= 4) {
+                    const dateIndex = pathParts.length - 2;
+                    const companyIndex = pathParts.length - 3;
+                    const typeIndex = pathParts.length - 4;
+
+                    type = pathParts[typeIndex] || 'LHDN';
+                    company = companyName;  // Use company name from settings
+                    date = pathParts[dateIndex] || moment().format('YYYY-MM-DD');
+                    
+                    // Only update invoice number if we got it from outbound
+                    if (outboundDoc.internalId) {
+                        invoiceNo = outboundDoc.internalId;
+                    }
+                    
+                    // Try to get invoice type code from typeName if available
+                    if (outboundDoc.typeName) {
+                        const typeMatch = outboundDoc.typeName.match(/^(\d{2})/);
+                        if (typeMatch) {
+                            invoiceTypeCode = typeMatch[1];
+                        }
+                    }
+                } else {
+                    console.log(`Invalid path structure in outbound doc for UUID: ${item.uuid}, using default values`);
+                    throw new Error('Invalid path structure');
+                }
+            } catch (pathError) {
+                console.log(`Using default values due to path error for UUID: ${item.uuid}`);
+                type = 'LHDN';
+                company = companyName;
+                date = moment().format('YYYY-MM-DD');
+            }
+        } else {
+            // Use default values if no outbound document
+            console.log(`No outbound document or path for UUID: ${item.uuid}, using default values`);
+            type = 'LHDN';
+            company = companyName;
+            date = moment().format('YYYY-MM-DD');
+        }
+
+        // Ensure all path components are strings and valid
+        type = String(type || 'LHDN');
+        company = String(company || companyName);
+        date = String(date || moment().format('YYYY-MM-DD'));
+
+        // Generate filename with new format: {invoiceTypeCode}_{invoiceNo}_{uuid}.json
+        const fileName = `${invoiceTypeCode}_${invoiceNo}_${item.uuid}.json`;
+
+        // Sanitize path components to remove invalid characters
+        const sanitizePath = (str) => str.replace(/[<>:"/\\|?*]/g, '_');
+        type = sanitizePath(type);
+        company = sanitizePath(company);
+        date = sanitizePath(date);
+
+        // Construct paths for outgoing files using configured network path
+        const outgoingBasePath = path.join(settings.networkPath, type, company, date);
+        const outgoingJSONPath = path.join(settings.networkPath, type, company, date);
+        
+        // Create directory structure recursively
+        await fsPromises.mkdir(outgoingBasePath, { recursive: true });
+
+        const jsonFilePath = path.join(outgoingJSONPath, fileName);
+
+        // Check if JSON response file already exists
+        try {
+            await fsPromises.access(jsonFilePath);
+            console.log(`Response file already exists for ${item.uuid}, skipping generation`);
+            return { 
+                success: true, 
+                message: 'Response file already exists', 
+                path: jsonFilePath,
+                fileName: fileName,
+                company: company
+            };
+        } catch (err) {
+            // File doesn't exist, continue with creation
+        }
+
+        // Create JSON content
+        const jsonContent = {
+            "issueDate": moment(date).format('YYYY-MM-DD'),
+            "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
+            "invoiceTypeCode": invoiceTypeCode,
+            "invoiceNo": invoiceNo,
+            "uuid": item.uuid,
+            "submissionUid": item.submissionUid,
+            "longId": item.longId,
+            "status": item.status,
+        };
+
+        // Write JSON file
+        await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
+        console.log(`Generated response file: ${jsonFilePath}`);
+        
+        return { 
+            success: true, 
+            message: 'Response file generated successfully', 
+            path: jsonFilePath,
+            fileName: fileName,
+            company: company
+        };
+
+    } catch (error) {
+        console.error(`Error generating response file for ${item.uuid}:`, error);
+        return { 
+            success: false, 
+            message: `Error generating response file: ${error.message}`,
+            error: error 
+        };
+    }
+};
+
 // Enhanced save to database function
 const saveInboundStatus = async (data) => {
     if (!data.result || !Array.isArray(data.result)) {
@@ -450,6 +690,7 @@ const saveInboundStatus = async (data) => {
     const retryDelay = 1000; // 1 second
     let successCount = 0;
     let errorCount = 0;
+    let responseFileResults = [];
     
     for (let i = 0; i < data.result.length; i += batchSize) {
         batches.push(data.result.slice(i, i + batchSize));
@@ -465,143 +706,79 @@ const saveInboundStatus = async (data) => {
         return null;
     };
 
-    // Helper function to generate JSON response file
-    const generateResponseFile = async (item) => {
-        try {
-            // Only generate for valid documents with required fields
-            if (!item.uuid || !item.submissionUid || !item.longId || item.status !== 'Valid') {
-                console.log(`Skipping response file generation for ${item.uuid}: missing required fields or invalid status`);
-                return;
-            }
-
-            // Get document details from outbound status
-            const outboundDoc = await WP_OUTBOUND_STATUS.findOne({
-                where: { UUID: item.uuid }
-            });
-
-            if (!outboundDoc) {
-                console.log(`No outbound document found for UUID: ${item.uuid}`);
-                return;
-            }
-
-            const { fileName, filePath } = outboundDoc;
-            if (!fileName || !filePath) {
-                console.log(`Missing file information for UUID: ${item.uuid}`);
-                return;
-            }
-
-            // Extract type, company, and date from filePath
-            const pathParts = filePath.split(path.sep);
-            const dateIndex = pathParts.length - 2;
-            const companyIndex = pathParts.length - 3;
-            const typeIndex = pathParts.length - 4;
-
-            const type = pathParts[typeIndex];
-            const company = pathParts[companyIndex];
-            const date = pathParts[dateIndex];
-
-            // Construct paths for outgoing files
-            const outgoingBasePath = path.join('C:\\SFTPRoot\\Outgoing', type, company, date);
-            const outgoingJSONPath = path.join('C:\\SFTPRoot\\Outgoing', type, company);
-            
-            // Create directory structure recursively
-            await fsPromises.mkdir(outgoingBasePath, { recursive: true });
-
-            // Generate JSON filename
-            const baseFileName = fileName.replace('.xls', '');
-            const jsonFileName = `${baseFileName}.json`;
-            const jsonFilePath = path.join(outgoingJSONPath, jsonFileName);
-
-            // Check if JSON response file already exists
-            if (await fsPromises.access(jsonFilePath).then(() => true).catch(() => false)) {
-                console.log(`Response file already exists for ${item.uuid}, skipping generation`);
-                return;
-            }
-
-            // Extract invoice type code from filename
-            const invoiceTypeCode = fileName.match(/^(\d{2})_/)?.[1];
-
-            // Create JSON content
-            const jsonContent = {
-                "issueDate": moment(date).format('YYYY-MM-DD'),
-                "issueTime": new Date().toISOString().split('T')[1].split('.')[0] + 'Z',
-                "invoiceTypeCode": invoiceTypeCode,
-                "invoiceNo": item.internalId,
-                "uuid": item.uuid,
-                "submissionUid": item.submissionUid,
-                "longId": item.longId,
-                "status": item.status
-            };
-
-            // Write JSON file
-            await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
-            console.log(`Generated response file: ${jsonFilePath}`);
-
-        } catch (error) {
-            console.error(`Error generating response file for ${item.uuid}:`, error);
-        }
-    };
-
-    // Helper function to handle a single document with retries
-    const saveDocument = async (item, retryCount = 0) => {
-        try {
-            await WP_INBOUND_STATUS.upsert({
-                uuid: item.uuid,
-                submissionUid: item.submissionUid,
-                longId: item.longId,
-                internalId: item.internalId,
-                typeName: item.typeName,
-                typeVersionName: item.typeVersionName,
-                issuerTin: item.issuerTin,
-                issuerName: item.issuerName,
-                receiverId: item.receiverId,
-                receiverName: item.receiverName,
-                dateTimeReceived: formatDate(item.dateTimeReceived),
-                dateTimeValidated: formatDate(item.dateTimeValidated),
-                status: item.status,
-                documentStatusReason: item.documentStatusReason,
-                totalSales: item.totalSales || item.total || item.netAmount || 0,
-                totalExcludingTax: item.totalExcludingTax || 0,
-                totalDiscount: item.totalDiscount || 0,
-                totalNetAmount: item.totalNetAmount || 0,
-                totalPayableAmount: item.totalPayableAmount || 0,
-                last_sync_date: formatDate(new Date()),
-                sync_status: 'success'
-            });
-
-            // Generate response file only for valid documents
-            if (item.status === 'Valid') {
-                await generateResponseFile(item);
-            }
-
-            successCount++;
-            return true;
-        } catch (error) {
-            // Check if it's a deadlock error
-            if (error.message.includes('deadlock') && retryCount < maxRetries) {
-                console.log(`Deadlock detected for document ${item.uuid}, retry attempt ${retryCount + 1}`);
-                await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, retryCount)));
-                return saveDocument(item, retryCount + 1);
-            }
-            
-            console.error(`Error saving document ${item.uuid}:`, error.message);
-            errorCount++;
-            return false;
-        }
-    };
-
     // Process batches sequentially to reduce concurrency
     for (const batch of batches) {
         // Process documents in smaller chunks to reduce deadlock probability
         const chunkSize = 10;
         for (let i = 0; i < batch.length; i += chunkSize) {
             const chunk = batch.slice(i, i + chunkSize);
-            await Promise.all(chunk.map(item => saveDocument(item)));
+            const results = await Promise.all(chunk.map(async item => {
+                try {
+                    await WP_INBOUND_STATUS.upsert({
+                        uuid: item.uuid,
+                        submissionUid: item.submissionUid,
+                        longId: item.longId,
+                        internalId: item.internalId,
+                        typeName: item.typeName,
+                        typeVersionName: item.typeVersionName,
+                        issuerTin: item.issuerTin,
+                        issuerName: item.issuerName,
+                        receiverId: item.receiverId,
+                        receiverName: item.receiverName,
+                        dateTimeReceived: formatDate(item.dateTimeReceived),
+                        dateTimeValidated: formatDate(item.dateTimeValidated),
+                        status: item.status,
+                        documentStatusReason: item.documentStatusReason,
+                        totalSales: item.totalSales || item.total || item.netAmount || 0,
+                        totalExcludingTax: item.totalExcludingTax || 0,
+                        totalDiscount: item.totalDiscount || 0,
+                        totalNetAmount: item.totalNetAmount || 0,
+                        totalPayableAmount: item.totalPayableAmount || 0,
+                        last_sync_date: formatDate(new Date()),
+                        sync_status: 'success'
+                    });
+
+                    // Generate response file only for valid documents
+                    if (item.status === 'Valid') {
+                        const responseResult = await generateResponseFile(item);
+                        responseFileResults.push(responseResult);
+                    }
+
+                    successCount++;
+                    return { success: true, item };
+                } catch (error) {
+                    console.error(`Error processing document ${item.uuid}:`, error);
+                    errorCount++;
+                    return { success: false, item, error };
+                }
+            }));
+
+            // Log results for this chunk
+            const chunkSuccesses = results.filter(r => r.success).length;
+            const chunkErrors = results.filter(r => !r.success).length;
+            console.log(`Chunk processed: ${chunkSuccesses} successes, ${chunkErrors} errors`);
         }
     }
 
+    // Summarize response file generation results
+    const successfulResponses = responseFileResults.filter(r => r.success);
+    if (successfulResponses.length > 0) {
+        console.log(`Successfully generated ${successfulResponses.length} response files`);
+        successfulResponses.forEach(result => {
+            console.log(`Generated: ${result.fileName} for company ${result.company}`);
+        });
+    }
+
     console.log(`Save operation completed. Success: ${successCount}, Errors: ${errorCount}`);
-    return { successCount, errorCount };
+    return { 
+        successCount, 
+        errorCount,
+        responseFiles: {
+            total: responseFileResults.length,
+            successful: successfulResponses.length,
+            results: responseFileResults
+        }
+    };
 };
 
 const requestLogger = async (req, res, next) => {
@@ -1155,7 +1332,7 @@ async function getTemplateData(uuid, accessToken, user) {
 
     let logoBase64;
     try {
-        const logoBuffer = await fs.readFile(logoPath);
+        const logoBuffer = await fsPromises.readFile(logoPath);
         const logoExt = path.extname(logoPath).substring(1);
         logoBase64 = `data:image/${logoExt};base64,${logoBuffer.toString('base64')}`;
     } catch (error) {
@@ -1424,7 +1601,7 @@ router.get('/documents/:uuid/check-pdf', async (req, res) => {
         });
 
         try {
-            await fs.access(pdfPath);
+            await fsPromises.access(pdfPath);
             console.log(`[${requestId}] PDF exists at ${pdfPath}`);
             return res.json({ 
                 exists: true,
@@ -1467,11 +1644,11 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
 
         // Check directory exists
         try {
-            await fs.access(tempDir);
+            await fsPromises.access(tempDir);
             console.log(`[${requestId}] Temp directory exists`);
         } catch {
             console.log(`[${requestId}] Creating temp directory`);
-            await fs.mkdir(tempDir, { recursive: true });
+            await fsPromises.mkdir(tempDir, { recursive: true });
         }
 
         // Auth check
@@ -1499,7 +1676,7 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
         // Check if regeneration needed
         if (!forceRegenerate) {
             try {
-                const storedHash = await fs.readFile(hashPath, 'utf8');
+                const storedHash = await fsPromises.readFile(hashPath, 'utf8');
                 const currentHash = generateTemplateHash(templateData);
 
                 console.log(`[${requestId}] Hash comparison:`, {
@@ -1529,7 +1706,7 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
         const templatePath = path.join(__dirname, '../../src/reports/original-invoice-template.html');
         console.log(`[${requestId}] Using template:`, templatePath);
 
-        const templateContent = await fs.readFile(templatePath, 'utf8');
+        const templateContent = await fsPromises.readFile(templatePath, 'utf8');
         const template = jsrender.templates(templateContent);
         const html = template.render(templateData);
 
@@ -1557,8 +1734,8 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
 
         // Save files
         console.log(`[${requestId}] Saving PDF and hash...`);
-        await fs.writeFile(pdfPath, pdfBuffer);
-        await fs.writeFile(hashPath, newHash);
+        await fsPromises.writeFile(pdfPath, pdfBuffer);
+        await fsPromises.writeFile(hashPath, newHash);
 
         console.log(`[${requestId}] PDF generated successfully:`, {
             path: pdfPath,
