@@ -29,6 +29,7 @@ docs/
 scripts/
 sessions/
 uploads/
+eelian-einvoice.rar
 # IDE specific files
 .idea/
 .vscode/
@@ -45,3 +46,4 @@ Thumbs.db
 
 .codebuddy/
 eInvoice.rar
+eelian-einvoice.rar
