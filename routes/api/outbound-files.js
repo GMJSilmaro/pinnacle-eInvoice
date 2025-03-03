@@ -607,27 +607,6 @@ function isValidFileFormat(fileName) {
         const match = baseName.match(pattern);
         
         if (!match) {
-            // console.log(`Invalid file name format: ${fileName}`);
-            // console.log('File name must follow this pattern:');
-            // console.log('XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS');
-            // console.log('Examples:');
-            // console.log('- 01_ARINV118965_eInvoice_20250127102244 (Main format)');
-            // console.log('- 01_IN-LABS-010001_eInvoice_20250128183637 (Alternative format)');
-            // console.log('Where:');
-            // console.log('- XX: Document type');
-            // console.log('Standard Documents:');
-            // console.log('  * 01: Invoice');
-            // console.log('  * 02: Credit Note');
-            // console.log('  * 03: Debit Note');
-            // console.log('  * 04: Refund Note');
-            // console.log('Self-billed Documents:');
-            // console.log('  * 11: Self-billed Invoice');
-            // console.log('  * 12: Self-billed Credit Note');
-            // console.log('  * 13: Self-billed Debit Note');
-            // console.log('  * 14: Self-billed Refund Note');
-            // console.log('- InvoiceNumber: Document number (alphanumeric with optional hyphens)');
-            // console.log('- eInvoice: Fixed text');
-            // console.log('- YYYYMMDDHHMMSS: Timestamp');
             return false;
         }
         
@@ -655,13 +634,7 @@ function isValidFileFormat(fileName) {
             return false;
         }
         
-        // Additional validation for invoice number format
         if (!/^[A-Z0-9][A-Z0-9-]*[A-Z0-9]$/.test(invoiceNumber)) {
-            // console.log(`Invalid invoice number format: ${invoiceNumber}`);
-            // console.log('Invoice number must:');
-            // console.log('- Start and end with alphanumeric characters');
-            // console.log('- Contain only uppercase letters, numbers, and hyphens');
-            // console.log('- Have at least 2 characters');
             return false;
         }
         
@@ -684,8 +657,6 @@ function isValidFileFormat(fileName) {
             date.getSeconds() !== second ||
             year < 2000 || year > 2100
         ) {
-           // console.log(`Invalid timestamp: ${timestamp}`);
-           // console.log('Timestamp must be a valid date/time in format: YYYYMMDDHHMMSS');
             return false;
         }
         
@@ -736,10 +707,6 @@ function extractTotalAmount(data) {
             }
         }
 
-        // Log the data structure for debugging
-        console.log('Footer row:', footerRow);
-        console.log('Data structure:', data);
-        
         return null;
     } catch (error) {
         console.error('Error extracting total amount:', error);
@@ -1014,9 +981,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             }
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
-                console.log('Accepted Document:', acceptedDoc);
-                console.log('Full LHDN Response:', result.data);
-            
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
                     invoice_number,
@@ -1065,8 +1029,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     }
                 };
 
-                console.log('=== Final Response ===', response);
-
                 // Invalidate the cache after successful submission
                 invalidateFileCache();
 
@@ -1075,7 +1037,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
             // Handle rejected documents
             if (result.data?.rejectedDocuments?.length > 0) {
-                console.log('Rejected Documents:', JSON.stringify(result.data.rejectedDocuments, null, 2));
+                //('Rejected Documents:', JSON.stringify(result.data.rejectedDocuments, null, 2));
                 
                 const rejectedDoc = result.data.rejectedDocuments[0];
                 await submitter.updateSubmissionStatus({
@@ -1098,7 +1060,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
             // Update the error handling section
             if (!result.data?.acceptedDocuments?.length && !result.data?.rejectedDocuments?.length) {
-                console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
+                //console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
                 throw new Error(`No documents were accepted or rejected by LHDN. Response: ${JSON.stringify(result.data)}`);
             }
 

@@ -15,6 +15,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     initializeTooltips();
+
+    // Initialize TIN search modal
+    tinSearchModal = new bootstrap.Modal(document.getElementById('tinSearchModal'));
+    
+    // Add event listener for search type change
+    document.getElementById('searchType')?.addEventListener('change', function(e) {
+        const nameSearch = document.getElementById('nameSearch');
+        const idSearch = document.getElementById('idSearch');
+        
+        if (e.target.value === 'name') {
+            nameSearch.style.display = 'block';
+            idSearch.style.display = 'none';
+        } else {
+            nameSearch.style.display = 'none';
+            idSearch.style.display = 'block';
+        }
+    });
+
+    // Add event listener for ID type change
+    document.getElementById('idType')?.addEventListener('change', function(e) {
+        const idValueExample = document.getElementById('idValueExample');
+        const examples = {
+            'BRN': '201901234567',
+            'NRIC': '770625015324',
+            'PASSPORT': 'A12345678',
+            'ARMY': '551587706543'
+        };
+        
+        if (e.target.value && examples[e.target.value]) {
+            idValueExample.textContent = `Example: ${examples[e.target.value]} (${e.target.value})`;
+        } else {
+            idValueExample.textContent = 'Please select an ID type';
+        }
+    });
   });
   
   function showLoadingState(elementId) {
@@ -827,3 +861,86 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 window.closeHelpGuide = closeHelpGuide;
+
+// TIN Search Modal Functions
+let tinSearchModal;
+
+function showTinSearchModal() {
+    // Reset form and results
+    document.getElementById('tinSearchForm').reset();
+    document.getElementById('searchResult').style.display = 'none';
+    document.getElementById('searchError').style.display = 'none';
+    document.getElementById('idValueExample').textContent = 'Example: 201901234567 (BRN)';
+    
+    // Show modal
+    tinSearchModal.show();
+}
+
+async function searchTIN() {
+    const searchResult = document.getElementById('searchResult');
+    const searchError = document.getElementById('searchError');
+    const errorMessage = document.getElementById('errorMessage');
+    const tinResult = document.getElementById('tinResult');
+    
+    // Hide previous results
+    searchResult.style.display = 'none';
+    searchError.style.display = 'none';
+    
+    try {
+        const taxpayerName = document.getElementById('taxpayerName').value.trim();
+        const idType = document.getElementById('idType').value;
+        const idValue = document.getElementById('idValue').value.trim();
+        
+        // Validate inputs according to LHDN rules
+        if (!taxpayerName && (!idType || !idValue)) {
+            throw new Error('Please provide either Company Name or both ID Type and ID Value');
+        }
+        
+        if (idType && !idValue) {
+            throw new Error('Please enter an ID value');
+        }
+        
+        if (idValue && !idType) {
+            throw new Error('Please select an ID type');
+        }
+        
+        // Prepare query parameters
+        const params = new URLSearchParams();
+        if (taxpayerName) params.append('taxpayerName', taxpayerName);
+        if (idType) params.append('idType', idType);
+        if (idValue) params.append('idValue', idValue);
+        
+        // Show loading state
+        const searchButton = document.querySelector('#tinSearchModal .btn-primary');
+        const originalText = searchButton.innerHTML;
+        searchButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Searching...';
+        searchButton.disabled = true;
+        
+        // Make API call
+        const response = await fetch(`/api/dashboard-analytics/search-tin?${params}`);
+        const data = await response.json();
+        
+        // Reset button state
+        searchButton.innerHTML = originalText;
+        searchButton.disabled = false;
+        
+        if (data.success && data.tin) {
+            tinResult.textContent = data.tin;
+            searchResult.style.display = 'block';
+        } else {
+            throw new Error(data.message || 'No TIN found for the given criteria');
+        }
+        
+    } catch (error) {
+        console.error('TIN search error:', error);
+        errorMessage.textContent = error.message || 'Failed to search TIN';
+        searchError.style.display = 'block';
+        
+        // Reset button state if error occurs during API call
+        const searchButton = document.querySelector('#tinSearchModal .btn-primary');
+        if (searchButton.disabled) {
+            searchButton.innerHTML = '<i class="fas fa-search me-2"></i>Search';
+            searchButton.disabled = false;
+        }
+    }
+}

@@ -3,6 +3,7 @@ const router = express.Router();
 const { WP_INBOUND_STATUS, WP_OUTBOUND_STATUS, sequelize, WP_CONFIGURATION, WP_USER_REGISTRATION } = require('../../models');
 const { Op } = require('sequelize');
 const { getAccessToken, checkTokenExpiry } = require('../../services/token.service');
+const fetch = require('node-fetch');
 
 async function getLHDNConfig() {
     const config = await WP_CONFIGURATION.findOne({
@@ -248,6 +249,150 @@ router.post('/update-user-status', async (req, res) => {
       message: 'Internal server error'
     });
   }
+});
+
+// Search Taxpayer TIN
+router.get('/search-tin', async (req, res) => {
+    try {
+        const { taxpayerName, idType, idValue } = req.query;
+
+        // Input validation
+        if (!taxpayerName && (!idType || !idValue)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Either taxpayerName or both idType and idValue are required'
+            });
+        }
+
+        if (idType && !idValue) {
+            return res.status(400).json({
+                success: false,
+                message: 'idValue is required when idType is provided'
+            });
+        }
+
+        if (idValue && !idType) {
+            return res.status(400).json({
+                success: false,
+                message: 'idType is required when idValue is provided'
+            });
+        }
+
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+        const baseUrl = lhdnConfig.baseUrl.replace(/\/$/, ''); // Remove trailing slash if present
+        
+        console.log('LHDN Config:', {
+            baseUrl,
+            environment: lhdnConfig.environment
+        });
+
+        // Get access token
+        const accessToken = await getAccessToken(req);
+        if (!accessToken) {
+            return res.status(401).json({
+                success: false,
+                message: 'Failed to get access token'
+            });
+        }
+
+        // Construct the full URL with correct API path
+        const apiUrl = `${baseUrl}/api/v1.0/taxpayer/search/tin`;
+        console.log('Making request to:', apiUrl);
+
+        // Make request to LHDN API with timeout
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), lhdnConfig.timeout);
+
+        try {
+            // Add query parameters directly to match the API signature
+            const queryString = new URLSearchParams({
+                ...(taxpayerName && { taxpayerName }),
+                ...(idType && { idType }),
+                ...(idValue && { idValue })
+            }).toString();
+
+            const finalUrl = `${apiUrl}?${queryString}`;
+            console.log('Final URL:', finalUrl);
+
+            const response = await fetch(finalUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                signal: controller.signal
+            });
+
+            clearTimeout(timeout);
+
+            console.log('LHDN API Response Status:', response.status);
+            
+            const responseText = await response.text();
+            console.log('LHDN API Response Body:', responseText);
+
+            if (!response.ok) {
+                let errorMessage = 'Unknown error';
+                let errorData = {};
+                
+                try {
+                    errorData = JSON.parse(responseText);
+                    errorMessage = errorData.message || `Failed to search TIN (${response.status})`;
+                } catch (e) {
+                    console.error('Error parsing error response:', e);
+                    errorMessage = responseText || `Failed to search TIN (${response.status})`;
+                }
+
+                return res.status(response.status).json({
+                    success: false,
+                    message: errorMessage,
+                    error: errorData
+                });
+            }
+
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (e) {
+                console.error('Error parsing success response:', e);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Invalid response format from LHDN API'
+                });
+            }
+            
+            if (!data || !data.tin) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'No TIN found for the given criteria'
+                });
+            }
+
+            res.json({
+                success: true,
+                tin: data.tin
+            });
+
+        } catch (fetchError) {
+            if (fetchError.name === 'AbortError') {
+                return res.status(504).json({
+                    success: false,
+                    message: 'Request timeout while searching TIN'
+                });
+            }
+            console.error('Fetch error:', fetchError);
+            throw fetchError;
+        }
+
+    } catch (error) {
+        console.error('Error searching TIN:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+            error: error.message
+        });
+    }
 });
 
 module.exports = router; 
