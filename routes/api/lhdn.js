@@ -571,6 +571,16 @@ const generateResponseFile = async (item) => {
         let invoiceTypeCode = "01"; // Default invoice type code
         let invoiceNo = item.internalId || "";
 
+        // Define sanitization function early so we can use it for all path components and IDs
+        const sanitizePath = (str) => {
+            if (!str) return '';
+            // Replace all characters that are problematic in file paths
+            return String(str).replace(/[<>:"/\\|?*]/g, '_');
+        };
+
+        // Sanitize the invoiceNo immediately
+        invoiceNo = sanitizePath(invoiceNo);
+
         // Always try to get inbound data first
         const inboundDoc = await WP_INBOUND_STATUS.findOne({
             where: { uuid: item.uuid }
@@ -579,7 +589,8 @@ const generateResponseFile = async (item) => {
         if (inboundDoc) {
             // Use the helper function to get invoice type code from typeName
             invoiceTypeCode = getInvoiceTypeCode(inboundDoc.typeName);
-            invoiceNo = inboundDoc.internalId || item.internalId || "";
+            // Get and sanitize the internal ID
+            invoiceNo = sanitizePath(inboundDoc.internalId || item.internalId || "");
         }
 
         // Try to use outbound data if available
@@ -598,7 +609,7 @@ const generateResponseFile = async (item) => {
                     
                     // Only update invoice number if we got it from outbound
                     if (outboundDoc.internalId) {
-                        invoiceNo = outboundDoc.internalId;
+                        invoiceNo = sanitizePath(outboundDoc.internalId);
                     }
                     
                     // Try to get invoice type code from typeName if available
@@ -631,18 +642,23 @@ const generateResponseFile = async (item) => {
         company = String(company || companyName);
         date = String(date || moment().format('YYYY-MM-DD'));
 
-        // Generate filename with new format: {invoiceTypeCode}_{invoiceNo}_{uuid}.json
-        const fileName = `${invoiceTypeCode}_${invoiceNo}_${item.uuid}.json`;
-
-        // Sanitize path components to remove invalid characters
-        const sanitizePath = (str) => str.replace(/[<>:"/\\|?*]/g, '_');
+        // Sanitize path components 
         type = sanitizePath(type);
         company = sanitizePath(company);
         date = sanitizePath(date);
+        
+        // Ensure invoiceNo is sanitized again (in case it was updated after initial sanitization)
+        invoiceNo = sanitizePath(invoiceNo);
+
+        // Generate filename with new format: {invoiceTypeCode}_{invoiceNo}_{uuid}.json
+        const fileName = `${invoiceTypeCode}_${invoiceNo}_${item.uuid}.json`;
 
         // Construct paths for outgoing files using configured network path
         const outgoingBasePath = path.join(settings.networkPath, type, company);
-        const outgoingJSONPath = path.join(settings.networkPath, type, company);
+        
+        // CHANGE: Previously tried to use a specific path from outboundDoc which might not exist
+        // Now use a simpler path structure for all documents
+        const outgoingJSONPath = outgoingBasePath;
         
         // Create directory structure recursively
         await fsPromises.mkdir(outgoingBasePath, { recursive: true });
@@ -680,18 +696,52 @@ const generateResponseFile = async (item) => {
             "lhdnUrl": LHDNUrl,
         };
 
-        // Write JSON file
-        await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
-        console.log(`Generated response file: ${jsonFilePath}`);
-        
-        return { 
-            success: true, 
-            message: 'Response file generated successfully', 
-            path: jsonFilePath,
-            fileName: fileName,
-            company: company
-        };
-
+        try {
+            // Make sure the directory exists (extra check)
+            const dirPath = path.dirname(jsonFilePath);
+            await fsPromises.mkdir(dirPath, { recursive: true });
+            
+            // Write JSON file
+            await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
+            console.log(`Generated response file: ${jsonFilePath}`);
+            
+            return { 
+                success: true, 
+                message: 'Response file generated successfully', 
+                path: jsonFilePath,
+                fileName: fileName,
+                company: company
+            };
+        } catch (writeError) {
+            console.error(`Error writing response file for ${item.uuid}:`, writeError);
+            
+            // If original path fails, try a fallback path - simplify the path further
+            try {
+                // Create a simpler fallback path without any potential problematic components
+                const fallbackDirName = `LHDN_Fallback_${moment().format('YYYYMMDD')}`;
+                const fallbackPath = path.join(settings.networkPath, fallbackDirName);
+                await fsPromises.mkdir(fallbackPath, { recursive: true });
+                
+                // Use a very simple filename pattern that removes all special characters
+                const simplifiedUuid = item.uuid.replace(/[^a-zA-Z0-9]/g, '');
+                const fallbackFileName = `document_${simplifiedUuid}.json`;
+                const fallbackFilePath = path.join(fallbackPath, fallbackFileName);
+                
+                await fsPromises.writeFile(fallbackFilePath, JSON.stringify(jsonContent, null, 2));
+                console.log(`Generated response file at fallback location: ${fallbackFilePath}`);
+                
+                return { 
+                    success: true, 
+                    message: 'Response file generated at fallback location', 
+                    path: fallbackFilePath,
+                    fileName: fallbackFileName,
+                    company: company
+                };
+            } catch (fallbackError) {
+                console.error(`Fallback path also failed for ${item.uuid}:`, fallbackError);
+                throw writeError; // throw the original error
+            }
+        }
     } catch (error) {
         console.error(`Error generating response file for ${item.uuid}:`, error);
         return { 
@@ -1163,7 +1213,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     longId: detailsData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: detailsData.validationResults,
+                    validationResults: documentData.validationResults,
                     supplierName: documentData.supplierName,
                     supplierSstNo: documentData.supplierSstNo,
                     supplierMsicCode: documentData.supplierMsicCode,
@@ -1200,11 +1250,6 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         // If document field exists, parse it and extract detailed info
         try {
             const parsedDocument = JSON.parse(documentData.document);
-            const validationResults = detailsData.validationResults;
-            const invoice = parsedDocument.Invoice[0];
-            const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
-            const customerParty = invoice.AccountingCustomerParty[0].Party[0];
-
             return res.json({
                 success: true,
                 documentInfo: {
@@ -1214,7 +1259,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     irbmlongId: documentData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: validationResults,
+                    validationResults: documentData.validationResults,
                     supplierName: documentData.issuerName,
                     supplierTIN: documentData.issuerTin,
                     supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
@@ -1233,30 +1278,24 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                         .join(', ') || documentData.receiverAddress
                 },
                 supplierInfo: {
-                    company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
-                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
-                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
-                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
-                    msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
-                    address: supplierParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.supplierAddress
+                    company: documentData.supplierName,
+                    tin: documentData.supplierTin,
+                    registrationNo: documentData.supplierRegistrationNo,
+                    taxRegNo: documentData.supplierSstNo,
+                    msicCode: documentData.supplierMsicCode,
+                    address: documentData.supplierAddress
                 },
                 customerInfo: {
-                    company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
-                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
-                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
-                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
-                    address: customerParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.receiverAddress
+                    company: documentData.receiverName,
+                    tin: documentData.receiverTin,
+                    registrationNo: documentData.receiverRegistrationNo,
+                    taxRegNo: documentData.receiverSstNo,
+                    address: documentData.receiverAddress
                 },
                 paymentInfo: {
-                    totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
-                    totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
-                    taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
+                    totalIncludingTax: documentData.totalSales,
+                    totalExcludingTax: documentData.totalExcludingTax,
+                    taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
                     irbmUniqueNo: documentData.uuid,
                     irbmlongId: documentData.longId
                 }
@@ -1273,46 +1312,34 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     irbmlongId: documentData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: validationResults,
-                    supplierName: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
-                    supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
-                    supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
-                    supplierAddress: supplierParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.supplierAddress,
-                    receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
-                    receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
-                    receiverAddress: customerParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.receiverAddress
+                    validationResults: documentData.validationResults,
+                    supplierName: documentData.supplierName,
+                    supplierSstNo: documentData.supplierSstNo,
+                    supplierMsicCode: documentData.supplierMsicCode,
+                    supplierAddress: documentData.supplierAddress,
+                    receiverSstNo: documentData.receiverSstNo,
+                    receiverRegistrationNo: documentData.receiverRegistrationNo,
+                    receiverAddress: documentData.receiverAddress
                 },
                 supplierInfo: {
-                    company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
-                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
-                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
-                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
-                    msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
-                    address: supplierParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.supplierAddress
+                    company: documentData.supplierName,
+                    tin: documentData.supplierTin,
+                    registrationNo: documentData.supplierRegistrationNo,
+                    taxRegNo: documentData.supplierSstNo,
+                    msicCode: documentData.supplierMsicCode,
+                    address: documentData.supplierAddress
                 },
                 customerInfo: {
-                    company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
-                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
-                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
-                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
-                    address: customerParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.receiverAddress
+                    company: documentData.receiverName,
+                    tin: documentData.receiverTin,
+                    registrationNo: documentData.receiverRegistrationNo,
+                    taxRegNo: documentData.receiverSstNo,
+                    address: documentData.receiverAddress
                 },
                 paymentInfo: {
-                    totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
-                    totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
-                    taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
+                    totalIncludingTax: documentData.totalSales,
+                    totalExcludingTax: documentData.totalExcludingTax,
+                    taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
                     irbmUniqueNo: documentData.uuid,
                     irbmlongId: documentData.longId
                 }

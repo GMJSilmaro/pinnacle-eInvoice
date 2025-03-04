@@ -115,8 +115,8 @@ async function readExcelWithLogging(filePath) {
 
         const dataAsObjects = XLSX.utils.sheet_to_json(worksheet);
         const dataWithHeaders = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-       // console.log(dataWithHeaders);
-       //console.log(dataAsObjects);
+        //console.log(dataWithHeaders);
+       console.log(dataAsObjects);
 
         // Log all cell addresses in first few rows
         //console.log('\n=== Cell by Cell Analysis (First 2 rows) ===');
@@ -714,6 +714,22 @@ function extractTotalAmount(data) {
         return null;
     }
 }
+
+/**
+ * Helper function to extract buyer information
+ */
+function extractSupplierInfo(data) {
+    try {
+        return {
+            registrationName: data[3]?.[25] || null,
+        };
+    } catch (error) {
+        console.error('Error extracting buyer info:', error);
+        return {};
+    }
+}
+
+
 /**
  * Helper function to extract buyer information
  */
@@ -728,6 +744,9 @@ function extractBuyerInfo(data) {
     }
 }
 
+/**
+ * Helper function to extract dates
+ */
 function extractDates(data) {
     try {
         // Look for date and time in specific Excel columns
@@ -809,6 +828,7 @@ async function processFile(file, dateDir, date, company, type, files, processLog
 
         const excelData = await readExcelWithLogging(filePath);
         const buyerInfo = extractBuyerInfo(excelData.dataWithHeaders);
+        const supplierInfo = extractSupplierInfo(excelData.dataWithHeaders);
         const dates = extractDates(excelData.dataAsObjects);
         const totalAmount = extractTotalAmount(excelData.dataWithHeaders);
 
@@ -835,6 +855,7 @@ async function processFile(file, dateDir, date, company, type, files, processLog
             status: submissionStatus?.SubmissionStatus || 'Pending',
             uuid: submissionStatus?.UUID,
             buyerInfo,
+            supplierInfo,
             totalAmount: totalAmount,
             invoiceNumber,
             documentType: docTypes[docType] || 'Unknown',

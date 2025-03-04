@@ -217,6 +217,7 @@ class InvoiceTableManager {
                             documentType: file.documentType || 'Invoice',
                             company: file.company,
                             buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
+                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
                             uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
                             issueDate: file.issueDate,
                             issueTime: file.issueTime,
@@ -279,8 +280,13 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'company',
-                        title: 'SUPPLIER',
+                        title: 'COMPANY',
                         render: (data, type, row) => this.renderCompanyInfo(data, type, row)
+                    },
+                    {
+                        data: 'supplierInfo',
+                        title: 'SUPPLIER',
+                        render: (data, type, row) => this.renderSupplierInfo(data, type, row)
                     },
                     {
                         data: 'buyerInfo',
@@ -528,6 +534,25 @@ class InvoiceTableManager {
             </div>`;
     }
 
+    
+    renderSupplierInfo(data) {
+        if (!data) {
+            return '<span class="text-muted">Company Name</span>';
+        }
+        const supplierName = data.name || data.registrationName || data.supplierName || data.supplier?.name || data.supplier?.registrationName || 'N/A';
+        return `
+            <div class="cell-group">
+                <div class="cell-main ">
+                    <i class="bi bi-person-badge me-1"></i>
+                    <span title="${supplierName}">${supplierName}</span>
+                </div>
+                <div class="cell-sub">
+                    <i class="bi bi-card-text me-1"></i>
+                    <span class="reg-text">Company Name</span>
+                </div>
+            </div>`;
+    }
+
     renderBuyerInfo(data) {
         if (!data) {
             return '<span class="text-muted">Company Name</span>';
@@ -674,7 +699,6 @@ class InvoiceTableManager {
                         onclick="deleteDocument('${row.fileName}', '${row.source}', '${row.company}', '${row.uploadedDate}')"
                         data-id="${row.id}">
                         <i class="bi bi-trash"></i>
-                        
                     </button>
                 </div>`;
         }
@@ -697,7 +721,10 @@ class InvoiceTableManager {
         return `
             <button 
                 class="outbound-action-btn"
-                disabled>
+                disabled
+                data-bs-toggle="tooltip" 
+                data-bs-placement="top"
+                title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'Transaction successfully processed' : 'Transaction is finalized'}">
                 <i class="bi bi-check-circle"></i>
                 ${row.status}
             </button>`;
@@ -4037,6 +4064,117 @@ async function showErrorModal(title, message, fileName, uuid) {
     });
 }
 
+// function showLHDNErrorModal(error) {
+//     console.log('LHDN Error:', error);
+    
+//     // Parse error message if it's a string
+//     let errorDetails = error;
+//     try {
+//         if (typeof error === 'string') {
+//             errorDetails = JSON.parse(error);
+//         }
+//     } catch (e) {
+//         console.warn('Error parsing error message:', e);
+//     }
+
+//     // Extract error details from the new error format
+//     const errorData = Array.isArray(errorDetails) ? errorDetails[0] : errorDetails;
+//     const mainError = {
+//         code: errorData.code || 'VALIDATION_ERROR',
+//         message: errorData.message || 'An unknown error occurred',
+//         target: errorData.target || '',
+//         details: errorData.details || {}
+//     };
+
+//     // Format the validation error details
+//     const validationDetails = mainError.details?.error?.details || [];
+
+//     Swal.fire({
+//         title: 'LHDN Submission Error',
+//         html: `
+//             <div class="content-card swal2-content">
+//                 <div style="margin-bottom: 15px; text-align: center;">
+//                     <div class="error-icon" style="color: #dc3545; font-size: 28px; margin-bottom: 10%; animation: pulseError 1.5s infinite;">
+//                         <i class="fas fa-times-circle"></i>
+//                     </div>
+//                     <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
+//                         <i class="fas fa-exclamation-circle" style="color: #dc3545; margin-right: 5px;"></i>
+//                         ${mainError.message}
+//                     </div>
+//                 </div>
+    
+//                 <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05);">
+//                     <div style="margin-bottom: 8px;">
+//                         <span style="color: #595959; font-weight: 600;">Error Code:</span>
+//                         <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${mainError.code}</span>
+//                     </div>
+
+//                     ${mainError.target ? `
+//                     <div style="margin-bottom: 8px;">
+//                         <span style="color: #595959; font-weight: 600;">Error Target:</span>
+//                         <span style="color: #595959;">${mainError.target}</span>
+//                     </div>
+//                     ` : ''}
+                    
+    
+//                     ${validationDetails.length > 0 ? `
+//                         <div>
+//                             <span style="color: #595959; font-weight: 600;">Validation Errors:</span>
+//                             <div style="margin-top: 4px; max-height: 200px; overflow-y: auto;">
+//                                 ${validationDetails.map(detail => `
+//                                     <div style="background: #fff; padding: 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid rgba(220, 53, 69, 0.2); font-size: 0.9em;">
+//                                         <div style="margin-bottom: 4px;">
+//                                             <strong>Path:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
+//                                         </div>
+//                                         <div>
+//                                             <strong>Error:</strong> ${formatValidationMessage(detail.message)}
+//                                         </div>
+//                                         ${detail.code ? `
+//                                             <div style="margin-top: 4px; font-size: 0.9em; color: #6c757d;">
+//                                                 Code: ${detail.code}
+//                                             </div>
+//                                         ` : ''}
+//                                     </div>
+//                                 `).join('')}
+//                             </div>
+//                         </div>
+//                     ` : ''}
+//                 </div>
+//             </div>
+    
+//         `,
+//         customClass: {
+//             confirmButton: 'outbound-action-btn submit',
+//             popup: 'semi-minimal-popup'
+//         },
+//         confirmButtonText: 'OK',
+//         showCloseButton: true
+//     });
+// }
+
+// Helper function to format validation messages
+
+
+
+// function formatValidationMessage(message) {
+//     if (!message) return 'Unknown error';
+    
+//     // Remove technical details and format the message
+//     return message
+//         .split('\n')
+//         .map(line => {
+//             // Remove JSON-like formatting
+//             line = line.replace(/[{}]/g, '');
+//             // Remove technical prefixes
+//             line = line.replace(/(ArrayItemNotValid|NoAdditionalPropertiesAllowed|#\/Invoice\[\d+\])/g, '');
+//             // Clean up extra spaces and punctuation
+//             line = line.trim().replace(/\s+/g, ' ').replace(/:\s+/g, ': ');
+//             return line;
+//         })
+//         .filter(line => line.length > 0)
+//         .join('<br>');
+// }
+
 function showLHDNErrorModal(error) {
     console.log('LHDN Error:', error);
     
@@ -4051,57 +4189,97 @@ function showLHDNErrorModal(error) {
     }
 
     // Extract error details from the new error format
-    const errorData = errorDetails.error || errorDetails;
+    const errorData = Array.isArray(errorDetails) ? errorDetails[0] : errorDetails;
     const mainError = {
         code: errorData.code || 'VALIDATION_ERROR',
         message: errorData.message || 'An unknown error occurred',
+        target: errorData.target || '',
         details: errorData.details || {}
     };
 
     // Format the validation error details
     const validationDetails = mainError.details?.error?.details || [];
-    const invoiceNumber = mainError.details?.invoiceCodeNumber || 'Unknown';
+    
+    // Check if this is a TIN matching error and provide specific guidance
+    const isTINMatchingError = mainError.message.includes("authenticated TIN and documents TIN is not matching");
+    
+    // Create tooltip help content for TIN matching errors
+    const tinErrorGuidance = `
+        <div class="tin-matching-guidance" style="margin-top: 15px; padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #17a2b8;">
+            <h4 style="margin-top: 0; color: #17a2b8; font-size: 16px;">
+                <i class="fas fa-info-circle"></i> How to resolve TIN matching errors:
+            </h4>
+            <ul style="padding-left: 20px; margin-bottom: 0; text-align: left; color: #495057;">
+                <li>Verify that the supplier's TIN in your document matches exactly with the one registered with LHDN</li>
+                <li>When using Login as Taxpayer API: The issuer TIN in the document must match with the TIN associated with your Client ID and Client Secret</li>
+                <li>When using Login as Intermediary System API: The issuer TIN must match with the TIN of the taxpayer you're representing</li>
+                <li>For sole proprietors: You can validate TINs starting with "IG" along with your BRN if you have the "Business Owner" role in MyTax</li>
+            </ul>
+            <div style="margin-top: 10px; font-size: 13px; color: #6c757d;">
+                <a href="https://sdk.myinvois.hasil.gov.my/faq/" target="_blank" style="color: #17a2b8; text-decoration: underline;">
+                    <i class="fas fa-external-link-alt"></i> View LHDN FAQ for more details
+                </a>
+            </div>
+        </div>
+    `;
 
     Swal.fire({
         title: 'LHDN Submission Error',
         html: `
             <div class="content-card swal2-content">
                 <div style="margin-bottom: 15px; text-align: center;">
-                    <div class="error-icon" style="color: #dc3545; font-size: 28px; margin-bottom: 10%; animation: pulseError 1.5s infinite;">
-                        <i class="fas fa-times-circle"></i>
+                    <div class="error-icon" style="color: #dc3545; font-size: 48px; margin-bottom: 20px;">
+                        <i class="fas fa-exclamation-circle" style="animation: pulseError 1.5s infinite;"></i>
                     </div>
-                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
-                        <i class="fas fa-exclamation-circle" style="color: #dc3545; margin-right: 5px;"></i>
-                        ${mainError.message}
+                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px; margin: 8px 0; border-radius: 4px; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                        <div style="display: flex; align-items: flex-start;">
+                            <i class="fas fa-exclamation-triangle" style="color: #dc3545; margin-right: 10px; margin-top: 2px;"></i>
+                            <span style="font-weight: 500; font-size: 15px;">${mainError.message}</span>
+                        </div>
                     </div>
                 </div>
     
-                <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05);">
-                    <div style="margin-bottom: 8px;">
-                        <span style="color: #595959; font-weight: 600;">Error Code:</span>
-                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${mainError.code}</span>
+                <div style="text-align: left; padding: 16px; border-radius: 8px; background: rgba(220, 53, 69, 0.05); box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                    <div style="margin-bottom: 12px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 100px;">Error Code:</span>
+                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 3px 8px; border-radius: 4px;">${mainError.code}</span>
                     </div>
+
+                    ${mainError.target ? `
+                    <div style="margin-bottom: 12px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 100px;">Error Target:</span>
+                        <span style="color: #495057; background: rgba(0,0,0,0.03); padding: 3px 8px; border-radius: 4px;">${mainError.target}</span>
+                    </div>
+                    ` : ''}
                     
-                    <div style="margin-bottom: 8px;">
-                        <span style="color: #595959; font-weight: 600;">Invoice Number:</span>
-                        <span style="color: #595959;">${invoiceNumber}</span>
-                    </div>
-    
                     ${validationDetails.length > 0 ? `
                         <div>
-                            <span style="color: #595959; font-weight: 600;">Validation Errors:</span>
-                            <div style="margin-top: 4px; max-height: 200px; overflow-y: auto;">
+                            <div style="color: #495057; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center;">
+                                <span>Validation Errors:</span>
+                                <span class="tooltip-container" style="margin-left: 8px; cursor: help; position: relative;">
+                                    <i class="fas fa-question-circle" style="color: #6c757d;"></i>
+                                    <div class="tooltip-content" style="position: absolute; width: 250px; background: #fff; border-radius: 4px; padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; display: none; top: -5px; left: 25px; font-weight: normal; font-size: 13px; color: #495057; text-align: left;">
+                                        These validation errors indicate specific issues with your submission data. Each error includes the path to the problematic field and details about what needs to be fixed.
+                                    </div>
+                                </span>
+                            </div>
+                            <div style="margin-top: 8px; max-height: 200px; overflow-y: auto; border-radius: 6px; border: 1px solid rgba(0,0,0,0.1);">
                                 ${validationDetails.map(detail => `
-                                    <div style="background: #fff; padding: 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid rgba(220, 53, 69, 0.2); font-size: 0.9em;">
-                                        <div style="margin-bottom: 4px;">
-                                            <strong>Path:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
+                                    <div style="background: #fff; padding: 12px; border-radius: 0; margin-bottom: 1px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 0.95em;">
+                                        <div style="margin-bottom: 6px; display: flex;">
+                                            <strong style="min-width: 80px; color: #495057;">Path:</strong> 
+                                            <span style="color: #0d6efd; font-family: monospace; background: rgba(13, 110, 253, 0.05); padding: 0 4px; border-radius: 2px;">
+                                                ${detail.propertyPath || detail.target || 'Unknown'}
+                                            </span>
                                         </div>
-                                        <div>
-                                            <strong>Error:</strong> ${formatValidationMessage(detail.message)}
+                                        <div style="display: flex;">
+                                            <strong style="min-width: 80px; color: #495057;">Error:</strong> 
+                                            <span>${formatValidationMessage(detail.message)}</span>
                                         </div>
                                         ${detail.code ? `
-                                            <div style="margin-top: 4px; font-size: 0.9em; color: #6c757d;">
-                                                Code: ${detail.code}
+                                            <div style="margin-top: 6px; font-size: 0.9em; color: #6c757d; display: flex;">
+                                                <strong style="min-width: 80px; color: #6c757d;">Code:</strong>
+                                                <span>${detail.code}</span>
                                             </div>
                                         ` : ''}
                                     </div>
@@ -4110,13 +4288,24 @@ function showLHDNErrorModal(error) {
                         </div>
                     ` : ''}
                 </div>
+                
+                ${isTINMatchingError ? tinErrorGuidance : ''}
             </div>
-    
+            
             <style>
                 @keyframes pulseError {
-                    0% { transform: scale(1); }
-                    50% { transform: scale(1.15); }
-                    100% { transform: scale(1); }
+                    0% { opacity: 1; }
+                    50% { opacity: 0.6; }
+                    100% { opacity: 1; }
+                }
+                .tooltip-container:hover .tooltip-content {
+                    display: block;
+                }
+                .semi-minimal-popup {
+                    max-width: 550px;
+                }
+                .tin-matching-guidance ul li {
+                    margin-bottom: 6px;
                 }
             </style>
         `,
@@ -4124,29 +4313,34 @@ function showLHDNErrorModal(error) {
             confirmButton: 'outbound-action-btn submit',
             popup: 'semi-minimal-popup'
         },
-        confirmButtonText: 'OK',
-        showCloseButton: true
+        confirmButtonText: 'I Understand',
+        showCloseButton: true,
+        didOpen: () => {
+            // Add event listeners for tooltips if needed
+            const tooltipContainers = document.querySelectorAll('.tooltip-container');
+            tooltipContainers.forEach(container => {
+                container.addEventListener('mouseenter', () => {
+                    container.querySelector('.tooltip-content').style.display = 'block';
+                });
+                container.addEventListener('mouseleave', () => {
+                    container.querySelector('.tooltip-content').style.display = 'none';
+                });
+            });
+        }
     });
 }
 
 // Helper function to format validation messages
 function formatValidationMessage(message) {
-    if (!message) return 'Unknown error';
+    if (!message) return 'Unknown validation error';
     
-    // Remove technical details and format the message
-    return message
-        .split('\n')
-        .map(line => {
-            // Remove JSON-like formatting
-            line = line.replace(/[{}]/g, '');
-            // Remove technical prefixes
-            line = line.replace(/(ArrayItemNotValid|NoAdditionalPropertiesAllowed|#\/Invoice\[\d+\])/g, '');
-            // Clean up extra spaces and punctuation
-            line = line.trim().replace(/\s+/g, ' ').replace(/:\s+/g, ': ');
-            return line;
-        })
-        .filter(line => line.length > 0)
-        .join('<br>');
+    // Enhance common LHDN error messages with more helpful information
+    if (message.includes('authenticated TIN and documents TIN is not matching')) {
+        return `The TIN (Tax Identification Number) in your document doesn't match with the authenticated TIN. 
+                Please ensure the supplier's TIN matches exactly with the one registered with LHDN.`;
+    }
+    
+    return message;
 }
 
 async function deleteDocument(fileName, type, company, date) {

@@ -25,29 +25,47 @@ async function getConfig() {
 async function getTokenAsTaxPayer() {
   try {
     const settings = await getConfig();
+    
+    // Validate and construct base URL
     const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
+      settings.middlewareUrl : settings.middlewareUrl;
 
-    const httpOptions = {
+    if (!baseUrl) {
+      throw new Error(`Missing ${settings.environment === 'production' ? 'middlewareUrl' : 'middlewareUrl'} in configuration`);
+    }
+
+    // Ensure URL is properly formatted
+    let formattedBaseUrl = baseUrl.trim();
+    if (!formattedBaseUrl.startsWith('http://') && !formattedBaseUrl.startsWith('https://')) {
+      formattedBaseUrl = 'https://' + formattedBaseUrl;
+    }
+    formattedBaseUrl = formattedBaseUrl.replace(/\/+$/, ''); // Remove trailing slashes
+
+    const httpOptions = new URLSearchParams({
       client_id: settings.clientId,
       client_secret: settings.clientSecret,
       grant_type: 'client_credentials',
       scope: 'InvoicingAPI'
-    };
+    });
 
     const response = await axios.post(
-      `${baseUrl}/connect/token`, 
+      `${formattedBaseUrl}/connect/token`, 
       httpOptions, 
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
-        }
+        },
+        validateStatus: status => status === 200,
+        timeout: 10000 // 10 second timeout
       }
     );
 
     if(response.status === 200) return response.data;
+    
+    throw new Error(`Unexpected response: ${response.status}`);
   } catch (err) {
     if (err.response?.status === 429) {
+      // Rate limit handling remains the same
       const rateLimitReset = err.response.headers["x-rate-limit-reset"];
       if (rateLimitReset) {
         const resetTime = new Date(rateLimitReset).getTime();
@@ -64,7 +82,24 @@ async function getTokenAsTaxPayer() {
         }            
       }
     }
-    throw new Error(`Failed to get token: ${err.message}`);
+    
+    // Enhanced error message
+    const errorMessage = err.response?.data?.error_description || 
+                        err.response?.data?.error || 
+                        err.message;
+    console.error('Token generation error:', {
+      message: errorMessage,
+      config: {
+        url: err.config?.url,
+        method: err.config?.method,
+      },
+      response: {
+        status: err.response?.status,
+        data: err.response?.data
+      }
+    });
+    
+    throw new Error(`Failed to get token: ${errorMessage}`);
   }
 }
 
@@ -236,7 +271,7 @@ async function validateCustomerTin(settings, tin, idType, idValue, token) {
     }
 
     const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
+      settings.middlewareUrl : settings.middlewareUrl;
 
     const response = await axios.get(
       `${baseUrl}/api/v1.0/taxpayer/validate/${tin}?idType=${idType}&idValue=${idValue}`,
@@ -347,4 +382,4 @@ module.exports = {
   validateCredentials,
   validateCustomerTin,
   getTokenSession
-}; 
+};

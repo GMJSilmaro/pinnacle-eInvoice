@@ -406,6 +406,13 @@ class InvoiceTableManager {
                     }
                 },
                 {
+                    data: 'source',
+                    title: 'SOURCE',
+                    render: function (data) {
+                        return this.renderSource(data);
+                    }.bind(this)
+                },
+                {
                     data: 'totalSales',
                     title: 'TOTAL SALES',
                     render: data => {
@@ -648,6 +655,11 @@ class InvoiceTableManager {
         }
     }
 
+    renderSource(data) {
+        if (!data) return this.createSourceBadge('LHDN');
+        return this.createSourceBadge(data);
+    }
+
     renderInvoiceNumber(data, type, row) {
         if (!data) return '<span class="text-muted">N/A</span>';
 
@@ -833,10 +845,6 @@ class InvoiceTableManager {
         }).format(amount || 0);
     }
 
-    renderSource(data) {
-        if (!data) return '<span class="text-muted">N/A</span>';
-        return `<span class="badge-source ${data.toLowerCase()}">LHDN</span>`;
-    }
 
     createStatusBadge(status, reason) {
         const statusClasses = {
@@ -853,9 +861,50 @@ class InvoiceTableManager {
     }
 
     createSourceBadge(source) {
-        const isPixelCare = source === 'PixelCare';
-        return `<span class="badge ${isPixelCare ? 'bg-primary' : 'bg-info'}">
-            <i class="bi ${isPixelCare ? 'bi-pc-display' : 'bi-building'}"></i>
+        let badgeClass = 'bg-info';
+        let iconClass = 'bi-building';
+        let tooltipText = 'Document from external system';
+        let customStyle = '';
+        
+        switch(source) {
+            case 'PixelCare':
+                badgeClass = 'bg-primary';
+                iconClass = 'bi-pc-display';
+                tooltipText = 'Document managed through PixelCare system';
+                break;
+            case 'Pixel Pinnacle':
+                badgeClass = 'bg-success';
+                iconClass = 'bi-file-earmark-spreadsheet';
+                tooltipText = 'Document created through Pixel Pinnacle portal';
+                break;
+            case 'LHDN':
+                badgeClass = ''; // Remove the default bg class
+                iconClass = 'bi-cloud-download';
+                tooltipText = 'Document imported/submitted directly from LHDN ';
+                customStyle = 'background-color: #1e40af; color: #ffffff;';
+                break;
+            default:
+                badgeClass = 'bg-info';
+                iconClass = 'bi-building';
+        }
+        
+        return `<span class="badge ${badgeClass}" 
+            data-bs-toggle="tooltip"
+            data-bs-placement="top"
+            title="${tooltipText}"
+            style="
+                display: inline-flex;
+                align-items: center;
+                gap: 6px; 
+                padding: 8px 12px;
+                border-radius: 6px;
+                font-size: 0.85rem;
+                font-weight: 500;
+                white-space: nowrap;
+                cursor: help;
+                ${customStyle}
+            ">
+            <i class="bi ${iconClass}"></i>
             ${source || 'Unknown'}
         </span>`;
     }
@@ -1867,7 +1916,7 @@ async function openValidationResultsModal(uuid) {
 
         // Extract validation results from the response
         const data = result.data || result;
-        const validationResults = data.documentInfo?.validationResults;
+        const validationResults = data.documentInfo?.validationResults || data.validationResults || data.detailsData.validationResults;
 
         console.log('Validation Results:', validationResults);
 
@@ -1880,7 +1929,6 @@ async function openValidationResultsModal(uuid) {
             return;
         }
 
-        // Add validation steps to the accordion
         validationResults.validationSteps.forEach((step, index) => {
             const stepDiv = document.createElement("div");
             stepDiv.classList.add("lhdn-validation-step");
