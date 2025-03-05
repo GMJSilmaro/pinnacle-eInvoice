@@ -188,6 +188,209 @@ async function logError(description, error, options = {}) {
     }
 }
 
+async function logCancellation(description, options = {}) {
+    try {
+        const logEntry = {
+            Description: description,
+            CreateTS: new Date().toISOString(),
+            LoggedUser: options.user || 'System',
+            IPAddress: options.ip || null,
+            LogType: 'INFO',
+            Module: 'OUTBOUND_FILES',
+            Action: 'CANCEL',
+            Status: options.status || 'SUCCESS',
+            UserID: options.userId || null
+        };
+
+        await WP_LOGS.create(logEntry);
+        
+        console.log('Cancellation logged:', {
+            description,
+            ...options
+        });
+    } catch (logError) {
+        console.error('Error logging cancellation to database:', logError);
+    }
+}
+
+/**
+ * Helper function to log submissions
+ */
+async function logSubmission(description, options = {}) {
+    try {
+        const logEntry = {
+            Description: description,
+            CreateTS: new Date().toISOString(),
+            LoggedUser: options.user || 'System',
+            IPAddress: options.ip || null,
+            LogType: 'INFO',
+            Module: 'OUTBOUND_FILES',
+            Action: 'SUBMIT',
+            Status: options.status || 'SUCCESS',
+            UserID: options.userId || null
+        };
+
+        await WP_LOGS.create(logEntry);
+        
+        console.log('Submission logged:', {
+            description,
+            ...options
+        });
+    } catch (logError) {
+        console.error('Error logging submission to database:', logError);
+    }
+}
+
+/**
+ * Helper function to log validations
+ */
+async function logValidation(description, options = {}) {
+    try {
+        const logEntry = {
+            Description: description,
+            CreateTS: new Date().toISOString(),
+            LoggedUser: options.user || 'System',
+            IPAddress: options.ip || null,
+            LogType: options.hasErrors ? 'WARNING' : 'INFO',
+            Module: 'OUTBOUND_FILES',
+            Action: 'VALIDATE',
+            Status: options.status || (options.hasErrors ? 'FAILED' : 'SUCCESS'),
+            UserID: options.userId || null
+        };
+
+        await WP_LOGS.create(logEntry);
+        
+        console.log('Validation logged:', {
+            description,
+            ...options
+        });
+    } catch (logError) {
+        console.error('Error logging validation to database:', logError);
+    }
+}
+
+/**
+ * Helper function to log file operations (read/write/delete)
+ */
+async function logFileOperation(description, options = {}) {
+    try {
+        const logEntry = {
+            Description: description,
+            CreateTS: new Date().toISOString(),
+            LoggedUser: options.user || 'System',
+            IPAddress: options.ip || null,
+            LogType: 'INFO',
+            Module: 'OUTBOUND_FILES',
+            Action: options.action || 'FILE_OP',
+            Status: options.status || 'SUCCESS',
+            UserID: options.userId || null
+        };
+
+        await WP_LOGS.create(logEntry);
+        
+        console.log('File operation logged:', {
+            description,
+            ...options
+        });
+    } catch (logError) {
+        console.error('Error logging file operation to database:', logError);
+    }
+}
+
+/**
+ * Helper function to log configuration changes
+ */
+async function logConfigChange(description, options = {}) {
+    try {
+        const logEntry = {
+            Description: description,
+            CreateTS: new Date().toISOString(),
+            LoggedUser: options.user || 'System',
+            IPAddress: options.ip || null,
+            LogType: 'INFO',
+            Module: 'OUTBOUND_FILES',
+            Action: 'CONFIG',
+            Status: options.status || 'SUCCESS',
+            UserID: options.userId || null
+        };
+
+        await WP_LOGS.create(logEntry);
+        
+        console.log('Configuration change logged:', {
+            description,
+            ...options
+        });
+    } catch (logError) {
+        console.error('Error logging configuration change to database:', logError);
+    }
+}
+
+/**
+ * Simple logging middleware
+ */
+async function logActivity(req, res, next) {
+    const originalJson = res.json;
+    const loggedUser = req.session?.user?.username;
+    const action = getActionFromPath(req.path, req.method);
+
+    try {
+        // Log the start of the request
+        await WP_LOGS.create({
+            Description: `${action} operation started`,
+            CreateTS: new Date().toISOString(),
+            LoggedUser: loggedUser || 'System',
+            LogType: 'INFO',
+            Module: 'OUTBOUND_FILES',
+            Action: action,
+            Status: 'PENDING',
+            IPAddress: req.ip
+        });
+
+        // Override res.json to log the response
+        res.json = function(data) {
+            const isSuccess = data.success !== false;
+            
+            // Log the completion
+            WP_LOGS.create({
+                Description: isSuccess ? 
+                    `${action} completed successfully` : 
+                    `${action} failed: ${data.error?.message || 'Unknown error'}`,
+                CreateTS: new Date().toISOString(),
+                LoggedUser: loggedUser || 'System',
+                LogType: isSuccess ? 'INFO' : 'ERROR',
+                Module: 'OUTBOUND_FILES',
+                Action: action,
+                Status: isSuccess ? 'SUCCESS' : 'FAILED',
+                IPAddress: req.ip
+            }).catch(console.error);
+
+            res.json = originalJson;
+            return res.json(data);
+        };
+
+        next();
+    } catch (error) {
+        console.error('Logging error:', error);
+        next();
+    }
+}
+
+/**
+ * Helper function to determine action from path
+ */
+function getActionFromPath(path, method) {
+    if (path.includes('/cancel')) return 'CANCEL';
+    if (path.includes('/validate')) return 'VALIDATE';
+    if (path.includes('/submit')) return 'SUBMIT';
+    if (path.includes('/content')) return 'READ';
+    if (method === 'DELETE') return 'DELETE';
+    //if (path.includes('/list-all')) return 'LIST';
+    return 'OTHER';
+}
+
+// Add the middleware to your routes
+router.use(logActivity);
+
 
 /**
  * List all files from network directories with caching and duplicate filtering
@@ -252,11 +455,6 @@ router.get('/list-all', async (req, res) => {
                 }
             }
         }
-
-        // await logDBOperation(req.app.get('models'), req, 'Started listing all outbound files', {
-        //     module: 'OUTBOUND',
-        //     action: 'LIST_ALL'
-        // });
 
         // Get existing submission statuses with new schema and include recent updates
         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
@@ -386,7 +584,6 @@ router.get('/list-all', async (req, res) => {
         });
     }
 });
-
 
 /**
  * Check if a document has already been submitted
@@ -776,6 +973,10 @@ function extractDates(data) {
  * 
  * Process individual file
  */
+/**
+ * 
+ * Process individual file
+ */
 async function processFile(file, dateDir, date, company, type, files, processLog, statusMap) {
     processLog.summary.total++;
     const logEntry = { file, valid: false, error: null };
@@ -882,262 +1083,129 @@ async function processFile(file, dateDir, date, company, type, files, processLog
 /**
  * Submit document to LHDN
  */
-router.post('/:fileName/submit-to-lhdn', async (req, res) => {
+router.post('/submit', async (req, res) => {
+    const loggedUser = req.session?.user?.username;
     try {
+        const { fileName, type, company, date } = req.body;
 
-        const { fileName } = req.params;
-        const { type, company, date, version } = req.body;
-
-        // Basic auth check
-        if (!req.session?.accessToken) {
-            return res.status(401).json({
-                success: false,
-                error: {
-                    code: 'AUTH_ERROR',
-                    message: 'Not authenticated'
-                }
-            });
-        }
-
-        // Validate all required parameters with more context
-        const paramValidation = [
-            { name: 'fileName', value: fileName, description: 'Excel file name' },
-            { name: 'type', value: type, description: 'Document type (e.g., Manual)' },
-            { name: 'company', value: company, description: 'Company identifier' },
-            { name: 'date', value: date, description: 'Document date' },
-            { name: 'version', value: version, description: 'LHDN version (e.g., 1.0, 1.1)' }
-        ];
-
-        const missingParams = paramValidation
-            .filter(param => !param.value)
-            .map(param => ({
-                name: param.name,
-                description: param.description
-            }));
-
-        if (missingParams.length > 0) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: `Missing required parameters: ${missingParams.map(p => p.name).join(', ')}`,
-                    details: missingParams,
-                    help: 'Please ensure all required parameters are provided in the request body'
-                }
-            });
-        }
-
-        // Initialize LHDNSubmitter
-        const submitter = new LHDNSubmitter(req);
-
-        // Check for existing submission
-        const existingCheck = await submitter.checkExistingSubmission(fileName);
-        if (existingCheck.blocked) {
-            return res.status(409).json(existingCheck.response);
-        }
-
-        try {
-            // Get and process document data
-            const processedData = await submitter.getProcessedData(fileName, type, company, date);
-            
-            // Ensure processedData is valid before mapping
-            if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: {
-                        code: 'PROCESSING_ERROR',
-                        message: 'Failed to process Excel data - no valid documents found'
-                    }
-                });
-            }
-
-            // Map to LHDN format only once
-            const lhdnJson = mapToLHDNFormat(processedData, version);
-            if (!lhdnJson) {
-                return res.status(400).json({
-                    success: false,
-                    error: {
-                        code: 'MAPPING_ERROR',
-                        message: 'Failed to map data to LHDN format'
-                    }
-                });
-            }
-
-            // Prepare document for submission
-            const { payload, invoice_number } = await submitter.prepareDocumentForSubmission(lhdnJson, version);
-            if (!payload) {
-                return res.status(400).json({
-                    success: false,
-                    error: {
-                        code: 'PREPARATION_ERROR',
-                        message: 'Failed to prepare document for submission'
-                    }
-                });
-            }
-
-            // Submit to LHDN using the session token
-            const result = await submitter.submitToLHDNDocument(payload.documents);
-            
-            // Process result and update status
-            if (result.status === 'failed') {
-                // Handle validation errors from LHDN
-                if (result.error?.error?.details) {
-                    const errorDetails = result.error.error.details;
-                    await submitter.updateSubmissionStatus({
-                        invoice_number,
-                        uuid: 'NA',
-                        submissionUid: 'NA',
-                        fileName,
-                        filePath: processedData.filePath || fileName,
-                        status: 'Failed',
-                        error: JSON.stringify(errorDetails)
-                    });
-
-                    return res.status(400).json({
-                        success: false,
-                        error: errorDetails,
-                        docNum: invoice_number
-                    });
-                }
-            }
-            if (result.data?.acceptedDocuments?.length > 0) {
-                const acceptedDoc = result.data.acceptedDocuments[0];
-                // First update the submission status in database
-                await submitter.updateSubmissionStatus({
-                    invoice_number,
-                    uuid: acceptedDoc.uuid,
-                    submissionUid: result.data.submissionUid,
-                    fileName,
-                    filePath: processedData.filePath || fileName,
-                    status: 'Submitted',
-                });
-            
-                // Then update the Excel file
-                const excelUpdateResult = await submitter.updateExcelWithResponse(
-                    fileName,
-                    type,
-                    company,
-                    date,
-                    acceptedDoc.uuid,
-                    invoice_number
-                );
-                
-                if (!excelUpdateResult.success) {
-                    console.error('Failed to update Excel file:', excelUpdateResult.error);
-                    return res.status(500).json({
-                        success: false,
-                        error: {
-                            code: 'EXCEL_UPDATE_ERROR',
-                            message: 'Failed to update Excel file',
-                            details: excelUpdateResult.error
-                        }
-                    });
-                }
-            
-                const response = {
-                    success: true,
-                    submissionUID: result.data.submissionUid,
-                    acceptedDocuments: result.data.acceptedDocuments,
-                    docNum: invoice_number,
-                    fileUpdates: {
-                        success: excelUpdateResult.success,
-                        ...(excelUpdateResult.success ? 
-                            { 
-                                excelPath: excelUpdateResult.outgoingPath,
-                            } : 
-                            { error: excelUpdateResult.error }
-                        )
-                    }
-                };
-
-                // Invalidate the cache after successful submission
-                invalidateFileCache();
-
-                return res.json(response);
-            }
-
-            // Handle rejected documents
-            if (result.data?.rejectedDocuments?.length > 0) {
-                //('Rejected Documents:', JSON.stringify(result.data.rejectedDocuments, null, 2));
-                
-                const rejectedDoc = result.data.rejectedDocuments[0];
-                await submitter.updateSubmissionStatus({
-                    invoice_number,
-                    uuid: rejectedDoc.uuid || 'NA',
-                    submissionUid: 'NA',
-                    fileName,
-                    filePath: processedData.filePath || fileName,
-                    status: 'Rejected',
-                    error: JSON.stringify(rejectedDoc.error || rejectedDoc)
-                });
-
-                return res.status(400).json({
-                    success: false,
-                    error: rejectedDoc.error || rejectedDoc,
-                    docNum: invoice_number,
-                    rejectedDocuments: result.data.rejectedDocuments
-                });
-            }
-
-            // Update the error handling section
-            if (!result.data?.acceptedDocuments?.length && !result.data?.rejectedDocuments?.length) {
-                //console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
-                throw new Error(`No documents were accepted or rejected by LHDN. Response: ${JSON.stringify(result.data)}`);
-            }
-
-        } catch (processingError) {
-            console.error('Error processing document data:', processingError);
-            // Handle specific errors as needed
-            throw processingError; // Re-throw other errors to be caught by outer catch block
-        }
-
-    } catch (error) {
-        console.error('=== Submit to LHDN Error ===', {
-            error: error.message,
-            stack: error.stack
+        await logSubmission(`Starting submission process for file: ${fileName}`, {
+            user: loggedUser,
+            status: 'PENDING',
+            details: { fileName, type, company, date }
         });
 
-        // Update status if possible
-        if (error.invoice_number) {
-            try {
-                await submitter.updateSubmissionStatus({
-                    invoice_number: error.invoice_number,
+        // Validate the file first
+        await logValidation(`Pre-submission validation for file: ${fileName}`, {
+            user: loggedUser,
+            status: 'PENDING',
+            details: { fileName, type, company, date }
+        });
+
+        const validationResult = await validateExcelFile(fileName, type, company, date);
+        if (validationResult.errors && validationResult.errors.length > 0) {
+            await logValidation(`Pre-submission validation failed for file: ${fileName}`, {
+                user: loggedUser,
+                hasErrors: true,
+                details: { 
                     fileName,
-                    filePath: error.filePath || fileName,
-                    status: 'Failed',
-                    error: error.message
-                });
-            } catch (statusError) {
-                console.error('Failed to update status:', statusError);
-            }
+                    errors: validationResult.errors,
+                    errorCount: validationResult.errors.length
+                }
+            });
+
+            return res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: validationResult.errors
+            });
         }
 
-        // Determine appropriate error response
-        const errorResponse = {
+        // Get LHDN token
+        const token = await getTokenAsIntermediary();
+        if (!token) {
+            await logError('Failed to get LHDN token', new Error('Token acquisition failed'), {
+                user: loggedUser,
+                action: 'SUBMIT',
+                details: { fileName }
+            });
+            throw new Error('Failed to get LHDN token');
+        }
+
+        // Prepare document for submission
+        const document = await prepareDocumentForSubmission(fileName, type, company, date);
+        
+        // Submit to LHDN
+        await logSubmission(`Submitting document to LHDN: ${fileName}`, {
+            user: loggedUser,
+            status: 'IN_PROGRESS',
+            details: { 
+                fileName,
+                documentId: document.id,
+                type,
+                company
+            }
+        });
+
+        const submissionResponse = await submitDocument([document], token);
+
+        if (submissionResponse.status === 'success') {
+            // Update local status
+            await WP_OUTBOUND_STATUS.create({
+                UUID: submissionResponse.data.uuid,
+                submissionUid: document.id,
+                fileName: fileName,
+                status: 'Submitted',
+                date_submitted: new Date(),
+                created_at: new Date(),
+                updated_at: new Date()
+            });
+
+            await logSubmission(`Successfully submitted document to LHDN: ${fileName}`, {
+                user: loggedUser,
+                details: { 
+                    fileName,
+                    uuid: submissionResponse.data.uuid,
+                    submissionUid: document.id,
+                    response: submissionResponse.data
+                }
+            });
+
+            return res.json({
+                success: true,
+                message: 'Document submitted successfully',
+                data: submissionResponse.data
+            });
+        }
+
+        throw new Error('Unexpected response from LHDN API');
+
+    } catch (error) {
+        await logError(`Submission error: ${error.message}`, error, {
+            user: loggedUser,
+            action: 'SUBMIT',
+            details: req.body
+        });
+
+        // Handle specific error cases
+        if (error.response?.status === 429) {
+            return res.status(429).json({
+                success: false,
+                error: {
+                    code: 'RATE_LIMIT',
+                    message: 'LHDN API rate limit exceeded. Please try again later.'
+                }
+            });
+        }
+
+        res.status(500).json({
             success: false,
             error: {
-                code: 'SUBMISSION_ERROR',
-                message: error.message || 'An unexpected error occurred during submission',
-                details: error.stack
+                message: 'Failed to submit document',
+                details: error.message
             }
-        };
-
-        // Set appropriate status code based on error type
-        if (error.response?.status === 401) {
-            errorResponse.error.code = 'AUTH_ERROR';
-            return res.status(401).json(errorResponse);
-        }
-
-        if (error.message.includes('getActiveSAPConfig')) {
-            errorResponse.error.code = 'CONFIG_ERROR';
-            errorResponse.error.message = 'SAP configuration error: Unable to get active configuration';
-            return res.status(500).json(errorResponse);
-        }
-
-        res.status(500).json(errorResponse);
+        });
     }
 });
-
 
 /**
  * Cancel document
@@ -1147,15 +1215,9 @@ router.post('/:uuid/cancel', async (req, res) => {
     const uuid = req.params.uuid;
     const reason = req.body.reason;
 
-    await logDBOperation(req.app.get('models'), req, `Started cancellation of document ${uuid}`, {
-        module: 'OUTBOUND',
-        action: 'CANCEL',
-        details: { uuid, reason }
-    });
-
     if (!uuid) {
-        await logDBOperation(req.app.get('models'), req, 'Missing UUID for document cancellation', {
-            module: 'OUTBOUND',
+        await logError('Missing UUID for document cancellation', new Error('Missing UUID'), {
+            user: loggedUser,
             action: 'CANCEL',
             status: 'FAILED'
         });
@@ -1170,8 +1232,20 @@ router.post('/:uuid/cancel', async (req, res) => {
         // Get document details first
         const token = req.session.accessToken;
 
+        await logCancellation(`Started cancellation process for document ${uuid}`, {
+            user: loggedUser,
+            status: 'PENDING',
+            details: { uuid, reason }
+        });
+
         const documentDetails = await getDocumentDetails(uuid, token);
         if (!documentDetails.status === 'success' || !documentDetails.data) {
+            await logError('Document not found for cancellation', new Error('Document not found'), {
+                user: loggedUser,
+                action: 'CANCEL',
+                status: 'FAILED',
+                details: { uuid }
+            });
             throw new Error('Document not found');
         }
 
@@ -1204,11 +1278,14 @@ router.post('/:uuid/cancel', async (req, res) => {
                 )
             ]);
 
-            await logDBOperation(req.app.get('models'), req, `Successfully cancelled document ${uuid}`, {
-                module: 'OUTBOUND',
-                action: 'CANCEL',
-                status: 'SUCCESS',
-                details: { docNum: documentDetails.data.invoice_number }
+            await logCancellation(`Successfully cancelled document ${uuid}`, {
+                user: loggedUser,
+                details: { 
+                    uuid,
+                    reason,
+                    docNum: documentDetails.data.invoice_number,
+                    response: cancelResponse
+                }
             });
 
             return res.json({
@@ -1221,11 +1298,12 @@ router.post('/:uuid/cancel', async (req, res) => {
 
     } catch (error) {
         console.error('Error cancelling invoice:', error);
-        await logDBOperation(req.app.get('models'), req, `Error cancelling document: ${error.message}`, {
-            module: 'OUTBOUND',
+        
+        await logError(`Error cancelling document: ${error.message}`, error, {
+            user: loggedUser,
             action: 'CANCEL',
             status: 'FAILED',
-            error
+            details: { uuid, reason }
         });
 
         // Handle specific error cases
@@ -1236,6 +1314,12 @@ router.post('/:uuid/cancel', async (req, res) => {
             if (errorData?.error?.code === 'ValidationError' && 
                 errorData?.error?.details?.some(d => d.message?.includes('already cancelled'))) {
                 
+                await logCancellation(`Document ${uuid} was already cancelled`, {
+                    user: loggedUser,
+                    status: 'WARNING',
+                    details: { uuid, reason, errorData }
+                });
+
                 // Update local status
                 await Promise.all([
                     WP_OUTBOUND_STATUS.update(
@@ -1256,6 +1340,13 @@ router.post('/:uuid/cancel', async (req, res) => {
 
             // Handle 404 specifically
             if (error.response.status === 404) {
+                await logError('Document not found in LHDN system', error, {
+                    user: loggedUser,
+                    action: 'CANCEL',
+                    status: 'FAILED',
+                    details: { uuid, reason }
+                });
+
                 return res.status(404).json({
                     success: false,
                     message: 'Document not found in LHDN system',
@@ -1270,35 +1361,29 @@ router.post('/:uuid/cancel', async (req, res) => {
                 error: errorData?.error?.message || error.message
             });
         }
-
-        // Log the error
-        await WP_LOGS.create({
-            Description: `Failed to cancel invoice: ${error.message}`,
-            CreateTS: new Date().toISOString(),
-            LoggedUser: loggedUser || 'System',
-            LogType: 'ERROR',
-            Module: 'OUTBOUND',
-            Action: 'CANCEL',
-            Status: 'FAILED'
-        });
-
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to cancel invoice',
-            error: error.message
-        });
     }
 });
 
 router.post('/:fileName/content', async (req, res) => {
+    const loggedUser = req.session?.user?.username;
     try {
         const { fileName } = req.params;
         const { type, company, date, uuid, submissionUid } = req.body;
+
+        await logFileOperation(`Accessing file content: ${fileName}`, {
+            user: loggedUser,
+            action: 'READ',
+            details: { fileName, type, company, date }
+        });
 
         // 1. Get and validate SAP configuration
         const config = await getActiveSAPConfig();
   
         if (!config.success || !config.networkPath) {
+            await logError('Invalid SAP configuration', new Error(config.error || 'No network path configured'), {
+                user: loggedUser,
+                action: 'CONFIG_CHECK'
+            });
             throw new Error('Invalid SAP configuration: ' + (config.error || 'No network path configured'));
         }
 
@@ -1415,6 +1500,13 @@ router.post('/:fileName/content', async (req, res) => {
         // Save the updated workbook
         XLSX.writeFile(outgoingWorkbook, outgoingFilePath);
 
+        // Add logging for successful file read
+        await logFileOperation(`Successfully read file content: ${fileName}`, {
+            user: loggedUser,
+            action: 'READ',
+            details: { fileName, type, company, date, filePath }
+        });
+
         res.json({
             success: true,
             content: processedData,
@@ -1422,7 +1514,11 @@ router.post('/:fileName/content', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('\nError in file content endpoint:', error);
+        await logError(`Error accessing file content: ${error.message}`, error, {
+            user: loggedUser,
+            action: 'READ',
+            details: req.params
+        });
         res.status(500).json({
             success: false,
             error: {
@@ -1514,6 +1610,93 @@ router.get('/submission/:submissionUid', async (req, res) => {
     }
 });
 
+router.post('/validate', async (req, res) => {
+    const loggedUser = req.session?.user?.username;
+    try {
+        const { fileName, type, company, date } = req.body;
+
+        await logValidation(`Starting validation for file: ${fileName}`, {
+            user: loggedUser,
+            status: 'PENDING',
+            details: { fileName, type, company, date }
+        });
+
+        // Get SAP configuration
+        const config = await getActiveSAPConfig();
+        if (!config.success) {
+            await logError('SAP configuration error during validation', new Error(config.error), {
+                user: loggedUser,
+                action: 'VALIDATE',
+                details: { fileName }
+            });
+            throw new Error(`SAP configuration error: ${config.error}`);
+        }
+
+        // Validate file path and access
+        const formattedDate = moment(date).format('YYYY-MM-DD');
+        const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
+
+        if (!fs.existsSync(filePath)) {
+            await logError('File not found during validation', new Error('File not found'), {
+                user: loggedUser,
+                action: 'VALIDATE',
+                details: { fileName, filePath }
+            });
+            throw new Error('File not found');
+        }
+
+        // Perform validation
+        const validationResult = await validateExcelFile(fileName, type, company, date);
+
+        if (validationResult.errors && validationResult.errors.length > 0) {
+            await logValidation(`Validation failed for file: ${fileName}`, {
+                user: loggedUser,
+                hasErrors: true,
+                details: { 
+                    fileName,
+                    errors: validationResult.errors,
+                    errorCount: validationResult.errors.length
+                }
+            });
+
+            return res.status(400).json({
+                success: false,
+                errors: validationResult.errors
+            });
+        }
+
+        await logValidation(`Validation successful for file: ${fileName}`, {
+            user: loggedUser,
+            details: { 
+                fileName,
+                type,
+                company,
+                date
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'File validation successful',
+            data: validationResult.data
+        });
+
+    } catch (error) {
+        await logError(`Validation error: ${error.message}`, error, {
+            user: loggedUser,
+            action: 'VALIDATE',
+            details: req.body
+        });
+
+        res.status(500).json({
+            success: false,
+            error: {
+                message: 'Validation failed',
+                details: error.message
+            }
+        });
+    }
+});
 
 router.delete('/:fileName', async (req, res) => {
     try {

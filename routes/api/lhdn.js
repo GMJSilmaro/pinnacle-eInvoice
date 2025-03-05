@@ -19,7 +19,8 @@ const { Op } = require('sequelize');
 const cache = new NodeCache({ stdTTL: 300 }); // 5 minutes in seconds
 
 // Database models
-const { WP_INBOUND_STATUS, WP_USER_REGISTRATION, WP_COMPANY_SETTINGS, WP_CONFIGURATION, WP_OUTBOUND_STATUS } = require('../../models');
+const { WP_INBOUND_STATUS, WP_USER_REGISTRATION, WP_COMPANY_SETTINGS, WP_CONFIGURATION, WP_OUTBOUND_STATUS, WP_LOGS } = require('../../models');
+const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
 
 // Helper function for delays
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -174,248 +175,283 @@ function getPortalUrl(environment) {
 const fetchRecentDocuments = async (req) => {
     console.log('Starting enhanced document fetch process...');
     
-    // Get LHDN configuration
-    const lhdnConfig = await getLHDNConfig();
-    console.log('Using LHDN configuration:', {
-        environment: lhdnConfig.environment,
-        baseUrl: lhdnConfig.baseUrl,
-        timeout: lhdnConfig.timeout
-    });
-
-    // First, check if we have data in the database
-    const dbDocuments = await WP_INBOUND_STATUS.findAll({
-        order: [['dateTimeReceived', 'DESC']],
-        limit: 1000 // Limit to latest 1000 records
-    });
-
-    // If we have database records, use them as the initial data source
-    if (dbDocuments && dbDocuments.length > 0) {
-        console.log(`Found ${dbDocuments.length} documents in database`);
-        
-        // Check if we need to refresh from API
-        const lastSyncedDocument = await WP_INBOUND_STATUS.findOne({
-            order: [['last_sync_date', 'DESC']],
-            attributes: ['last_sync_date']
+    try {  
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+        console.log('Using LHDN configuration:', {
+            environment: lhdnConfig.environment,
+            baseUrl: lhdnConfig.baseUrl,
+            timeout: lhdnConfig.timeout
         });
-        
-        const currentTime = new Date();
-        const syncThreshold = 15 * 60 * 1000; // 15 minutes in milliseconds
-        const forceRefresh = req.query.forceRefresh === 'true';
-        
-        // Only fetch from API if forced or if last sync is older than threshold
-        if (!forceRefresh && lastSyncedDocument && lastSyncedDocument.last_sync_date) {
-            const timeSinceLastSync = currentTime - new Date(lastSyncedDocument.last_sync_date);
-            if (timeSinceLastSync < syncThreshold) {
-                console.log('Using database records - last sync was', Math.round(timeSinceLastSync/1000/60), 'minutes ago');
-                return {
-                    result: dbDocuments,
-                    cached: true,
-                    fromDatabase: true
-                };
+
+        // First, check if we have data in the database
+        const dbDocuments = await WP_INBOUND_STATUS.findAll({
+            order: [['dateTimeReceived', 'DESC']],
+            limit: 1000 // Limit to latest 1000 records
+        });
+
+        // If we have database records, use them as the initial data source
+        if (dbDocuments && dbDocuments.length > 0) {
+            console.log(`Found ${dbDocuments.length} documents in database`);
+            
+            // Check if we need to refresh from API
+            const lastSyncedDocument = await WP_INBOUND_STATUS.findOne({
+                order: [['last_sync_date', 'DESC']],
+                attributes: ['last_sync_date']
+            });
+            
+            const currentTime = new Date();
+            const syncThreshold = 15 * 60 * 1000; // 15 minutes in milliseconds
+            const forceRefresh = req.query.forceRefresh === 'true';
+            
+            // Only fetch from API if forced or if last sync is older than threshold
+            if (!forceRefresh && lastSyncedDocument && lastSyncedDocument.last_sync_date) {
+                const timeSinceLastSync = currentTime - new Date(lastSyncedDocument.last_sync_date);
+                if (timeSinceLastSync < syncThreshold) {
+                    console.log('Using database records - last sync was', Math.round(timeSinceLastSync/1000/60), 'minutes ago');
+                    return {
+                        result: dbDocuments,
+                        cached: true,
+                        fromDatabase: true
+                    };
+                }
             }
+            
+            // If we're here, we need to refresh from API but still have DB records as fallback
+            console.log('Database records exist but need refresh from API');
+        } else {
+            console.log('No documents found in database, will fetch from API');
         }
-        
-        // If we're here, we need to refresh from API but still have DB records as fallback
-        console.log('Database records exist but need refresh from API');
-    } else {
-        console.log('No documents found in database, will fetch from API');
-    }
 
-    // Attempt to fetch from API
-    try {
-        console.log('Fetching fresh data from LHDN API...');
-        const documents = [];
-        let pageNo = 1;
-        const pageSize = 100; // MyInvois recommended page size
-        let hasMorePages = true;
-        let consecutiveErrors = 0;
-        const maxConsecutiveErrors = 3;
+        // Attempt to fetch from API
+        try {
+            console.log('Fetching fresh data from LHDN API...');
+            const documents = [];
+            let pageNo = 1;
+            const pageSize = 100; // MyInvois recommended page size
+            let hasMorePages = true;
+            let consecutiveErrors = 0;
+            const maxConsecutiveErrors = 3;
 
-        // Track rate limiting
-        let rateLimitRemaining = null;
-        let rateLimitReset = null;
+            // Track rate limiting
+            let rateLimitRemaining = null;
+            let rateLimitReset = null;
 
-        while (hasMorePages) {
-            let retryCount = 0;
-            let success = false;
+            while (hasMorePages) {
+                let retryCount = 0;
+                let success = false;
 
-            while (!success && retryCount < lhdnConfig.maxRetries) {
-                try {
-                    // Check rate limit before making request
-                    if (rateLimitRemaining !== null && rateLimitRemaining <= 0) {
-                        const waitTime = (new Date(rateLimitReset).getTime() - Date.now()) + 1000; // Add 1s buffer
-                        if (waitTime > 0) {
-                            console.log(`Rate limit reached. Waiting ${Math.round(waitTime/1000)}s before continuing...`);
-                            await delay(waitTime);
+                while (!success && retryCount < lhdnConfig.maxRetries) {
+                    try {
+                        // Check rate limit before making request
+                        if (rateLimitRemaining !== null && rateLimitRemaining <= 0) {
+                            const waitTime = (new Date(rateLimitReset).getTime() - Date.now()) + 1000; // Add 1s buffer
+                            if (waitTime > 0) {
+                                console.log(`Rate limit reached. Waiting ${Math.round(waitTime/1000)}s before continuing...`);
+                                await delay(waitTime);
+                            }
                         }
-                    }
 
-                    const response = await axios.get(
-                        `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
-                        {
-                            params: {
-                                pageNo: pageNo,
-                                pageSize: pageSize,
-                                sortBy: 'dateTimeReceived',
-                                sortOrder: 'desc'
-                            },
-                            headers: {
-                                'Authorization': `Bearer ${req.session.accessToken}`,
-                                'Accept': 'application/json',
-                                'Content-Type': 'application/json'
-                            },
-                            timeout: lhdnConfig.timeout
-                        }
-                    );
+                        const response = await axios.get(
+                            `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
+                            {
+                                params: {
+                                    pageNo: pageNo,
+                                    pageSize: pageSize,
+                                    sortBy: 'dateTimeReceived',
+                                    sortOrder: 'desc'
+                                },
+                                headers: {
+                                    'Authorization': `Bearer ${req.session.accessToken}`,
+                                    'Accept': 'application/json',
+                                    'Content-Type': 'application/json'
+                                },
+                                timeout: lhdnConfig.timeout
+                            }
+                        );
 
-                    // Update rate limit tracking from headers
-                    rateLimitRemaining = parseInt(response.headers['x-rate-limit-remaining'] || '-1');
-                    rateLimitReset = response.headers['x-rate-limit-reset'];
+                        // Update rate limit tracking from headers
+                        rateLimitRemaining = parseInt(response.headers['x-rate-limit-remaining'] || '-1');
+                        rateLimitReset = response.headers['x-rate-limit-reset'];
 
-                    // Handle pagination
-                    const { result, pagination } = response.data;
-                    
-                    if (!result || result.length === 0) {
-                        console.log(`No more documents found after page ${pageNo-1}`);
-                        hasMorePages = false;
-                        break;
-                    }
-
-                    // Map the required fields from the API response
-                    const mappedDocuments = result.map(doc => ({
-                        ...doc,
-                        issuerTin: doc.issuerTin || doc.supplierTin || doc.supplierTIN,
-                        issuerName: doc.issuerName || doc.supplierName,
-                        receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN,
-                        receiverName: doc.receiverName || doc.buyerName,
-                        receiverTIN: doc.receiverTIN || doc.buyerTIN,
-                        receiverRegistrationNo: doc.receiverRegistrationNo || doc.buyerRegistrationNo,
-                        receiverAddress: doc.receiverAddress || doc.buyerAddress,
-                        receiverPostcode: doc.receiverPostcode || doc.buyerPostcode,
-                        receiverCity: doc.receiverCity || doc.buyerCity,
-                        receiverState: doc.receiverState || doc.buyerState,
-                        receiverCountry: doc.receiverCountry || doc.buyerCountry,
-                        receiverPhone: doc.receiverPhone || doc.buyerPhone,
-                        uuid: doc.uuid,
-                        submissionUid: doc.submissionUid,
-                        longId: doc.longId,
-                        internalId: doc.internalId,
-                        typeName: doc.typeName,
-                        typeVersionName: doc.typeVersionName,
-                        dateTimeReceived: doc.dateTimeReceived,
-                        dateTimeValidated: doc.dateTimeValidated,
-                        status: doc.status,
-                        documentStatusReason: doc.documentStatusReason,
-                        totalSales: doc.totalSales || doc.total || doc.netAmount || 0,
-                        totalExcludingTax: doc.totalExcludingTax || 0,
-                        totalDiscount: doc.totalDiscount || 0,
-                        totalNetAmount: doc.totalNetAmount || 0,
-                        totalPayableAmount: doc.totalPayableAmount || 0
-                    }));
-
-                    documents.push(...mappedDocuments);
-                    console.log(`Successfully fetched page ${pageNo} with ${mappedDocuments.length} documents`);
-
-                    // Check if we have more pages based on pagination info
-                    if (pagination) {
-                        hasMorePages = pageNo < pagination.totalPages;
-                    } else {
-                        hasMorePages = result.length === pageSize;
-                    }
-
-                    // Reset consecutive errors counter on success
-                    consecutiveErrors = 0;
-                    success = true;
-                    pageNo++;
-
-                    // Add a small delay between requests to be considerate
-                    if (hasMorePages) {
-                        await delay(500);
-                    }
-
-                } catch (error) {
-                    retryCount++;
-                    console.error(`Error fetching page ${pageNo}:`, error.message);
-
-                    // Handle authentication errors
-                    if (error.response?.status === 401 || error.response?.status === 403) {
-                        throw new Error('Authentication failed. Please log in again.');
-                    }
-
-                    // Handle rate limiting
-                    if (error.response?.status === 429) {
-                        const resetTime = error.response.headers["x-rate-limit-reset"];
-                        rateLimitRemaining = 0;
-                        rateLimitReset = resetTime;
+                        // Handle pagination
+                        const { result, pagination } = response.data;
                         
-                        const waitTime = new Date(resetTime).getTime() - Date.now();
-                        if (waitTime > 0) {
-                            console.log(`Rate limited. Waiting ${Math.round(waitTime/1000)}s before retry...`);
-                            await delay(waitTime);
-                            retryCount--; // Don't count rate limit retries
-                            continue;
-                        }
-                    }
-
-                    // Track consecutive errors
-                    if (retryCount >= lhdnConfig.maxRetries) {
-                        consecutiveErrors++;
-                        if (consecutiveErrors >= maxConsecutiveErrors) {
-                            console.error(`Max consecutive errors (${maxConsecutiveErrors}) reached. Stopping fetch.`);
+                        if (!result || result.length === 0) {
+                            console.log(`No more documents found after page ${pageNo-1}`);
                             hasMorePages = false;
                             break;
                         }
-                        console.log(`Moving to next page after max retries for page ${pageNo}`);
-                        pageNo++;
-                        break;
-                    }
 
-                    // Exponential backoff for other errors
-                    const backoffDelay = Math.min(
-                        lhdnConfig.maxRetryDelay,
-                        lhdnConfig.retryDelay * Math.pow(2, retryCount)
-                    );
-                    console.log(`Retrying page ${pageNo} after ${backoffDelay/1000}s delay (attempt ${retryCount + 1}/${lhdnConfig.maxRetries})...`);
-                    await delay(backoffDelay);
+                        // Map the required fields from the API response
+                        const mappedDocuments = result.map(doc => ({
+                            ...doc,
+                            issuerTin: doc.issuerTin || doc.supplierTin || doc.supplierTIN,
+                            issuerName: doc.issuerName || doc.supplierName,
+                            receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN,
+                            receiverName: doc.receiverName || doc.buyerName,
+                            receiverTIN: doc.receiverTIN || doc.buyerTIN,
+                            receiverRegistrationNo: doc.receiverRegistrationNo || doc.buyerRegistrationNo,
+                            receiverAddress: doc.receiverAddress || doc.buyerAddress,
+                            receiverPostcode: doc.receiverPostcode || doc.buyerPostcode,
+                            receiverCity: doc.receiverCity || doc.buyerCity,
+                            receiverState: doc.receiverState || doc.buyerState,
+                            receiverCountry: doc.receiverCountry || doc.buyerCountry,
+                            receiverPhone: doc.receiverPhone || doc.buyerPhone,
+                            uuid: doc.uuid,
+                            submissionUid: doc.submissionUid,
+                            longId: doc.longId,
+                            internalId: doc.internalId,
+                            typeName: doc.typeName,
+                            typeVersionName: doc.typeVersionName,
+                            dateTimeReceived: doc.dateTimeReceived,
+                            dateTimeValidated: doc.dateTimeValidated,
+                            status: doc.status,
+                            documentStatusReason: doc.documentStatusReason,
+                            totalSales: doc.totalSales || doc.total || doc.netAmount || 0,
+                            totalExcludingTax: doc.totalExcludingTax || 0,
+                            totalDiscount: doc.totalDiscount || 0,
+                            totalNetAmount: doc.totalNetAmount || 0,
+                            totalPayableAmount: doc.totalPayableAmount || 0
+                        }));
+
+                        documents.push(...mappedDocuments);
+                        console.log(`Successfully fetched page ${pageNo} with ${mappedDocuments.length} documents`);
+
+                        // Check if we have more pages based on pagination info
+                        if (pagination) {
+                            hasMorePages = pageNo < pagination.totalPages;
+                        } else {
+                            hasMorePages = result.length === pageSize;
+                        }
+
+                        // Reset consecutive errors counter on success
+                        consecutiveErrors = 0;
+                        success = true;
+                        pageNo++;
+
+                        // Add a small delay between requests to be considerate
+                        if (hasMorePages) {
+                            await delay(500);
+                        }
+
+                    } catch (error) {
+                        retryCount++;
+                        console.error(`Error fetching page ${pageNo}:`, error.message);
+
+                        // Handle authentication errors
+                        if (error.response?.status === 401 || error.response?.status === 403) {
+                            throw new Error('Authentication failed. Please log in again.');
+                        }
+
+                        // Handle rate limiting
+                        if (error.response?.status === 429) {
+                            const resetTime = error.response.headers["x-rate-limit-reset"];
+                            rateLimitRemaining = 0;
+                            rateLimitReset = resetTime;
+                            
+                            const waitTime = new Date(resetTime).getTime() - Date.now();
+                            if (waitTime > 0) {
+                                console.log(`Rate limited. Waiting ${Math.round(waitTime/1000)}s before retry...`);
+                                await delay(waitTime);
+                                retryCount--; // Don't count rate limit retries
+                                continue;
+                            }
+                        }
+
+                        // Track consecutive errors
+                        if (retryCount >= lhdnConfig.maxRetries) {
+                            consecutiveErrors++;
+                            if (consecutiveErrors >= maxConsecutiveErrors) {
+                                console.error(`Max consecutive errors (${maxConsecutiveErrors}) reached. Stopping fetch.`);
+                                hasMorePages = false;
+                                break;
+                            }
+                            console.log(`Moving to next page after max retries for page ${pageNo}`);
+                            pageNo++;
+                            break;
+                        }
+
+                        // Exponential backoff for other errors
+                        const backoffDelay = Math.min(
+                            lhdnConfig.maxRetryDelay,
+                            lhdnConfig.retryDelay * Math.pow(2, retryCount)
+                        );
+                        console.log(`Retrying page ${pageNo} after ${backoffDelay/1000}s delay (attempt ${retryCount + 1}/${lhdnConfig.maxRetries})...`);
+                        await delay(backoffDelay);
+                    }
+                }
+
+                if (!success && consecutiveErrors >= maxConsecutiveErrors) {
+                    hasMorePages = false;
                 }
             }
 
-            if (!success && consecutiveErrors >= maxConsecutiveErrors) {
-                hasMorePages = false;
+            if (documents.length === 0) {
+                throw new Error('No documents could be fetched from the API');
             }
-        }
 
-        if (documents.length === 0) {
-            throw new Error('No documents could be fetched from the API');
-        }
+            console.log(`Fetch complete. Total documents retrieved: ${documents.length}`);
+            
+            // Save the fetched documents to database
+            await saveInboundStatus({ result: documents });
 
-        console.log(`Fetch complete. Total documents retrieved: ${documents.length}`);
-        
-        // Save the fetched documents to database
-        await saveInboundStatus({ result: documents });
+            // Log successful document fetch
+            await LoggingService.log({
+                description: `Successfully fetched ${documents.length} documents from LHDN`,
+                username: req?.session?.user?.username || 'System',
+                userId: req?.session?.user?.id,
+                ipAddress: req?.ip,
+                logType: LOG_TYPES.INFO,
+                module: MODULES.API,
+                action: ACTIONS.READ,
+                status: STATUS.SUCCESS,
+                details: { count: documents.length }
+            });
 
-        return { 
-            result: documents,
-            cached: false,
-            fromApi: true
-        };
-    } catch (error) {
-        console.error('Error fetching from LHDN API:', error.message);
-        
-        // If we have database records, use them as fallback
-        if (dbDocuments && dbDocuments.length > 0) {
-            console.log(`Using ${dbDocuments.length} database records as fallback`);
-            return {
-                result: dbDocuments,
-                cached: true,
-                fromDatabase: true,
-                fallback: true,
-                error: error.message
+            return { 
+                result: documents,
+                cached: false,
+                fromApi: true
             };
+        } catch (error) {
+            console.error('Error fetching from LHDN API:', error.message);
+            
+            // Log the error
+            await LoggingService.log({
+                description: `Error fetching documents from LHDN: ${error.message}`,
+                username: req?.session?.user?.username || 'System',
+                userId: req?.session?.user?.id,
+                ipAddress: req?.ip,
+                logType: LOG_TYPES.ERROR,
+                module: MODULES.API,
+                action: ACTIONS.READ,
+                status: STATUS.FAILED,
+                details: { error: error.message }
+            });
+            
+            // If we have database records, use them as fallback
+            if (dbDocuments && dbDocuments.length > 0) {
+                console.log(`Using ${dbDocuments.length} database records as fallback`);
+                return {
+                    result: dbDocuments,
+                    cached: true,
+                    fromDatabase: true,
+                    fallback: true,
+                    error: error.message
+                };
+            }
+            
+            // If no database records, rethrow the error
+            throw error;
         }
-        
-        // If no database records, rethrow the error
-        throw error;
+    } catch (error) {
+        console.error('Error in document fetch:', error);
+        return { 
+            success: false, 
+            message: `Error fetching documents: ${error.message}`,
+            error: error 
+        };
     }
 };
 
@@ -763,6 +799,13 @@ const generateResponseFile = async (item) => {
 const saveInboundStatus = async (data) => {
     if (!data.result || !Array.isArray(data.result)) {
         console.warn("No valid data to process");
+        await LoggingService.log({
+            description: "No valid data to process for inbound status",
+            logType: LOG_TYPES.WARNING,
+            module: MODULES.API,
+            action: ACTIONS.CREATE,
+            status: STATUS.WARNING
+        });
         return;
     }
 
@@ -779,6 +822,16 @@ const saveInboundStatus = async (data) => {
     }
 
     console.log(`Processing ${batches.length} batches of ${batchSize} documents each`);
+    
+    // Log the start of batch processing
+    await LoggingService.log({
+        description: `Starting to process ${data.result.length} documents in ${batches.length} batches`,
+        logType: LOG_TYPES.INFO,
+        module: MODULES.API,
+        action: ACTIONS.CREATE,
+        status: STATUS.PENDING,
+        details: { totalDocuments: data.result.length, batchCount: batches.length }
+    });
 
     // Helper function to format dates
     const formatDate = (date) => {
@@ -852,6 +905,7 @@ const saveInboundStatus = async (data) => {
     }
 
     console.log(`Save operation completed. Success: ${successCount}, Errors: ${errorCount}`);
+    
     return { 
         successCount, 
         errorCount,
@@ -1082,6 +1136,17 @@ router.get('/documents/recent-total', async (req, res) => {
 router.get('/sync', async (req, res) => {
     try {
             const apiData = await fetchRecentDocuments(req);
+             // Log the start of document fetching
+            await LoggingService.log({
+                description: 'Starting document fetch from LHDN',
+                username: req?.session?.user?.username || 'System',
+                userId: req?.session?.user?.id,
+                ipAddress: req?.ip,
+                logType: LOG_TYPES.INFO,
+                module: MODULES.API,
+                action: ACTIONS.READ,
+                status: STATUS.PENDING
+            });
             await saveInboundStatus(apiData);
             
             res.json({ success: true });
@@ -1093,278 +1158,6 @@ router.get('/sync', async (req, res) => {
             });
         }
 });
-
-// // Update display-details endpoint to fetch all required data
-// router.get('/documents/:uuid/display-details', async (req, res) => {
-//     const lhdnConfig = await getLHDNConfig();
-
-//     try {
-//         const { uuid } = req.params;
-
-//         // Log the request details
-//         console.log('Fetching details for document:', {
-//             uuid,
-//             user: req.session.user,
-//             timestamp: new Date().toISOString()
-//         });
-
-//         // Check if user is logged in
-//         if (!req.session.user || !req.session.accessToken) {
-//             return res.redirect('/login');
-//         }
-
-//         // Get document details directly from LHDN API using raw endpoint
-//         console.log('Fetching raw document from LHDN API...');
-//         const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/raw`, {
-//             headers: {
-//                 'Authorization': `Bearer ${req.session.accessToken}`,
-//                 'Content-Type': 'application/json'
-//             }
-//         });
-
-//         const documentData = response.data;
-//         console.log('Raw document data:', JSON.stringify(documentData, null, 2));
-
-//         // Check if document field exists and can be parsed
-//         if (documentData.document) {
-//             try {
-//                 const parsedDocument = JSON.parse(documentData.document);
-//                 console.log('Parsed UBL structure:', JSON.stringify(parsedDocument, null, 2));
-//             } catch (parseError) {
-//                 console.log('Failed to parse document field:', parseError);
-//             }
-//         } else {
-//             console.log('No document field present, using top-level fields');
-//             console.log('Available top-level fields:', Object.keys(documentData));
-//         }
-
-//         // Check if user is receiver and document status is Invalid or Submitted
-//         const isReceiver = req.session.user.TIN === documentData.receiverTin;
-//         if (isReceiver && (documentData.status === 'Invalid' || documentData.status === 'Submitted')) {
-//             return res.status(403).json({
-//                 success: false,
-//                 message: `Document details cannot be viewed when status is ${documentData.status}. Please wait for the document to be validated.`
-//             });
-//         }
-
-//         // Get document details directly from LHDN API using raw endpoint
-//         console.log('Fetching raw document from LHDN API...');
-//         const detailsResponse = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/details`, {
-//             headers: {
-//                 'Authorization': `Bearer ${req.session.accessToken}`,
-//                 'Content-Type': 'application/json'
-//             }
-//         });
-
-//         const detailsData = detailsResponse.data;
-//         console.log('Raw document details:', JSON.stringify(detailsData, null, 2));
-
-
-//         // Process validation results if document is invalid
-//         let processedValidationResults = null;
-//         if (detailsData.validationResults) {
-//             processedValidationResults = {
-//                 status: detailsData.status,
-//                 validationSteps: detailsData.validationResults.validationSteps?.map(step => {
-//                     let errors = [];
-//                     if (step.error) {
-//                         if (Array.isArray(step.error.errors)) {
-//                             errors = step.error.errors.map(err => ({
-//                                 code: err.code || 'VALIDATION_ERROR',
-//                                 message: err.message || err.toString(),
-//                                 field: err.field || null,
-//                                 value: err.value || null,
-//                                 details: err.details || null
-//                             }));
-//                         } else if (typeof step.error === 'object') {
-//                             errors = [{
-//                                 code: step.error.code || 'VALIDATION_ERROR',
-//                                 message: step.error.message || step.error.toString(),
-//                                 field: step.error.field || null,
-//                                 value: step.error.value || null,
-//                                 details: step.error.details || null
-//                             }];
-//                         } else {
-//                             errors = [{
-//                                 code: 'VALIDATION_ERROR',
-//                                 message: step.error.toString(),
-//                                 field: null,
-//                                 value: null,
-//                                 details: null
-//                             }];
-//                         }
-//                     }
-
-//                     return {
-//                         name: step.name || 'Validation Step',
-//                         status: step.status || 'Invalid',
-//                         error: errors.length > 0 ? { errors } : null,
-//                         timestamp: step.timestamp || new Date().toISOString()
-//                     };
-//                 }) || [],
-//                 summary: {
-//                     totalSteps: detailsData.validationResults.validationSteps?.length || 0,
-//                     failedSteps: detailsData.validationResults.validationSteps?.filter(step => step.status === 'Invalid' || step.error)?.length || 0,
-//                     lastUpdated: new Date().toISOString()
-//                 }
-//             };
-//         }
-
-//         // Return basic document info if document field is not present
-//         if (!documentData.document) {
-//             return res.json({
-//                 success: true,
-//                 documentInfo: {
-//                     uuid: documentData.uuid,
-//                     submissionUid: documentData.submissionUid,
-//                     longId: detailsData.longId,
-//                     internalId: documentData.internalId,
-//                     status: documentData.status,
-//                     validationResults: documentData.validationResults,
-//                     supplierName: documentData.supplierName,
-//                     supplierSstNo: documentData.supplierSstNo,
-//                     supplierMsicCode: documentData.supplierMsicCode,
-//                     supplierAddress: documentData.supplierAddress,
-//                     receiverSstNo: documentData.receiverSstNo,
-//                     receiverRegistrationNo: documentData.receiverRegistrationNo,
-//                     receiverAddress: documentData.receiverAddress
-//                 },
-//                 supplierInfo: {
-//                     company: documentData.supplierName,
-//                     tin: documentData.supplierTin,
-//                     registrationNo: documentData.supplierRegistrationNo,
-//                     taxRegNo: documentData.supplierSstNo,
-//                     msicCode: documentData.supplierMsicCode,
-//                     address: documentData.supplierAddress
-//                 },
-//                 customerInfo: {
-//                     company: documentData.receiverName,
-//                     tin: documentData.receiverTin,
-//                     registrationNo: documentData.receiverRegistrationNo,
-//                     taxRegNo: documentData.receiverSstNo,
-//                     address: documentData.receiverAddress
-//                 },
-//                 paymentInfo: {
-//                     totalIncludingTax: documentData.totalSales,
-//                     totalExcludingTax: documentData.totalExcludingTax,
-//                     taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
-//                     irbmUniqueNo: documentData.uuid,
-//                     irbmlongId: documentData.longId
-//                 }
-//             });
-//         }
-
-//         // If document field exists, parse it and extract detailed info
-//         try {
-//             const parsedDocument = JSON.parse(documentData.document);
-//             return res.json({
-//                 success: true,
-//                 documentInfo: {
-//                     uuid: documentData.uuid,
-//                     submissionUid: documentData.submissionUid,
-//                     longId: detailsData.longId,
-//                     irbmlongId: documentData.longId,
-//                     internalId: documentData.internalId,
-//                     status: documentData.status,
-//                     validationResults: documentData.validationResults,
-//                     supplierName: documentData.issuerName,
-//                     supplierTIN: documentData.issuerTin,
-//                     supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
-//                     supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
-//                     supplierAddress: supplierParty.PostalAddress[0].AddressLine
-//                         .map(line => line.Line[0]._)
-//                         .filter(Boolean)
-//                         .join(', ') || documentData.supplierAddress,
-//                     receiverName: documentData.receiverName,
-//                     receiverId: documentData.receiverTin,
-//                     receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
-//                     receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
-//                     receiverAddress: customerParty.PostalAddress[0].AddressLine
-//                         .map(line => line.Line[0]._)
-//                         .filter(Boolean)
-//                         .join(', ') || documentData.receiverAddress
-//                 },
-//                 supplierInfo: {
-//                     company: documentData.supplierName,
-//                     tin: documentData.supplierTin,
-//                     registrationNo: documentData.supplierRegistrationNo,
-//                     taxRegNo: documentData.supplierSstNo,
-//                     msicCode: documentData.supplierMsicCode,
-//                     address: documentData.supplierAddress
-//                 },
-//                 customerInfo: {
-//                     company: documentData.receiverName,
-//                     tin: documentData.receiverTin,
-//                     registrationNo: documentData.receiverRegistrationNo,
-//                     taxRegNo: documentData.receiverSstNo,
-//                     address: documentData.receiverAddress
-//                 },
-//                 paymentInfo: {
-//                     totalIncludingTax: documentData.totalSales,
-//                     totalExcludingTax: documentData.totalExcludingTax,
-//                     taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
-//                     irbmUniqueNo: documentData.uuid,
-//                     irbmlongId: documentData.longId
-//                 }
-//             });
-//         } catch (parseError) {
-//             console.error('Error parsing document:', parseError);
-//             // Return basic document info if parsing fails
-//             return res.json({
-//                 success: true,
-//                 documentInfo: {
-//                     uuid: documentData.uuid,
-//                     submissionUid: documentData.submissionUid,
-//                     longId: documentData.longId,
-//                     irbmlongId: documentData.longId,
-//                     internalId: documentData.internalId,
-//                     status: documentData.status,
-//                     validationResults: documentData.validationResults,
-//                     supplierName: documentData.supplierName,
-//                     supplierSstNo: documentData.supplierSstNo,
-//                     supplierMsicCode: documentData.supplierMsicCode,
-//                     supplierAddress: documentData.supplierAddress,
-//                     receiverSstNo: documentData.receiverSstNo,
-//                     receiverRegistrationNo: documentData.receiverRegistrationNo,
-//                     receiverAddress: documentData.receiverAddress
-//                 },
-//                 supplierInfo: {
-//                     company: documentData.supplierName,
-//                     tin: documentData.supplierTin,
-//                     registrationNo: documentData.supplierRegistrationNo,
-//                     taxRegNo: documentData.supplierSstNo,
-//                     msicCode: documentData.supplierMsicCode,
-//                     address: documentData.supplierAddress
-//                 },
-//                 customerInfo: {
-//                     company: documentData.receiverName,
-//                     tin: documentData.receiverTin,
-//                     registrationNo: documentData.receiverRegistrationNo,
-//                     taxRegNo: documentData.receiverSstNo,
-//                     address: documentData.receiverAddress
-//                 },
-//                 paymentInfo: {
-//                     totalIncludingTax: documentData.totalSales,
-//                     totalExcludingTax: documentData.totalExcludingTax,
-//                     taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
-//                     irbmUniqueNo: documentData.uuid,
-//                     irbmlongId: documentData.longId
-//                 }
-//             });
-//         }
-
-//     } catch (error) {
-//         console.error('Error fetching document details:', error);
-//         return res.status(500).json({
-//             success: false,
-//             message: error.message || 'Failed to fetch document details',
-//             error: {
-//                 name: error.name,
-//                 details: error.response?.data || error.stack
-//             }
-//         });
-//     }
-// });
 
 // Update display-details endpoint to fetch all required data
 router.get('/documents/:uuid/display-details', async (req, res) => {
@@ -1976,9 +1769,6 @@ router.get('/documents/:uuid/check-pdf', async (req, res) => {
         });
     }
 });
-
-// // Apply rate limiting to PDF routes
-// router.use('/documents/:uuid/pdf', limiter);
 
 // Update PDF generation route
 router.post('/documents/:uuid/pdf', async (req, res) => {

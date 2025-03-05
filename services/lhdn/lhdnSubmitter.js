@@ -15,6 +15,7 @@ const { getActiveSAPConfig } = require('../../config/paths');
 const { processExcelData } = require('./processExcelData');
 const { parseStringPromise } = require('xml2js');
 const { getTokenSession, getConfig } = require('../token.service');
+const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
 
 async function getLHDNConfig() {
     const config = await WP_CONFIGURATION.findOne({
@@ -93,18 +94,17 @@ class LHDNSubmitter {
 
   
   async logOperation(description, options = {}) {
-    const now = new Date();
     try {
-      await WP_LOGS.create({
-        Description: description,
-        CreateTS: new Date().toISOString(),
-        LoggedUser: this.req.session?.user?.username || 'System',
-        IPAddress: this.req.ip,
-        LogType: options.logType || 'INFO',
-        Module: 'OUTBOUND',
-        Action: options.action || 'SUBMIT',
-        Status: options.status || 'SUCCESS',
-        UserID: this.req.session?.user?.id
+      await LoggingService.log({
+        description,
+        username: this.req.session?.user?.username || 'System',
+        userId: this.req.session?.user?.id,
+        ipAddress: this.req.ip,
+        logType: options.logType || LOG_TYPES.INFO,
+        module: options.module || MODULES.INVOICE,
+        action: options.action || ACTIONS.SUBMIT,
+        status: options.status || STATUS.SUCCESS,
+        details: options.details || null
       });
     } catch (error) {
       console.error('Error creating log:', error);
@@ -409,6 +409,14 @@ class LHDNSubmitter {
 
   async submitToLHDNDocument(docs) {
     try {
+      // Log the start of submission process
+      await this.logOperation(`Starting document submission to LHDN`, {
+        action: ACTIONS.SUBMIT,
+        status: STATUS.PENDING,
+        module: MODULES.INVOICE,
+        details: { documentCount: docs.length }
+      });
+      
       // Get token from session
       let token;
       
@@ -423,11 +431,29 @@ class LHDNSubmitter {
       }
       
       if (!token) {
+        await this.logOperation('No valid authentication token found', {
+          action: ACTIONS.SUBMIT,
+          status: STATUS.FAILED,
+          logType: LOG_TYPES.ERROR,
+          module: MODULES.INVOICE
+        });
         throw new Error('No valid authentication token found');
       }
 
       const result = await submitDocument(docs, token);
       console.log('Submission result:', JSON.stringify(result, null, 2));
+      
+      // Log successful submission
+      await this.logOperation(`Document successfully submitted to LHDN`, {
+        action: ACTIONS.SUBMIT,
+        status: STATUS.SUCCESS,
+        module: MODULES.INVOICE,
+        details: { 
+          uuid: result.uuid,
+          submissionUid: result.submissionUid,
+          status: result.status
+        }
+      });
 
       // Check if there are rejected documents
       if (result.data?.rejectedDocuments?.length > 0) {
@@ -450,6 +476,18 @@ class LHDNSubmitter {
         code: error.response?.data?.code,
         details: error.response?.data?.error?.details || error.response?.data?.details,
         fullError: JSON.stringify(error.response?.data, null, 2)
+      });
+
+      // Log the error to database
+      await this.logOperation(`Error submitting document to LHDN: ${error.message}`, {
+        action: ACTIONS.SUBMIT,
+        status: STATUS.FAILED,
+        logType: LOG_TYPES.ERROR,
+        module: MODULES.INVOICE,
+        details: {
+          errorCode: error.response?.data?.code || 'SUBMISSION_ERROR',
+          errorDetails: error.response?.data?.error?.details || error.response?.data?.details || error.stack
+        }
       });
 
       return {
@@ -480,12 +518,33 @@ class LHDNSubmitter {
       await WP_OUTBOUND_STATUS.upsert(submissionData, { transaction });
 
       await this.logOperation(`Status Updated to ${data.status} for invoice ${data.invoice_number}`, {
-        action: 'STATUS_UPDATE',
-        status: data.status
+        action: ACTIONS.UPDATE,
+        status: STATUS.SUCCESS,
+        module: MODULES.INVOICE,
+        details: {
+          fileName: data.fileName,
+          invoiceNumber: data.invoice_number,
+          uuid: data.uuid,
+          submissionUid: data.submissionUid,
+          status: data.status
+        }
       });
 
     } catch (error) {
       console.error('Error updating submission status:', error);
+      
+      await this.logOperation(`Error updating status for invoice ${data.invoice_number}: ${error.message}`, {
+        action: ACTIONS.UPDATE,
+        status: STATUS.FAILED,
+        logType: LOG_TYPES.ERROR,
+        module: MODULES.INVOICE,
+        details: {
+          fileName: data.fileName,
+          invoiceNumber: data.invoice_number,
+          error: error.message
+        }
+      });
+      
       throw error;
     }
   }
@@ -500,11 +559,33 @@ class LHDNSubmitter {
         console.log('=== updateExcelWithResponse Start ===');
         console.log('Input Parameters:', { fileName, type, company, date, uuid, longId, invoice_number });
 
+        // Log the start of Excel update process
+        await this.logOperation(`Starting Excel update with LHDN response for ${fileName}`, {
+            action: ACTIONS.UPDATE,
+            status: STATUS.PENDING,
+            module: MODULES.INVOICE,
+            details: { 
+                fileName, 
+                type, 
+                company, 
+                date, 
+                uuid, 
+                longId, 
+                invoice_number 
+            }
+        });
+
         // Get network path from config
         const config = await getActiveSAPConfig();
         console.log('SAP Config:', config);
 
         if (!config.success) {
+            await this.logOperation(`Failed to get SAP configuration for Excel update: ${fileName}`, {
+                action: ACTIONS.UPDATE,
+                status: STATUS.FAILED,
+                logType: LOG_TYPES.ERROR,
+                module: MODULES.INVOICE
+            });
             throw new Error('Failed to get SAP configuration');
         }
 
@@ -552,10 +633,37 @@ class LHDNSubmitter {
         };
 
         console.log('=== updateExcelWithResponse Response ===', response);
+        
+        // Log successful Excel update
+        await this.logOperation(`Successfully updated Excel file with LHDN response for ${fileName}`, {
+            action: ACTIONS.UPDATE,
+            status: STATUS.SUCCESS,
+            module: MODULES.INVOICE,
+            details: { 
+                fileName, 
+                outgoingPath: outgoingFilePath,
+                uuid,
+                invoice_number
+            }
+        });
+        
         return response;
 
     } catch (error) {
         console.error('=== updateExcelWithResponse Error ===', error);
+        
+        // Log error in Excel update
+        await this.logOperation(`Error updating Excel file with LHDN response for ${fileName}: ${error.message}`, {
+            action: ACTIONS.UPDATE,
+            status: STATUS.FAILED,
+            logType: LOG_TYPES.ERROR,
+            module: MODULES.INVOICE,
+            details: { 
+                fileName, 
+                error: error.message
+            }
+        });
+        
         return {
             success: false,
             error: error.message
