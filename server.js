@@ -164,6 +164,7 @@ app.use('/dashboard', dashboardRoutes);
 app.use('/api', auth.isApiAuthenticated, apiRoutes);
 app.use('/api/dashboard-analytics', auth.isApiAuthenticated, dashboardAnalyticsRouter); 
 app.use('/api/dashboard-analytics', require('./routes/api/dashboard-analytics'));
+app.use('/api/logs', auth.isApiAuthenticated, require('./routes/api/logs.routes'));
 app.use('/', webRoutes);
 
 // 6. Error Handling

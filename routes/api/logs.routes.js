@@ -3,6 +3,27 @@ const router = express.Router();
 const { auth } = require('../../middleware');
 const { LoggingService, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
 const excel = require('exceljs');
+const { WP_LOGS } = require('../../models');
+
+/**
+ * @route GET /api/logs/recent
+ * @desc Get recent logs for dashboard display
+ * @access Private
+ */
+router.get('/recent', async (req, res) => {
+  try {
+    // Get the most recent 10 logs
+    const logs = await WP_LOGS.findAll({
+      order: [['CreateTS', 'DESC']],
+      limit: 10
+    });
+    
+    res.json(logs);
+  } catch (error) {
+    console.error('Error fetching recent logs:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 
 // Get audit logs with filtering and pagination
 router.get('/audit', auth.isAdmin, async (req, res) => {

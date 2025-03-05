@@ -308,4 +308,24 @@ router.get('/health', (req, res) => {
   });
 });
 
+// Add a function to provide accurate information about document cancellation
+function getCancellationInstructions() {
+    return `To cancel a submitted document in the Pinnacle eInvoice system:
+
+1. Navigate to the Outbound page where you can see your submitted documents
+2. Find the document you want to cancel in the table (it must have "Submitted" status)
+3. If the document was recently submitted (within the cancellation time window), you'll see a "Cancel" button in the Actions column
+4. Click the "Cancel" button
+5. In the confirmation dialog, enter a reason for cancellation (this is required)
+6. Click "Yes, cancel it" to confirm
+
+Important notes:
+- You can only cancel documents with "Submitted" status
+- There is a time limit for cancellation after submission
+- Once the time window expires, the Cancel button will no longer be available
+- The cancellation cannot be undone
+
+If you need help with cancellation or have issues with the process, please contact your system administrator.`;
+}
+
 module.exports = router; 

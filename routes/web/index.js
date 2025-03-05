@@ -11,8 +11,20 @@ const checkSession = (req, res, next) => {
 };
 
 // Dashboard routes
+router.get('/', auth.middleware, (req, res) => {
+    res.render('dashboard/inbound.html', {
+        title: 'Inbound',
+        user: req.session.user || null,
+        layout: 'layout'
+    });
+});
+// Dashboard routes
 router.get('/dashboard', auth.middleware, (req, res) => {
-    res.render('dashboard/index');
+    res.render('dashboard/inbound.html', {
+        title: 'Inbound',
+        user: req.session.user || null,
+        layout: 'layout'
+    });
 });
 
 //  Inbound redirect

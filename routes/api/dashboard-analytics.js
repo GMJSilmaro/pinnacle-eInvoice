@@ -86,7 +86,7 @@ router.get('/invoice-status', async (req, res) => {
         res.json(results);
     } catch (error) {
         console.error('Error fetching invoice status:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Failed to fetch invoice status' });
     }
 });
 
@@ -203,7 +203,7 @@ router.get('/top-customers', async (req, res) => {
 
 router.get('/online-users', async (req, res) => {
     try {
-        console.log('Fetching online users', req.session.user);
+        //console.log('Fetching online users', req.session.user);
         const onlineUsers = await WP_USER_REGISTRATION.getOnlineUsers();
         res.json(onlineUsers);
     } catch (error) {
@@ -392,6 +392,30 @@ router.get('/search-tin', async (req, res) => {
             message: 'Internal server error',
             error: error.message
         });
+    }
+});
+
+// Refresh Queue Status
+router.get('/refresh-queue', async (req, res) => {
+    try {
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+        
+        // Get queue count from database or API
+        // This is a placeholder - implement actual queue count logic based on your system
+        const queueCount = await WP_OUTBOUND_STATUS.count({
+            where: {
+                Status: 'QUEUED'
+            }
+        });
+        
+        res.json({
+            queueCount,
+            timestamp: new Date()
+        });
+    } catch (error) {
+        console.error('Error refreshing queue:', error);
+        res.status(500).json({ error: 'Failed to refresh queue' });
     }
 });
 

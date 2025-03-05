@@ -508,7 +508,7 @@ async function updateAnalytics() {
         const apiStatusElement = document.getElementById('apiStatus');
         console.log(systemStatusData);
         if (apiStatusElement) {
-            const statusClass = systemStatusData.apiHealthy ? 'bg-success' : 'bg-warning';
+            const statusClass = systemStatusData.apiHealthy ? 'bg-success' : 'bg-secondary';
             apiStatusElement.className = `badge ${statusClass}`;
             apiStatusElement.innerHTML = `
                 <i class="fas fa-${systemStatusData.apiHealthy ? 'check-circle' : 'exclamation-circle'} me-1"></i>
@@ -604,34 +604,45 @@ async function updateInvoiceStatus() {
         const response = await fetch('/api/dashboard-analytics/invoice-status');
         const data = await response.json();
 
+        // Calculate total for percentage calculation
+        const total = data.reduce((sum, status) => sum + (status.count || 0), 0);
+
         data.forEach(status => {
             const statusKey = status.status.toLowerCase();
-            const percentage = Math.round(status.percentage) || 0;
             const count = status.count || 0;
+            const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+            
             // Update progress bar
             const progressBar = document.querySelector(`.progress-bar[data-status="${statusKey}"]`);
             if (progressBar) {
-                progressBar.style.width = `${count} documents`;
+                progressBar.style.width = `${percentage}%`;
+                
+                // Add animation class if percentage is significant
+                if (percentage > 10) {
+                    progressBar.classList.add('progress-bar-animated');
+                } else {
+                    progressBar.classList.remove('progress-bar-animated');
+                }
             }
 
-            // Update percentage
+            // Update percentage/count text
             const percentageElement = document.querySelector(`.percentage[data-status="${statusKey}"]`);
             if (percentageElement) {
-                percentageElement.textContent = `${count} documents`;
-            }
-
-            // Update count
-            const countElement = document.querySelector(`.count[data-status="${statusKey}"]`);
-            if (countElement) {
-                countElement.textContent = ``;
+                percentageElement.textContent = `${count} document${count !== 1 ? 's' : ''}`;
             }
         });
 
+        // Add subtle animation to the card
+        const card = document.getElementById('invoice-status-card');
+        card.classList.add('card-updated');
         setTimeout(() => {
+            card.classList.remove('card-updated');
             button.style.animation = '';
         }, 1000);
     } catch (error) {
         console.error('Error updating invoice status:', error);
+        const button = document.querySelector('.refresh-button .fa-sync-alt');
+        button.style.animation = '';
     }
 }
 
@@ -658,7 +669,7 @@ async function updateSystemStatus() {
             apiStatus.className = 'badge bg-success';
             apiStatus.innerHTML = '<i class="fas fa-check-circle me-1"></i>Connected';
         } else {
-            apiStatus.className = 'badge bg-warning';
+            apiStatus.className = 'badge bg-danger';
             apiStatus.innerHTML = '<i class="fas fa-exclamation-circle me-1"></i>Connection Issues';
         }
 
@@ -669,12 +680,43 @@ async function updateSystemStatus() {
         // Update Queue Status with details
         const queueCount = document.getElementById('queueCount');
         const queueDetails = document.getElementById('queueDetails');
+        const queueProgressBar = document.getElementById('queueProgressBar');
+        const queueStatusIndicator = document.getElementById('queueStatusIndicator');
+        const queueLastUpdate = document.getElementById('queueLastUpdate');
         
         queueCount.textContent = `${data.queueCount} Queue`;
-        queueCount.className = `badge ${data.queueCount > 0 ? 'bg-success text-dark' : 'bg-warning text-dark'}`;
-        queueDetails.textContent = data.queueCount > 0 
-            ? `Processing ${data.queueCount} document(s)` 
-            : 'Queue is empty';
+        queueLastUpdate.textContent = 'Just now';
+        
+        if (data.queueCount > 0) {
+            // Calculate progress (this is just an example - adjust based on your actual data)
+            const maxQueueSize = 20; // Example max queue size
+            const progress = Math.min(100, Math.round((data.queueCount / maxQueueSize) * 100));
+            
+            // Update progress bar
+            queueProgressBar.style.width = `${progress}%`;
+            queueProgressBar.setAttribute('aria-valuenow', progress);
+            
+            // Update status based on queue size
+            if (data.queueCount > 10) {
+                queueCount.className = 'badge bg-danger text-white';
+                queueStatusIndicator.className = 'ms-2 badge bg-danger-subtle text-danger';
+                queueStatusIndicator.textContent = 'High Load';
+            } else {
+                queueCount.className = 'badge bg-info text-white';
+                queueStatusIndicator.className = 'ms-2 badge bg-info-subtle text-info';
+                queueStatusIndicator.textContent = 'Processing';
+            }
+            
+            queueDetails.innerHTML = `<span class="text-info">Processing ${data.queueCount} document${data.queueCount !== 1 ? 's' : ''}</span>`;
+        } else {
+            // Empty queue
+            queueCount.className = 'badge bg-success text-white';
+            queueProgressBar.style.width = '0%';
+            queueProgressBar.setAttribute('aria-valuenow', 0);
+            queueStatusIndicator.className = 'ms-2 badge bg-success-subtle text-success';
+            queueStatusIndicator.textContent = 'Ready';
+            queueDetails.textContent = 'Queue is empty';
+        }
 
         // Update Last Sync with enhanced status
         const lastSync = document.getElementById('lastSync');
@@ -687,37 +729,114 @@ async function updateSystemStatus() {
 
             if (timeDiff < 60) {
                 syncStatus.className = 'fas fa-circle ms-2 recent';
-                syncDetails.textContent = 'Sync is up to date';
-            } else if (timeDiff > 60) {
+                syncDetails.innerHTML = '<span class="text-success">Sync is up to date</span>';
+            } else if (timeDiff < 240) {
                 syncStatus.className = 'fas fa-circle ms-2 warning';
-                syncDetails.textContent = 'Sync is slightly delayed';
+                syncDetails.innerHTML = '<span class="text-warning">Sync is slightly delayed</span>';
             } else {
                 syncStatus.className = 'fas fa-circle ms-2 danger';
-                syncDetails.textContent = 'Sync needs attention please check the Inbound Page to sync latest data.';
+                syncDetails.innerHTML = '<span class="text-danger">Sync needs attention</span>';
             }
         } else {
             lastSync.textContent = 'No sync data';
             syncStatus.className = 'fas fa-circle ms-2 danger';
-            syncDetails.textContent = 'No synchronization recorded';
+            syncDetails.innerHTML = '<span class="text-danger">No synchronization data available</span>';
         }
-
+        
+        // Update Online Users
+        const onlineUsers = document.getElementById('onlineUsers');
+        const onlineUsersStatus = document.getElementById('onlineUsersStatus');
+        const onlineUsersDetails = document.getElementById('onlineUsersDetails');
+        
+        if (data.onlineUsers !== undefined) {
+            onlineUsers.textContent = data.onlineUsers;
+            
+            if (data.onlineUsers > 0) {
+                onlineUsersStatus.className = 'fas fa-circle ms-2 text-success';
+                onlineUsersDetails.textContent = `${data.onlineUsers} user${data.onlineUsers !== 1 ? 's' : ''} currently registered`;
+            } else {
+                onlineUsersStatus.className = 'fas fa-circle ms-2 text-warning';
+                onlineUsersDetails.textContent = 'No users currently registered';
+            }
+        }
+        
+        // Add subtle animation to the card
+        const card = document.getElementById('system-status-card');
+        card.classList.add('card-updated');
+        setTimeout(() => {
+            card.classList.remove('card-updated');
+        }, 1000);
     } catch (error) {
         console.error('Error updating system status:', error);
-        showNoDataState('system-status');
+        hideLoadingState('system-status');
     }
 }
 
 
 async function refreshQueue() {
-    const button = document.querySelector('.status-item button .fa-sync-alt');
-    button.style.animation = 'spin 1s linear';
-    
     try {
-        await updateSystemStatus();
-    } finally {
-        setTimeout(() => {
-            button.style.animation = '';
-        }, 1000);
+        const button = document.querySelector('.status-item button .fa-sync-alt');
+        button.style.animation = 'spin 1s linear';
+
+        const response = await fetch('/api/dashboard-analytics/refresh-queue');
+        const data = await response.json();
+
+        // Update Queue Status with details
+        const queueCount = document.getElementById('queueCount');
+        const queueDetails = document.getElementById('queueDetails');
+        const queueProgressBar = document.getElementById('queueProgressBar');
+        const queueStatusIndicator = document.getElementById('queueStatusIndicator');
+        const queueLastUpdate = document.getElementById('queueLastUpdate');
+        
+        // Update last updated time
+        queueLastUpdate.textContent = 'Just now';
+        
+        if (data && data.queueCount !== undefined) {
+            queueCount.textContent = `${data.queueCount} Queue`;
+            
+            if (data.queueCount > 0) {
+                // Calculate progress (this is just an example - adjust based on your actual data)
+                const maxQueueSize = 20; // Example max queue size
+                const progress = Math.min(100, Math.round((data.queueCount / maxQueueSize) * 100));
+                
+                // Update progress bar
+                queueProgressBar.style.width = `${progress}%`;
+                queueProgressBar.setAttribute('aria-valuenow', progress);
+                
+                // Update status based on queue size
+                if (data.queueCount > 10) {
+                    queueCount.className = 'badge bg-danger text-white';
+                    queueStatusIndicator.className = 'ms-2 badge bg-danger-subtle text-danger';
+                    queueStatusIndicator.textContent = 'High Load';
+                } else {
+                    queueCount.className = 'badge bg-info text-white';
+                    queueStatusIndicator.className = 'ms-2 badge bg-info-subtle text-info';
+                    queueStatusIndicator.textContent = 'Processing';
+                }
+                
+                queueDetails.innerHTML = `<span class="text-info">Processing ${data.queueCount} document${data.queueCount !== 1 ? 's' : ''}</span>`;
+            } else {
+                // Empty queue
+                queueCount.className = 'badge bg-success text-white';
+                queueProgressBar.style.width = '0%';
+                queueProgressBar.setAttribute('aria-valuenow', 0);
+                queueStatusIndicator.className = 'ms-2 badge bg-success-subtle text-success';
+                queueStatusIndicator.textContent = 'Ready';
+                queueDetails.textContent = 'Queue is empty';
+            }
+            
+            // Add subtle animation to the queue item
+            const queueItem = button.closest('.status-item');
+            queueItem.classList.add('card-updated');
+            setTimeout(() => {
+                queueItem.classList.remove('card-updated');
+                button.style.animation = '';
+            }, 1000);
+        }
+    } catch (error) {
+        console.error('Error refreshing queue:', error);
+        const button = document.querySelector('.status-item button .fa-sync-alt');
+        if (button) button.style.animation = '';
     }
 }
 

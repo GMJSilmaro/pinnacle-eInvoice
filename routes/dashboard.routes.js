@@ -6,7 +6,7 @@ const { auth } = require('../middleware');
 // Admin middleware
 const isAdmin = (req, res, next) => {
   if (!req.session?.user?.admin) {
-    return res.status(403).redirect('/dashboard');
+    return res.status(403).redirect('/');
   }
   next();
 };
@@ -14,7 +14,7 @@ const isAdmin = (req, res, next) => {
 router.get('/', (req, res) => {
   res.render('dashboard/index', {
     title: 'Dashboard',
-    user: req.session.user,
+    user: req.session.user || null,
     layout: 'layout'
   });
 });

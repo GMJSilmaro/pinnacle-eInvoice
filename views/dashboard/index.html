@@ -175,17 +175,31 @@
 
 /* Status Indicators */
 .status-indicator {
-  width: 50px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   margin-right: 12px;
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  box-shadow: 0 0 0 rgba(0,0,0,0.1);
 }
 
-.status-submitted { background-color: var(--bs-primary); }
-.status-pending { background-color: var(--bs-warning); }
-.status-valid { background-color: var(--bs-success); }
-.status-invalid { background-color: var(--bs-danger); }
-.status-cancelled { background-color: var(--bs-secondary); }
+.status-submitted { 
+  background-color: #4361ee; 
+}
+.status-pending { 
+  background-color: #f7b801; 
+}
+.status-valid { 
+  background-color: #2ec4b6; 
+}
+.status-invalid { 
+  background-color: #e63946; 
+}
+.status-cancelled { 
+  background-color: #6c757d; 
+}
 
 /* System Status Grid */
 .system-status-grid {
@@ -196,12 +210,16 @@
 
 .status-item {
   transition: all 0.3s ease;
-  border: 1px solid var(--bs-gray-200);
+  border: none;
+  border-radius: 10px;
+  background-color: #f8f9fa;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  overflow: hidden;
 }
 
 .status-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.08);
 }
 
 .status-icon {
@@ -213,18 +231,57 @@
   justify-content: center;
   font-size: 1.2rem;
   background: rgba(var(--bs-primary-rgb), 0.1);
+  transition: all 0.3s ease;
+}
+
+.status-item:hover .status-icon {
+  transform: scale(1.1);
 }
 
 /* Progress bars */
 .progress-thin {
-  height: 3px;
-  border-radius: 2px;
-  background-color: var(--bs-gray-300);
+  height: 6px;
+  border-radius: 3px;
+  background-color: #e9ecef;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .progress-wrapper {
   display: flex;
   align-items: center;
+}
+
+.progress-bar {
+  transition: width 0.6s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 1rem 1rem;
+  animation: progress-bar-stripes 1s linear infinite;
+}
+
+@keyframes progress-bar-stripes {
+  from { background-position: 1rem 0; }
+  to { background-position: 0 0; }
 }
 
 /* Refresh button animation */
@@ -244,18 +301,142 @@
 /* Sync status indicator */
 #syncStatus {
   font-size: 8px;
+  transition: all 0.3s ease;
 }
 
-#syncStatus.recent { color: var(--bs-success); }
-#syncStatus.warning { color: var(--bs-warning); }
-#syncStatus.danger { color: var(--bs-danger); }
+#syncStatus.recent { 
+  color: #2ec4b6; 
+  animation: pulse 2s infinite;
+}
+#syncStatus.warning { 
+  color: #f7b801; 
+}
+#syncStatus.danger { 
+  color: #e63946; 
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+/* Card updated animation */
+@keyframes card-updated-animation {
+  0% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }
+  50% { box-shadow: 0 4px 20px rgba(67, 97, 238, 0.3); }
+  100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }
+}
+
+.card-updated {
+  animation: card-updated-animation 1s ease;
+}
+
+/* Hover effect for status items */
+.hover-bg {
+  transition: all 0.2s ease;
+}
+
+.hover-bg:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+  transform: translateX(3px);
+}
+
+/* Badge styling */
+.badge {
+  padding: 0.4em 0.65em;
+  font-weight: 500;
+  border-radius: 30px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.bg-success {
+  background-color: #2ec4b6 !important;
+}
+
+.bg-danger {
+  background-color: #e63946 !important;
+}
+
+.bg-warning {
+  background-color: #f7b801 !important;
+}
+
+.bg-info {
+  background-color: #4361ee !important;
+}
+
+.bg-primary-subtle {
+  background-color: rgba(67, 97, 238, 0.1);
+}
+
+.bg-success-subtle {
+  background-color: rgba(46, 196, 182, 0.1);
+}
+
+.bg-warning-subtle {
+  background-color: rgba(247, 184, 1, 0.1);
+}
+
+.bg-info-subtle {
+  background-color: rgba(67, 97, 238, 0.1);
+}
+
+.text-success {
+  color: #2ec4b6 !important;
+}
+
+.text-warning {
+  color: #f7b801 !important;
+}
+
+.text-danger {
+  color: #e63946 !important;
+}
+
+.text-info {
+  color: #4361ee !important;
+}
+
+/* Button styling */
+.btn-light {
+  background-color: #f8f9fa;
+  border-color: #f8f9fa;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.btn-light:hover {
+  background-color: #e9ecef;
+  border-color: #e9ecef;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
+}
+
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.rounded-circle {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
   /* Card Base Styles */
   .card {
     border: none;
     border-radius: 15px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     transition: all 0.3s ease;
+    overflow: hidden;
+  }
+  
+  .card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   }
 
   .info-card {
@@ -339,7 +520,26 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin: 0;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
   }
+  
+  .card-title-new::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 0;
+    width: 30px;
+    height: 2px;
+    background-color: #4361ee;
+    transition: width 0.3s ease;
+  }
+  
+  .card:hover .card-title-new::after {
+    width: 50px;
+  }
+
 /* New Analytics Styles */
 .invoice-stats-card {
   background: #fff;
@@ -772,6 +972,169 @@
   margin-bottom: 0.5rem;
   letter-spacing: 0.5px;
 }
+
+/* Activity Logs Styles */
+.activity-logs-list {
+  max-height: auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.activity-logs-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.activity-logs-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activity-logs-list::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.activity-item {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background-color: #f8f9fa;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.activity-item:hover {
+  background-color: #f1f3f5;
+  transform: translateX(3px);
+}
+
+.activity-item.info-log {
+  border-left-color: #4361ee;
+}
+
+.activity-item.success-log {
+  border-left-color: #2ec4b6;
+}
+
+.activity-item.warning-log {
+  border-left-color: #f7b801;
+}
+
+.activity-item.error-log {
+  border-left-color: #e63946;
+}
+
+.activity-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.activity-icon.info-icon {
+  background-color: rgba(67, 97, 238, 0.1);
+  color: #4361ee;
+}
+
+.activity-icon.success-icon {
+  background-color: rgba(46, 196, 182, 0.1);
+  color: #2ec4b6;
+}
+
+.activity-icon.warning-icon {
+  background-color: rgba(247, 184, 1, 0.1);
+  color: #f7b801;
+}
+
+.activity-icon.error-icon {
+  background-color: rgba(230, 57, 70, 0.1);
+  color: #e63946;
+}
+
+.activity-time {
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-bottom: 4px;
+}
+
+.activity-message {
+  font-size: 0.875rem;
+  color: #343a40;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.activity-user {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.activity-user span {
+  font-weight: 500;
+  color: #343a40;
+}
+
+.info-card {
+  height: 100%;
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+/* LHDN Button Styling */
+.btn-lhdn {
+  background-color: #1a3a6c;
+  border-color: #1a3a6c;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 200;
+  box-shadow: 0 2px 10px rgba(26, 58, 108, 0.2);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.btn-lhdn:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(255,255,255,0.1), rgba(255,255,255,0.2), rgba(255,255,255,0.1));
+  transition: all 0.6s ease;
+  z-index: -1;
+}
+
+.btn-lhdn:hover {
+  background-color: #0f2952;
+  border-color: #0f2952;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(26, 58, 108, 0.3);
+}
+
+.btn-lhdn:hover:before {
+  left: 100%;
+}
+
+.btn-lhdn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 5px rgba(26, 58, 108, 0.2);
+}
+
+.btn-lhdn i {
+  transition: transform 0.3s ease;
+}
+
+.btn-lhdn:hover i {
+  transform: translateX(3px);
+}
 </style>
 {% endblock %}
 
@@ -1021,13 +1384,13 @@
               <!-- Invoice Status Distribution -->
                 <div class="card h-100" id="invoice-status-card">
                   <div class="card-body p-4">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
                       <h5 class="card-title-new">
                         PINNACLE INVOICE STATUS
                         <i class="fas fa-info-circle info-icon" data-bs-toggle="tooltip" data-bs-placement="right" title="Real-time status distribution of your e-invoices"></i>
                       </h5>
                       <div class="refresh-button">
-                        <button class="btn btn-sm btn-light" onclick="updateInvoiceStatus()">
+                        <button class="btn btn-sm btn-light rounded-circle shadow-sm" onclick="updateInvoiceStatus()">
                           <i class="fas fa-sync-alt"></i>
                         </button>
                       </div>
@@ -1036,66 +1399,62 @@
                     <!-- Status Items -->
                     <div class="status-items">
                       <!-- Submitted Status -->
-                      <div class="d-flex align-items-center mb-4">
+                      <div class="d-flex align-items-center mb-4 p-2 rounded hover-bg">
                         <span class="status-indicator status-submitted"></span>
                         <div class="status-info flex-grow-1">
-                          <span class="text-muted d-block"><b>Submitted</b></span>
+                          <span class="fw-semibold d-block">Submitted</span>
                           <small class="text-muted" style="font-size: 13px;">Initial structure validation passed</small>
-                          <small class="count" data-status="submitted">0</small>
                         </div>
                         <div class="progress-wrapper">
                           <div class="progress progress-thin" style="width: 100px;">
                             <div class="progress-bar bg-primary" style="width: 0%" data-status="submitted"></div>
                           </div>
-                          <span class="ms-2 percentage" data-status="submitted">0%</span>
+                          <span class="ms-2 fw-semibold percentage" data-status="submitted">9 documents</span>
                         </div>
                       </div>
     
                       <!-- Valid Status -->
-                      <div class="d-flex align-items-center mb-4">
+                      <div class="d-flex align-items-center mb-4 p-2 rounded hover-bg">
                         <span class="status-indicator status-valid"></span>
                         <div class="status-info flex-grow-1">
-                          <span class="text-muted d-block"><b>Valid</b></span>
+                          <span class="fw-semibold d-block">Valid</span>
                           <small class="text-muted" style="font-size: 13px;">Successful validation</small>
-                          <small class="count" data-status="valid">0</small>
                         </div>
                         <div class="progress-wrapper">
                           <div class="progress progress-thin" style="width: 100px;">
                             <div class="progress-bar bg-success" style="width: 0%" data-status="valid"></div>
                           </div>
-                          <span class="ms-2 percentage" data-status="valid">0%</span>
+                          <span class="ms-2 fw-semibold percentage" data-status="valid">6 documents</span>
                         </div>
                       </div>
     
                       <!-- Invalid Status -->
-                      <div class="d-flex align-items-center mb-4">
+                      <div class="d-flex align-items-center mb-4 p-2 rounded hover-bg">
                         <span class="status-indicator status-invalid"></span>
                         <div class="status-info flex-grow-1">
-                          <span class="text-muted d-block"><b>Invalid</b></span>
+                          <span class="fw-semibold d-block">Invalid</span>
                           <small class="text-muted" style="font-size: 13px;">Validation issues found</small>
-                          <small class="count" data-status="invalid">0</small>
                         </div>
                         <div class="progress-wrapper">
                           <div class="progress progress-thin" style="width: 100px;">
                             <div class="progress-bar bg-danger" style="width: 0%" data-status="invalid"></div>
                           </div>
-                          <span class="ms-2 percentage" data-status="invalid">0%</span>
+                          <span class="ms-2 fw-semibold percentage" data-status="invalid">20 documents</span>
                         </div>
                       </div>
     
                       <!-- Cancelled Status -->
-                      <div class="d-flex align-items-center mb-4">
+                      <div class="d-flex align-items-center mb-4 p-2 rounded hover-bg">
                         <span class="status-indicator status-cancelled"></span>
                         <div class="status-info flex-grow-1">
-                          <span class="text-muted d-block"><b>Cancelled</b></span>
+                          <span class="fw-semibold d-block">Cancelled</span>
                           <small class="text-muted" style="font-size: 13px;">Cancelled by issuer</small>
-                          <small class="count" data-status="cancelled">0</small>
                         </div>
                         <div class="progress-wrapper">
                           <div class="progress progress-thin" style="width: 100px;">
-                            <div class="progress-bar bg-warning" style="width: 0%" data-status="cancelled"></div>
+                            <div class="progress-bar bg-secondary" style="width: 0%" data-status="cancelled"></div>
                           </div>
-                          <span class="ms-2 percentage" data-status="cancelled">0%</span>
+                          <span class="ms-2 fw-semibold percentage" data-status="cancelled">1 documents</span>
                         </div>
                       </div>
                     </div>
@@ -1114,36 +1473,36 @@
                     </div>
                     <div class="system-status-grid">
                       <!-- API Endpoint Status -->
-                      <div class="status-item p-3 rounded bg-light w-200 mb-2">
+                      <div class="status-item p-3 rounded mb-2">
                         <div class="d-flex align-items-center" data-bs-toggle="tooltip" data-bs-placement="top" title="Shows current connection status with LHDN API">
-                          <div class="status-icon me-3">
+                          <div class="status-icon me-3 bg-primary-subtle">
                             <i class="fas fa-cloud text-primary"></i>
                           </div>
                           <div class="flex-grow-1">
-                            <h6 class="mb-1">API Endpoint</h6>
-                            <div class="d-flex align-items-center mb-1">
+                            <h6 class="mb-2 fw-semibold">API Endpoint</h6>
+                            <div class="d-flex align-items-center mb-2">
                               <span name="apiStatus" id="apiStatus" class="badge bg-success">
                                 <i class="fas fa-check-circle me-1"></i>Connected
                               </span>
-                              <small class="ms-2 text-muted" id="apiLastCheck"></small>
+                              <small class="ms-2 text-muted" id="apiLastCheck">Last checked: 10:18:28 PM</small>
                             </div>
-                            <small class="text-muted" id="apiEndpointUrl"></small>
+                            <small class="text-muted" id="apiEndpointUrl">Environment: sandbox</small>
                           </div>
                         </div>
                       </div>
 
                             
                       <!-- Online Users -->
-                      <div class="status-item p-3 rounded bg-light w-100 mb-2">
+                      <div class="status-item p-3 rounded mb-2">
                         <div class="d-flex align-items-center" >
-                          <div class="status-icon me-3">
+                          <div class="status-icon me-3 bg-success-subtle">
                             <i class="fas fa-users text-success"></i>
                           </div>
                           <div class="flex-grow-1">
-                            <h6 class="mb-1">Total Users</h6>
-                            <div class="d-flex align-items-center mb-1">
-                              <span id="onlineUsers" class="text-muted">--</span>
-                              <i id="onlineUsersStatus" class="fas fa-circle ms-2"></i>
+                            <h6 class="mb-2 fw-semibold">Total Users</h6>
+                            <div class="d-flex align-items-center mb-2">
+                              <span id="onlineUsers" class="fw-semibold">1</span>
+                              <i id="onlineUsersStatus" class="fas fa-circle ms-2 text-success"></i>
                             </div>
                             <small class="text-muted text-small" id="onlineUsersDetails">Number of users currently registered</small>
                           </div>
@@ -1152,43 +1511,63 @@
 
                       
                       <!-- Last Sync -->
-                      <div class="status-item p-3 rounded bg-light w-100 mb-2">
+                      <div class="status-item p-3 rounded mb-2">
                         <div class="d-flex align-items-center" data-bs-toggle="tooltip" data-bs-placement="top" title="Indicates when data was last synchronized with LHDN">
-                          <div class="status-icon me-3">
-                            <i class="fas fa-clock text-info"></i>
+                          <div class="status-icon me-3 bg-warning-subtle">
+                            <i class="fas fa-clock text-warning"></i>
                           </div>
                           <div class="flex-grow-1">
-                            <h6 class="mb-1">Inbound Last Sync</h6>
-                            <div class="d-flex align-items-center mb-1">
-                              <span id="lastSync" class="text-muted">--</span>
-                              <i id="syncStatus" class="fas fa-circle ms-2"></i>
+                            <h6 class="mb-2 fw-semibold">Inbound Last Sync</h6>
+                            <div class="d-flex align-items-center mb-2">
+                              <span id="lastSync" class="fw-semibold">246 mins ago</span>
+                              <i id="syncStatus" class="fas fa-circle ms-2 warning"></i>
                             </div>
-                            <small class="text-muted text-small" id="syncDetails">Last successful data synchronization</small>
+                            <small class="text-muted text-small" id="syncDetails">Sync is slightly delayed</small>
                           </div>
                         </div>
                       </div>
 
                       <!-- Queue Status -->
-                      <div class="status-item p-3 rounded bg-light w-200 mb-2">
+                      <div class="status-item p-3 rounded mb-2">
                         <div class="d-flex align-items-center" data-bs-toggle="tooltip" data-bs-placement="top" title="Displays number of documents waiting to be processed">
-                          <div class="status-icon me-3">
-                            <i class="fas fa-tasks text-warning"></i>
+                          <div class="status-icon me-3 bg-info-subtle">
+                            <i class="fas fa-tasks text-info"></i>
                           </div>
                           <div class="flex-grow-1">
-                            <h6 class="mb-1">LHDN Queue Status</h6>
-                            <div class="d-flex align-items-center mb-1">
-                              <span id="queueCount" class="badge bg-warning text-dark">0 Queue</span>
-                              <button class="btn btn-link btn-sm ms-2 p-0" onclick="refreshQueue()" title="Refresh Queue">
-                                <i class="fas fa-sync-alt"></i>
-                              </button>
+                            <h6 class="mb-2 fw-semibold">LHDN Queue Status</h6>
+                            <div class="queue-status-wrapper mb-2">
+                              <div class="d-flex align-items-center justify-content-between">
+                                <div class="d-flex align-items-center">
+                                  <span id="queueCount" >0 Queue</span>
+                                  <button class="btn btn-sm btn-light rounded-circle shadow-sm ms-2 p-1" onclick="refreshQueue()" title="Refresh Queue">
+                                    <i class="fas fa-sync-alt"></i>
+                                  </button>
+                                </div>
+                                <span class="queue-time text-muted small">Last updated: <span id="queueLastUpdate">Just now</span></span>
+                              </div>
+                              <div class="queue-progress mt-2">
+                                <div class="progress" style="height: 8px; border-radius: 4px; background-color: rgba(0,0,0,0.05);">
+                                  <div id="queueProgressBar" class="progress-bar bg-info" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                              </div>
                             </div>
-                            <small class="text-muted" id="queueDetails">Processing submitted documents</small>
+                            <div class="d-flex align-items-center">
+                              <small class="text-muted" id="queueDetails">Queue is empty</small>
+                              <span id="queueStatusIndicator" class="ms-2 badge bg-success-subtle text-success">Ready</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-
-                
-
+                    </div>
+                    
+                    <!-- Add LHDN Link Section -->
+                    <div class="mt-3 text-center">
+                      <hr class="my-3" style="opacity: 0.1; font-size: 100px;">
+                      <a href="https://mytax.hasil.gov.my/" target="_blank" class="btn btn-lhdn d-flex align-items-center justify-content-center" style="font-size: 0.85rem;">
+                        <i class="fas fa-external-link-alt me-2"></i>
+                        <span>Access LHDN MyTax Portal</span>
+                      </a>
+                      <small class="text-muted mt-2" style="font-size: 0.75rem;">Visit the official LHDN portal for tax-related services and information</small>
                     </div>
                   </div>
                 </div>
@@ -1258,7 +1637,7 @@
                 <div class="d-flex align-items-center mb-3 p-2 rounded customer-item">
                   <div class="customer-avatar me-3">
                     <div class="avatar-wrapper">
-                      <img src="/assets/images/default.png"
+                      <img src="/assets/img/default-avatar.png"
                           alt="Acme Corp"
                           class="customer-logo"
                           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
@@ -1284,77 +1663,54 @@
           </div>
 
         
-
-      <!-- Recent Activity Card -->
-      <div class="card h-95">
+      <!-- Recent Activity Logs Card -->
+      <div class="card mb-4">
         <div class="card-body p-3">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="card-title-new mb-0">
-              RECENT ACTIVITY
-              <i class="fas fa-info-circle info-icon" data-bs-toggle="tooltip" data-bs-placement="right" title="Track recent e-invoice related activities"></i>
+              RECENT ACTIVITY LOGS
+              <i class="fas fa-info-circle info-icon" data-bs-toggle="tooltip" data-bs-placement="right" title="View recent system activities and user actions"></i>
             </h5>
-            <div class="date-filter d-flex align-items-center">
-              <div class="btn-group btn-group-sm">
-                <button class="btn btn-outline-secondary active btn-sm">Today</button>
-                <button class="btn btn-outline-secondary btn-sm">Week</button>
-              </div>
+            <div class="dropdown">
+              <button class="btn btn-sm btn-light dropdown-toggle" type="button" id="logFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-filter me-1"></i>All
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="logFilterDropdown">
+                <li><a class="dropdown-item active" href="#" data-filter="all">All Activities</a></li>
+                <li><a class="dropdown-item" href="#" data-filter="info">Information</a></li>
+                <li><a class="dropdown-item" href="#" data-filter="success">Success</a></li>
+                <li><a class="dropdown-item" href="#" data-filter="warning">Warning</a></li>
+                <li><a class="dropdown-item" href="#" data-filter="error">Error</a></li>
+              </ul>
             </div>
           </div>
           
+          <!-- Activity Log Container -->
           <div class="activity-log-container" id="activity-log">
-            <!-- Loading Spinner -->
-            <div class="loading-spinner">
-              <div class="spinner-border" role="status">
+            <!-- Loading State -->
+            <div class="loading-spinner text-center py-4" id="logs-loading">
+              <div class="spinner-border spinner-border-sm text-primary" role="status">
                 <span class="visually-hidden">Loading...</span>
               </div>
-              <p class="loading-text">Loading activities...</p>
+              <p class="loading-text mt-2">Loading activity logs...</p>
             </div>
-
+            
             <!-- No Data State -->
-            <div class="no-data-state">
-              <i class="bi bi-journal-text"></i>
-              <p>No recent activities found</p>
+            <div class="no-data-state text-center py-4 d-none" id="logs-no-data">
+              <i class="fas fa-clipboard-list fs-4 mb-2 text-muted"></i>
+              <p class="mb-0">No activity logs available</p>
             </div>
-
-            <!-- Activity Item Template -->
-            <div class="activity-item">
-              <div class="activity-icon">
-                <div class="icon-wrapper bg-info-subtle">
-                  <i class="fas fa-file-invoice text-info"></i>
-                </div>
-              </div>
-              <div class="activity-content">
-                <div class="activity-text">
-                  <strong>New Invoice Created</strong>
-                  <span class="text-muted">for Acme Corp</span>
-                </div>
-                <div class="activity-meta">
-                  <small class="text-muted">
-                    <i class="far fa-clock me-1"></i>2 hours ago
-                  </small>
-                  <a href="#" class="ms-2 text-primary">
-                    <small>View</small>
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            <div class="activity-item">
-              <div class="activity-icon">
-                <div class="icon-wrapper bg-success-subtle">
-                  <i class="fas fa-user-check text-success"></i>
-                </div>
-              </div>
-              <div class="activity-content">
-                <!-- ... existing code ... -->
-              </div>
+            
+            <!-- Activity Logs will be populated here -->
+            <div class="activity-logs-list" id="activity-logs-list">
+              <!-- Log items will be inserted here by JavaScript -->
             </div>
           </div>
-
+          
+          <!-- View All Link -->
           <div class="text-center mt-3">
-            <a href="/dashboard/audit-trail" class="btn btn-light btn-sm w-100 view-all-btn">
-              <span>View All Activities</span>
-              <i class="fas fa-arrow-right ms-2"></i>
+            <a href="/logs" class="btn btn-sm btn-light">
+              <i class="fas fa-list me-1"></i> View All Logs
             </a>
           </div>
         </div>
@@ -1458,6 +1814,7 @@
 <script src="/assets/js/stackbar.js"></script>
 <script src="/assets/js/logs.js"></script>
 <script src="/assets/js/dashboard.js"></script>
+<script src="/assets/js/dashboard-logs.js"></script>
 
 
 <script>
