@@ -14,7 +14,7 @@ const XLSX = require('xlsx');
 const { getActiveSAPConfig } = require('../../config/paths');
 const { processExcelData } = require('./processExcelData');
 const { parseStringPromise } = require('xml2js');
-const { getTokenSession } = require('../token.service');
+const { getTokenSession, getConfig } = require('../token.service');
 
 async function getLHDNConfig() {
     const config = await WP_CONFIGURATION.findOne({
@@ -32,7 +32,7 @@ async function getLHDNConfig() {
     let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
     
     const baseUrl = settings.environment === 'production' 
-        ? settings.productionUrl || settings.middlewareUrl 
+        ? settings.middlewareUrl || settings.middlewareUrl 
         : settings.sandboxUrl || settings.middlewareUrl;
 
     if (!baseUrl) {
@@ -77,7 +77,7 @@ class LHDNSubmitter {
 
       // Set base URL based on environment
       this.baseUrl = settings.environment === 'production'
-        ? settings.productionUrl || settings.middlewareUrl
+        ? settings.middlewareUrl || settings.middlewareUrl
         : settings.sandboxUrl || settings.middlewareUrl;
 
       if (!this.baseUrl) {
@@ -113,9 +113,17 @@ class LHDNSubmitter {
 
   async validateCustomerTaxInfo(tin, idType, idValue) {
     try {
+      if (!this.req || !this.req.session || !this.req.session.accessToken) {
+        throw new Error('No valid authentication token found in session');
+      }
+      
       const token = this.req.session.accessToken;
-      console.log("Using Login Authentication Token", token);
-      const result = await validateCustomerTin(tin, idType, idValue, token);
+      console.log("Using Login Authentication Token from session");
+      
+      // Get settings for validateCustomerTin
+      const settings = await getConfig();
+      
+      const result = await validateCustomerTin(settings, tin, idType, idValue, token);
       return result;
     } catch (error) {
       await this.logOperation(`Customer tax validation failed for TIN: ${tin}`, {
@@ -402,7 +410,18 @@ class LHDNSubmitter {
   async submitToLHDNDocument(docs) {
     try {
       // Get token from session
-      const token = await getTokenSession();
+      let token;
+      
+      // First try to get token from the request session
+      if (this.req && this.req.session && this.req.session.accessToken) {
+        console.log('Using existing token from session');
+        token = this.req.session.accessToken;
+      } else {
+        // Fallback to getting a new token only if not available in session
+        console.log('No token found in session, getting a new one');
+        token = await getTokenSession();
+      }
+      
       if (!token) {
         throw new Error('No valid authentication token found');
       }

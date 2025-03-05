@@ -35,7 +35,7 @@ async function getTokenAsIntermediary() {
   try {
     const settings = await getConfig();
     const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
+      settings.middlewareUrl : settings.middlewareUrl;
 
     const httpOptions = {
       client_id: settings.clientId,
@@ -86,7 +86,7 @@ async function submitDocument(docs, token) {
 
     const settings = await getConfig();
     const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
+      settings.middlewareUrl : settings.middlewareUrl;
 
     const response = await axios.post(
       `${baseUrl}/api/v1.0/documentsubmissions`, 
@@ -164,7 +164,7 @@ async function getDocumentDetails(irb_uuid, token) {
   try {
     const settings = await getConfig();
     const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
+      settings.middlewareUrl : settings.middlewareUrl;
 
     const response = await axios.get(
       `${baseUrl}/api/v1.0/documents/${irb_uuid}/details`, 
@@ -205,7 +205,7 @@ async function cancelValidDocumentBySupplier(irb_uuid, cancellation_reason, toke
   try {
     const settings = await getConfig();
     const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
+      settings.middlewareUrl : settings.middlewareUrl;
 
     const payload = {
       status: 'cancelled',
@@ -603,15 +603,18 @@ async function testIRBCall(data) {
   }
 }
 
-async function validateCustomerTin(tin, idType, idValue, token) {
+async function validateCustomerTin(settings, tin, idType, idValue, token) {
   try {
     if (!['NRIC', 'BRN', 'PASSPORT', 'ARMY'].includes(idType)) {
       throw new Error(`Invalid ID type. Only 'NRIC', 'BRN', 'PASSPORT', 'ARMY' are allowed`);
     }
 
-    const settings = await getConfig();
+    if (!settings) {
+      settings = await getConfig();
+    }
+    
     const baseUrl = settings.environment === 'production' ? 
-      settings.productionUrl : settings.middlewareUrl;
+      settings.middlewareUrl : settings.middlewareUrl;
 
     const response = await axios.get(
       `${baseUrl}/api/v1.0/taxpayer/validate/${tin}?idType=${idType}&idValue=${idValue}`,
@@ -635,7 +638,7 @@ async function validateCustomerTin(tin, idType, idValue, token) {
 
         if (waitTime > 0) {
           await new Promise(resolve => setTimeout(resolve, waitTime));
-          return await validateCustomerTin(tin, idType, idValue, token);
+          return await validateCustomerTin(settings, tin, idType, idValue, token);
         }
       }
     }

@@ -103,14 +103,42 @@ async function getTokenAsTaxPayer() {
   }
 }
 
+// Global token cache with expiry time
+let globalTokenCache = {
+  token: null,
+  expiryTime: 0
+};
+
 async function getTokenSession() {
   try {
+    const now = Date.now();
+    
+    // Check if we have a valid token in the global cache
+    if (globalTokenCache.token && globalTokenCache.expiryTime > now) {
+      console.log('Using existing token from global cache (expires in', 
+        Math.round((globalTokenCache.expiryTime - now) / 1000), 'seconds)');
+      return globalTokenCache.token;
+    }
+    
+    console.log('No valid token in global cache, generating a new one');
+    
     // Get a new token if needed
     const tokenData = await getTokenAsTaxPayer();
     
     if (!tokenData || !tokenData.access_token) {
       throw new Error('Failed to obtain access token');
     }
+
+    // Store in global cache with expiry time
+    globalTokenCache.token = tokenData.access_token;
+    globalTokenCache.expiryTime = now + (tokenData.expires_in * 1000);
+    
+    // Add a buffer to avoid edge cases (5 minutes before actual expiry)
+    const bufferTime = 5 * 60 * 1000;
+    globalTokenCache.safeExpiryTime = globalTokenCache.expiryTime - bufferTime;
+    
+    console.log('New token generated and stored in global cache (expires in', 
+      Math.round(tokenData.expires_in), 'seconds)');
 
     return tokenData.access_token;
   } catch (error) {
@@ -295,7 +323,7 @@ async function validateCustomerTin(settings, tin, idType, idValue, token) {
 
         if (waitTime > 0) {
           await new Promise(resolve => setTimeout(resolve, waitTime));
-          return await validateCustomerTin(tin, idType, idValue, token);
+          return await validateCustomerTin(settings, tin, idType, idValue, token);
         }
       }
     }
@@ -355,9 +383,13 @@ async function getAccessToken(req) {
   try {
     // Check if token exists in session and is not expired
     if (req.session?.accessToken && req.session?.tokenExpiryTime > Date.now()) {
+      console.log('Using existing token from session (expires in', 
+        Math.round((req.session.tokenExpiryTime - Date.now()) / 1000), 'seconds)');
       return req.session.accessToken;
     }
 
+    console.log('No valid token in session, generating a new one');
+    
     // Get new token
     const tokenData = await getTokenAsTaxPayer();
     
@@ -365,6 +397,14 @@ async function getAccessToken(req) {
       // Store token in session with expiry
       req.session.accessToken = tokenData.access_token;
       req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
+      
+      // Add a buffer to avoid edge cases (5 minutes before actual expiry)
+      const bufferTime = 5 * 60 * 1000; 
+      req.session.tokenSafeExpiryTime = req.session.tokenExpiryTime - bufferTime;
+      
+      console.log('New token generated and stored in session (expires in', 
+        Math.round(tokenData.expires_in), 'seconds)');
+      
       return tokenData.access_token;
     }
     

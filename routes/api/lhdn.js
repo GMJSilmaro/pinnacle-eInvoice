@@ -288,7 +288,14 @@ const fetchRecentDocuments = async (req) => {
                         issuerName: doc.issuerName || doc.supplierName,
                         receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN,
                         receiverName: doc.receiverName || doc.buyerName,
-                        // Ensure other required fields are mapped
+                        receiverTIN: doc.receiverTIN || doc.buyerTIN,
+                        receiverRegistrationNo: doc.receiverRegistrationNo || doc.buyerRegistrationNo,
+                        receiverAddress: doc.receiverAddress || doc.buyerAddress,
+                        receiverPostcode: doc.receiverPostcode || doc.buyerPostcode,
+                        receiverCity: doc.receiverCity || doc.buyerCity,
+                        receiverState: doc.receiverState || doc.buyerState,
+                        receiverCountry: doc.receiverCountry || doc.buyerCountry,
+                        receiverPhone: doc.receiverPhone || doc.buyerPhone,
                         uuid: doc.uuid,
                         submissionUid: doc.submissionUid,
                         longId: doc.longId,
@@ -1087,6 +1094,278 @@ router.get('/sync', async (req, res) => {
         }
 });
 
+// // Update display-details endpoint to fetch all required data
+// router.get('/documents/:uuid/display-details', async (req, res) => {
+//     const lhdnConfig = await getLHDNConfig();
+
+//     try {
+//         const { uuid } = req.params;
+
+//         // Log the request details
+//         console.log('Fetching details for document:', {
+//             uuid,
+//             user: req.session.user,
+//             timestamp: new Date().toISOString()
+//         });
+
+//         // Check if user is logged in
+//         if (!req.session.user || !req.session.accessToken) {
+//             return res.redirect('/login');
+//         }
+
+//         // Get document details directly from LHDN API using raw endpoint
+//         console.log('Fetching raw document from LHDN API...');
+//         const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/raw`, {
+//             headers: {
+//                 'Authorization': `Bearer ${req.session.accessToken}`,
+//                 'Content-Type': 'application/json'
+//             }
+//         });
+
+//         const documentData = response.data;
+//         console.log('Raw document data:', JSON.stringify(documentData, null, 2));
+
+//         // Check if document field exists and can be parsed
+//         if (documentData.document) {
+//             try {
+//                 const parsedDocument = JSON.parse(documentData.document);
+//                 console.log('Parsed UBL structure:', JSON.stringify(parsedDocument, null, 2));
+//             } catch (parseError) {
+//                 console.log('Failed to parse document field:', parseError);
+//             }
+//         } else {
+//             console.log('No document field present, using top-level fields');
+//             console.log('Available top-level fields:', Object.keys(documentData));
+//         }
+
+//         // Check if user is receiver and document status is Invalid or Submitted
+//         const isReceiver = req.session.user.TIN === documentData.receiverTin;
+//         if (isReceiver && (documentData.status === 'Invalid' || documentData.status === 'Submitted')) {
+//             return res.status(403).json({
+//                 success: false,
+//                 message: `Document details cannot be viewed when status is ${documentData.status}. Please wait for the document to be validated.`
+//             });
+//         }
+
+//         // Get document details directly from LHDN API using raw endpoint
+//         console.log('Fetching raw document from LHDN API...');
+//         const detailsResponse = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/details`, {
+//             headers: {
+//                 'Authorization': `Bearer ${req.session.accessToken}`,
+//                 'Content-Type': 'application/json'
+//             }
+//         });
+
+//         const detailsData = detailsResponse.data;
+//         console.log('Raw document details:', JSON.stringify(detailsData, null, 2));
+
+
+//         // Process validation results if document is invalid
+//         let processedValidationResults = null;
+//         if (detailsData.validationResults) {
+//             processedValidationResults = {
+//                 status: detailsData.status,
+//                 validationSteps: detailsData.validationResults.validationSteps?.map(step => {
+//                     let errors = [];
+//                     if (step.error) {
+//                         if (Array.isArray(step.error.errors)) {
+//                             errors = step.error.errors.map(err => ({
+//                                 code: err.code || 'VALIDATION_ERROR',
+//                                 message: err.message || err.toString(),
+//                                 field: err.field || null,
+//                                 value: err.value || null,
+//                                 details: err.details || null
+//                             }));
+//                         } else if (typeof step.error === 'object') {
+//                             errors = [{
+//                                 code: step.error.code || 'VALIDATION_ERROR',
+//                                 message: step.error.message || step.error.toString(),
+//                                 field: step.error.field || null,
+//                                 value: step.error.value || null,
+//                                 details: step.error.details || null
+//                             }];
+//                         } else {
+//                             errors = [{
+//                                 code: 'VALIDATION_ERROR',
+//                                 message: step.error.toString(),
+//                                 field: null,
+//                                 value: null,
+//                                 details: null
+//                             }];
+//                         }
+//                     }
+
+//                     return {
+//                         name: step.name || 'Validation Step',
+//                         status: step.status || 'Invalid',
+//                         error: errors.length > 0 ? { errors } : null,
+//                         timestamp: step.timestamp || new Date().toISOString()
+//                     };
+//                 }) || [],
+//                 summary: {
+//                     totalSteps: detailsData.validationResults.validationSteps?.length || 0,
+//                     failedSteps: detailsData.validationResults.validationSteps?.filter(step => step.status === 'Invalid' || step.error)?.length || 0,
+//                     lastUpdated: new Date().toISOString()
+//                 }
+//             };
+//         }
+
+//         // Return basic document info if document field is not present
+//         if (!documentData.document) {
+//             return res.json({
+//                 success: true,
+//                 documentInfo: {
+//                     uuid: documentData.uuid,
+//                     submissionUid: documentData.submissionUid,
+//                     longId: detailsData.longId,
+//                     internalId: documentData.internalId,
+//                     status: documentData.status,
+//                     validationResults: documentData.validationResults,
+//                     supplierName: documentData.supplierName,
+//                     supplierSstNo: documentData.supplierSstNo,
+//                     supplierMsicCode: documentData.supplierMsicCode,
+//                     supplierAddress: documentData.supplierAddress,
+//                     receiverSstNo: documentData.receiverSstNo,
+//                     receiverRegistrationNo: documentData.receiverRegistrationNo,
+//                     receiverAddress: documentData.receiverAddress
+//                 },
+//                 supplierInfo: {
+//                     company: documentData.supplierName,
+//                     tin: documentData.supplierTin,
+//                     registrationNo: documentData.supplierRegistrationNo,
+//                     taxRegNo: documentData.supplierSstNo,
+//                     msicCode: documentData.supplierMsicCode,
+//                     address: documentData.supplierAddress
+//                 },
+//                 customerInfo: {
+//                     company: documentData.receiverName,
+//                     tin: documentData.receiverTin,
+//                     registrationNo: documentData.receiverRegistrationNo,
+//                     taxRegNo: documentData.receiverSstNo,
+//                     address: documentData.receiverAddress
+//                 },
+//                 paymentInfo: {
+//                     totalIncludingTax: documentData.totalSales,
+//                     totalExcludingTax: documentData.totalExcludingTax,
+//                     taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
+//                     irbmUniqueNo: documentData.uuid,
+//                     irbmlongId: documentData.longId
+//                 }
+//             });
+//         }
+
+//         // If document field exists, parse it and extract detailed info
+//         try {
+//             const parsedDocument = JSON.parse(documentData.document);
+//             return res.json({
+//                 success: true,
+//                 documentInfo: {
+//                     uuid: documentData.uuid,
+//                     submissionUid: documentData.submissionUid,
+//                     longId: detailsData.longId,
+//                     irbmlongId: documentData.longId,
+//                     internalId: documentData.internalId,
+//                     status: documentData.status,
+//                     validationResults: documentData.validationResults,
+//                     supplierName: documentData.issuerName,
+//                     supplierTIN: documentData.issuerTin,
+//                     supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+//                     supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+//                     supplierAddress: supplierParty.PostalAddress[0].AddressLine
+//                         .map(line => line.Line[0]._)
+//                         .filter(Boolean)
+//                         .join(', ') || documentData.supplierAddress,
+//                     receiverName: documentData.receiverName,
+//                     receiverId: documentData.receiverTin,
+//                     receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+//                     receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+//                     receiverAddress: customerParty.PostalAddress[0].AddressLine
+//                         .map(line => line.Line[0]._)
+//                         .filter(Boolean)
+//                         .join(', ') || documentData.receiverAddress
+//                 },
+//                 supplierInfo: {
+//                     company: documentData.supplierName,
+//                     tin: documentData.supplierTin,
+//                     registrationNo: documentData.supplierRegistrationNo,
+//                     taxRegNo: documentData.supplierSstNo,
+//                     msicCode: documentData.supplierMsicCode,
+//                     address: documentData.supplierAddress
+//                 },
+//                 customerInfo: {
+//                     company: documentData.receiverName,
+//                     tin: documentData.receiverTin,
+//                     registrationNo: documentData.receiverRegistrationNo,
+//                     taxRegNo: documentData.receiverSstNo,
+//                     address: documentData.receiverAddress
+//                 },
+//                 paymentInfo: {
+//                     totalIncludingTax: documentData.totalSales,
+//                     totalExcludingTax: documentData.totalExcludingTax,
+//                     taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
+//                     irbmUniqueNo: documentData.uuid,
+//                     irbmlongId: documentData.longId
+//                 }
+//             });
+//         } catch (parseError) {
+//             console.error('Error parsing document:', parseError);
+//             // Return basic document info if parsing fails
+//             return res.json({
+//                 success: true,
+//                 documentInfo: {
+//                     uuid: documentData.uuid,
+//                     submissionUid: documentData.submissionUid,
+//                     longId: documentData.longId,
+//                     irbmlongId: documentData.longId,
+//                     internalId: documentData.internalId,
+//                     status: documentData.status,
+//                     validationResults: documentData.validationResults,
+//                     supplierName: documentData.supplierName,
+//                     supplierSstNo: documentData.supplierSstNo,
+//                     supplierMsicCode: documentData.supplierMsicCode,
+//                     supplierAddress: documentData.supplierAddress,
+//                     receiverSstNo: documentData.receiverSstNo,
+//                     receiverRegistrationNo: documentData.receiverRegistrationNo,
+//                     receiverAddress: documentData.receiverAddress
+//                 },
+//                 supplierInfo: {
+//                     company: documentData.supplierName,
+//                     tin: documentData.supplierTin,
+//                     registrationNo: documentData.supplierRegistrationNo,
+//                     taxRegNo: documentData.supplierSstNo,
+//                     msicCode: documentData.supplierMsicCode,
+//                     address: documentData.supplierAddress
+//                 },
+//                 customerInfo: {
+//                     company: documentData.receiverName,
+//                     tin: documentData.receiverTin,
+//                     registrationNo: documentData.receiverRegistrationNo,
+//                     taxRegNo: documentData.receiverSstNo,
+//                     address: documentData.receiverAddress
+//                 },
+//                 paymentInfo: {
+//                     totalIncludingTax: documentData.totalSales,
+//                     totalExcludingTax: documentData.totalExcludingTax,
+//                     taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
+//                     irbmUniqueNo: documentData.uuid,
+//                     irbmlongId: documentData.longId
+//                 }
+//             });
+//         }
+
+//     } catch (error) {
+//         console.error('Error fetching document details:', error);
+//         return res.status(500).json({
+//             success: false,
+//             message: error.message || 'Failed to fetch document details',
+//             error: {
+//                 name: error.name,
+//                 details: error.response?.data || error.stack
+//             }
+//         });
+//     }
+// });
+
 // Update display-details endpoint to fetch all required data
 router.get('/documents/:uuid/display-details', async (req, res) => {
     const lhdnConfig = await getLHDNConfig();
@@ -1213,7 +1492,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     longId: detailsData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: documentData.validationResults,
+                    validationResults: detailsData.validationResults,
                     supplierName: documentData.supplierName,
                     supplierSstNo: documentData.supplierSstNo,
                     supplierMsicCode: documentData.supplierMsicCode,
@@ -1250,6 +1529,11 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         // If document field exists, parse it and extract detailed info
         try {
             const parsedDocument = JSON.parse(documentData.document);
+            const validationResults = detailsData.validationResults;
+            const invoice = parsedDocument.Invoice[0];
+            const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
+            const customerParty = invoice.AccountingCustomerParty[0].Party[0];
+
             return res.json({
                 success: true,
                 documentInfo: {
@@ -1259,7 +1543,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     irbmlongId: documentData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: documentData.validationResults,
+                    validationResults: validationResults,
                     supplierName: documentData.issuerName,
                     supplierTIN: documentData.issuerTin,
                     supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
@@ -1278,24 +1562,30 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                         .join(', ') || documentData.receiverAddress
                 },
                 supplierInfo: {
-                    company: documentData.supplierName,
-                    tin: documentData.supplierTin,
-                    registrationNo: documentData.supplierRegistrationNo,
-                    taxRegNo: documentData.supplierSstNo,
-                    msicCode: documentData.supplierMsicCode,
-                    address: documentData.supplierAddress
+                    company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
+                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
+                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
+                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+                    address: supplierParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.supplierAddress
                 },
                 customerInfo: {
-                    company: documentData.receiverName,
-                    tin: documentData.receiverTin,
-                    registrationNo: documentData.receiverRegistrationNo,
-                    taxRegNo: documentData.receiverSstNo,
-                    address: documentData.receiverAddress
+                    company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
+                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
+                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    address: customerParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.receiverAddress
                 },
                 paymentInfo: {
-                    totalIncludingTax: documentData.totalSales,
-                    totalExcludingTax: documentData.totalExcludingTax,
-                    taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
+                    totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
+                    totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
+                    taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
                     irbmUniqueNo: documentData.uuid,
                     irbmlongId: documentData.longId
                 }
@@ -1312,34 +1602,46 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     irbmlongId: documentData.longId,
                     internalId: documentData.internalId,
                     status: documentData.status,
-                    validationResults: documentData.validationResults,
-                    supplierName: documentData.supplierName,
-                    supplierSstNo: documentData.supplierSstNo,
-                    supplierMsicCode: documentData.supplierMsicCode,
-                    supplierAddress: documentData.supplierAddress,
-                    receiverSstNo: documentData.receiverSstNo,
-                    receiverRegistrationNo: documentData.receiverRegistrationNo,
-                    receiverAddress: documentData.receiverAddress
+                    validationResults: validationResults,
+                    supplierName: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
+                    supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+                    supplierAddress: supplierParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.supplierAddress,
+                    receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    receiverAddress: customerParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.receiverAddress
                 },
                 supplierInfo: {
-                    company: documentData.supplierName,
-                    tin: documentData.supplierTin,
-                    registrationNo: documentData.supplierRegistrationNo,
-                    taxRegNo: documentData.supplierSstNo,
-                    msicCode: documentData.supplierMsicCode,
-                    address: documentData.supplierAddress
+                    company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
+                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
+                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
+                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
+                    address: supplierParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.supplierAddress
                 },
                 customerInfo: {
-                    company: documentData.receiverName,
-                    tin: documentData.receiverTin,
-                    registrationNo: documentData.receiverRegistrationNo,
-                    taxRegNo: documentData.receiverSstNo,
-                    address: documentData.receiverAddress
+                    company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
+                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
+                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    address: customerParty.PostalAddress[0].AddressLine
+                        .map(line => line.Line[0]._)
+                        .filter(Boolean)
+                        .join(', ') || documentData.receiverAddress
                 },
                 paymentInfo: {
-                    totalIncludingTax: documentData.totalSales,
-                    totalExcludingTax: documentData.totalExcludingTax,
-                    taxAmount: documentData.totalSales - (documentData.totalExcludingTax || 0),
+                    totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
+                    totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
+                    taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
                     irbmUniqueNo: documentData.uuid,
                     irbmlongId: documentData.longId
                 }
@@ -1358,6 +1660,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         });
     }
 });
+
 
 // Helper function to get template data
 async function getTemplateData(uuid, accessToken, user) {

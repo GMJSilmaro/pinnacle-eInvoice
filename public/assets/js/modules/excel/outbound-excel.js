@@ -3010,117 +3010,6 @@ async function showErrorModal(title, message, fileName, uuid) {
     });
 }
 
-function showLHDNErrorModal(error) {
-    console.log('LHDN Error:', error);
-    
-    // Parse error message if it's a string
-    let errorDetails = error;
-    try {
-        if (typeof error === 'string') {
-            errorDetails = JSON.parse(error);
-        }
-    } catch (e) {
-        console.warn('Error parsing error message:', e);
-    }
-
-    // Extract error details from the new error format
-    const errorData = errorDetails.error || errorDetails;
-    const mainError = {
-        code: errorData.code || 'VALIDATION_ERROR',
-        message: errorData.message || 'An unknown error occurred',
-        details: errorData.details || {}
-    };
-
-    // Format the validation error details
-    const validationDetails = mainError.details?.error?.details || [];
-    const invoiceNumber = mainError.details?.invoiceCodeNumber || 'Unknown';
-
-    Swal.fire({
-        title: 'LHDN Submission Error',
-        html: `
-            <div class="content-card swal2-content">
-                <div style="margin-bottom: 15px; text-align: center;">
-                    <div class="error-icon" style="color: #dc3545; font-size: 28px; margin-bottom: 10%; animation: pulseError 1.5s infinite;">
-                        <i class="fas fa-times-circle"></i>
-                    </div>
-                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
-                        <i class="fas fa-exclamation-circle" style="color: #dc3545; margin-right: 5px;"></i>
-                        ${mainError.message}
-                    </div>
-                </div>
-    
-                <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05);">
-                    <div style="margin-bottom: 8px;">
-                        <span style="color: #595959; font-weight: 600;">Error Code:</span>
-                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${mainError.code}</span>
-                    </div>
-                    
-                    <div style="margin-bottom: 8px;">
-                        <span style="color: #595959; font-weight: 600;">Invoice Number:</span>
-                        <span style="color: #595959;">${invoiceNumber}</span>
-                    </div>
-    
-                    ${validationDetails.length > 0 ? `
-                        <div>
-                            <span style="color: #595959; font-weight: 600;">Validation Errors:</span>
-                            <div style="margin-top: 4px; max-height: 200px; overflow-y: auto;">
-                                ${validationDetails.map(detail => `
-                                    <div style="background: #fff; padding: 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid rgba(220, 53, 69, 0.2); font-size: 0.9em;">
-                                        <div style="margin-bottom: 4px;">
-                                            <strong>Path:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
-                                        </div>
-                                        <div>
-                                            <strong>Error:</strong> ${formatValidationMessage(detail.message)}
-                                        </div>
-                                        ${detail.code ? `
-                                            <div style="margin-top: 4px; font-size: 0.9em; color: #6c757d;">
-                                                Code: ${detail.code}
-                                            </div>
-                                        ` : ''}
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
-    
-            <style>
-                @keyframes pulseError {
-                    0% { transform: scale(1); }
-                    50% { transform: scale(1.15); }
-                    100% { transform: scale(1); }
-                }
-            </style>
-        `,
-        customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            popup: 'semi-minimal-popup'
-        },
-        confirmButtonText: 'OK',
-        showCloseButton: true
-    });
-}
-
-// Helper function to format validation messages
-function formatValidationMessage(message) {
-    if (!message) return 'Unknown error';
-    
-    // Remove technical details and format the message
-    return message
-        .split('\n')
-        .map(line => {
-            // Remove JSON-like formatting
-            line = line.replace(/[{}]/g, '');
-            // Remove technical prefixes
-            line = line.replace(/(ArrayItemNotValid|NoAdditionalPropertiesAllowed|#\/Invoice\[\d+\])/g, '');
-            // Clean up extra spaces and punctuation
-            line = line.trim().replace(/\s+/g, ' ').replace(/:\s+/g, ': ');
-            return line;
-        })
-        .filter(line => line.length > 0)
-        .join('<br>');
-}
 
 // Helper function to get next steps based on error code
 function getNextSteps(errorCode) {
@@ -4206,18 +4095,32 @@ function showLHDNErrorModal(error) {
     // Create tooltip help content for TIN matching errors
     const tinErrorGuidance = `
         <div class="tin-matching-guidance" style="margin-top: 15px; padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #17a2b8;">
-            <h4 style="margin-top: 0; color: #17a2b8; font-size: 16px;">
-                <i class="fas fa-info-circle"></i> How to resolve TIN matching errors:
-            </h4>
-            <ul style="padding-left: 20px; margin-bottom: 0; text-align: left; color: #495057;">
-                <li>Verify that the supplier's TIN in your document matches exactly with the one registered with LHDN</li>
-                <li>When using Login as Taxpayer API: The issuer TIN in the document must match with the TIN associated with your Client ID and Client Secret</li>
-                <li>When using Login as Intermediary System API: The issuer TIN must match with the TIN of the taxpayer you're representing</li>
-                <li>For sole proprietors: You can validate TINs starting with "IG" along with your BRN if you have the "Business Owner" role in MyTax</li>
-            </ul>
-            <div style="margin-top: 10px; font-size: 13px; color: #6c757d;">
-                <a href="https://sdk.myinvois.hasil.gov.my/faq/" target="_blank" style="color: #17a2b8; text-decoration: underline;">
-                    <i class="fas fa-external-link-alt"></i> View LHDN FAQ for more details
+            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                <i class="fas fa-info-circle" style="color: #17a2b8; margin-right: 8px;"></i>
+                <span style="color: #17a2b8; font-size: 14px; font-weight: 600;">How to resolve TIN matching errors:</span>
+            </div>
+            <div style="padding-left: 6px; margin-bottom: 0; text-align: left; color: #495057; font-size: 13px;">
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>Verify that the supplier's TIN in your document matches exactly with the one registered with LHDN</span>
+                </div>
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>When using Login as Taxpayer API: The issuer TIN in the document must match with the TIN associated with your Client ID and Client Secret</span>
+                </div>
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>When using Login as Intermediary System API: The issuer TIN must match with the TIN of the taxpayer you're representing</span>
+                </div>
+                <div style="display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>For sole proprietors: You can validate TINs starting with "IG" along with your BRN if you have the "Business Owner" role in MyTax</span>
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #6c757d; text-align: right;">
+                <a href="https://sdk.myinvois.hasil.gov.my/faq/" target="_blank" style="color: #17a2b8; text-decoration: none; display: inline-flex; align-items: center;">
+                    <span>View LHDN FAQ for more details</span>
+                    <i class="fas fa-external-link-alt" style="margin-left: 4px; font-size: 10px;"></i>
                 </a>
             </div>
         </div>
@@ -4228,58 +4131,58 @@ function showLHDNErrorModal(error) {
         html: `
             <div class="content-card swal2-content">
                 <div style="margin-bottom: 15px; text-align: center;">
-                    <div class="error-icon" style="color: #dc3545; font-size: 48px; margin-bottom: 20px;">
+                    <div class="error-icon" style="color: #dc3545; font-size: 36px; margin-bottom: 15px;">
                         <i class="fas fa-exclamation-circle" style="animation: pulseError 1.5s infinite;"></i>
                     </div>
-                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px; margin: 8px 0; border-radius: 4px; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 10px; margin: 8px 0; border-radius: 4px; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                         <div style="display: flex; align-items: flex-start;">
-                            <i class="fas fa-exclamation-triangle" style="color: #dc3545; margin-right: 10px; margin-top: 2px;"></i>
-                            <span style="font-weight: 500; font-size: 15px;">${mainError.message}</span>
+                            <i class="fas fa-exclamation-triangle" style="color: #dc3545; margin-right: 8px; margin-top: 2px; font-size: 13px;"></i>
+                            <span style="font-weight: 500; font-size: 13px;">${mainError.message}</span>
                         </div>
                     </div>
                 </div>
     
-                <div style="text-align: left; padding: 16px; border-radius: 8px; background: rgba(220, 53, 69, 0.05); box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <div style="margin-bottom: 12px; display: flex; align-items: center;">
-                        <span style="color: #495057; font-weight: 600; min-width: 100px;">Error Code:</span>
-                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 3px 8px; border-radius: 4px;">${mainError.code}</span>
+                <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Code:</span>
+                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.code}</span>
                     </div>
 
                     ${mainError.target ? `
-                    <div style="margin-bottom: 12px; display: flex; align-items: center;">
-                        <span style="color: #495057; font-weight: 600; min-width: 100px;">Error Target:</span>
-                        <span style="color: #495057; background: rgba(0,0,0,0.03); padding: 3px 8px; border-radius: 4px;">${mainError.target}</span>
+                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Target:</span>
+                        <span style="color: #495057; background: rgba(0,0,0,0.03); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.target}</span>
                     </div>
                     ` : ''}
                     
                     ${validationDetails.length > 0 ? `
                         <div>
-                            <div style="color: #495057; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center;">
-                                <span>Validation Errors:</span>
-                                <span class="tooltip-container" style="margin-left: 8px; cursor: help; position: relative;">
-                                    <i class="fas fa-question-circle" style="color: #6c757d;"></i>
-                                    <div class="tooltip-content" style="position: absolute; width: 250px; background: #fff; border-radius: 4px; padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; display: none; top: -5px; left: 25px; font-weight: normal; font-size: 13px; color: #495057; text-align: left;">
+                            <div style="color: #495057; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center;">
+                                <span style="font-size: 12px;">Validation Errors:</span>
+                                <span class="tooltip-container" style="margin-left: 6px; cursor: help; position: relative;">
+                                    <i class="fas fa-question-circle" style="color: #6c757d; font-size: 11px;"></i>
+                                    <div class="tooltip-content" style="position: absolute; width: 220px; background: #fff; border-radius: 4px; padding: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; display: none; top: -5px; left: 20px; font-weight: normal; font-size: 11px; color: #495057; text-align: left;">
                                         These validation errors indicate specific issues with your submission data. Each error includes the path to the problematic field and details about what needs to be fixed.
                                     </div>
                                 </span>
                             </div>
-                            <div style="margin-top: 8px; max-height: 200px; overflow-y: auto; border-radius: 6px; border: 1px solid rgba(0,0,0,0.1);">
+                            <div style="margin-top: 6px; max-height: 150px; overflow-y: auto; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
                                 ${validationDetails.map(detail => `
-                                    <div style="background: #fff; padding: 12px; border-radius: 0; margin-bottom: 1px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 0.95em;">
-                                        <div style="margin-bottom: 6px; display: flex;">
-                                            <strong style="min-width: 80px; color: #495057;">Path:</strong> 
-                                            <span style="color: #0d6efd; font-family: monospace; background: rgba(13, 110, 253, 0.05); padding: 0 4px; border-radius: 2px;">
+                                    <div style="background: #fff; padding: 8px; border-radius: 0; margin-bottom: 1px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 12px;">
+                                        <div style="margin-bottom: 4px; display: flex;">
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Path:</strong> 
+                                            <span style="color: #0d6efd; font-family: monospace; background: rgba(13, 110, 253, 0.05); padding: 0 3px; border-radius: 2px; font-size: 11px;">
                                                 ${detail.propertyPath || detail.target || 'Unknown'}
                                             </span>
                                         </div>
                                         <div style="display: flex;">
-                                            <strong style="min-width: 80px; color: #495057;">Error:</strong> 
-                                            <span>${formatValidationMessage(detail.message)}</span>
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Error:</strong> 
+                                            <span style="font-size: 11px;">${formatValidationMessage(detail.message)}</span>
                                         </div>
                                         ${detail.code ? `
-                                            <div style="margin-top: 6px; font-size: 0.9em; color: #6c757d; display: flex;">
-                                                <strong style="min-width: 80px; color: #6c757d;">Code:</strong>
-                                                <span>${detail.code}</span>
+                                            <div style="margin-top: 4px; color: #6c757d; display: flex;">
+                                                <strong style="min-width: 60px; color: #6c757d; font-size: 11px;">Code:</strong>
+                                                <span style="font-size: 11px;">${detail.code}</span>
                                             </div>
                                         ` : ''}
                                     </div>
@@ -4304,8 +4207,13 @@ function showLHDNErrorModal(error) {
                 .semi-minimal-popup {
                     max-width: 550px;
                 }
-                .tin-matching-guidance ul li {
-                    margin-bottom: 6px;
+                .semi-minimal-popup {
+                    max-width: 480px;
+                    font-size: 12px;
+                }
+                .btn-sm {
+                    padding: 0.375rem 0.75rem;
+                    font-size: 0.875rem;
                 }
             </style>
         `,
@@ -4314,6 +4222,9 @@ function showLHDNErrorModal(error) {
             popup: 'semi-minimal-popup'
         },
         confirmButtonText: 'I Understand',
+        customClass: {
+            confirmButton: 'outbound-action-btn submit btn-sm',
+        },
         showCloseButton: true,
         didOpen: () => {
             // Add event listeners for tooltips if needed

@@ -1455,7 +1455,7 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
         taxAmount: result.paymentInfo?.taxAmount || 0,
         irbmUniqueNo: documentInfo.uuid,
         irbmlongId: documentInfo.longId || documentInfo.irbmlongId || 'N/A',
-        irbmURL: 'https://preprod.myinvois.hasil.gov.my/'+documentInfo.uuid+'/share/'+documentInfo.longId
+        irbmURL: 'https://myinvois.hasil.gov.my/'+documentInfo.uuid+'/share/'+documentInfo.longId
     };
 
     // Update info sections content
