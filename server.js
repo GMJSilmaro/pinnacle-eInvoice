@@ -204,35 +204,85 @@ async function ensureDirectories() {
 // 7. Server Startup
 const startServer = async () => {
   let jsreportInstance;
+  let httpServer;
+  let httpsServer;
 
   try {
     await ensureDirectories();
-
     jsreportInstance = await initJsReport();
 
-    const port = process.env.PORT || 3000; // Use a high port, not 80/443
+    const httpPort = process.env.HTTP_PORT || 3000;  // Changed from 80 to 3000
+    const httpsPort = process.env.HTTPS_PORT || 443; // Changed from 443 to 3001
 
-    // Start the Express app (no HTTPS setup here—IIS handles it)
-    app.listen(port, () => {
-      console.log(`Server started on http://localhost:${port}`);
+    // Create HTTP server
+    httpServer = http.createServer((req, res) => {
+      // Only redirect to HTTPS if not in development and not behind proxy
+      if (process.env.NODE_ENV === 'production' && !req.headers['x-forwarded-proto']) {
+        const host = req.headers.host.split(':')[0]; // Remove port if present
+        const httpsUrl = `https://${host}:${httpsPort}${req.url}`;
+        res.writeHead(301, { Location: httpsUrl });
+        res.end();
+      } else {
+        app(req, res);
+      }
+    });
+
+    // Create HTTPS server if SSL certificates exist
+    const sslPath = path.join(__dirname, 'ssl');
+    if (fs.existsSync(path.join(sslPath, 'private.key')) && fs.existsSync(path.join(sslPath, 'certificate.crt'))) {
+      const httpsOptions = {
+        key: fs.readFileSync(path.join(sslPath, 'private.key')),
+        cert: fs.readFileSync(path.join(sslPath, 'certificate.crt'))
+      };
+      httpsServer = https.createServer(httpsOptions, app);
+    }
+
+    // Start HTTP server with error handling
+    httpServer.listen(httpPort, () => {
+      console.log(`HTTP server running on http://localhost:${httpPort}`);
     }).on('error', (err) => {
-      console.error('Server error:', err);
       if (err.code === 'EACCES') {
-        console.error(`Port ${port} requires elevated privileges`);
+        console.error(`Port ${httpPort} requires elevated privileges. Try using a port number above 1024.`);
       } else if (err.code === 'EADDRINUSE') {
-        console.error(`Port ${port} is already in use`);
+        console.error(`Port ${httpPort} is already in use. Try a different port.`);
+      } else {
+        console.error('HTTP server error:', err);
       }
       process.exit(1);
     });
+
+    // Start HTTPS server if available
+    if (httpsServer) {
+      httpsServer.listen(httpsPort, () => {
+        console.log(`HTTPS server running on https://localhost:${httpsPort}`);
+      }).on('error', (err) => {
+        if (err.code === 'EACCES') {
+          console.error(`Port ${httpsPort} requires elevated privileges. Try using a port number above 1024.`);
+        } else if (err.code === 'EADDRINUSE') {
+          console.error(`Port ${httpsPort} is already in use. Try a different port.`);
+        } else {
+          console.error('HTTPS server error:', err);
+        }
+        // Don't exit process if HTTPS fails, as HTTP might still be working
+        console.log('Continuing with HTTP only...');
+      });
+    }
 
     // Graceful shutdown
     const gracefulShutdown = async (signal) => {
       console.log(`Received ${signal} signal. Shutting down gracefully...`);
 
-      // Close the Express server
-      app.close(() => {
-        console.log('Server closed.');
-      });
+      // Close the HTTP server
+      if (httpServer) {
+        await new Promise(resolve => httpServer.close(resolve));
+        console.log('HTTP server closed.');
+      }
+
+      // Close the HTTPS server
+      if (httpsServer) {
+        await new Promise(resolve => httpsServer.close(resolve));
+        console.log('HTTPS server closed.');
+      }
 
       // Close jsreport
       if (jsreportInstance && typeof jsreportInstance.close === 'function') {
