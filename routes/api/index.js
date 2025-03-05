@@ -29,6 +29,7 @@ const xmlRoutes = require('./xml.routes');
 const logsRoutes = require('./logs.routes');
 const lhdnRoutes = require('./lhdn');
 const configRoutes = require('./config');
+const geminiRoutes = require('./gemini.routes');
 
 
 // Add admin settings routes
@@ -41,6 +42,7 @@ router.use('/logs', logsRoutes);
 router.use('/lhdn', lhdnRoutes);
 router.use('/config', configRoutes);
 router.use('/user', userRoutes);
+router.use('/gemini', geminiRoutes);
 
 
 // Configure multer for file uploads
