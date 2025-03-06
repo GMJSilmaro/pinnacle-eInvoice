@@ -5,9 +5,9 @@ const VersionControl = require(path.join(__dirname, '..', './utils', 'versionCon
 // Create the app version
 const appVersion = new VersionControl({
   major: '1',
-  minor: '1', 
-  patch: '1',
-  build: '002'
+  minor: '2', 
+  patch: '5',
+  build: '005'
 });
 
 module.exports = appVersion;

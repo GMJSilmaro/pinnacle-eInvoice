@@ -464,9 +464,8 @@ function resetChat() {
     
     // Generate a new session ID
     sessionId = generateSessionId();
-    
     // Add welcome message
-    const welcomeMessage = `Hello PXC Developer! I'm your Pinnacle eInvoice Assistant.
+    const welcomeMessage = `Hello! I'm your Pinnacle eInvoice Assistant.
 
 I can help you with:
 • Submitting invoices

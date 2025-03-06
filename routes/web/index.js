@@ -12,16 +12,16 @@ const checkSession = (req, res, next) => {
 
 // Dashboard routes
 router.get('/', auth.middleware, (req, res) => {
-    res.render('dashboard/inbound.html', {
-        title: 'Inbound',
+    res.render('dashboard/index.html', {
+        title: 'Dashboard',
         user: req.session.user || null,
         layout: 'layout'
     });
 });
 // Dashboard routes
 router.get('/dashboard', auth.middleware, (req, res) => {
-    res.render('dashboard/inbound.html', {
-        title: 'Inbound',
+    res.render('dashboard/index.html', {
+        title: 'Dashboard',
         user: req.session.user || null,
         layout: 'layout'
     });
