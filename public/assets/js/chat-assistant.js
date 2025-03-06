@@ -526,7 +526,7 @@ function addPredefinedQuestions() {
                 'How do I submit an Invoice Document to LHDN?',
                 'What happens during the LHDN submission process?',
                 'How do I check my document submission status?',
-                'How do I cancel a submitted document in Pinnacle eInvoice?',
+                'How do I cancel a submitted document in Pinnacle e-Invoice Portal?',
                 'What do the different status colors mean in the outbound table?'
             ]
         },
@@ -545,9 +545,9 @@ function addPredefinedQuestions() {
             name: 'Company Settings',
             icon: 'fa-building',
             questions: [
-                'How do I update my company profile?',
+                'How do I update my company profile in Pinnacle e-Invoice Portal?',
                 'How do I configure my LHDN credentials?',
-                'How do I update my company logo or profile image?',
+                'How do I update my company logo or profile image in Pinnacle e-Invoice Portal?',
                 'Where can I find my company TIN and BRN information?',
                 'How do I set up Outbound/Inbound configuration paths?'
             ]
