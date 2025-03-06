@@ -39,6 +39,11 @@ System Interface Navigation:
 - Dashboard: Main overview with statistics and recent activity
 - Outbound: Page for managing invoices sent to others
 - Inbound: Page for receiving and viewing invoices from suppliers
+- Profile: Access Company profile and settings, including Company Details, Logo, etc.
+- Settings: Manage personal information such as adding Profile picture, password, and notification settings, etc.
+- Help: Detailed information about system features and usage
+- Changelog: List of updates and changes to the system
+- Logout: End the current session and log out
 
 OUTBOUND INVOICE SUBMISSION PROCESS:
 1. Navigate to the Outbound page by clicking "OUTBOUND" in the top navigation menu
@@ -78,7 +83,15 @@ STATUS CODES:
 - Cancelled (Orange): Invoice was cancelled
 - Pending (Yellow): Invoice is waiting to be submitted
 
-PROFILE & COMPANY SETTINGS:
+USER PROFILE SETTINGS:
+1. Click on your profile icon in the top right corner to access your profile settings
+2. You can update your personal information, change your password, and manage notification settings
+3. Make sure to keep your profile information up to date
+4. You can also add a profile picture to personalize your account
+5. Logout to end the current session and log out of the system
+6. If you have any issues with your profile or settings, contact your system administrator
+
+COMPANY PROFILE SETTINGS:
 1. Click on your profile icon in the top right corner to access your profile settings
 2. You can update your personal information, change your password, and manage company settings
 3. Company settings include details like company name, address, tax ID, and other relevant information
