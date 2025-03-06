@@ -517,28 +517,27 @@ function addPredefinedQuestions() {
     title.textContent = 'Frequently Asked Questions';
     container.appendChild(title);
     
-    // Define question categories and their questions based on actual system functionality
     const categories = [
         {
             name: 'Document Submission',
             icon: 'fa-file-upload',
             questions: [
-                'How do I submit an Invoice Document to LHDN?',
-                'What happens during the LHDN submission process?',
-                'How do I check my document submission status?',
+                'How do I submit an Invoice Document to LHDN from Pinnacle e-Invoice Portal?',
+                'What happens during the LHDN submission process from Pinnacle e-Invoice Portal?',
+                'How do I check my document submission status in Pinnacle e-Invoice Portal?',
                 'How do I cancel a submitted document in Pinnacle e-Invoice Portal?',
-                'What do the different status colors mean in the outbound table?'
+                'What do the different status colors mean in the outbound table in Pinnacle e-Invoice Portal?'
             ]
         },
         {
             name: 'Validation & Errors',
             icon: 'fa-check-circle',
             questions: [
-                'Why was my document rejected by LHDN?',
-                'How do I fix Document Validation errors?',
-                'What are common validation issues with Excel files?',
-                'How do I validate my Excel file before LHDN submission?',
-                'What should I do if I get a system error during submission?'
+                'Why was my document rejected by LHDN from Pinnacle e-Invoice Portal?',
+                'How do I fix document validation errors in Pinnacle e-Invoice Portal?',
+                'What are common validation issues with Excel files in Pinnacle e-Invoice Portal?',
+                'How do I validate my Excel file before LHDN submission in Pinnacle e-Invoice Portal?',
+                'What should I do if I get a system error during submission in Pinnacle e-Invoice Portal?'
             ]
         },
         {
@@ -546,47 +545,46 @@ function addPredefinedQuestions() {
             icon: 'fa-building',
             questions: [
                 'How do I update my company profile in Pinnacle e-Invoice Portal?',
-                'How do I configure my LHDN credentials?',
+                'How do I configure my LHDN credentials in Pinnacle e-Invoice Portal?',
                 'How do I update my company logo or profile image in Pinnacle e-Invoice Portal?',
-                'Where can I find my company TIN and BRN information?',
-                'How do I set up Outbound/Inbound configuration paths?'
+                'Where can I find my company TIN and BRN information in Pinnacle e-Invoice Portal?',
+                'How do I set up Outbound/Inbound configuration paths in Pinnacle e-Invoice Portal?'
             ]
         },
         {
             name: 'Inbound & Reports',
             icon: 'fa-file-import',
             questions: [
-                'How do I view invoice details in the inbound section?',
-                'How do I export invoice data to CSV?',
-                'How do I check if my LHDN data is up to date?',
-                'What do the document type icons mean in the inbound table?',
-                'How do I copy invoice information from the system?'
+                'How do I view invoice details in the inbound section of Pinnacle e-Invoice Portal?',
+                'How do I export invoice data to CSV from Pinnacle e-Invoice Portal?',
+                'How do I check if my LHDN data is up to date in Pinnacle e-Invoice Portal?',
+                'What do the document type icons mean in the inbound table of Pinnacle e-Invoice Portal?',
+                'How do I copy invoice information from the system in Pinnacle e-Invoice Portal?'
             ]
         },
         {
             name: 'System Configuration',
             icon: 'fa-cogs',
             questions: [
-                'How do I set up my LHDN certificate?',
-                'How do I test my LHDN connection?',
-                'How do I update my access token?',
-                'How do I configure network paths for documents?',
-                'How do I validate network path accessibility?'
+                'How do I set up my LHDN certificate on Pinnacle e-Invoice Portal?',
+                'How do I test my LHDN connection on Pinnacle e-Invoice Portal?',
+                'How do I update my access token on Pinnacle e-Invoice Portal?',
+                'How do I configure network paths for documents on Pinnacle e-Invoice Portal?',
+                'How do I validate network path accessibility on Pinnacle e-Invoice Portal?'
             ]
         },
         {
             name: 'Audit Trail',
             icon: 'fa-history',
             questions: [
-                'How do I use the Audit Trail feature?',
-                'What information is tracked in the Audit Trail?',
-                'How do I filter activities in the Audit Trail?',
-                'How do I export Audit Trail data?',
-                'What do the different action types mean in Audit Trail?'
+                'How do I use the Audit Trail feature on Pinnacle e-Invoice Portal?',
+                'What information is tracked in the Audit Trail on Pinnacle e-Invoice Portal?',
+                'How do I filter activities in the Audit Trail on Pinnacle e-Invoice Portal?',
+                'How do I export Audit Trail data from Pinnacle e-Invoice Portal?',
+                'What do the different action types mean in the Audit Trail on Pinnacle e-Invoice Portal?'
             ]
         }
     ];
-    
     // Create and append each category
     categories.forEach((category, index) => {
         const categoryDiv = document.createElement('div');

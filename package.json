@@ -24,6 +24,7 @@
   "description": "A specialized middleware solution designed to integrate business applications with LHDN's (Lembaga Hasil Dalam Negeri) e-Invoicing system. This middleware facilitates seamless invoice data exchange while ensuring compliance with Malaysian tax regulations.",
   "dependencies": {
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
+    "@google/generative-ai": "^0.23.0",
     "axios": "^1.7.9",
     "axios-retry": "^4.5.0",
     "bcryptjs": "^2.4.3",

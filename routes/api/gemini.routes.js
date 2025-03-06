@@ -1,10 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // Use environment variables for API keys in production
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDsPA4DKpJ5a_tdVQxgbd3H_N8Cp2njMJY';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+
+// Initialize the Google Generative AI client
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+
+// API URL for direct axios calls (as a fallback)
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 // Store conversation history in memory (in production, consider using a database)
 const conversationHistory = {};
@@ -172,100 +180,213 @@ router.post('/chat', async (req, res) => {
     // Add context as first message if this is a new conversation
     const isNewConversation = history.length === 0;
     
-    // Construct the contents array for the API request
-    let contents = [];
-    
-    if (isNewConversation) {
-      // For a new conversation, include the system prompt as context in the first message
-      contents = [
-        {
-          role: "user",
-          parts: [{ 
-            text: SYSTEM_PROMPT + "\n\nUser's first message: " + sanitizedMessage 
-          }]
-        }
-      ];
-    } else {
-      // For ongoing conversations, add all previous messages
-      // Then add the new user message
-      contents = [
-        ...history,
-        {
+    try {
+      let textResponse;
+      
+      if (isNewConversation) {
+        // For a new conversation, include the system prompt as context
+        const chat = model.startChat({
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1024,
+            topP: 0.95,
+            topK: 40
+          },
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+          ]
+        });
+        
+        // Send the system prompt first
+        const result = await chat.sendMessage(SYSTEM_PROMPT + "\n\nUser's first message: " + sanitizedMessage);
+        textResponse = result.response.text();
+      } else {
+        // For ongoing conversations, create a chat with history
+        const chatHistory = history.map(msg => ({
+          role: msg.role,
+          parts: msg.parts.map(part => part.text)
+        }));
+        
+        const chat = model.startChat({
+          history: chatHistory,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1024,
+            topP: 0.95,
+            topK: 40
+          },
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+          ]
+        });
+        
+        // Send the new message
+        const result = await chat.sendMessage(sanitizedMessage);
+        textResponse = result.response.text();
+      }
+      
+      // Store the conversation in history
+      if (isNewConversation) {
+        // For new conversations, we've combined the system prompt with the user message
+        // So we need to store the actual user message separately for the history
+        conversationHistory[sessionId].messages.push({
           role: "user",
           parts: [{ text: sanitizedMessage }]
-        }
-      ];
-    }
-    
-    // Call the Gemini API with conversation history
-    const response = await axios.post(
-      `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
-      {
-        contents: contents,
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1024,
-          topP: 0.95,
-          topK: 40
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          }
-        ]
-      },
-      {
-        timeout: 15000 // 15 second timeout
+        });
+      } else {
+        // For ongoing conversations, add the message we just sent
+        conversationHistory[sessionId].messages.push({
+          role: "user",
+          parts: [{ text: sanitizedMessage }]
+        });
       }
-    );
-
-    // Extract the response text from Gemini
-    const textResponse = response.data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
-    
-    // Store the conversation in history
-    if (isNewConversation) {
-      // For new conversations, we've combined the system prompt with the user message
-      // So we need to store the actual user message separately for the history
+      
+      // Add the assistant's response to the conversation history
       conversationHistory[sessionId].messages.push({
-        role: "user",
-        parts: [{ text: sanitizedMessage }]
+        role: "model",
+        parts: [{ text: textResponse }]
       });
-    } else {
-      // For ongoing conversations, add the message we just sent
+      
+      // Limit history to last 10 messages (5 exchanges) to avoid token limits
+      if (conversationHistory[sessionId].messages.length > 10) {
+        conversationHistory[sessionId].messages = conversationHistory[sessionId].messages.slice(-10);
+      }
+
+      return res.json({
+        success: true,
+        response: textResponse
+      });
+    } catch (aiError) {
+      console.error('Gemini AI Client Error:', aiError);
+      
+      // Fall back to direct API call if the client library fails
+      console.log('Falling back to direct API call...');
+      
+      // Construct the contents array for the API request
+      let contents = [];
+      
+      if (isNewConversation) {
+        // For a new conversation, include the system prompt as context in the first message
+        contents = [
+          {
+            role: "user",
+            parts: [{ 
+              text: SYSTEM_PROMPT + "\n\nUser's first message: " + sanitizedMessage 
+            }]
+          }
+        ];
+      } else {
+        // For ongoing conversations, add all previous messages
+        // Then add the new user message
+        contents = [
+          ...history,
+          {
+            role: "user",
+            parts: [{ text: sanitizedMessage }]
+          }
+        ];
+      }
+      
+      // Call the Gemini API with conversation history
+      const response = await axios.post(
+        `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
+        {
+          contents: contents,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1024,
+            topP: 0.95,
+            topK: 40
+          },
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+          ]
+        },
+        {
+          timeout: 15000 // 15 second timeout
+        }
+      );
+
+      // Extract the response text from Gemini
+      const textResponse = response.data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
+      
+      // Store the conversation in history
+      if (isNewConversation) {
+        // For new conversations, we've combined the system prompt with the user message
+        // So we need to store the actual user message separately for the history
+        conversationHistory[sessionId].messages.push({
+          role: "user",
+          parts: [{ text: sanitizedMessage }]
+        });
+      } else {
+        // For ongoing conversations, add the message we just sent
+        conversationHistory[sessionId].messages.push({
+          role: "user",
+          parts: [{ text: sanitizedMessage }]
+        });
+      }
+      
+      // Add the assistant's response to the conversation history
       conversationHistory[sessionId].messages.push({
-        role: "user",
-        parts: [{ text: sanitizedMessage }]
+        role: "model",
+        parts: [{ text: textResponse }]
+      });
+      
+      // Limit history to last 10 messages (5 exchanges) to avoid token limits
+      if (conversationHistory[sessionId].messages.length > 10) {
+        conversationHistory[sessionId].messages = conversationHistory[sessionId].messages.slice(-10);
+      }
+
+      return res.json({
+        success: true,
+        response: textResponse
       });
     }
-    
-    // Add the assistant's response to the conversation history
-    conversationHistory[sessionId].messages.push({
-      role: "model",
-      parts: [{ text: textResponse }]
-    });
-    
-    // Limit history to last 10 messages (5 exchanges) to avoid token limits
-    if (conversationHistory[sessionId].messages.length > 10) {
-      conversationHistory[sessionId].messages = conversationHistory[sessionId].messages.slice(-10);
-    }
-
-    return res.json({
-      success: true,
-      response: textResponse
-    });
   } catch (error) {
     console.error('Gemini API Error:', error.response?.data || error.message);
     
