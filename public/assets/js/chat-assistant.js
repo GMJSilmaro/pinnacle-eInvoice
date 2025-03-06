@@ -9,10 +9,9 @@ document.addEventListener('DOMContentLoaded', function() {
 // Configuration options for the chat assistant
 const chatConfig = {
     position: {
-        bottom: 20,
+        bottom: 1,
         right: 20
     },
-    // Add other configuration options as needed
 };
 
 // Load position settings from localStorage
