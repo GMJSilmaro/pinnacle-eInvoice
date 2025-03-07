@@ -173,7 +173,7 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'invoiceNumber',
-                        title: 'INVOICE NO. / DOCUMENT',
+                        title: 'INV NO. / DOCUMENT',
                         render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                     },
                     {
@@ -213,7 +213,7 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'totalAmount',
-                        title: 'TOTAL AMOUNT',
+                        title: 'AMOUNT',
                         render: (data) => this.renderTotalAmount(data)
                     },
                     {
@@ -225,7 +225,7 @@ class InvoiceTableManager {
                 ],
                 scrollX: true,
                 scrollCollapse: true,
-                autoWidth: true,
+                autoWidth: false,
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 language: {
@@ -479,11 +479,14 @@ class InvoiceTableManager {
                     <div class="date-row cancelled-info" 
                          data-bs-toggle="tooltip" 
                          data-bs-placement="top" 
-                         title="${row.cancellation_reason ? `Cancel Reason: ${row.cancellation_reason}` : ''} ${row.cancelled_by ? `Cancelled by: ${row.cancelled_by}` : ''}">
+                         title="${row.cancellation_reason ? `Cancel Reason: ${row.cancellation_reason}` : ''}">
                         <i class="bi bi-x-circle me-1 text-warning"></i>
                         <span class="date-value">
                             <div>
                                 <span class="text-warning">Date Cancelled:</span> ${cancelledFormatted}
+                            </div>
+                            <div>
+                                <span class="text-secondary">By: </span> ${row.cancelled_by}
                             </div>
                         </span>
                     </div>
@@ -2550,320 +2553,6 @@ async function updateStepStatus(stepNumber, status, message) {
     console.log(`✅ [Step ${stepNumber}] Status update completed`);
 }
 
-// async function performStep2(data, version) {
-//     try {
-//         console.log('🚀 [Step 2] Starting LHDN submission with data:', data);
-//         await updateStepStatus(2, 'processing', 'Connecting to to LHDN...');
-//         await updateStepStatus(2, 'processing', 'Initializing Preparing Documents...');
-//         console.log('📤 [Step 2] Initiating submission to LHDN');
-        
-//         // Extract the required parameters from the data
-//         const {
-//             fileName,
-//             type,
-//             company,  // Make sure we extract company
-//             date
-//         } = data;
-
-//         // Make the API call with all required parameters
-//         const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn`, {
-//             method: 'POST',
-//             headers: {
-//                 'Content-Type': 'application/json'
-//             },
-//             body: JSON.stringify({
-//                 type,
-//                 company,  // Include company in the request body
-//                 date,
-//                 version
-//             })
-//         });
-
-//         const result = await response.json();
-
-//         if (!response.ok) {
-//             console.error('❌ [Step 2] API error response:', result);
-//             throw new Error(JSON.stringify(result.error));
-//         }
-
-//         console.log('✅ [Step 2] Submission successful:', result);
-//         await updateStepStatus(2, 'completed', 'Submission completed');
-//         return result;
-
-//     } catch (error) {
-//         console.error('❌ [Step 2] LHDN submission failed:', error);
-//         await updateStepStatus(2, 'error', 'Submission failed');
-//         throw error;
-//     }
-// } 
-
-// async function performStep3(response) {
-//     console.log('🚀 [Step 3] Starting response processing');
-    
-//     try {
-//         // Start processing
-//         console.log('📝 [Step 3] Processing LHDN response');
-//         await updateStepStatus(3, 'processing', 'Processing response...');
-        
-//         // Process response
-//         if (!response || !response.success) {
-//             console.error('❌ [Step 3] Invalid response data');
-//         }
-        
-//         console.log('📝 [Step 3] Response data:', response ? 'Data present' : 'No data');
-//         if (!response) {
-//             console.error('❌ [Step 3] No response data to process');
-//             console.log('Updating step status to error...');
-//             await updateStepStatus(3, 'error', 'Processing failed');
-//             throw new Error('No response data to process');
-//         }
-
-//         // Simulate processing time (if needed)
-//         console.log('⏳ [Step 3] Processing response data...');
-//         await new Promise(resolve => setTimeout(resolve, 1000));
-
-//         // Complete successfully
-//         console.log('✅ [Step 3] Response processing completed');
-//         console.log('Updating step status to completed...');
-//         await updateStepStatus(3, 'completed', 'Processing completed');
-        
-//         return true;
-//     } catch (error) {
-//         console.error('❌ [Step 3] Response processing failed:', error);
-//         console.error('Error details:', {
-//             name: error.name,
-//             message: error.message,
-//             stack: error.stack
-//         });
-//         console.log('Updating step status to error...');
-//         await updateStepStatus(3, 'error', 'Processing failed');
-//         throw error;
-//     }
-// }
-
-// async function cancelDocument(uuid, fileName, submissionDate) {
-//     console.log('Cancelling document:', { uuid, fileName });
-//     try {
-//         const content = `
-//         <div class="content-card swal2-content">
-//             <div style="margin-bottom: 15px; text-align: center;">
-//                 <div class="warning-icon" style="color: #f8bb86; font-size: 24px; margin-bottom: 10%; animation: pulseWarning 1.5s infinite;">
-//                     <i class="fas fa-exclamation-triangle"></i>
-//                 </div>
-//                 <h3 style="color: #595959; font-size: 1.125rem; margin-bottom: 5px;">Document Details</h3>
-//                 <div style="background: #fff3e0; border-left: 4px solid #f8bb86; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
-//                     <i class="fas fa-info-circle" style="color: #f8bb86; margin-right: 5px;"></i>
-//                     This action cannot be undone
-//                 </div>
-//             </div>
-
-//             <div style="text-align: left; margin-bottom: 12px; padding: 8px; border-radius: 8px; background: rgba(248, 187, 134, 0.1);">
-//                 <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
-//                     <span style="color: #595959; font-weight: 600;">File Name:</span>
-//                     <span style="color: #595959;">${fileName}</span>
-//                 </div>
-//                 <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
-//                     <span style="color: #595959; font-weight: 600;">UUID:</span>
-//                     <span style="color: #595959;">${uuid}</span>
-//                 </div>
-//                 <div>
-//                     <span style="color: #595959; font-weight: 600;">Submission Date:</span>
-//                     <span style="color: #595959;">${submissionDate}</span>
-//                 </div>
-//             </div>
-
-//             <div style="margin-top: 12px;">
-//                 <label style="display: block; color: #595959; font-weight: 600; margin-bottom: 5px;">
-//                     <i class="fas fa-exclamation-circle" style="color: #f8bb86; margin-right: 5px;"></i>
-//                     Cancellation Reason <span style="color: #dc3545;">*</span>
-//                 </label>
-//                 <textarea 
-//                     id="cancellationReason"
-//                     class="swal2-textarea"
-//                     style="width: 80%; height: 30%; min-height: 70px; resize: none; border: 1px solid #d9d9d9; border-radius: 4px; padding: 8px; margin-top: 5px; transition: all 0.3s ease; font-size: 1rem;"
-//                     placeholder="Please provide a reason for cancellation"
-//                     onkeyup="this.style.borderColor = this.value.trim() ? '#28a745' : '#dc3545'"
-//                 ></textarea>
-//             </div>
-//         </div>
-
-//         <style>
-//             @keyframes pulseWarning {
-//                 0% { transform: scale(1); }
-//                 50% { transform: scale(1.15); }
-//                 100% { transform: scale(1); }
-//             }
-
-//             .warning-icon {
-//                 animation: pulseWarning 1.5s infinite;
-//             }
-//         </style>
-//     `;
-
-//         // Initial confirmation dialog using createSemiMinimalDialog
-//         const result = await Swal.fire({
-//             title: 'Cancel Document',
-//             text: 'Are you sure you want to cancel this document?',
-//             html: content,
-//             showCancelButton: true,
-//             confirmButtonText: 'Yes, cancel it',
-//             cancelButtonText: 'No, keep it',
-//             width: 480,
-//             padding: '1.5rem',
-//             customClass: {
-//                 confirmButton: 'outbound-action-btn submit',
-//                 cancelButton: 'outbound-action-btn cancel',
-//                 popup: 'semi-minimal-popup'
-//             },
-//             preConfirm: () => {
-//                 const reason = document.getElementById('cancellationReason').value;
-//                 if (!reason.trim()) {
-//                     Swal.showValidationMessage('Please provide a cancellation reason');
-//                     return false;
-//                 }
-//                 return reason;
-//             }
-//         });
-
-//         if (!result.isConfirmed) {
-//             console.log('Cancellation cancelled by user');
-//             return;
-//         }
-
-//         const cancellationReason = result.value;
-//         console.log('Cancellation reason:', cancellationReason);
-
-//         // Show loading state
-//         Swal.fire({
-//             title: 'Cancelling Document...',
-//             text: 'Please wait while we process your request',
-//             allowOutsideClick: false,
-//             didOpen: () => Swal.showLoading()
-//         });
-
-//         console.log('Making API request to cancel document...');
-//         const response = await fetch(`/api/outbound-files/${uuid}/cancel`, {
-//             method: 'POST',
-//             headers: {
-//                 'Content-Type': 'application/json'
-//             },
-//             body: JSON.stringify({ reason: cancellationReason })
-//         });
-
-//         console.log('API Response status:', response.status);
-//         const data = await response.json();
-//         console.log('API Response data:', data);
-
-//         if (!response.ok) {
-//             throw new Error(data.error?.message || data.message || 'Failed to cancel document');
-//         }
-//         await Swal.fire({
-//             title: 'Cancelled Successfully',
-//             html: `
-//                 <div class="content-card swal2-content" style="animation: slideIn 0.3s ease-out; max-height: 280px;">
-//                     <div style="text-align: center; margin-bottom: 18px;">
-//                         <div class="success-icon" style="color: #28a745; font-size: 28px; animation: pulseSuccess 1.5s infinite;">
-//                             <i class="fas fa-check-circle"></i>
-//                         </div>
-//                         <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 6px; margin: 8px 0; border-radius: 4px; text-align: left;">
-//                             <i class="fas fa-info-circle" style="color: #28a745; margin-right: 5px;"></i>
-//                             Invoice cancelled successfully
-//                         </div>
-//                     </div>
-        
-//                     <div style="text-align: left; padding: 8px; border-radius: 8px; background: rgba(40, 167, 69, 0.05);">
-//                         <div style="color: #595959; font-weight: 500; margin-bottom: 8px;">Document Details:</div>
-//                         <div style="margin-bottom: 4px;">
-//                             <span style="color: #595959; font-weight: 500;">File Name:</span>
-//                             <span style="color: #595959; font-size: 0.9em;">${fileName}</span>
-//                         </div>
-//                         <div style="margin-bottom: 4px;">
-//                             <span style="color: #595959; font-weight: 500;">UUID:</span>
-//                             <span style="color: #595959; font-size: 0.9em;">${uuid}</span>
-//                         </div>
-//                         <div>
-//                             <span style="color: #595959; font-weight: 500;">Time:</span>
-//                             <span style="color: #595959; font-size: 0.9em;">${new Date().toLocaleString()}</span>
-//                         </div>
-//                     </div>
-//                 </div>
-        
-//                 <style>
-//                     @keyframes pulseSuccess {
-//                         0% { transform: scale(1); }
-//                         50% { transform: scale(1.15); }
-//                         100% { transform: scale(1); }
-//                     }
-        
-//                     @keyframes slideIn {
-//                         from { transform: translateY(-10px); opacity: 0; }
-//                         to { transform: translateY(0); opacity: 1; }
-//                     }
-        
-//                     .success-icon {
-//                         animation: pulseSuccess 1.5s infinite;
-//                     }
-//                 </style>
-//             `,
-//             customClass: {
-//                 confirmButton: 'outbound-action-btn submit',
-//                 popup: 'semi-minimal-popup'
-//             }
-//         });
-//         console.log('Document cancelled successfully');
-//         // Refresh the table
-//         window.location.reload();
-
-//     } catch (error) {
-//         console.error('Error in cancellation process:', error);
-        
-//         // Show error message using createSemiMinimalDialog
-//         await Swal.fire({
-//             title: 'Error',
-//             html: `
-//                 <div class="text-left">
-//                     <p class="text-danger">${error.message}</p>
-//                     <div class="mt-2 text-gray-600">
-//                         <strong>Technical Details:</strong><br>
-//                         File Name: ${fileName}<br>
-//                         UUID: ${uuid}
-//                     </div>
-//                 </div>
-//             `,
-//             customClass: {
-//                 confirmButton: 'outbound-action-btn submit',
-//                 cancelButton: 'outbound-action-btn cancel',
-//                 popup: 'semi-minimal-popup'
-//             }
-//         });
-//     }
-// }
-
-// async function showErrorModal(title, message, fileName, uuid) {
-//     await Swal.fire({
-//         icon: 'error',
-//         title: title,
-//         html: `
-//             <div class="text-left">
-//                 <p class="text-danger">${message}</p>
-//                 <div class="small text-muted mt-2">
-//                     <strong>Technical Details:</strong><br>
-//                     File Name: ${fileName}<br>
-//                     UUID: ${uuid}
-//                 </div>
-//             </div>
-//         `,
-//         confirmButtonText: 'OK',
-//         customClass: {
-//             confirmButton: 'outbound-action-btn submit',
-//             cancelButton: 'outbound-action-btn cancel',
-//             popup: 'semi-minimal-popup'
-//         },
-//     });
-// }
-
-
-// Helper function to get next steps based on error code
 function getNextSteps(errorCode) {
     const commonSteps = `
         <li>Review each validation error carefully</li>

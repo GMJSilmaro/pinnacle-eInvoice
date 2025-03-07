@@ -456,7 +456,15 @@
     align-items: center;
     gap: 6px;
     width: 100%;
-    max-width: 180px;
+    max-width: 200px;
+    margin-right: 50px;
+    justify-content: flex-start;
+    white-space: no-wrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    text-wrap: no-wrap;
+   
+   
 }
 
 @media (max-width: 768px) {
@@ -490,7 +498,7 @@
 .invoice-text {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: no-wrap;
     font-weight: 600;
 }
 
@@ -513,7 +521,7 @@
 .file-name-text {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: no-wrap;
     max-width: calc(100% - 20px);
 }
 
@@ -522,7 +530,9 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    width: 220px;
+    width: 100%;
+    max-width: 130px;
+    margin-right: 50px;
 }
 
 .date-row {
