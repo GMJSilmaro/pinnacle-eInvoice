@@ -22,13 +22,34 @@ const fileCache = new NodeCache({ stdTTL: 300 }); // 5 minutes cache
 // Add cache helper functions at the top after fileCache declaration
 const CACHE_KEY_PREFIX = 'outbound_files';
 
-function generateCacheKey() {
-    return `${CACHE_KEY_PREFIX}_list`;
+/**
+ * Generate a cache key with optional parameters for more granular caching
+ */
+function generateCacheKey(params = {}) {
+    const baseKey = `${CACHE_KEY_PREFIX}_list`;
+    // Add additional cache parameters if needed
+    if (Object.keys(params).length > 0) {
+        const paramsStr = Object.entries(params)
+            .map(([key, value]) => `${key}=${value}`)
+            .join('_');
+        return `${baseKey}_${paramsStr}`;
+    }
+    return baseKey;
 }
 
-function invalidateFileCache() {
-    const cacheKey = generateCacheKey();
-    fileCache.del(cacheKey);
+/**
+ * Invalidate file cache with optional targeted invalidation
+ */
+function invalidateFileCache(params = {}) {
+    if (Object.keys(params).length > 0) {
+        // Targeted invalidation
+        const cacheKey = generateCacheKey(params);
+        fileCache.del(cacheKey);
+    } else {
+        // Full invalidation
+        const cacheKey = generateCacheKey();
+        fileCache.del(cacheKey);
+    }
 }
 
 // Add new function to check for new files
@@ -100,36 +121,31 @@ async function getOutgoingConfig() {
     return settings;
 };
 /**
- * Helper function to read Excel file with detailed logging
+ * Read Excel file with optimized performance
  */
 async function readExcelWithLogging(filePath) {
     try {
-        //console.log('\n=== Reading Excel File ===');
-        //console.log('File Path:', filePath);
+        // Use a more efficient approach to read Excel files
+        // Only read the first sheet and the necessary data
+        const workbook = XLSX.readFile(filePath, {
+            cellFormula: false,      // Don't parse formulas
+            cellHTML: false,         // Don't generate HTML
+            cellNF: false,           // Don't parse number formats
+            cellStyles: false,       // Don't parse styles
+            cellDates: false,        // Don't convert dates
+            sheetStubs: false,       // Don't generate stubs for empty cells
+            sheetRows: 1000,         // Limit to first 1000 rows for performance
+            bookImages: false,       // Don't parse images
+            bookVBA: false           // Don't parse VBA
+        });
 
-        const workbook = XLSX.readFile(filePath);
-        //console.log('\nSheet Names:', workbook.SheetNames);
+        // Just get the first sheet
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
 
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        //console.log('\nWorksheet Range:', worksheet['!ref']);
-
+        // Convert to JSON objects - only what we need
         const dataAsObjects = XLSX.utils.sheet_to_json(worksheet);
         const dataWithHeaders = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        //console.log(dataWithHeaders);
-       console.log(dataAsObjects);
-
-        // Log all cell addresses in first few rows
-        //console.log('\n=== Cell by Cell Analysis (First 2 rows) ===');
-        const range = XLSX.utils.decode_range(worksheet['!ref']);
-        for (let R = 0; R <= Math.min(1, range.e.r); ++R) {
-            for (let C = 0; C <= range.e.c; ++C) {
-                const cellAddress = XLSX.utils.encode_cell({r: R, c: C});
-                const cell = worksheet[cellAddress];
-                if (cell) {
-                    //console.log(`${cellAddress}:`, cell.v);
-                }
-            }
-        }
 
         return {
             dataWithHeaders,
@@ -138,7 +154,6 @@ async function readExcelWithLogging(filePath) {
             worksheet
         };
     } catch (error) {
-        //console.error('Error reading Excel file:', error);
         throw error;
     }
 }
@@ -209,6 +224,107 @@ router.get('/list-all', async (req, res) => {
             raw: true
         });
 
+        // Check cache first if not forcing refresh - with more aggressive caching
+        if (!forceRefresh) {
+            const cachedData = fileCache.get(cacheKey);
+            if (cachedData) {
+                // Use timestamp-based check for cache validity
+                const cacheAge = new Date() - new Date(cachedData.timestamp);
+                const maxCacheAge = 15 * 60 * 1000; // 15 minutes in milliseconds
+                
+                // Check if there are new files since last cache - only if cache is older than 15 minutes
+                const hasNewFiles = cacheAge > maxCacheAge ? 
+                    await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : false;
+                
+                // If cache is valid, return cached data
+                if (!hasNewFiles && 
+                    cachedData.lastStatusUpdate && 
+                    latestStatusUpdate && 
+                    new Date(cachedData.lastStatusUpdate) >= new Date(latestStatusUpdate.updated_at)) {
+                    return res.json({
+                        success: true,
+                        files: cachedData.files,
+                        processLog: cachedData.processLog,
+                        fromCache: true,
+                        cachedAt: cachedData.timestamp,
+                        lastStatusUpdate: cachedData.lastStatusUpdate
+                    });
+                }
+            }
+        }
+
+        // Get inbound statuses for comparison and matching - OPTIMIZED: Only fetch necessary fields
+        const inboundStatuses = await WP_INBOUND_STATUS.findAll({
+            attributes: ['internalId', 'status', 'updated_at'],
+            where: {
+                status: {
+                    [Op.like]: 'Invalid%' // Only get invalid statuses
+                }
+            },
+            raw: true
+        });
+
+        // Create a map of inbound statuses for quick lookup
+        const inboundStatusMap = new Map();
+        inboundStatuses.forEach(status => {
+            if (status.internalId) {
+                inboundStatusMap.set(status.internalId, status);
+            }
+        });
+
+        // Fetch outbound statuses that might need updates
+        let outboundStatusesToUpdate = [];
+        if (inboundStatusMap.size > 0) {
+            outboundStatusesToUpdate = await WP_OUTBOUND_STATUS.findAll({
+                where: {
+                    status: {
+                        [Op.notIn]: ['Cancelled', 'Failed'] // Don't update already cancelled or failed documents
+                    }
+                },
+                raw: true
+            });
+        }
+        
+        // Process status updates in batches
+        if (outboundStatusesToUpdate.length > 0) {
+            const batchSize = 100;
+            const updatePromises = [];
+            
+            for (let i = 0; i < outboundStatusesToUpdate.length; i += batchSize) {
+                const batch = outboundStatusesToUpdate.slice(i, i + batchSize);
+                const batchPromises = [];
+                
+                for (const outbound of batch) {
+                    if (outbound.invoice_number && inboundStatusMap.has(outbound.invoice_number)) {
+                        const inbound = inboundStatusMap.get(outbound.invoice_number);
+                        if (inbound.status.startsWith('Invalid')) {
+                            batchPromises.push(
+                                WP_OUTBOUND_STATUS.update(
+                                    {
+                                        status: inbound.status,
+                                        updated_at: sequelize.literal('GETDATE()')
+                                    },
+                                    {
+                                        where: { id: outbound.id }
+                                    }
+                                )
+                            );
+                        }
+                    }
+                }
+                
+                if (batchPromises.length > 0) {
+                    updatePromises.push(Promise.all(batchPromises));
+                }
+            }
+            
+            // Execute all updates in batches
+            if (updatePromises.length > 0) {
+                await Promise.all(updatePromises);
+                console.log(`Updated outbound statuses based on invalid inbound documents`);
+            }
+        }
+
         // Get active SAP configuration for network path check
         const config = await WP_CONFIGURATION.findOne({
             where: {
@@ -229,35 +345,6 @@ router.get('/list-all', async (req, res) => {
             settings = JSON.parse(settings);
         }
 
-        // Check cache first if not forcing refresh
-        if (!forceRefresh) {
-            const cachedData = fileCache.get(cacheKey);
-            if (cachedData) {
-                // Check if there are new files since last cache
-                const hasNewFiles = await checkForNewFiles(settings.networkPath, cachedData.timestamp);
-                
-                // If no new files and status hasn't changed, return cached data
-                if (!hasNewFiles && 
-                    cachedData.lastStatusUpdate && 
-                    latestStatusUpdate && 
-                    new Date(cachedData.lastStatusUpdate) >= new Date(latestStatusUpdate.updated_at)) {
-                    return res.json({
-                        success: true,
-                        files: cachedData.files,
-                        processLog: cachedData.processLog,
-                        fromCache: true,
-                        cachedAt: cachedData.timestamp,
-                        lastStatusUpdate: cachedData.lastStatusUpdate
-                    });
-                }
-            }
-        }
-
-        // await logDBOperation(req.app.get('models'), req, 'Started listing all outbound files', {
-        //     module: 'OUTBOUND',
-        //     action: 'LIST_ALL'
-        // });
-
         // Get existing submission statuses with new schema and include recent updates
         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
             attributes: [
@@ -269,54 +356,41 @@ router.get('/list-all', async (req, res) => {
                 'invoice_number',
                 'status',
                 'date_submitted',
-                'date_sync',
-                'date_cancelled',
-                'cancelled_by',
-                'cancellation_reason',
-                'created_at',
                 'updated_at'
             ],
             order: [['updated_at', 'DESC']],
             raw: true
         });
 
-        // Create status lookup map with new schema
+        // Create status lookup map with new schema - OPTIMIZED: Use both keys in a single pass
         const statusMap = new Map();
         submissionStatuses.forEach(status => {
+            const statusObj = {
+                UUID: status.UUID,
+                SubmissionUID: status.submissionUid,
+                SubmissionStatus: status.status,
+                DateTimeSent: status.date_submitted,
+                DateTimeUpdated: status.updated_at,
+                FileName: status.fileName,
+                DocNum: status.invoice_number
+            };
+            
             // Use both fileName and invoice_number as keys for better matching
-            if (status.fileName) {
-                statusMap.set(status.fileName, {
-                    UUID: status.UUID,
-                    SubmissionUID: status.submissionUid,
-                    SubmissionStatus: status.status,
-                    DateTimeSent: status.date_submitted,
-                    DateTimeUpdated: status.updated_at,
-                    FileName: status.fileName,
-                    DocNum: status.invoice_number
-                });
-            }
-            if (status.invoice_number) {
-                statusMap.set(status.invoice_number, {
-                    UUID: status.UUID,
-                    SubmissionUID: status.submissionUid,
-                    SubmissionStatus: status.status,
-                    DateTimeSent: status.date_submitted,
-                    DateTimeUpdated: status.updated_at,
-                    FileName: status.fileName,
-                    DocNum: status.invoice_number
-                });
-            }
+            if (status.fileName) statusMap.set(status.fileName, statusObj);
+            if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
         });
 
         const files = [];
         const types = ['Manual', 'Schedule'];
 
-        for (const type of types) {
+        // OPTIMIZED: Process all directories in parallel
+        await Promise.all(types.map(type => {
             const typeDir = path.join(settings.networkPath, type);
-            await processTypeDirectory(typeDir, type, files, processLog, statusMap);
-        }
+            return processTypeDirectory(typeDir, type, files, processLog, statusMap);
+        }));
 
         // Create a map to store the latest version of each document
+        // OPTIMIZED: Use a more efficient approach to keep only latest versions
         const latestDocuments = new Map();
 
         // Process files to keep only the latest version of each document
@@ -347,21 +421,15 @@ router.get('/list-all', async (req, res) => {
         // Sort by modified time descending
         mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
 
-        // Store in cache with status update timestamp
+        // Store in cache with status update timestamp and network path for future checks
         const cacheData = {
             files: mergedFiles,
             processLog,
             timestamp: new Date().toISOString(),
-            lastStatusUpdate: latestStatusUpdate?.updated_at
+            lastStatusUpdate: latestStatusUpdate?.updated_at,
+            networkPath: settings.networkPath
         };
         fileCache.set(cacheKey, cacheData);
-
-        // // Log success
-        // await logDBOperation(req.app.get('models'), req, 'Successfully retrieved outbound files list', {
-        //     module: 'OUTBOUND',
-        //     action: 'LIST_ALL',
-        //     status: 'SUCCESS'
-        // });
 
         res.json({
             success: true,
@@ -372,11 +440,9 @@ router.get('/list-all', async (req, res) => {
 
     } catch (error) {
         console.error('Error in list-all:', error);
-        await logDBOperation(req.app.get('models'), req, `Error listing outbound files: ${error.message}`, {
-            module: 'OUTBOUND',
+        await logError('Error listing outbound files', error, {
             action: 'LIST_ALL',
-            status: 'FAILED',
-            error
+            userId: req.user?.id
         });
 
         res.status(500).json({
@@ -501,21 +567,19 @@ router.post('/:filename/open', async (req, res) => {
     }
 }); 
 /**
- * Process type directory (Manual/Schedule)
+ * Process type directory
  */
 async function processTypeDirectory(typeDir, type, files, processLog, statusMap) {
-   // console.log(`\nProcessing type directory: ${typeDir}`);
     try {
-    await ensureDirectoryExists(typeDir);
+        await ensureDirectoryExists(typeDir);
     
         const companies = await fsPromises.readdir(typeDir);
-      //  console.log(`Found ${companies.length} companies in ${type}:`, companies);
         
-        for (const company of companies) {
-           // console.log(`\nProcessing company: ${company}`);
+        // Process all companies in parallel for better performance
+        await Promise.all(companies.map(company => {
             const companyDir = path.join(typeDir, company);
-            await processCompanyDirectory(companyDir, company, type, files, processLog, statusMap);
-        }
+            return processCompanyDirectory(companyDir, company, type, files, processLog, statusMap);
+        }));
     } catch (error) {
         console.error(`Error processing ${type} directory:`, error);
         await logError(`Error processing ${type} directory`, error);
@@ -526,18 +590,16 @@ async function processTypeDirectory(typeDir, type, files, processLog, statusMap)
  * Process company directory
  */
 async function processCompanyDirectory(companyDir, company, type, files, processLog, statusMap) {
-   // console.log(`Processing company directory: ${companyDir}`);
     try {
-    await ensureDirectoryExists(companyDir);
+        await ensureDirectoryExists(companyDir);
     
         const dates = await fsPromises.readdir(companyDir);
-       // console.log(`Found ${dates.length} dates in ${company}:`, dates);
         
-        for (const date of dates) {
-          //  console.log(`\nProcessing date: ${date}`);
+        // Process all dates in parallel for better performance
+        await Promise.all(dates.map(date => {
             const dateDir = path.join(companyDir, date);
-            await processDateDirectory(dateDir, date, company, type, files, processLog, statusMap);
-        }
+            return processDateDirectory(dateDir, date, company, type, files, processLog, statusMap);
+        }));
     } catch (error) {
         console.error(`Error processing company directory ${company}:`, error);
         await logError(`Error processing company directory ${company}`, error);
@@ -548,7 +610,6 @@ async function processCompanyDirectory(companyDir, company, type, files, process
  * Process date directory
  */
 async function processDateDirectory(dateDir, date, company, type, files, processLog, statusMap) {
-    //console.log(`Processing date directory: ${dateDir}`);
     try {
         // Validate and normalize date format
         const normalizedDate = moment(date, ['YYYY-MM-DD', 'YYYY-DD-MM']).format('YYYY-MM-DD');
@@ -564,11 +625,15 @@ async function processDateDirectory(dateDir, date, company, type, files, process
         await ensureDirectoryExists(dateDir);
     
         const dirFiles = await fsPromises.readdir(dateDir);
-        //console.log(`Found ${dirFiles.length} files in ${normalizedDate}:`, dirFiles);
         
-        for (const file of dirFiles) {
-            //console.log(`\nProcessing file: ${file}`);
-            await processFile(file, dateDir, normalizedDate, company, type, files, processLog, statusMap);
+        // Process files in batches to prevent memory overload
+        const batchSize = 10;
+        for (let i = 0; i < dirFiles.length; i += batchSize) {
+            const batch = dirFiles.slice(i, i + batchSize);
+            // Process batch of files in parallel
+            await Promise.all(batch.map(file => 
+                processFile(file, dateDir, normalizedDate, company, type, files, processLog, statusMap)
+            ));
         }
     } catch (error) {
         console.error(`Error processing date directory ${date}:`, error);

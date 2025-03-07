@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Toast Manager Class
 class ToastManager {
     static container = null;
@@ -77,142 +78,6 @@ class DateTimeManager {
         setInterval(update, 1000);
     }
 }
-
-// Add Tailwind styles at the top of the file
-const tableStyles = `
-<style>
-    /* Source Badge Styles */
-    .badge-source {
-        @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
-    }
-    .badge-source.manual {
-        @apply bg-blue-100 text-blue-800;
-    }
-    .badge-source.schedule {
-        @apply bg-purple-100 text-purple-800;
-    }
-
-    /* Table Styles */
-    .outbound-table-container {
-        @apply w-full overflow-hidden rounded-lg shadow bg-white;
-    }
-    
-    .outbound-table {
-        @apply min-w-full divide-y divide-gray-200;
-    }
-    
-    .outbound-table th {
-        @apply px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap;
-    }
-    
-    .outbound-table td {
-        @apply px-4 py-3 whitespace-nowrap text-sm text-gray-900;
-    }
-
-    /* Status Badge Styles */
-    .outbound-status {
-        @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
-    }
-    .outbound-status.pending {
-        @apply bg-yellow-100 text-yellow-800;
-    }
-    .outbound-status.submitted {
-        @apply bg-green-100 text-green-800;
-    }
-    .outbound-status.cancelled {
-        @apply bg-gray-100 text-gray-800;
-    }
-    .outbound-status.rejected {
-        @apply bg-red-100 text-red-800;
-    }
-
-    /* Responsive Design */
-    @media (max-width: 1280px) {
-        .outbound-table th, .outbound-table td {
-            @apply px-2 py-2 text-xs;
-        }
-        .outbound-table-container {
-            @apply mx-auto max-w-full;
-        }
-        .outbound-table {
-            @apply table-auto;
-        }
-    }
-</style>`;
-
-const additionalStyles = `
-<style>
-    /* Table Container */
-    .outbound-table-wrapper {
-        @apply w-full bg-white shadow-sm rounded-lg overflow-hidden;
-    }
-
-    /* Table Controls */
-    .outbound-controls {
-        @apply flex flex-wrap items-center justify-between p-4 border-b border-gray-200;
-    }
-
-    .outbound-length-control {
-        @apply flex items-center space-x-2;
-    }
-
-    .outbound-search-control {
-        @apply relative mt-2 sm:mt-0;
-    }
-
-    /* Table Header */
-    .outbound-table thead th {
-        @apply bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
-    }
-
-    /* Table Body */
-    .outbound-table tbody td {
-        @apply px-4 py-3 text-sm text-gray-900 border-b border-gray-200;
-    }
-
-    /* Table Footer */
-    .outbound-bottom {
-        @apply flex flex-wrap items-center justify-between p-4 border-t border-gray-200;
-    }
-
-    /* Pagination */
-    .outbound-pagination {
-        @apply flex items-center justify-end space-x-2;
-    }
-
-    .outbound-pagination .paginate_button {
-        @apply px-3 py-1 text-sm font-medium rounded-md transition-colors;
-    }
-
-    .outbound-pagination .paginate_button.current {
-        @apply bg-primary-600 text-white;
-    }
-
-    .outbound-pagination .paginate_button:not(.current) {
-        @apply text-gray-700 hover:bg-gray-100;
-    }
-
-    /* Action Buttons */
-    .outbound-action-btn {
-        @apply inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md shadow-sm 
-        transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2;
-    }
-
-    .outbound-action-btn.submit {
-        @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
-    }
-
-    .outbound-action-btn.cancel {
-        @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
-    }
-
-    .outbound-action-btn[disabled] {
-        @apply bg-gray-200 text-gray-500 cursor-not-allowed opacity-70;
-    }
-</style>`;
-
-document.head.insertAdjacentHTML('beforeend', additionalStyles);
-document.head.insertAdjacentHTML('beforeend', tableStyles);
 
 // Create a class for managing inbound invoices
 class InvoiceTableManager {
@@ -462,7 +327,7 @@ class InvoiceTableManager {
             scrollCollapse: true,
             autoWidth: false,
             pageLength: 10,
-            dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+            dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>><"custom-filter-row"<"filter-container">>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
             language: {
                 search: '',
                 searchPlaceholder: 'Search...',
@@ -490,9 +355,12 @@ class InvoiceTableManager {
                     this.updateCardTotals();
                 }
             },
-            initComplete: () => {
+            initComplete: (settings, json) => {
                 // Update totals once table is fully initialized
                 this.updateCardTotals();
+                
+                // Initialize column filters
+                this.initializeColumnFilters();
             }
         });
 
@@ -515,6 +383,65 @@ class InvoiceTableManager {
             .spin {
                 animation: spin 1s linear infinite;
                 display: inline-block;
+            }
+            
+            /* Filter styling */
+            .custom-filter-row {
+                margin-bottom: 15px;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .filter-container {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                width: 100%;
+            }
+            
+            .filter-group {
+                display: flex;
+                align-items: center;
+                margin-right: 15px;
+            }
+            
+            .filter-label {
+                margin-right: 8px;
+                font-weight: 500;
+                font-size: 0.85rem;
+            }
+            
+            .filter-select {
+                padding: 4px 8px;
+                border-radius: 4px;
+                border: 1px solid #ced4da;
+                background-color: #fff;
+                font-size: 0.85rem;
+                min-width: 120px;
+            }
+            
+            .filter-select:focus {
+                outline: none;
+                border-color: #86b7fe;
+                box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+            }
+            
+            .filter-reset {
+                padding: 4px 8px;
+                border-radius: 4px;
+                background-color: #f8f9fa;
+                border: 1px solid #ced4da;
+                font-size: 0.85rem;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                transition: all 0.2s;
+            }
+            
+            .filter-reset:hover {
+                background-color: #e9ecef;
             }
         `;
         document.head.appendChild(style);
@@ -1284,6 +1211,260 @@ class InvoiceTableManager {
         updateTimer();
         this.refreshTimerInterval = setInterval(updateTimer, 60000);
     }
+
+    initializeColumnFilters() {
+        const table = this.table;
+        const filterContainer = $('.filter-container');
+        
+        // Clear any existing filters
+        filterContainer.empty();
+        
+        // Define filters we want to add - Fixed column indices and data access
+        const filters = [
+            { column: 'status', index: 8, label: 'Status', dataType: 'html' },
+            { column: 'source', index: 9, label: 'Source', dataType: 'html' },
+       
+        ];
+        
+        // Add date range filter
+        const dateFilterGroup = $('<div class="filter-group date-filter"></div>');
+        dateFilterGroup.append('<label class="filter-label">Issue Date:</label>');
+        
+        const startDateInput = $('<input type="date" class="filter-select date-input" id="start-date-filter">');
+        const endDateInput = $('<input type="date" class="filter-select date-input" id="end-date-filter">');
+        
+        dateFilterGroup.append(startDateInput).append(' to ').append(endDateInput);
+        filterContainer.append(dateFilterGroup);
+        
+        // Create filter dropdowns for each specified column
+        filters.forEach(filter => {
+            // Get unique values for this column
+            const uniqueValues = this.getUniqueColumnValues(filter.column, filter.index, filter.dataType);
+            
+            // Create filter group
+            const filterGroup = $('<div class="filter-group"></div>');
+            filterGroup.append(`<label class="filter-label">${filter.label}:</label>`);
+            
+            // Create select element
+            const select = $(`<select class="filter-select" data-column="${filter.column}" data-index="${filter.index}" data-type="${filter.dataType}"></select>`);
+            
+            // Add default option
+            select.append('<option value="">All</option>');
+            
+            // Add options for each unique value
+            uniqueValues.forEach(value => {
+                if (value) { // Skip empty values
+                    select.append(`<option value="${value}">${value}</option>`);
+                }
+            });
+            
+            // Append select to filter group
+            filterGroup.append(select);
+            
+            // Append filter group to container
+            filterContainer.append(filterGroup);
+            
+            // Add change event handler
+            select.on('change', () => this.applyFilters());
+        });
+        
+        // Add event handlers for date filters
+        startDateInput.on('change', () => this.applyFilters());
+        endDateInput.on('change', () => this.applyFilters());
+        
+        // Add reset filters button
+        const resetButton = $('<button class="filter-reset"><i class="bi bi-arrow-counterclockwise"></i> Reset Filters</button>');
+        resetButton.on('click', () => this.resetFilters());
+        filterContainer.append(resetButton);
+    }
+    
+    getUniqueColumnValues(columnName, columnIndex, dataType = 'text') {
+        const table = this.table;
+        
+        // For HTML columns, we need to get both the rendered data and the raw data
+        let processedData = [];
+        
+        // Use DataTables API to get column data
+        if (dataType === 'html') {
+            // Get the rendered data (HTML) from the column
+            const columnData = table.column(columnIndex).nodes().to$();
+            
+            // Extract text content from HTML
+            columnData.each(function() {
+                let text = '';
+                
+                // For source column
+                if (columnName === 'source') {
+                    // Extract the source name from the badge
+                    const sourceBadge = $(this).find('.source-badge');
+                    if (sourceBadge.length) {
+                        text = sourceBadge.text().trim();
+                    } else {
+                        // Fallback to any text in the cell
+                        text = $(this).text().trim();
+                    }
+                } 
+                // For status column
+                else if (columnName === 'status') {
+                    const statusBadge = $(this).find('.inbound-status');
+                    if (statusBadge.length) {
+                        // Extract only the status text, not the icon
+                        const iconElement = statusBadge.find('i');
+                        if (iconElement.length) {
+                            iconElement.remove(); // Temporarily remove icon to get clean text
+                            text = statusBadge.text().trim();
+                            statusBadge.prepend(iconElement); // Restore icon
+                        } else {
+                            text = statusBadge.text().trim();
+                        }
+                    } else {
+                        // Fallback to any text in the cell
+                        text = $(this).text().trim();
+                    }
+                }
+                // For other HTML columns
+                else {
+                    text = $(this).text().trim();
+                }
+                
+                if (text) {
+                    processedData.push(text);
+                }
+            });
+        } else {
+            // For text columns, use the standard DataTables API
+            processedData = table.column(columnIndex).data()
+                .toArray()
+                .map(item => {
+                    if (typeof item === 'string') {
+                        return item.trim();
+                    } else if (item && typeof item === 'object' && item[columnName] !== undefined) {
+                        return item[columnName].toString().trim();
+                    }
+                    return (item || '').toString().trim();
+                })
+                .filter(Boolean); // Remove empty values
+        }
+        
+        // Get unique values
+        const uniqueValues = [...new Set(processedData)];
+        return uniqueValues.sort();
+    }
+    
+    applyFilters() {
+        const table = this.table;
+        
+        // Custom filtering function
+        $.fn.dataTable.ext.search.push((settings, data, dataIndex, rowData) => {
+            // Check each active filter
+            let pass = true;
+            
+            // Check dropdown filters
+            $('.filter-select').not('.date-input').each(function() {
+                const filterValue = $(this).val();
+                if (filterValue) {
+                    const columnIndex = parseInt($(this).data('index'));
+                    const dataType = $(this).data('type');
+                    
+                    // Extract text from HTML content if needed
+                    let cellText = '';
+                    
+                    if (dataType === 'html') {
+                        // Create a temporary div to parse HTML
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = data[columnIndex];
+                        cellText = tempDiv.textContent.trim();
+                    } else {
+                        cellText = data[columnIndex].toString().trim();
+                    }
+                    
+                    // Check if the cell text contains the filter value
+                    if (!cellText.includes(filterValue)) {
+                        pass = false;
+                    }
+                }
+            });
+            
+            // Check date range filter
+            const startDateValue = $('#start-date-filter').val();
+            const endDateValue = $('#end-date-filter').val();
+            
+            if (startDateValue || endDateValue) {
+                // Issue date is in column 6
+                const dateCell = data[6]; 
+                
+                // Extract date from the cell
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = dateCell;
+                const dateText = tempDiv.textContent.trim();
+                
+                // Parse the date (format depends on how it's displayed in the table)
+                const dateParts = dateText.split(/[\/\s]/); // Split by slash or whitespace
+                if (dateParts.length >= 3) {
+                    let day, month, year;
+                    
+                    // Handle different date formats
+                    if (!isNaN(parseInt(dateParts[0]))) {
+                        // Format: DD/MM/YYYY or DD Month YYYY
+                        day = parseInt(dateParts[0]);
+                        
+                        // Month can be numeric or text
+                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        if (!isNaN(parseInt(dateParts[1]))) {
+                            month = parseInt(dateParts[1]) - 1; // 0-based month
+                        } else {
+                            month = monthNames.findIndex(m => dateParts[1].includes(m));
+                            if (month === -1) month = 0;
+                        }
+                        
+                        year = parseInt(dateParts[2]);
+                    } else {
+                        // Handle other formats if needed
+                        day = 1;
+                        month = 0;
+                        year = 2023; // Default fallback
+                    }
+                    
+                    const issueDate = new Date(year, month, day);
+                    
+                    if (startDateValue) {
+                        const startDate = new Date(startDateValue);
+                        if (issueDate < startDate) {
+                            pass = false;
+                        }
+                    }
+                    
+                    if (endDateValue) {
+                        const endDate = new Date(endDateValue);
+                        endDate.setHours(23, 59, 59, 999); // End of day
+                        if (issueDate > endDate) {
+                            pass = false;
+                        }
+                    }
+                }
+            }
+            
+            return pass;
+        });
+        
+        // Apply filters
+        table.draw();
+        
+        // Remove the custom filtering function after drawing
+        $.fn.dataTable.ext.search.pop();
+    }
+    
+    resetFilters() {
+        // Reset all dropdown filters
+        $('.filter-select').val('');
+        
+        // Reset date filters
+        $('#start-date-filter').val('');
+        $('#end-date-filter').val('');
+        
+        // Redraw the table with no filters
+        this.table.draw();
+    }
 }
 
 const copyToClipboard = async (text, elementId) => {
@@ -1779,34 +1960,6 @@ function formatAddressFromParts(address) {
     return parts.length > 0 ? parts.join(', ') : 'N/A';
 }
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM loaded, initializing managers...');
-    try {
-        // Initialize invoice table using singleton
-        const invoiceManager = InvoiceTableManager.getInstance();
-     
-        // Initialize date/time display
-        DateTimeManager.updateDateTime();
-
-        console.log('Managers initialized successfully');
-    } catch (error) {
-        console.error('Error initializing managers:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Initialization Error',
-            text: 'Failed to initialize the application. Please refresh the page.',
-            confirmButtonText: 'Refresh',
-            showCancelButton: true,
-        }).then((result) => {
-            if (result.isConfirmed) {
-                window.location.reload();
-            }
-        });
-    }
-});
-
-
 async function loadPDF(uuid, documentData) {
     // Only proceed if document is Valid or Cancelled
     if (!['Valid', 'Cancelled'].includes(documentData.documentInfo.status)) {
@@ -2074,5 +2227,32 @@ async function openValidationResultsModal(uuid) {
 window.addEventListener('unload', () => {
     if (window.invoiceTable) {
         window.invoiceTable.cleanup();
+    }
+});
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing managers...');
+    try {
+        // Initialize invoice table using singleton
+        const invoiceManager = InvoiceTableManager.getInstance();
+     
+        // Initialize date/time display
+        DateTimeManager.updateDateTime();
+
+        console.log('Managers initialized successfully');
+    } catch (error) {
+        console.error('Error initializing managers:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Initialization Error',
+            text: 'Failed to initialize the application. Please refresh the page.',
+            confirmButtonText: 'Refresh',
+            showCancelButton: true,
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.reload();
+            }
+        });
     }
 });

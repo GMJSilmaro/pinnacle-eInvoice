@@ -879,6 +879,20 @@ const saveInboundStatus = async (data) => {
                         responseFileResults.push(responseResult);
                     }
 
+                    // If the inbound document status is "Failed"
+                    if (item.status === 'Failed') {
+                        // Update the corresponding outbound status record
+                        await WP_OUTBOUND_STATUS.update(
+                            { 
+                                status: 'Failed', 
+                                updated_at: sequelize.literal('GETDATE()') 
+                            },
+                            { 
+                                where: { UUID: item.uuid } 
+                            }
+                        );
+                    }
+
                     successCount++;
                     return { success: true, item };
                 } catch (error) {

@@ -34,6 +34,9 @@ const tableStyles = `
         @apply bg-red-100 text-red-800;
     }
 
+      .outbound-status.invalid {
+        @apply bg-red-100 text-red-800;
+    }
     /* Responsive Design */
     @media (max-width: 1280px) {
         .outbound-table th, .outbound-table td {
@@ -663,7 +666,8 @@ class InvoiceTableManager {
             cancelled: 'x-circle-fill',
             rejected: 'x-circle-fill',
             processing: 'arrow-repeat',
-            failed: 'exclamation-triangle-fill'
+            failed: 'exclamation-triangle-fill',
+            invalid: 'exclamation-triangle-fill'
         };
         const statusColors = {
             pending: '#ff8307',
@@ -671,7 +675,8 @@ class InvoiceTableManager {
             cancelled: '#ffc107',
             rejected: '#dc3545',
             processing: '#0d6efd',
-            failed: '#dc3545'
+            failed: '#dc3545',
+            invalid: '#dc3545'
         };
         const icon = icons[statusClass] || 'question-circle';
         const color = statusColors[statusClass];
@@ -724,7 +729,7 @@ class InvoiceTableManager {
                 disabled
                 data-bs-toggle="tooltip" 
                 data-bs-placement="top"
-                title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'Transaction successfully processed' : 'Transaction is finalized'}">
+                title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'LHDN Cancellation successfully processed' : 'LHDN Validation is finalized, Kindly check the Inbound Page status for more details'}">
                 <i class="bi bi-check-circle"></i>
                 ${row.status}
             </button>`;
