@@ -17,13 +17,12 @@ const LHDNSubmitter = require('../../services/lhdn/lhdnSubmitter');
 const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../services/lhdn/lhdnService');
 const { getActiveSAPConfig } = require('../../config/paths');
 const NodeCache = require('node-cache');
-const fileCache = new NodeCache({ stdTTL: 300 }); // 5 minutes cache
-
+const fileCache = new NodeCache({ stdTTL: 60 }); // 1 minute cache instead of 5 minutes
 // Add cache helper functions at the top after fileCache declaration
 const CACHE_KEY_PREFIX = 'outbound_files';
 
 /**
- * Generate a cache key with optional parameters for more granular caching
+ * Generate a cache key with optional parameters for more granular caching`
  */
 function generateCacheKey(params = {}) {
     const baseKey = `${CACHE_KEY_PREFIX}_list`;
@@ -50,6 +49,36 @@ function invalidateFileCache(params = {}) {
         const cacheKey = generateCacheKey();
         fileCache.del(cacheKey);
     }
+    
+    // Log cache invalidation
+    console.log('Cache invalidated:', params);
+}
+
+/**
+ * Check for status updates since the last check
+ * @param {string} lastUpdateTime - ISO timestamp of the last update check
+ * @returns {Promise<boolean>} - True if there are new updates
+ */
+async function checkForStatusUpdates(lastUpdateTime) {
+    try {
+        if (!lastUpdateTime) return true;
+        
+        const latestUpdate = await WP_OUTBOUND_STATUS.findOne({
+            attributes: ['updated_at'],
+            where: {
+                updated_at: {
+                    [Op.gt]: new Date(lastUpdateTime)
+                }
+            },
+            order: [['updated_at', 'DESC']],
+            raw: true
+        });
+        
+        return !!latestUpdate;
+    } catch (error) {
+        console.error('Error checking for status updates:', error);
+        return false;
+    }
 }
 
 // Add new function to check for new files
@@ -57,35 +86,91 @@ async function checkForNewFiles(networkPath, lastCheck) {
     try {
         const types = ['Manual', 'Schedule'];
         let hasNewFiles = false;
+        const lastCheckDate = new Date(lastCheck);
 
+        // Fast check for recent files
         for (const type of types) {
             const typeDir = path.join(networkPath, type);
             
             // Skip if directory doesn't exist
             if (!fs.existsSync(typeDir)) continue;
 
-            const companies = await fsPromises.readdir(typeDir);
+            // Get list of company directories
+            let companies;
+            try {
+                companies = await fsPromises.readdir(typeDir);
+            } catch (err) {
+                console.error(`Error reading type directory ${typeDir}:`, err);
+                continue;
+            }
+
+            // Check each company directory
             for (const company of companies) {
                 const companyDir = path.join(typeDir, company);
                 
                 // Skip if not a directory
-                if (!(await fsPromises.stat(companyDir)).isDirectory()) continue;
+                try {
+                    const stat = await fsPromises.stat(companyDir);
+                    if (!stat.isDirectory()) continue;
+                    
+                    // If the company directory itself is newer than our last check
+                    if (new Date(stat.mtime) > lastCheckDate) {
+                        return true;
+                    }
+                } catch (err) {
+                    console.error(`Error checking company directory ${companyDir}:`, err);
+                    continue;
+                }
 
-                const dates = await fsPromises.readdir(companyDir);
+                // Get list of date directories
+                let dates;
+                try {
+                    dates = await fsPromises.readdir(companyDir);
+                } catch (err) {
+                    console.error(`Error reading company directory ${companyDir}:`, err);
+                    continue;
+                }
+
+                // Check each date directory
                 for (const date of dates) {
                     const dateDir = path.join(companyDir, date);
                     
                     // Skip if not a directory
-                    if (!(await fsPromises.stat(dateDir)).isDirectory()) continue;
+                    try {
+                        const stat = await fsPromises.stat(dateDir);
+                        if (!stat.isDirectory()) continue;
+                        
+                        // If the date directory itself is newer than our last check
+                        if (new Date(stat.mtime) > lastCheckDate) {
+                            return true;
+                        }
+                    } catch (err) {
+                        console.error(`Error checking date directory ${dateDir}:`, err);
+                        continue;
+                    }
 
-                    const files = await fsPromises.readdir(dateDir);
+                    // Get list of files
+                    let files;
+                    try {
+                        files = await fsPromises.readdir(dateDir);
+                    } catch (err) {
+                        console.error(`Error reading date directory ${dateDir}:`, err);
+                        continue;
+                    }
+
+                    // Check if any file is newer than our last check
                     for (const file of files) {
                         const filePath = path.join(dateDir, file);
-                        const stats = await fsPromises.stat(filePath);
-                        
-                        // If any file is newer than our last check, return true
-                        if (new Date(stats.mtime) > new Date(lastCheck)) {
-                            return true;
+                        try {
+                            const stats = await fsPromises.stat(filePath);
+                            
+                            // If any file is newer than our last check, return true
+                            if (new Date(stats.mtime) > lastCheckDate) {
+                                return true;
+                            }
+                        } catch (err) {
+                            console.error(`Error checking file ${filePath}:`, err);
+                            continue;
                         }
                     }
                 }
@@ -208,57 +293,148 @@ async function logError(description, error, options = {}) {
  * List all files from network directories with caching and duplicate filtering
  */
 router.get('/list-all', async (req, res) => {
+    console.log('Starting list-all endpoint');
+    
+    // Check authentication
+    if (!req.session?.user) {
+        console.log('Unauthorized access attempt - no session user');
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Authentication required'
+            }
+        });
+    }
+
+    // Check if access token exists
+    if (!req.session?.accessToken) {
+        console.log('Unauthorized access attempt - no access token');
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Access token required'
+            }
+        });
+    }
+
     const processLog = {
         details: [],
         summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
     };
 
     try {
+        console.log('Generating cache key');
         const cacheKey = generateCacheKey();
         const { forceRefresh } = req.query;
+        const { polling } = req.query;
+        const realTime = req.query.realTime === 'true';
         
         // Get the latest status update timestamp
+        console.log('Fetching latest status update');
         const latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
             attributes: ['updated_at'],
             order: [['updated_at', 'DESC']],
             raw: true
         });
+        console.log('Latest status update:', latestStatusUpdate);
 
-        // Check cache first if not forcing refresh - with more aggressive caching
-        if (!forceRefresh) {
+        // Check cache first if not forcing refresh and not in real-time mode
+        if (!forceRefresh && !realTime) {
+            console.log('Checking cache');
             const cachedData = fileCache.get(cacheKey);
             if (cachedData) {
+                console.log('Found cached data');
                 // Use timestamp-based check for cache validity
                 const cacheAge = new Date() - new Date(cachedData.timestamp);
-                const maxCacheAge = 15 * 60 * 1000; // 15 minutes in milliseconds
-                
-                // Check if there are new files since last cache - only if cache is older than 15 minutes
-                const hasNewFiles = cacheAge > maxCacheAge ? 
-                    await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : false;
-                
-                // If cache is valid, return cached data
-                if (!hasNewFiles && 
-                    cachedData.lastStatusUpdate && 
-                    latestStatusUpdate && 
-                    new Date(cachedData.lastStatusUpdate) >= new Date(latestStatusUpdate.updated_at)) {
-                    return res.json({
-                        success: true,
-                        files: cachedData.files,
-                        processLog: cachedData.processLog,
-                        fromCache: true,
-                        cachedAt: cachedData.timestamp,
-                        lastStatusUpdate: cachedData.lastStatusUpdate
-                    });
+                const maxCacheAge = polling ? 10 * 1000 : 30 * 1000; // 10 seconds for polling, 30 seconds otherwise
+
+                try {
+                    // Always check for new files when in polling mode
+                    const hasNewFiles = polling || realTime ? 
+                        await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : 
+                        (cacheAge > maxCacheAge ? await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : false);
+                    
+                    // Check for status updates
+                    const hasStatusUpdates = realTime || polling ? 
+                        await checkForStatusUpdates(cachedData.lastStatusUpdate) :
+                        (latestStatusUpdate && cachedData.lastStatusUpdate && 
+                        new Date(latestStatusUpdate.updated_at) > new Date(cachedData.lastStatusUpdate));
+                    
+                    // If cache is valid, return cached data
+                    if (!hasNewFiles && !hasStatusUpdates) {
+                        console.log('Returning cached data');
+                        return res.json({
+                            success: true,
+                            files: cachedData.files,
+                            processLog: cachedData.processLog,
+                            fromCache: true,
+                            cachedAt: cachedData.timestamp,
+                            lastStatusUpdate: cachedData.lastStatusUpdate,
+                            realTime: realTime
+                        });
+                    }
+                    
+                    // Log why we're not using cache
+                    if (hasNewFiles) console.log('Not using cache: New files detected');
+                    if (hasStatusUpdates) console.log('Not using cache: Status updates detected');
+                } catch (cacheError) {
+                    console.error('Cache validation error:', cacheError);
+                    // Continue with fresh data if cache validation fails
                 }
             }
         }
 
-        // Get inbound statuses for comparison and matching - OPTIMIZED: Only fetch necessary fields
+        // Get active SAP configuration first since we need it for the network path
+        console.log('Fetching SAP configuration');
+        const config = await WP_CONFIGURATION.findOne({
+            where: {
+                Type: 'SAP',
+                IsActive: 1
+            },
+            order: [['CreateTS', 'DESC']],
+            raw: true
+        });
+
+        if (!config || !config.Settings) {
+            throw new Error('No active SAP configuration found');
+        }
+
+        // Parse Settings if it's a string
+        let settings = config.Settings;
+        if (typeof settings === 'string') {
+            try {
+                settings = JSON.parse(settings);
+            } catch (parseError) {
+                console.error('Error parsing SAP settings:', parseError);
+                throw new Error('Invalid SAP configuration format');
+            }
+        }
+
+        if (!settings.networkPath) {
+            throw new Error('Network path not configured in SAP settings');
+        }
+
+        // Validate network path accessibility
+        console.log('Validating network path:', settings.networkPath);
+        const networkValid = await testNetworkPathAccessibility(settings.networkPath, {
+            serverName: settings.domain || '',
+            serverUsername: settings.username,
+            serverPassword: settings.password
+        });
+
+        if (!networkValid.success) {
+            throw new Error(`Network path not accessible: ${networkValid.error}`);
+        }
+
+        // Get inbound statuses for comparison
+        console.log('Fetching inbound statuses');
         const inboundStatuses = await WP_INBOUND_STATUS.findAll({
             attributes: ['internalId', 'status', 'updated_at'],
             where: {
                 status: {
-                    [Op.like]: 'Invalid%' // Only get invalid statuses
+                    [Op.like]: 'Invalid%'
                 }
             },
             raw: true
@@ -273,12 +449,13 @@ router.get('/list-all', async (req, res) => {
         });
 
         // Fetch outbound statuses that might need updates
+        console.log('Fetching outbound statuses');
         let outboundStatusesToUpdate = [];
         if (inboundStatusMap.size > 0) {
             outboundStatusesToUpdate = await WP_OUTBOUND_STATUS.findAll({
                 where: {
                     status: {
-                        [Op.notIn]: ['Cancelled', 'Failed', 'Invalid'] // Don't update already cancelled or failed documents
+                        [Op.notIn]: ['Cancelled', 'Failed', 'Invalid']
                     }
                 },
                 raw: true
@@ -287,6 +464,7 @@ router.get('/list-all', async (req, res) => {
         
         // Process status updates in batches
         if (outboundStatusesToUpdate.length > 0) {
+            console.log('Processing status updates');
             const batchSize = 100;
             const updatePromises = [];
             
@@ -318,34 +496,14 @@ router.get('/list-all', async (req, res) => {
                 }
             }
             
-            // Execute all updates in batches
             if (updatePromises.length > 0) {
                 await Promise.all(updatePromises);
-                console.log(`Updated outbound statuses based on invalid inbound documents`);
+                console.log('Updated outbound statuses');
             }
         }
 
-        // Get active SAP configuration for network path check
-        const config = await WP_CONFIGURATION.findOne({
-            where: {
-                Type: 'SAP',
-                IsActive: 1
-            },
-            order: [['CreateTS', 'DESC']],
-            raw: true
-        });
-
-        if (!config || !config.Settings) {
-            throw new Error('No active SAP configuration found');
-        }
-
-        // Parse Settings if it's a string
-        let settings = config.Settings;
-        if (typeof settings === 'string') {
-            settings = JSON.parse(settings);
-        }
-
-        // Get existing submission statuses with new schema and include recent updates
+        // Get existing submission statuses
+        console.log('Fetching submission statuses');
         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
             attributes: [
                 'id',
@@ -365,7 +523,7 @@ router.get('/list-all', async (req, res) => {
             raw: true
         });
 
-        // Create status lookup map with new schema - OPTIMIZED: Use both keys in a single pass
+        // Create status lookup map
         const statusMap = new Map();
         submissionStatuses.forEach(status => {
             const statusObj = {
@@ -381,7 +539,6 @@ router.get('/list-all', async (req, res) => {
                 DocNum: status.invoice_number
             };
             
-            // Use both fileName and invoice_number as keys for better matching
             if (status.fileName) statusMap.set(status.fileName, statusObj);
             if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
         });
@@ -389,17 +546,22 @@ router.get('/list-all', async (req, res) => {
         const files = [];
         const types = ['Manual', 'Schedule'];
 
-        // OPTIMIZED: Process all directories in parallel
-        await Promise.all(types.map(type => {
+        // Process directories
+        console.log('Processing directories');
+        for (const type of types) {
             const typeDir = path.join(settings.networkPath, type);
-            return processTypeDirectory(typeDir, type, files, processLog, statusMap);
-        }));
+            try {
+                await processTypeDirectory(typeDir, type, files, processLog, statusMap);
+            } catch (dirError) {
+                console.error(`Error processing ${type} directory:`, dirError);
+                // Continue with other directories even if one fails
+            }
+        }
 
-        // Create a map to store the latest version of each document
-        // OPTIMIZED: Use a more efficient approach to keep only latest versions
+        // Create a map for latest documents
+        console.log('Processing latest documents');
         const latestDocuments = new Map();
 
-        // Process files to keep only the latest version of each document
         files.forEach(file => {
             const documentKey = file.invoiceNumber || file.fileName;
             const existingDoc = latestDocuments.get(documentKey);
@@ -409,7 +571,7 @@ router.get('/list-all', async (req, res) => {
             }
         });
 
-        // Convert map back to array and merge with status
+        // Convert map to array and merge with status
         const mergedFiles = Array.from(latestDocuments.values()).map(file => {
             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
             const fileStatus = status?.SubmissionStatus || 'Pending';
@@ -427,10 +589,11 @@ router.get('/list-all', async (req, res) => {
             };
         });
 
-        // Sort by modified time descending
+        // Sort by modified time
         mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
 
-        // Store in cache with status update timestamp and network path for future checks
+        // Update cache
+        console.log('Updating cache');
         const cacheData = {
             files: mergedFiles,
             processLog,
@@ -438,13 +601,21 @@ router.get('/list-all', async (req, res) => {
             lastStatusUpdate: latestStatusUpdate?.updated_at,
             networkPath: settings.networkPath
         };
-        fileCache.set(cacheKey, cacheData);
+        
+        // Set shorter TTL for real-time mode
+        if (realTime) {
+            fileCache.set(cacheKey, cacheData, 15); // 15 seconds TTL for real-time mode
+        } else {
+            fileCache.set(cacheKey, cacheData);
+        }
 
+        console.log('Sending response');
         res.json({
             success: true,
             files: mergedFiles,
             processLog,
-            fromCache: false
+            fromCache: false,
+            realTime: realTime
         });
 
     } catch (error) {
@@ -457,7 +628,8 @@ router.get('/list-all', async (req, res) => {
         res.status(500).json({
             success: false,
             error: error.message,
-            processLog
+            processLog,
+            stack: error.stack // Include stack trace for debugging
         });
     }
 });
@@ -1438,7 +1610,7 @@ router.post('/:fileName/content', async (req, res) => {
         let workbook;
         try {
             workbook = XLSX.readFile(filePath);
-            // console.log('Excel file read successfully');
+            console.log('Excel file read successfully');
         } catch (readError) {
             console.error('Error reading Excel file:', readError);
             throw new Error(`Failed to read Excel file: ${readError.message}`);
@@ -1454,7 +1626,7 @@ router.post('/:fileName/content', async (req, res) => {
 
         // 8. Process the data
         const processedData = processExcelData(data);
-        // console.log('\nExcel data processed successfully');
+        console.log('\nExcel data processed successfully');
 
         // 9. Create outgoing directory structure
         const outgoingConfig = await getOutgoingConfig();
@@ -1647,6 +1819,101 @@ router.delete('/:fileName', async (req, res) => {
                 message: 'Failed to delete file',
                 details: error.message
             }
+        });
+    }
+});
+
+/**
+ * Real-time updates endpoint - optimized for frequent polling
+ */
+router.get('/real-time-updates', async (req, res) => {
+    console.log('Starting real-time-updates endpoint');
+    
+    // Check authentication
+    if (!req.session?.user) {
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Authentication required'
+            }
+        });
+    }
+
+    // Check if access token exists
+    if (!req.session?.accessToken) {
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Access token required'
+            }
+        });
+    }
+
+    try {
+        const { lastUpdate, lastFileCheck } = req.query;
+        
+        // Quick check for status updates
+        const hasStatusUpdates = await checkForStatusUpdates(lastUpdate);
+        
+        // Quick check for new files
+        let hasNewFiles = false;
+        if (!hasStatusUpdates && lastFileCheck) {
+            // Get active SAP configuration
+            const config = await WP_CONFIGURATION.findOne({
+                where: {
+                    Type: 'SAP',
+                    IsActive: 1
+                },
+                attributes: ['Settings'],
+                raw: true
+            });
+
+            if (config && config.Settings) {
+                // Parse Settings if it's a string
+                let settings = config.Settings;
+                if (typeof settings === 'string') {
+                    try {
+                        settings = JSON.parse(settings);
+                    } catch (parseError) {
+                        console.error('Error parsing SAP settings:', parseError);
+                    }
+                }
+
+                if (settings && settings.networkPath) {
+                    hasNewFiles = await checkForNewFiles(settings.networkPath, lastFileCheck);
+                }
+            }
+        }
+
+        // If there are updates, client should request full data
+        if (hasStatusUpdates || hasNewFiles) {
+            return res.json({
+                success: true,
+                hasUpdates: true,
+                hasStatusUpdates,
+                hasNewFiles,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // No updates
+        return res.json({
+            success: true,
+            hasUpdates: false,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error in real-time-updates:', error);
+        await logError('Error checking for real-time updates', error, {
+            action: 'REAL_TIME_UPDATES',
+            userId: req.user?.id
+        });
+
+        res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });

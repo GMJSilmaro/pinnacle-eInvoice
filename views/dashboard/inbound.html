@@ -5,7 +5,11 @@
 <title>Inbound - eInvoice Portal</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <link href="/assets/css/pages/inbound/card.css" rel="stylesheet">
+<link href="/assets/css/pages/inbound/notice.css" rel="stylesheet">
 
 <link href="/assets/css/pages/profile.css" rel="stylesheet">
 
@@ -16,6 +20,317 @@
 
 <script src="/assets/js/config/validation-translations.js"></script>
 
+<style>
+/* Enhanced UI Styles */
+.statistics-section .card,
+.quick-actions-section .card,
+.enhanced-filter-section .card,
+.document-preview-section .card {
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.statistics-section .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.quick-actions-section .btn {
+    transition: all 0.2s ease;
+    border: none;
+    padding: 0.5rem 1rem;
+}
+
+.quick-actions-section .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.enhanced-filter-section .form-floating > .form-control,
+.enhanced-filter-section .form-floating > .form-select {
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    padding: 1rem 0.75rem;
+}
+
+.enhanced-filter-section .form-floating > label {
+    padding: 1rem 0.75rem;
+}
+
+.document-preview-section .document-info {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.document-preview-section .info-item {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.document-preview-section .info-item:last-child {
+    border-bottom: none;
+}
+
+.document-preview-frame {
+    min-height: 300px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+/* Animation for refresh icon */
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Chart container styles */
+.statistics-section canvas {
+    max-height: 200px;
+}
+
+/* Card title styles */
+.card-title {
+    color: #495057;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Quick action button styles */
+.quick-actions-section .btn i {
+    font-size: 1rem;
+}
+
+/* Enhanced filter styles */
+.enhanced-filter-section .btn-link {
+    color: #6c757d;
+    text-decoration: none;
+}
+
+.enhanced-filter-section .btn-link:hover {
+    color: #495057;
+}
+
+/* Document preview styles */
+.document-preview-section .badge {
+    padding: 0.5em 0.75em;
+    font-weight: 500;
+}
+
+.document-preview-section .fw-medium {
+    font-weight: 500;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .statistics-section .card {
+        margin-bottom: 1rem;
+    }
+    
+    .quick-actions-section .btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    
+    .enhanced-filter-section .form-floating {
+        margin-bottom: 1rem;
+    }
+}
+
+/* Enhanced Filter Styles */
+.filter-container {
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+.search-wrapper {
+    position: relative;
+}
+
+.search-wrapper .form-control {
+    padding-left: 2.5rem;
+    height: 48px;
+    border-radius: 24px;
+    border: 2px solid #e9ecef;
+    transition: all 0.2s ease;
+}
+
+.search-wrapper .form-control:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13,110,253,.15);
+}
+
+.quick-filters .btn {
+    transition: all 0.2s ease;
+    border-width: 1px;
+}
+
+.quick-filters .btn-outline-primary {
+    color: #1e40af;
+    border-color: #1e40af;
+}
+
+.quick-filters .btn-outline-primary:hover,
+.quick-filters .btn-outline-primary.active {
+    background-color: #1e40af;
+    border-color: #1e40af;
+    color: #ffffff;
+}
+
+.quick-filters .btn-outline-success {
+    color: #1e40af;
+    border-color: #1e40af;
+}
+
+.quick-filters .btn-outline-success:hover,
+.quick-filters .btn-outline-success.active {
+    background-color: #1e40af;
+    border-color: #1e40af;
+    color: #ffffff;
+}
+
+.quick-filters .btn-outline-danger {
+    color: #1e40af;
+    border-color: #1e40af;
+}
+
+.quick-filters .btn-outline-danger:hover,
+.quick-filters .btn-outline-danger.active {
+    background-color: #1e40af;
+    border-color: #1e40af;
+    color: #ffffff;
+}
+
+.quick-filters .btn-outline-warning {
+    color: #1e40af;
+    border-color: #1e40af;
+}
+
+.quick-filters .btn-outline-warning:hover,
+.quick-filters .btn-outline-warning.active {
+    background-color: #1e40af;
+    border-color: #1e40af;
+    color: #ffffff;
+}
+
+.quick-filters .btn-outline-info {
+    color: #1e40af;
+    border-color: #1e40af;
+}
+
+.quick-filters .btn-outline-info:hover,
+.quick-filters .btn-outline-info.active {
+    background-color: #1e40af;
+    border-color: #1e40af;
+    color: #ffffff;
+}
+
+.quick-filters .btn-primary {
+    background-color: #1e40af;
+    border-color: #1e40af;
+}
+
+.quick-filters .btn-primary:hover {
+    background-color: #1e3a8a;
+    border-color: #1e3a8a;
+}
+
+.quick-filters .btn-light {
+    color: #1e40af;
+    background-color: #f3f4f6;
+    border-color: #e5e7eb;
+}
+
+.quick-filters .btn-light:hover {
+    color: #1e40af;
+    background-color: #e5e7eb;
+    border-color: #d1d5db;
+}
+
+.quick-filters .btn.active {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.advanced-filters-content {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+
+.advanced-filters-content .form-label {
+    font-weight: 500;
+    color: #495057;
+    margin-bottom: 0.5rem;
+}
+
+.advanced-filters-content .form-control,
+.advanced-filters-content .form-select {
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+}
+
+.advanced-filters-content .input-group-text {
+    border: 2px solid #e9ecef;
+    background-color: #f8f9fa;
+}
+
+.active-filter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.filter-tag {
+    background-color: #e9ecef;
+    color: #495057;
+    padding: 0.25rem 0.75rem;
+    border-radius: 16px;
+    font-size: 0.875rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.filter-tag .close {
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.filter-tag .close:hover {
+    opacity: 1;
+}
+
+@media (max-width: 768px) {
+    .quick-filters {
+        flex-wrap: wrap;
+    }
+    
+    .quick-filters .btn {
+        flex: 1 1 auto;
+    }
+    
+    .quick-filters .ms-auto {
+        width: 100%;
+        margin-top: 0.5rem;
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .quick-filters .ms-auto .btn {
+        flex: 1;
+    }
+}
+</style>
 
 {% endblock %}
 {% block content %}
@@ -73,7 +388,6 @@
         </div>
     </div>
     </div>
-  
     <!-- Content Section - With margins -->
     <div class="content-section">
       <!-- Cards Section -->
@@ -129,23 +443,6 @@
               <span class="card-title-new">INVALID</span>
           </div>
 
-          <!-- Rejected Card -->
-          <div class="info-card rejected-card">
-              <div class="card-info">
-                  <div class="card-icon position-relative">
-                      <i class="bi bi-file-earmark-excel"></i>
-                  </div>
-                  <div class="count-info">
-                      <div class="spinner-border text-danger loading-spinner" role="status">
-                          <span class="visually-hidden">Loading...</span>
-                      </div>
-                      <h6 class="total-rejected-value" style="display: none;">0</h6>
-                      <span class="text-muted">Total</span>
-                  </div>
-              </div>
-              <span class="card-title-new">REJECTED</span>
-          </div>
-
           <!-- Cancelled Card -->
           <div class="info-card cancelled-card">
               <div class="card-info">
@@ -181,13 +478,234 @@
           </div>
       </div>
 
+      <!-- Statistics Section -->
+      <div class="statistics-section mb-4">
+        <div class="row">
+          <!-- Document Status Chart -->
+          <div class="col-md-4">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h6 class="card-title d-flex align-items-center">
+                  <i class="bi bi-pie-chart-fill me-2"></i>
+                  Document Status Distribution
+                </h6>
+                <canvas id="documentStatusChart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Daily Submissions Chart -->
+          <div class="col-md-4">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h6 class="card-title d-flex align-items-center">
+                  <i class="bi bi-graph-up me-2"></i>
+                  Daily Submissions
+                </h6>
+                <canvas id="dailySubmissionsChart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
 
-        <div class="table-section">
+          <!-- Processing Time Chart -->
+          <div class="col-md-4">
+            <div class="card shadow-sm">
+              <div class="card-body">
+                <h6 class="card-title d-flex align-items-center">
+                  <i class="bi bi-clock-history me-2"></i>
+                  Average Processing Time
+                </h6>
+                <canvas id="processingTimeChart" height="200"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-section">
             <div class="outbound-table-container">
-                <div class="d-flex justify-content-between align-items-center p-3">
-                    <div class="table-filter"></div>
+                <!-- Replace the entire filter section with new design -->
+                <div class="filter-container bg-white p-3 rounded-3 shadow-sm mb-3">
+                    <!-- Primary Filters Row -->
+                    <div class="row g-3 mb-3">
+                        <!-- Global Search -->
+                        <div class="col-md-4">
+                            <div class="search-wrapper position-relative">
+                                <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                                <input type="text" class="form-control form-control-lg ps-5" id="globalSearch" 
+                                    placeholder="Search documents...">
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Filters -->
+                        <div class="col-md-8">
+                            <div class="quick-filters d-flex gap-2">
+                                <button class="btn outbound-action-btn submit active" data-filter="all">
+                                    <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
+                                </button>
+                                <button class="btn outbound-action-btn submit" data-filter="valid">
+                                    <i class="bi bi-check-circle me-1 text-success"></i>Valid
+                                </button>
+                                <button class="btn outbound-action-btn submit" data-filter="invalid">
+                                    <i class="bi bi-x-circle me-1 text-danger"></i>Invalid
+                                </button>
+                                
+                                <button class="btn outbound-action-btn submit" data-filter="cancelled">
+                                    <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Cancelled
+                                </button>
+                                <button class="btn outbound-action-btn submit" data-filter="queue">
+                                    <i class="bi bi-clock-history me-1 text-secondary"></i>Queue
+                                </button>
+                                <div class="ms-auto">
+                                    <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
+                                        <i class="bi bi-eraser me-1"></i>Clear
+                                    </button>
+                                    <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                                        <i class="bi bi-sliders me-1"></i>Advanced
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Filters (Collapsible) -->
+                    <div class="collapse" id="advancedFilters">
+                        <div class="advanced-filters-content border-top pt-3">
+                            <div class="row g-3">
+                                <!-- Date Range -->
+                                <div class="col-md-6">
+                                    <label class="form-label d-flex align-items-center">
+                                        <i class="bi bi-calendar-range me-2"></i>Date Range
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="date" class="form-control" id="tableStartDate">
+                                        <span class="input-group-text bg-light">to</span>
+                                        <input type="date" class="form-control" id="tableEndDate">
+                                    </div>
+                                </div>
+
+                                <!-- Amount Range -->
+                                <div class="col-md-6">
+                                    <label class="form-label d-flex align-items-center">
+                                        <i class="bi bi-currency-dollar me-2"></i>Amount Range
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="minAmount" placeholder="Min">
+                                        <span class="input-group-text bg-light">to</span>
+                                        <input type="number" class="form-control" id="maxAmount" placeholder="Max">
+                                    </div>
+                                </div>
+
+                                <!-- Company Filter -->
+                                <div class="col-md-4">
+                                    <label class="form-label d-flex align-items-center">
+                                        <i class="bi bi-building me-2"></i>Company
+                                    </label>
+                                    <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
+                                </div>
+
+                                <!-- Document Type -->
+                                <div class="col-md-4">
+                                    <label class="form-label d-flex align-items-center">
+                                        <i class="bi bi-file-text me-2"></i>Document Type
+                                    </label>
+                                    <select class="form-select" id="documentTypeFilter">
+                                        <option value="">All Types</option>
+                                        <option value="Invoice">Invoice</option>
+                                        <option value="Credit Note">Credit Note</option>
+                                        <option value="Debit Note">Debit Note</option>
+                                    </select>
+                                </div>
+
+                                <!-- Source -->
+                                <div class="col-md-4">
+                                    <label class="form-label d-flex align-items-center">
+                                        <i class="bi bi-diagram-2 me-2"></i>Source
+                                        <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
+                                           title="<div class='tooltip-content'>
+                                                   <div class='tooltip-row'>
+                                                       <i class='bi bi-info-circle'></i>
+                                                       <span><b>LHDN Validation:</b></span>
+                                                   </div>
+                                                   <div class='tooltip-row'>
+                                                       <i class='bi bi-check-circle text-success'></i>
+                                                       <span>Valid: Document passed validation</span>
+                                                   </div>
+                                                   <div class='tooltip-row'>
+                                                       <i class='bi bi-x-circle text-danger'></i>
+                                                       <span>Invalid: Failed validation checks</span>
+                                                   </div>
+                                                   <div class='tooltip-row'>
+                                                       <i class='bi bi-clock-history text-warning'></i>
+                                                       <span>Queue: Awaiting validation</span>
+                                                   </div>
+                                               </div>"></i>
+                                    </label>
+                                    <select class="form-select" id="sourceFilter">
+                                        <option value="">LHDN</option>
+                                        
+                                    </select>
+                                    <small class="text-muted mt-1 d-block">
+                                        <i class="bi bi-info-circle-fill me-1"></i>
+                                        LHDN responses include validation status and timestamps
+                                    </small>
+                                </div>
+                            </div>
+
+                         
+                            <!-- Filter Note -->
+                            <div class="filter-note alert alert-info mt-3" role="alert">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <small>
+                                    Use the filters above to narrow down your results. Active filters will appear below as tags that you can easily remove. Click the 'x' on any tag to remove that filter, or use 'Clear all filters' to reset.
+                                </small>
+                            </div>
+
+                            <!-- Active Filters Display -->
+                            <div class="active-filters mt-3 pt-3 border-top">
+                                <div class="d-flex align-items-center">
+                                    <small class="text-muted me-2">Active Filters:</small>
+                                    <div class="active-filter-tags" id="activeFilterTags">
+                                        <!-- Active filter tags will be added here dynamically -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+                <!-- End of new filter section -->
                 <div>
+                       <!-- LHDN Validation Note -->
+                       <div class="filter-note alert alert-warning mt-3" role="alert">
+                        <div class="d-flex align-items-start">
+                            <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+                            <div>
+                                <h6 class="mb-2"><strong>Note: LHDN Validation Status</strong></h6>
+                                <small>
+                                    <ul class="mb-2 ps-3">
+                                        <li><i class="bi bi-clock me-1"></i>Document validation is currently experiencing longer processing times (up to 24 hours)</li>
+                                        <li><i class="bi bi-arrow-repeat me-1"></i>Documents in "Queue" status are being processed & validated by LHDN servers</li>
+                                        <li><i class="bi bi-info-circle me-1"></i>Check document status by refreshing the page periodically</li>
+                                        <li><i class="bi bi-shield-exclamation me-1"></i>We have no control over validation speed or outcome</li>
+                                    </ul>
+                                    <div class="mt-2">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <span class="badge bg-warning text-dark me-2">
+                                                <i class="bi bi-clock-history me-1"></i>Queue
+                                            </span>
+                                            <span>Please be patient while your documents are being validated.</span>
+                                        </div>
+                                        <div class="text-muted fst-italic">
+                                            <i class="bi bi-info-circle-fill me-1"></i>
+                                            Note: The validation process is entirely dependent on LHDN's system availability and processing capacity.
+                                        </div>
+                                    </div>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+
                     <table id="invoiceTable" class="outbound-table">
                         <thead>
                             <tr>

@@ -127,23 +127,19 @@ class InvoiceTableManager {
     }
 
     constructor() {
-        // Prevent multiple instances
         if (InvoiceTableManager.instance) {
             return InvoiceTableManager.instance;
         }
-
         this.initializeTable();
         InvoiceTableManager.instance = this;
     }
 
     initializeTable() {
         if ($.fn.DataTable.isDataTable('#invoiceTable')) {
-            return;
+            this.table.destroy();
         }
 
-        // Store reference to the class instance
         const self = this;
-
         this.table = $('#invoiceTable').DataTable({
             processing: false,
             serverSide: false,
@@ -151,18 +147,20 @@ class InvoiceTableManager {
                 url: '/api/lhdn/documents/recent',
                 method: 'GET',
                 data: function (d) {
-                    // Use the stored reference 'self' instead of 'this'
                     d.forceRefresh = window.forceRefreshLHDN || !self.checkDataFreshness();
                     return d;
                 },
                 dataSrc: (json) => {
                     const result = json && json.result ? json.result : [];
-                    // Update last data update timestamp
                     localStorage.setItem('lastDataUpdate', new Date().getTime());
-                    // Reset force refresh flag
                     window.forceRefreshLHDN = false;
-                    // Update totals
-                    setTimeout(() => self.updateCardTotals(), 100);
+                    
+                    // Update totals and charts after data load
+                    setTimeout(() => {
+                        self.updateCardTotals();
+                        updateCharts(); // Update charts with new data
+                    }, 100);
+                    
                     return result;
                 }
             },
@@ -306,6 +304,7 @@ class InvoiceTableManager {
                 },
                 {
                     data: 'status',
+                    title: 'STATUS',
                     render: function (data) {
 
                         const statusClass = data.toLowerCase();
@@ -408,10 +407,10 @@ class InvoiceTableManager {
             autoWidth: false,
             pageLength: 10,
             order: [[5, 'desc']], // Order by date column descending
-            dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+            dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
             language: {
-                search: '',
-                searchPlaceholder: 'Search in records...',
+                //search: '',
+                //searchPlaceholder: 'Search in records...',
                 lengthMenu: '<i class="bi bi-list"></i> _MENU_',
                 info: 'Showing _START_ to _END_ of _TOTAL_ entries',
                 infoEmpty: 'No records available',
@@ -431,24 +430,22 @@ class InvoiceTableManager {
                 }
             },
             drawCallback: function(settings) {
-                // Use the stored reference 'self' to access the table
                 if (settings._iDisplayLength !== undefined) {
                     self.updateCardTotals();
+                    updateCharts(); // Update charts when table is redrawn
                 }
-
-                // Update row indexes when table is redrawn
+                
+                // Update row indexes
                 const table = $(this).DataTable();
                 $(table.table().node()).find('tbody tr').each(function(index) {
                     const pageInfo = settings._iDisplayStart;
                     $(this).find('.row-index').text(pageInfo + index + 1);
                 });
             },
-            initComplete: (settings, json) => {
-                // Update totals once table is fully initialized
-                this.updateCardTotals();
-                
-                // Initialize column filters
-                this.initializeColumnFilters();
+            initComplete: function() {
+                self.updateCardTotals();
+                self.initializeFilters();
+                updateCharts(); // Update charts when table is first initialized
             }
         });
 
@@ -460,9 +457,7 @@ class InvoiceTableManager {
         this.addExportButton();
         this.initializeTooltipsAndCopy();
 
-        
-
-        // Add refresh button with smart refresh logic
+        // Add refresh button
         const refreshButton = $(`
             <button id="refreshLHDNData" class="outbound-action-btn submit btn-sm ms-2">
                 <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
@@ -472,7 +467,7 @@ class InvoiceTableManager {
 
         $('.dataTables_length').append(refreshButton);
 
-        // Handle refresh button click with improved UX
+        // Handle refresh button click
         $('#refreshLHDNData').on('click', async () => {
             try {
                 const button = $('#refreshLHDNData');
@@ -481,7 +476,6 @@ class InvoiceTableManager {
                 const statusText = document.getElementById('loadingStatus');
                 const detailsText = document.getElementById('loadingDetails');
 
-                // Check if data is fresh enough
                 if (this.checkDataFreshness() && !window.forceRefreshLHDN) {
                     const result = await Swal.fire({
                         title: 'Data is up to date',
@@ -491,11 +485,7 @@ class InvoiceTableManager {
                         confirmButtonText: 'Yes, refresh anyway',
                         cancelButtonText: 'No, keep current data',
                         confirmButtonColor: '#1e40af',
-                        cancelButtonColor: '#dc3545',
-                        customClass: {
-                            confirmButton: 'outbound-action-btn.submit',
-                            cancelButton: 'outbound-action-btn.cancel'
-                        }
+                        cancelButtonColor: '#dc3545'
                     });
 
                     if (!result.isConfirmed) {
@@ -503,50 +493,24 @@ class InvoiceTableManager {
                     }
                 }
 
-                // Disable button and show loading state
                 button.prop('disabled', true);
-
-                // Show loading modal with improved progress tracking
                 loadingModal.classList.add('show');
                 loadingModal.style.display = 'block';
                 document.body.classList.add('modal-open');
 
-                // Add backdrop
                 const backdrop = document.createElement('div');
                 backdrop.className = 'modal-backdrop fade show';
                 document.body.appendChild(backdrop);
 
-                // Update progress bar and status
                 progressBar.style.width = '10%';
                 statusText.textContent = 'Connecting to LHDN server...';
 
-                // Set force refresh flag
                 window.forceRefreshLHDN = true;
-
-                // Set up event listeners for progress tracking
-                $(document).on('ajaxSend.dt', (e, xhr, settings) => {
-                    if (settings.url.includes('/api/lhdn/documents/recent')) {
-                        progressBar.style.width = '30%';
-                        statusText.textContent = 'Connected! Fetching your documents...';
-                    }
-                });
-
-                $(document).on('xhr.dt', (e, settings, json, xhr) => {
-                    if (json && json.result) {
-                        progressBar.style.width = '60%';
-                        statusText.textContent = 'Documents received! Processing data...';
-                        detailsText.textContent = `Found ${json.result.length} documents`;
-                    }
-                });
-
-                // Reload the table
                 await this.table.ajax.reload(null, false);
 
-                // Update final progress
                 progressBar.style.width = '100%';
                 statusText.textContent = 'Success! Your data is now up to date.';
 
-                // Close modal after a short delay
                 setTimeout(() => {
                     loadingModal.classList.remove('show');
                     loadingModal.style.display = 'none';
@@ -554,36 +518,153 @@ class InvoiceTableManager {
                     backdrop.remove();
                     progressBar.style.width = '0%';
                     detailsText.textContent = '';
-
-                    // Show success toast
                     ToastManager.show('Successfully fetched fresh data from LHDN', 'success');
-
-                    // Start refresh timer
                     this.startRefreshTimer();
                 }, 1000);
 
             } catch (error) {
                 console.error('Error refreshing LHDN data:', error);
-
-                // Show error in modal
-                document.getElementById('loadingStatus').textContent = 'Oops! Something went wrong.';
-                document.getElementById('loadingDetails').textContent = error.message || 'Please try again in a few moments.';
-
-                setTimeout(() => {
-                    const loadingModal = document.getElementById('loadingModal');
-                    loadingModal.classList.remove('show');
-                    loadingModal.style.display = 'none';
-                    document.body.classList.remove('modal-open');
-                    document.querySelector('.modal-backdrop')?.remove();
-                    ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
-                }, 2000);
+                ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
             } finally {
                 $('#refreshLHDNData').prop('disabled', false);
             }
         });
+
+        this.startRefreshTimer();
     }
 
-      
+    initializeFilters() {
+        const self = this;
+
+        // Global search
+        $('#globalSearch').on('input', function() {
+            self.table.search(this.value).draw();
+        });
+
+        // Status filter buttons
+        $('.quick-filters .btn[data-filter]').on('click', function() {
+            $('.quick-filters .btn').removeClass('active');
+            $(this).addClass('active');
+            
+            const filter = $(this).data('filter');
+            const statusColumn = self.table.column(8); // Status column
+            
+            if (filter === 'all') {
+                statusColumn.search('').draw();
+            } else {
+                // Convert filter value to match the actual status text
+                let searchValue = filter.charAt(0).toUpperCase() + filter.slice(1).toLowerCase();
+                
+                // Special handling for 'queue' status
+                if (filter === 'queue') {
+                    searchValue = 'Queued|Submitted|Pending';
+                }
+                
+                statusColumn.search(searchValue, true, false, true).draw();
+            }
+        });
+
+        // Date range filter
+        $('#tableStartDate, #tableEndDate').on('change', function() {
+            const startDate = $('#tableStartDate').val();
+            const endDate = $('#tableEndDate').val();
+            
+            // Validate date range
+            if (startDate && endDate) {
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                if (start > end) {
+                    ToastManager.show('Start date cannot be later than end date', 'error');
+                    return;
+                }
+            }
+            
+            self.applyFilters();
+        });
+
+        // Amount range filter
+        $('#minAmount, #maxAmount').on('input', debounce(function() {
+            self.applyFilters();
+        }, 300));
+
+        // Company filter
+        $('#companyFilter').on('input', debounce(function() {
+            self.applyFilters();
+        }, 300));
+
+        // Document type filter
+        $('#documentTypeFilter').on('change', function() {
+            self.applyFilters();
+        });
+
+        // Source filter
+        $('#sourceFilter').on('change', function() {
+            self.applyFilters();
+        });
+
+        // Clear all filters
+        $(document).on('click', '#clearFilters, #clearAllFilters', function() {
+            // Reset all inputs
+            $('#tableStartDate, #tableEndDate, #minAmount, #maxAmount, #companyFilter').val('');
+            $('#documentTypeFilter, #sourceFilter').val('');
+            
+            // Reset quick filters
+            $('.quick-filters .btn[data-filter="all"]').addClass('active').siblings().removeClass('active');
+            
+            // Clear DataTable filters
+            self.table.search('').columns().search('');
+            
+            // Clear global search
+            $('#globalSearch').val('');
+            
+            // Reset and redraw table
+            self.applyFilters();
+            
+            // Show success message
+            ToastManager.show('All filters have been cleared', 'success');
+        });
+
+        // Remove individual filter
+        $(document).on('click', '.filter-tag .btn-close', function() {
+            const filterText = $(this).siblings('.filter-text').text();
+            const filterType = filterText.split(':')[0].trim().toLowerCase();
+            
+            // Clear the corresponding filter input
+            switch(filterType) {
+                case 'date':
+                    $('#tableStartDate, #tableEndDate').val('');
+                    break;
+                case 'amount':
+                    $('#minAmount, #maxAmount').val('');
+                    break;
+                case 'company':
+                    $('#companyFilter').val('');
+                    break;
+                case 'type':
+                    $('#documentTypeFilter').val('');
+                    break;
+                case 'source':
+                    $('#sourceFilter').val('');
+                    break;
+            }
+            
+            // Reapply filters
+            self.applyFilters();
+            
+            // Show success message
+            ToastManager.show('Filter removed', 'success');
+        });
+
+        // Helper function for debouncing
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+    }
+
     initializeTableStyles() {
         $('.dataTables_filter input').addClass('form-control form-control-sm');
         $('.dataTables_length select').addClass('form-select form-select-sm');
@@ -930,6 +1011,7 @@ class InvoiceTableManager {
             link.href = URL.createObjectURL(blob);
             link.download = `inbound_invoices_${new Date().toISOString().split('T')[0]}.csv`;
             link.click();
+            document.body.removeChild(link);
 
             // Reset button state
             exportBtn.prop('disabled', false);
@@ -1200,71 +1282,7 @@ class InvoiceTableManager {
         this.refreshTimerInterval = setInterval(updateTimer, 60000);
     }
 
-    initializeColumnFilters() {
-        const table = this.table;
-        const filterContainer = $('.filter-container');
-        
-        // Clear any existing filters
-        filterContainer.empty();
-        
-        // Define filters we want to add - Fixed column indices and data access
-        const filters = [
-            { column: 'status', index: 8, label: 'Status', dataType: 'html' },
-            { column: 'source', index: 9, label: 'Source', dataType: 'html' },
-       
-        ];
-        
-        // Add date range filter
-        const dateFilterGroup = $('<div class="filter-group date-filter"></div>');
-        dateFilterGroup.append('<label class="filter-label">Issue Date:</label>');
-        
-        const startDateInput = $('<input type="date" class="filter-select date-input" id="start-date-filter">');
-        const endDateInput = $('<input type="date" class="filter-select date-input" id="end-date-filter">');
-        
-        dateFilterGroup.append(startDateInput).append(' to ').append(endDateInput);
-        filterContainer.append(dateFilterGroup);
-        
-        // Create filter dropdowns for each specified column
-        filters.forEach(filter => {
-            // Get unique values for this column
-            const uniqueValues = this.getUniqueColumnValues(filter.column, filter.index, filter.dataType);
-            
-            // Create filter group
-            const filterGroup = $('<div class="filter-group"></div>');
-            filterGroup.append(`<label class="filter-label">${filter.label}:</label>`);
-            
-            // Create select element
-            const select = $(`<select class="filter-select" data-column="${filter.column}" data-index="${filter.index}" data-type="${filter.dataType}"></select>`);
-            
-            // Add default option
-            select.append('<option value="">All</option>');
-            
-            // Add options for each unique value
-            uniqueValues.forEach(value => {
-                if (value) { // Skip empty values
-                    select.append(`<option value="${value}">${value}</option>`);
-                }
-            });
-            
-            // Append select to filter group
-            filterGroup.append(select);
-            
-            // Append filter group to container
-            filterContainer.append(filterGroup);
-            
-            // Add change event handler
-            select.on('change', () => this.applyFilters());
-        });
-        
-        // Add event handlers for date filters
-        startDateInput.on('change', () => this.applyFilters());
-        endDateInput.on('change', () => this.applyFilters());
-        
-        // Add reset filters button
-        const resetButton = $('<button class="filter-reset"><i class="bi bi-arrow-counterclockwise"></i> Reset Filters</button>');
-        resetButton.on('click', () => this.resetFilters());
-        filterContainer.append(resetButton);
-    }
+    
     
     getUniqueColumnValues(columnName, columnIndex, dataType = 'text') {
         const table = this.table;
@@ -1340,106 +1358,160 @@ class InvoiceTableManager {
     }
     
     applyFilters() {
+        const self = this;
         const table = this.table;
         
-        // Custom filtering function
-        $.fn.dataTable.ext.search.push((settings, data, dataIndex, rowData) => {
-            // Check each active filter
-            let pass = true;
-            
-            // Check dropdown filters
-            $('.filter-select').not('.date-input').each(function() {
-                const filterValue = $(this).val();
-                if (filterValue) {
-                    const columnIndex = parseInt($(this).data('index'));
-                    const dataType = $(this).data('type');
-                    
-                    // Extract text from HTML content if needed
-                    let cellText = '';
-                    
-                    if (dataType === 'html') {
-                        // Create a temporary div to parse HTML
-                        const tempDiv = document.createElement('div');
-                        tempDiv.innerHTML = data[columnIndex];
-                        cellText = tempDiv.textContent.trim();
-                    } else {
-                        cellText = data[columnIndex].toString().trim();
-                    }
-                    
-                    // Check if the cell text contains the filter value
-                    if (!cellText.includes(filterValue)) {
-                        pass = false;
-                    }
-                }
-            });
-            
-            // Check date range filter
-            const startDateValue = $('#start-date-filter').val();
-            const endDateValue = $('#end-date-filter').val();
-            
-            if (startDateValue || endDateValue) {
-                // Issue date is in column 6
-                const dateCell = data[6]; 
-                
-                // Extract date from the cell
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = dateCell;
-                const dateText = tempDiv.textContent.trim();
-                
-                // Parse the date (format depends on how it's displayed in the table)
-                const dateParts = dateText.split(/[\/\s]/); // Split by slash or whitespace
-                if (dateParts.length >= 3) {
-                    let day, month, year;
-                    
-                    // Handle different date formats
-                    if (!isNaN(parseInt(dateParts[0]))) {
-                        // Format: DD/MM/YYYY or DD Month YYYY
-                        day = parseInt(dateParts[0]);
-                        
-                        // Month can be numeric or text
-                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                        if (!isNaN(parseInt(dateParts[1]))) {
-                            month = parseInt(dateParts[1]) - 1; // 0-based month
-                        } else {
-                            month = monthNames.findIndex(m => dateParts[1].includes(m));
-                            if (month === -1) month = 0;
-                        }
-                        
-                        year = parseInt(dateParts[2]);
-                    } else {
-                        // Handle other formats if needed
-                        day = 1;
-                        month = 0;
-                        year = 2023; // Default fallback
-                    }
-                    
-                    const issueDate = new Date(year, month, day);
-                    
-                    if (startDateValue) {
-                        const startDate = new Date(startDateValue);
-                        if (issueDate < startDate) {
-                            pass = false;
-                        }
-                    }
-                    
-                    if (endDateValue) {
-                        const endDate = new Date(endDateValue);
-                        endDate.setHours(23, 59, 59, 999); // End of day
-                        if (issueDate > endDate) {
-                            pass = false;
-                        }
-                    }
-                }
-            }
-            
-            return pass;
-        });
+        // Remove any existing custom filter
+        $.fn.dataTable.ext.search = $.fn.dataTable.ext.search.filter(fn => fn.name !== 'customInboundFilter');
+
+        // Track active filters
+        const activeFilters = [];
+
+        // Date Range Filter
+        const startDate = $('#tableStartDate').val();
+        const endDate = $('#tableEndDate').val();
         
+        if (startDate || endDate) {
+            if (startDate && endDate) {
+                activeFilters.push(`Date: ${startDate} to ${endDate}`);
+            } else if (startDate) {
+                activeFilters.push(`Date: From ${startDate}`);
+            } else if (endDate) {
+                activeFilters.push(`Date: Until ${endDate}`);
+            }
+        }
+
+        // Amount Range Filter
+        const minAmount = parseFloat($('#minAmount').val()) || 0;
+        const maxAmount = parseFloat($('#maxAmount').val()) || Infinity;
+        if (minAmount > 0 || maxAmount < Infinity) {
+            if (minAmount > 0 && maxAmount < Infinity) {
+                activeFilters.push(`Amount: MYR ${minAmount.toFixed(2)} - MYR ${maxAmount.toFixed(2)}`);
+            } else if (minAmount > 0) {
+                activeFilters.push(`Amount: Min MYR ${minAmount.toFixed(2)}`);
+            } else if (maxAmount < Infinity) {
+                activeFilters.push(`Amount: Max MYR ${maxAmount.toFixed(2)}`);
+            }
+        }
+
+        // Company Filter
+        const companyFilter = $('#companyFilter').val();
+        if (companyFilter) {
+            activeFilters.push(`Company: ${companyFilter}`);
+        }
+
+        // Document Type Filter
+        const typeFilter = $('#documentTypeFilter').val();
+        if (typeFilter) {
+            activeFilters.push(`Type: ${typeFilter}`);
+        }
+
+        // Source Filter
+        const sourceFilter = $('#sourceFilter').val();
+        if (sourceFilter) {
+            activeFilters.push(`Source: ${sourceFilter}`);
+        }
+
+        // Update active filters display
+        this.updateActiveFilterTags(activeFilters);
+
+        // Add custom filtering function
+        $.fn.dataTable.ext.search.push(
+            function customInboundFilter(settings, searchData, index, rowData) {
+                let showRow = true;
+
+                // Date Range Filter
+                if (startDate || endDate) {
+                    const dateCell = searchData[7]; // DATE INFO column
+                    const dateMatch = dateCell.match(/Date Received:\s*([^,\n]+)/);
+                    if (dateMatch) {
+                        const dateStr = dateMatch[1].trim();
+                        const [datePart, timePart] = dateStr.split(',').map(s => s.trim());
+                        const [month, day, year] = datePart.split(' ');
+                        const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(month);
+                        
+                        if (monthIndex !== -1) {
+                            const rowDate = new Date(year, monthIndex, parseInt(day));
+                            rowDate.setHours(0, 0, 0, 0); // Set to start of day for comparison
+                            
+                            if (startDate) {
+                                const startDateTime = new Date(startDate);
+                                startDateTime.setHours(0, 0, 0, 0);
+                                if (rowDate < startDateTime) showRow = false;
+                            }
+                            
+                            if (endDate) {
+                                const endDateTime = new Date(endDate);
+                                endDateTime.setHours(23, 59, 59, 999);
+                                if (rowDate > endDateTime) showRow = false;
+                            }
+                        }
+                    }
+                }
+
+                // Amount Range Filter
+                const amountStr = searchData[10].replace(/[^\d.-]/g, ''); // TOTAL AMOUNT column
+                const amount = parseFloat(amountStr) || 0;
+                if (amount < minAmount || amount > maxAmount) showRow = false;
+
+                // Company Filter
+                if (companyFilter) {
+                    const supplierName = searchData[5].toLowerCase(); // SUPPLIER column
+                    const receiverName = searchData[6].toLowerCase(); // RECEIVER column
+                    if (!supplierName.includes(companyFilter.toLowerCase()) && 
+                        !receiverName.includes(companyFilter.toLowerCase())) {
+                        showRow = false;
+                    }
+                }
+
+                // Document Type Filter
+                if (typeFilter) {
+                    const docTypeCell = $(table.cell(index, 4).node()).find('.badge-document-type').text().trim();
+                    if (!docTypeCell.includes(typeFilter)) showRow = false;
+                }
+
+                // Source Filter
+                if (sourceFilter) {
+                    const source = searchData[8].trim(); // SOURCE column
+                    if (!source.includes(sourceFilter)) showRow = false;
+                }
+
+                return showRow;
+            }
+        );
+
         // Apply filters
         table.draw();
-        
-        // Remove the custom filtering function after drawing
-        $.fn.dataTable.ext.search.pop();
+    }
+
+    updateActiveFilterTags(activeFilters) {
+        const container = $('#activeFilterTags');
+        container.empty();
+
+        if (activeFilters.length === 0) {
+            container.html('<span class="text-muted">No active filters</span>');
+            return;
+        }
+
+        activeFilters.forEach(filter => {
+            const tag = $(`
+                <div class="filter-tag">
+                    <span class="filter-text">${filter}</span>
+                    <button type="button" class="btn-close btn-close-white btn-sm" aria-label="Remove filter"></button>
+                </div>
+            `);
+            container.append(tag);
+        });
+
+        // Add clear all button if there are filters
+        if (activeFilters.length > 0) {
+            const clearAllBtn = $(`
+                <button type="button" class="btn btn-link btn-sm text-danger" id="clearAllFilters">
+                    <i class="bi bi-x-circle me-1"></i>Clear all filters
+                </button>
+            `);
+            container.append(clearAllBtn);
+        }
     }
     
     resetFilters() {
@@ -1456,7 +1528,12 @@ class InvoiceTableManager {
 
  
     refresh() {
-        this.table?.ajax.reload(null, false);
+        if (this.table) {
+            this.table.ajax.reload(() => {
+                this.updateCardTotals();
+                updateCharts(); // Update charts after refresh
+            }, false);
+        }
     }
   
     cleanup() {
@@ -2230,6 +2307,463 @@ async function openValidationResultsModal(uuid) {
             title: 'Error',
             text: `Failed to load validation results: ${error.message}`
         });
+    }
+}
+
+// Initialize Charts
+function initializeCharts() {
+    // Document Status Distribution Chart
+    const statusCtx = document.getElementById('documentStatusChart').getContext('2d');
+    const statusChart = new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Valid', 'Invalid', 'Cancelled', 'Queue'],
+            datasets: [{
+                data: [15, 4, 8, 0], // Initial data, will be updated
+                backgroundColor: [
+                    'rgba(25, 135, 84, 0.8)',
+                    'rgba(220, 53, 69, 0.8)',
+                    'rgba(255, 193, 7, 0.8)',
+                    'rgba(13, 110, 253, 0.8)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // Daily Submissions Chart
+    const submissionsCtx = document.getElementById('dailySubmissionsChart').getContext('2d');
+    const submissionsChart = new Chart(submissionsCtx, {
+        type: 'line',
+        data: {
+            labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+            datasets: [{
+                label: 'Submissions',
+                data: [12, 19, 3, 5, 2, 3, 7],
+                borderColor: 'rgba(13, 110, 253, 0.8)',
+                tension: 0.4,
+                fill: true,
+                backgroundColor: 'rgba(13, 110, 253, 0.1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+
+    // Processing Time Chart
+    const timeCtx = document.getElementById('processingTimeChart').getContext('2d');
+    const timeChart = new Chart(timeCtx, {
+        type: 'bar',
+        data: {
+            labels: ['< 1min', '1-5min', '5-15min', '15-30min', '> 30min'],
+            datasets: [{
+                label: 'Documents',
+                data: [4, 8, 15, 3, 1],
+                backgroundColor: 'rgba(13, 110, 253, 0.8)',
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+
+    return { statusChart, submissionsChart, timeChart };
+}
+
+// Quick Actions Event Handlers
+function initializeQuickActions() {
+    try {
+        // Export All Documents
+        const exportAllBtn = document.getElementById('exportAllBtn');
+        if (exportAllBtn) {
+            exportAllBtn.addEventListener('click', () => {
+                const table = $('#invoiceTable').DataTable();
+                const data = table.data().toArray();
+                if (data.length === 0) {
+                    ToastManager.show('No documents available to export', 'error');
+                    return;
+                }
+                // Trigger export for all documents
+                exportToExcel(data, 'all_documents');
+            });
+        }
+
+        // Download Valid Documents
+        const downloadValidBtn = document.getElementById('downloadValidBtn');
+        if (downloadValidBtn) {
+            downloadValidBtn.addEventListener('click', () => {
+                const table = $('#invoiceTable').DataTable();
+                const validDocs = table.data().toArray().filter(doc => doc.status === 'Valid');
+                if (validDocs.length === 0) {
+                    ToastManager.show('No valid documents available', 'error');
+                    return;
+                }
+                exportToExcel(validDocs, 'valid_documents');
+            });
+        }
+
+        // Export Invalid List
+        const exportInvalidBtn = document.getElementById('exportInvalidBtn');
+        if (exportInvalidBtn) {
+            exportInvalidBtn.addEventListener('click', () => {
+                const table = $('#invoiceTable').DataTable();
+                const invalidDocs = table.data().toArray().filter(doc => doc.status === 'Invalid');
+                if (invalidDocs.length === 0) {
+                    ToastManager.show('No invalid documents to export', 'error');
+                    return;
+                }
+                exportToExcel(invalidDocs, 'invalid_documents');
+            });
+        }
+
+        // Refresh All Data
+        const refreshDataBtn = document.getElementById('refreshDataBtn');
+        if (refreshDataBtn) {
+            refreshDataBtn.addEventListener('click', async () => {
+                try {
+                    refreshDataBtn.disabled = true;
+                    refreshDataBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-2 spin"></i>Refreshing...';
+
+                    await $('#invoiceTable').DataTable().ajax.reload();
+                    updateCharts(); // Update charts with new data
+                    ToastManager.show('Data refreshed successfully', 'success');
+                } catch (error) {
+                    console.error('Error refreshing data:', error);
+                    ToastManager.show('Failed to refresh data', 'error');
+                } finally {
+                    refreshDataBtn.disabled = false;
+                    refreshDataBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-2"></i>Refresh All Data';
+                }
+            });
+        }
+
+        // Settings Dropdown Actions
+        const settingsDropdown = document.getElementById('settingsDropdown');
+        if (settingsDropdown) {
+            // Initialize Bootstrap dropdown
+            new bootstrap.Dropdown(settingsDropdown);
+
+            // Add event listeners for dropdown items
+            document.querySelectorAll('.dropdown-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const action = e.target.textContent.trim();
+                    handleSettingsAction(action);
+                });
+            });
+        }
+
+    } catch (error) {
+        console.error('Error initializing quick actions:', error);
+        ToastManager.show('Failed to initialize quick actions', 'error');
+    }
+}
+
+// Helper function to handle settings actions
+function handleSettingsAction(action) {
+    const table = $('#invoiceTable').DataTable();
+    
+    switch(action) {
+        case 'Column Visibility':
+            // Implement column visibility toggle
+            ToastManager.show('Column visibility settings coming soon', 'info');
+            break;
+        case 'Default Sorting':
+            // Implement sorting preferences
+            ToastManager.show('Sorting preferences coming soon', 'info');
+            break;
+        case 'Filter Preferences':
+            // Implement filter preferences
+            ToastManager.show('Filter preferences coming soon', 'info');
+            break;
+        case 'Reset All Settings':
+            // Reset all table settings
+            try {
+                table.state.clear();
+                table.draw();
+                ToastManager.show('All settings have been reset', 'success');
+            } catch (error) {
+                console.error('Error resetting settings:', error);
+                ToastManager.show('Failed to reset settings', 'error');
+            }
+            break;
+        default:
+            console.warn('Unknown settings action:', action);
+    }
+}
+
+// Helper function to export data to Excel
+function exportToExcel(data, filename) {
+    try {
+        // Convert data to CSV format
+        const headers = ['UUID', 'Long ID', 'Internal ID', 'Supplier', 'Receiver', 'Date Issued', 'Status', 'Total Amount'];
+        const csvContent = [
+            headers.join(','),
+            ...data.map(row => [
+                row.uuid,
+                row.longId,
+                row.internalId,
+                row.supplierName,
+                row.receiverName,
+                formatDate(row.dateTimeIssued),
+                row.status,
+                formatCurrency(row.totalSales)
+            ].join(','))
+        ].join('\n');
+
+        // Create and trigger download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        ToastManager.show('Export completed successfully', 'success');
+    } catch (error) {
+        console.error('Error exporting to Excel:', error);
+        ToastManager.show('Failed to export data', 'error');
+    }
+}
+
+// Enhanced Filter Functionality
+function initializeEnhancedFilters() {
+    const startDate = document.getElementById('startDate');
+    const endDate = document.getElementById('endDate');
+    const statusSelect = document.getElementById('documentStatus');
+    const sourceSelect = document.getElementById('documentSource');
+
+    // Apply filters when any filter changes
+    [startDate, endDate, statusSelect, sourceSelect].forEach(element => {
+        element.addEventListener('change', () => {
+            const table = $('#invoiceTable').DataTable();
+            table.draw(); // This will trigger the custom filtering function
+        });
+    });
+
+    // Reset filters
+    document.querySelector('.enhanced-filter-section .btn-link').addEventListener('click', () => {
+        startDate.value = '';
+        endDate.value = '';
+        statusSelect.value = '';
+        sourceSelect.value = '';
+        $('#invoiceTable').DataTable().draw();
+        ToastManager.show('Filters have been reset', 'success');
+    });
+}
+
+// Document Preview Functionality
+function initializeDocumentPreview() {
+    const previewSection = document.querySelector('.document-preview-section');
+    
+    // Show preview when clicking on a table row
+    $('#invoiceTable tbody').on('click', 'tr', function() {
+        const table = $('#invoiceTable').DataTable();
+        const data = table.row(this).data();
+        if (!data) return;
+
+        // Update preview data
+        document.getElementById('previewDocId').textContent = data.internalId || '-';
+        document.getElementById('previewStatus').textContent = data.status;
+        document.getElementById('previewStatus').className = `badge bg-${getStatusColor(data.status)}`;
+        document.getElementById('previewDate').textContent = formatDate(data.dateTimeIssued) || '-';
+        document.getElementById('previewAmount').textContent = formatCurrency(data.totalSales) || '-';
+
+        // Show preview section
+        previewSection.classList.remove('d-none');
+    });
+
+    // Close preview
+    document.querySelector('.document-preview-section .btn-close').addEventListener('click', () => {
+        previewSection.classList.add('d-none');
+    });
+}
+
+// Helper function to get status color
+function getStatusColor(status) {
+    const colors = {
+        'Valid': 'success',
+        'Invalid': 'danger',
+        'Cancelled': 'warning',
+        'Queue': 'info'
+    };
+    return colors[status] || 'secondary';
+}
+
+// Initialize everything when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing enhanced features...');
+    try {
+        const charts = initializeCharts();
+        
+        // Initialize invoice table using singleton
+        const invoiceManager = InvoiceTableManager.getInstance();
+        
+        // Initialize date/time display
+        DateTimeManager.updateDateTime();
+
+        console.log('Enhanced features initialized successfully');
+    } catch (error) {
+        console.error('Error initializing enhanced features:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Initialization Error',
+            text: 'Failed to initialize some features. Please refresh the page.',
+            confirmButtonText: 'Refresh',
+            showCancelButton: true,
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.reload();
+            }
+        });
+    }
+});
+
+function updateCharts() {
+    try {
+        const table = $('#invoiceTable').DataTable();
+        if (!table) {
+            console.warn('Table not initialized yet');
+            return;
+        }
+
+        // Get all data from the table
+        const allData = table.rows().data().toArray();
+        
+        // Status Distribution Chart Update
+        const statusCounts = {
+            Valid: 0,
+            Invalid: 0,
+            Cancelled: 0,
+            Queue: 0
+        };
+
+        // Process status counts
+        allData.forEach(row => {
+            if (row.status === 'Valid') statusCounts.Valid++;
+            else if (row.status === 'Invalid') statusCounts.Invalid++;
+            else if (row.status === 'Cancelled') statusCounts.Cancelled++;
+            else if (['Submitted', 'Pending', 'Queued'].includes(row.status)) statusCounts.Queue++;
+        });
+
+        // Update Status Chart
+        const statusChart = Chart.getChart('documentStatusChart');
+        if (statusChart) {
+            statusChart.data.datasets[0].data = [
+                statusCounts.Valid,
+                statusCounts.Invalid,
+                statusCounts.Cancelled,
+                statusCounts.Queue
+            ];
+            statusChart.update();
+        }
+
+        // Daily Submissions Chart Update
+        const dailySubmissions = new Map();
+        const last7Days = [];
+        
+        // Generate last 7 days dates
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            last7Days.push(dateStr);
+            dailySubmissions.set(dateStr, 0);
+        }
+
+        // Count submissions per day
+        allData.forEach(row => {
+            if (row.dateTimeReceived) {
+                const submissionDate = new Date(row.dateTimeReceived).toISOString().split('T')[0];
+                if (dailySubmissions.has(submissionDate)) {
+                    dailySubmissions.set(submissionDate, dailySubmissions.get(submissionDate) + 1);
+                }
+            }
+        });
+
+        // Update Daily Submissions Chart
+        const submissionsChart = Chart.getChart('dailySubmissionsChart');
+        if (submissionsChart) {
+            submissionsChart.data.labels = last7Days.map(date => {
+                const d = new Date(date);
+                return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            });
+            submissionsChart.data.datasets[0].data = last7Days.map(date => dailySubmissions.get(date));
+            submissionsChart.update();
+        }
+
+        // Processing Time Chart Update
+        const processingTimes = [0, 0, 0, 0, 0]; // [<1min, 1-5min, 5-15min, 15-30min, >30min]
+
+        allData.forEach(row => {
+            if (row.dateTimeReceived && row.dateTimeIssued) {
+                const receivedTime = new Date(row.dateTimeReceived);
+                const issuedTime = new Date(row.dateTimeIssued);
+                const processingTime = (receivedTime - issuedTime) / (1000 * 60); // Convert to minutes
+
+                if (processingTime < 1) processingTimes[0]++;
+                else if (processingTime < 5) processingTimes[1]++;
+                else if (processingTime < 15) processingTimes[2]++;
+                else if (processingTime < 30) processingTimes[3]++;
+                else processingTimes[4]++;
+            }
+        });
+
+        // Update Processing Time Chart
+        const timeChart = Chart.getChart('processingTimeChart');
+        if (timeChart) {
+            timeChart.data.datasets[0].data = processingTimes;
+            timeChart.update();
+        }
+
+        console.log('Charts updated with table data:', {
+            statusCounts,
+            dailySubmissions: Object.fromEntries(dailySubmissions),
+            processingTimes
+        });
+
+    } catch (error) {
+        console.error('Error updating charts:', error);
     }
 }
 

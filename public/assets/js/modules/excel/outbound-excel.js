@@ -86,7 +86,7 @@ class InvoiceTableManager {
 
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
-                processing: true,
+                processing: false,
                 serverSide: false,
                 ajax: {
                     url: '/api/outbound-files/list-all',
@@ -244,7 +244,7 @@ class InvoiceTableManager {
                     emptyTable: this.getEmptyStateHtml(),
                     zeroRecords: this.getEmptyStateHtml('Searching for data...')
                 },
-                order: [[5, 'desc']], // Keep newest first sorting
+                order: [[6, 'desc']], // Keep newest first sorting
                 drawCallback: function(settings) {
                     // Update row indexes when table is redrawn (sorting, filtering, pagination)
                     $(this).find('tbody tr').each(function(index) {
@@ -255,6 +255,7 @@ class InvoiceTableManager {
             });
 
             this.initializeFeatures();
+            
         } catch (error) {
             console.error('Error initializing DataTable:', error);
             this.showEmptyState('Error initializing table. Please refresh the page.');
@@ -1329,6 +1330,8 @@ if (helpButton) {
             </div>
         `;
     }
+
+    
 }
 
 async function validateExcelFile(fileName, type, company, date) {
@@ -1402,6 +1405,7 @@ async function validateExcelFile(fileName, type, company, date) {
 
         // Validate data
         const rawData = fileData.content[0]; // Get the first document since backend returns array
+        console.log("VALIDATION RAW DATA: ", rawData);
         console.log('Processing Excel file data:', rawData);
 
         if (!rawData) {
@@ -1426,7 +1430,8 @@ async function validateExcelFile(fileName, type, company, date) {
         } else {
             const headerErrors = [];
             const header = rawData.header;
-            
+            console.log("HEADER: ", header);
+
             if (!header.invoiceNo) headerErrors.push('Missing invoice number');
             if (!header.invoiceType) headerErrors.push('Missing invoice type');
             
@@ -1461,7 +1466,41 @@ async function validateExcelFile(fileName, type, company, date) {
 
         // Supplier and Buyer validations remain the same...
 
+        const supplier = rawData.supplier;
+        const buyer = rawData.buyer;
+
+        console.log("SUPPLIER: ", supplier);
+        console.log("BUYER: ", buyer);  
+
+        if (!supplier || !buyer) {
+            validationErrors.push({
+                row: 'Supplier and Buyer',
+                errors: ['Missing supplier or buyer information']
+            });
+        }else{
+            const supplierErrors = [];
+            const buyerErrors = [];
+
+            if (!supplier.name) supplierErrors.push('Missing supplier name');
+            if (!buyer.name) buyerErrors.push('Missing buyer name');
+            
+            if (supplierErrors.length > 0) {
+                validationErrors.push({
+                    row: 'Supplier',
+                    errors: supplierErrors
+                });
+            }
+
+            if (buyerErrors.length > 0) {
+                validationErrors.push({
+                    row: 'Buyer',
+                    errors: buyerErrors
+                });
+            }
+        }
+
          // Items Validation - Updated to match new structure
+         console.log("ITEMS: ", rawData.items);
          if (!rawData.items || !Array.isArray(rawData.items)) {
             validationErrors.push({
                 row: 'Items',
@@ -1469,7 +1508,7 @@ async function validateExcelFile(fileName, type, company, date) {
             });
         } else {
             const validItems = rawData.items.filter(item => 
-                item && 
+                item &&
                 item.lineId &&
                 item.quantity > 0 && 
                 item.unitPrice > 0 &&
@@ -2128,244 +2167,39 @@ async function showConfirmationDialog(fileName, type, company, date, version) {
     }).then((result) => result.isConfirmed);
 }
 
-// async function showSubmissionStatus(fileName, type, company, date, version) {
-//     console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
-//     window.currentFileName = fileName;
-
-//     let modal = null;
-//     try {
-//         // Create steps HTML
-//         console.log('📋 Creating steps container');
-//       // Update your showSubmissionStatus function's style section
-//       const stepsHtml = `
-//       <style>
-//           .step-card {
-//               transform: translateY(10px);
-//               opacity: 0.6;
-//               transition: all 0.3s ease;
-//               margin-bottom: 1rem;
-//               padding: 1rem;
-//               border-radius: 8px;
-//               border: 1px solid #e9ecef;
-//               display: flex;
-//               align-items: center;
-//               justify-content: center;
-//               text-align: center;
-//               flex-direction: column;
-//           }
-          
-//           .step-card.processing {
-//               transform: translateY(0);
-//               opacity: 1;
-//               border-color: var(--primary);
-//               background: var(--primary-light);
-//           }
-          
-//           .step-card.completed {
-//               opacity: 1;
-//               border-color: var(--success);
-//               background: var(--success-light);
-//           }
-          
-//           .step-card.error {
-//               opacity: 1;
-//               border-color: var(--error);
-//               background: var(--error-light);
-//           }
-          
-//           .step-badge {
-//               width: 32px;
-//               height: 32px;
-//               border-radius: 50%;
-//               display: flex;
-//               align-items: center;
-//               justify-content: center;
-//               margin-bottom: 0.5rem;
-//           }
-          
-//           .step-card.processing .step-badge {
-//               background: var(--primary-light);
-//               color: var(--primary);
-//           }
-          
-//           .step-card.completed .step-badge {
-//               background: var(--success-light);
-//               color: var(--success);
-//           }
-          
-//           .step-card.error .step-badge {
-//               background: var(--error-light);
-//               color: var(--error);
-//           }
-          
-//           .step-badge.spinning::after {
-//               content: '';
-//               width: 20px;
-//               height: 20px;
-//               border: 2px solid var(--primary);
-//               border-right-color: transparent;
-//               border-radius: 50%;
-//               animation: spin 0.8s linear infinite;
-//               display: block;
-//           }
-          
-//           @keyframes spin {
-//               from { transform: rotate(0deg); }
-//               to { transform: rotate(360deg); }
-//           }
-          
-//           .step-content {
-//               display: flex;
-//               flex-direction: column;
-//               align-items: center;
-//               gap: 0.25rem;
-//           }
-          
-//           .step-title {
-//               font-weight: 500;
-//               font-size: 1rem;
-//               color: var(--text-main);
-//           }
-          
-//           .step-status {
-//               font-size: 0.875rem;
-//               color: var(--text-muted);
-//           }
-//       </style>
-//       <div class="steps-container">
-//           ${getStepHtml(1, 'Validating Document')}
-//           ${getStepHtml(2, 'Submit to LHDN')}
-//           ${getStepHtml(3, 'Processing')}
-//       </div>
-//   `;
-//         // Create and show modal
-//         console.log('📦 Creating submission modal');
-//         modal = await Swal.fire({
-//             html: createSemiMinimalDialog({
-//                 title: 'Submitting Document to LHDN',
-//                 subtitle: 'Please wait while we process your request',
-//                 content: stepsHtml
-//             }),
-//             showConfirmButton: false,
-//             allowOutsideClick: false,
-//             allowEscapeKey: false,
-//             width: 480,
-//             padding: '1.5rem',
-//             customClass: {
-//                 popup: 'semi-minimal-popup'
-//             },
-//             didOpen: async () => {
-//                 try {
-//                     // Verify steps were created
-//                     console.log('🔍 Verifying step elements:');
-//                     for (let i = 1; i <= 3; i++) {
-//                         const step = document.getElementById(`step${i}`);
-//                         if (step) {
-//                             console.log(`✅ Step ${i} element found`);
-//                         } else {
-//                             console.error(`❌ Step ${i} element not found`);
-//                         }
-//                     }
-
-//                     // Step 1: Internal Validation
-//                     console.log('🔍 Starting Step 1: Document Validation');
-//                     await updateStepStatus(1, 'processing', 'Validating document...');
-//                     const validatedData = await performStep1(fileName, type, company, date);
-                    
-//                     if (!validatedData) {
-//                         throw new ValidationError('No data available for validation', [], fileName);
-//                     }
-//                     await updateStepStatus(1, 'completed', 'Validation completed');
-
-//                     // Step 2: Submit to LHDN
-//                     console.log('📤 Starting Step 2: LHDN Submission');
-//                     await updateStepStatus(2, 'processing', 'Submitting to LHDN...');
-                    
-//                     // Add the original parameters to the validated data
-//                     const submissionData = {
-//                         ...validatedData,
-//                         fileName,
-//                         type,
-//                         company,
-//                         date,
-//                         version
-//                     };
-                    
-//                     const submitted = await performStep2(submissionData, version);
-                    
-//                     if (!submitted) {
-//                         throw new Error('LHDN submission failed');
-//                     }
-//                     await updateStepStatus(2, 'completed', 'Submission completed');
-
-//                     // Step 3: Process Response
-//                     console.log('⚙️ Starting Step 3: Processing');
-//                     await updateStepStatus(3, 'processing', 'Processing response...');
-//                     const processed = await performStep3(submitted);
-                    
-//                     if (!processed) {
-//                         throw new Error('Response processing failed');
-//                     }
-//                     await updateStepStatus(3, 'completed', 'Processing completed');
-
-//                     console.log('🎉 All steps completed successfully');
-//                     await new Promise(resolve => setTimeout(resolve, 1000));
-                    
-//                     if (modal) {
-//                         Swal.close();
-//                     }
-                    
-//                     await showSuccessMessage(fileName, version);
-//                     // Refresh the table
-//                     window.location.reload();
-//                 } catch (error) {
-//                     console.error('❌ Step execution failed:', error);
-                    
-//                     // Find the current processing step and update its status to error
-//                     const currentStep = document.querySelector('.step-card.processing');
-//                     if (currentStep) {
-//                         const stepNumber = parseInt(currentStep.id.replace('step', ''));
-//                         console.log(`⚠️ Updating step ${stepNumber} to error state`);
-//                         await updateStepStatus(stepNumber, 'error', 'Error occurred');
-//                     }
-
-//                     // Add delay for visual feedback
-//                     await new Promise(resolve => setTimeout(resolve, 1000));
-                    
-//                     // Close the current modal
-//                     if (modal) {
-//                         modal.close();
-//                     }
-
-//                     // Show appropriate error modal based on error type
-//                     if (error instanceof ValidationError) {
-//                         console.log('📋 Showing Excel validation error modal');
-//                         await showExcelValidationError(error);
-//                     } else {
-//                         console.log('🔴 Showing LHDN error modal');
-//                         await showLHDNErrorModal(error);
-//                     }
-//                     throw error; // Re-throw to be caught by outer catch
-//                 }
-//             }
-//         });
-
-//         return true;
-
-//     } catch (error) {
-//         console.error('❌ Submission process failed:', error);
+// Step functions for the submission process
+async function performStep1(fileName, type, company, date) {
+    console.log('🚀 [Step 1] Starting validation with params:', { fileName, type, company, date });
+    
+    try {
+        // Start processing
+        console.log('🔍 [Step 1] Starting validation');
+        await updateStepStatus(1, 'processing', 'Validating document format...');
         
-//         // Show appropriate error modal based on error type
-//         if (error instanceof ValidationError) {
-//             console.log('📋 Showing Excel validation error modal');
-//             await showExcelValidationError(error);
-//         } else {
-//             console.log('🔴 Showing LHDN error modal');
-//             await showLHDNErrorModal(error);
-//         }
-//         return false;
-//     }
-// } 
+        // Perform validation
+        console.log('🔍 [Step 1] Calling validateExcelFile');
+        const validatedData = await validateExcelFile(fileName, type, company, date);
+        
+        if (!validatedData) {
+            console.error('❌ [Step 1] No data available for validation');
+            await updateStepStatus(1, 'error', 'Validation failed');
+            throw new ValidationError('No data available for validation', [], fileName);
+        }
+
+        // Complete successfully
+        console.log('✅ [Step 1] Validation successful');
+        await updateStepStatus(1, 'completed', 'Validation completed');
+        
+        return validatedData;
+    } catch (error) {
+        console.error('❌ [Step 1] Validation failed:', error);
+        await updateStepStatus(1, 'error', 'Validation failed');
+        throw error;
+    }
+}
+
+
+
 async function showSuccessMessage(fileName, version) {
     const content = `
         <div class="content-card">
@@ -2553,129 +2387,6 @@ async function updateStepStatus(stepNumber, status, message) {
     console.log(`✅ [Step ${stepNumber}] Status update completed`);
 }
 
-function getNextSteps(errorCode) {
-    const commonSteps = `
-        <li>Review each validation error carefully</li>
-        <li>Update the required fields in your document</li>
-        <li>Ensure all mandatory information is provided</li>
-        <li>Try submitting the document again</li>
-    `;
-
-    const specificSteps = {
-        'DS302': `
-            <li>Check the document status in LHDN portal</li>
-            <li>If you need to submit a correction, use the amendment feature</li>
-            <li>Contact support if you need assistance with amendments</li>
-        `,
-        'DUPLICATE_SUBMISSION': `
-            <li>Check the document status in the system</li>
-            <li>Wait for the current submission to complete</li>
-            <li>Contact support if you need to resubmit</li>
-        `,
-        'CF321': `
-            <li>Check the document's issue date</li>
-            <li>Documents must be submitted within 7 days of issuance</li>
-            <li>Create a new document with current date if needed</li>
-        `,
-        'CF364': `
-            <li>Review the item classification codes</li>
-            <li>Ensure all items have valid classification codes</li>
-            <li>Update missing or invalid classifications</li>
-        `,
-        'AUTH001': `
-            <li>Try logging out and logging back in</li>
-            <li>Check your internet connection</li>
-            <li>Contact support if the issue persists</li>
-        `
-    };
-
-    return specificSteps[errorCode] || commonSteps;
-}
-
-// Step functions for the submission process
-async function performStep1(fileName, type, company, date) {
-    console.log('🚀 [Step 1] Starting validation with params:', { fileName, type, company, date });
-    
-    try {
-        // Start processing
-        console.log('🔍 [Step 1] Starting validation');
-        await updateStepStatus(1, 'processing', 'Validating document format...');
-        
-        // Perform validation
-        console.log('🔍 [Step 1] Calling validateExcelFile');
-        const validatedData = await validateExcelFile(fileName, type, company, date);
-        
-        if (!validatedData) {
-            console.error('❌ [Step 1] No data available for validation');
-            await updateStepStatus(1, 'error', 'Validation failed');
-            throw new ValidationError('No data available for validation', [], fileName);
-        }
-
-        // Complete successfully
-        console.log('✅ [Step 1] Validation successful');
-        await updateStepStatus(1, 'completed', 'Validation completed');
-        
-        return validatedData;
-    } catch (error) {
-        console.error('❌ [Step 1] Validation failed:', error);
-        await updateStepStatus(1, 'error', 'Validation failed');
-        throw error;
-    }
-}
-
-// Helper function to group validation errors by type
-function groupValidationErrors(errors) {
-    const groups = {};
-    errors.forEach(error => {
-        const type = error.type || 'VALIDATION_ERROR';
-        if (!groups[type]) {
-            groups[type] = [];
-        }
-        groups[type].push(error);
-    });
-    return groups;
-}
-
-// Helper function to get icon for error type
-function getErrorTypeIcon(type) {
-    const icons = {
-        'DS302': 'fa-copy',
-        'CF321': 'fa-calendar-times',
-        'CF364': 'fa-tags',
-        'CF401': 'fa-calculator',
-        'CF402': 'fa-money-bill',
-        'CF403': 'fa-percent',
-        'CF404': 'fa-id-card',
-        'CF405': 'fa-address-card',
-        'AUTH001': 'fa-lock',
-        'DUPLICATE_SUBMISSION': 'fa-copy',
-        'VALIDATION_ERROR': 'fa-exclamation-circle',
-        'DB_ERROR': 'fa-database',
-        'SUBMISSION_ERROR': 'fa-exclamation-triangle'
-    };
-    return icons[type] || 'fa-exclamation-circle';
-}
-
-// Helper function to format error type for display
-function formatErrorType(type) {
-    const typeMap = {
-        'DS302': 'Duplicate Document',
-        'CF321': 'Date Validation',
-        'CF364': 'Classification',
-        'CF401': 'Tax Calculation',
-        'CF402': 'Currency',
-        'CF403': 'Tax Code',
-        'CF404': 'Identification',
-        'CF405': 'Party Information',
-        'AUTH001': 'Authentication',
-        'DUPLICATE_SUBMISSION': 'Duplicate Submission',
-        'VALIDATION_ERROR': 'Validation Error',
-        'DB_ERROR': 'Database Error',
-        'SUBMISSION_ERROR': 'Submission Error'
-    };
-    return typeMap[type] || type.replace(/_/g, ' ');
-}
-
 async function showSubmissionStatus(fileName, type, company, date, version) {
     console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
     window.currentFileName = fileName;
@@ -2860,7 +2571,7 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     if (modal) {
-                        Swal.close();
+                        modal.close();
                     }
                     
                     await showSuccessMessage(fileName, version);
@@ -3337,6 +3048,98 @@ async function deleteDocument(fileName, type, company, date) {
 
 // Error Modals
 
+function getNextSteps(errorCode) {
+    const commonSteps = `
+        <li>Review each validation error carefully</li>
+        <li>Update the required fields in your document</li>
+        <li>Ensure all mandatory information is provided</li>
+        <li>Try submitting the document again</li>
+    `;
+
+    const specificSteps = {
+        'DS302': `
+            <li>Check the document status in LHDN portal</li>
+            <li>If you need to submit a correction, use the amendment feature</li>
+            <li>Contact support if you need assistance with amendments</li>
+        `,
+        'DUPLICATE_SUBMISSION': `
+            <li>Check the document status in the system</li>
+            <li>Wait for the current submission to complete</li>
+            <li>Contact support if you need to resubmit</li>
+        `,
+        'CF321': `
+            <li>Check the document's issue date</li>
+            <li>Documents must be submitted within 7 days of issuance</li>
+            <li>Create a new document with current date if needed</li>
+        `,
+        'CF364': `
+            <li>Review the item classification codes</li>
+            <li>Ensure all items have valid classification codes</li>
+            <li>Update missing or invalid classifications</li>
+        `,
+        'AUTH001': `
+            <li>Try logging out and logging back in</li>
+            <li>Check your internet connection</li>
+            <li>Contact support if the issue persists</li>
+        `
+    };
+
+    return specificSteps[errorCode] || commonSteps;
+}
+
+// Helper function to group validation errors by type
+function groupValidationErrors(errors) {
+    const groups = {};
+    errors.forEach(error => {
+        const type = error.type || 'VALIDATION_ERROR';
+        if (!groups[type]) {
+            groups[type] = [];
+        }
+        groups[type].push(error);
+    });
+    return groups;
+}
+
+// Helper function to get icon for error type
+function getErrorTypeIcon(type) {
+    const icons = {
+        'DS302': 'fa-copy',
+        'CF321': 'fa-calendar-times',
+        'CF364': 'fa-tags',
+        'CF401': 'fa-calculator',
+        'CF402': 'fa-money-bill',
+        'CF403': 'fa-percent',
+        'CF404': 'fa-id-card',
+        'CF405': 'fa-address-card',
+        'AUTH001': 'fa-lock',
+        'DUPLICATE_SUBMISSION': 'fa-copy',
+        'VALIDATION_ERROR': 'fa-exclamation-circle',
+        'DB_ERROR': 'fa-database',
+        'SUBMISSION_ERROR': 'fa-exclamation-triangle'
+    };
+    return icons[type] || 'fa-exclamation-circle';
+}
+
+// Helper function to format error type for display
+function formatErrorType(type) {
+    const typeMap = {
+        'DS302': 'Duplicate Document',
+        'CF321': 'Date Validation',
+        'CF364': 'Classification',
+        'CF401': 'Tax Calculation',
+        'CF402': 'Currency',
+        'CF403': 'Tax Code',
+        'CF404': 'Identification',
+        'CF405': 'Party Information',
+        'AUTH001': 'Authentication',
+        'DUPLICATE_SUBMISSION': 'Duplicate Submission',
+        'VALIDATION_ERROR': 'Validation Error',
+        'DB_ERROR': 'Database Error',
+        'SUBMISSION_ERROR': 'Submission Error'
+    };
+    return typeMap[type] || type.replace(/_/g, ' ');
+}
+
 async function showErrorModal(title, message, fileName, uuid) {
     await Swal.fire({
         icon: 'error',
@@ -3427,7 +3230,7 @@ async function showExcelValidationError(error) {
     return Swal.fire({
         html: createSemiMinimalDialog({
             title: 'Excel Validation Failed',
-            subtitle: 'Correct the issues listed and proceed with creating a new document using the Appwrap / Netsuite Template',
+            subtitle: 'Correct the issues listed and proceed with creating a new document using the EXCEL Template',
             content: errorContent + guidance
         }),
         icon: 'error',
