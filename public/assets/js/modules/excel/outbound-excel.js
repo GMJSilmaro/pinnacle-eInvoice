@@ -1,119 +1,11 @@
-const tableStyles = `
-<style>
-    /* Source Badge Styles */
-    .badge-source {
-        @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+class ValidationError extends Error {
+    constructor(message, validationErrors = [], fileName = null) {
+        super(message);
+        this.name = 'ValidationError';
+        this.validationErrors = validationErrors;
+        this.fileName = fileName;
     }
-    .badge-source.manual {
-        @apply bg-blue-100 text-blue-800;
-    }
-    .badge-source.schedule {
-        @apply bg-purple-100 text-purple-800;
-    }
-    .outbound-table-container {
-        @apply w-full overflow-hidden rounded-lg shadow bg-white;
-    }
-    
-    .outbound-table {
-        @apply min-w-full divide-y divide-gray-200;
-    }
-    
-    .outbound-status {
-        @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
-    }
-    .outbound-status.pending {
-        @apply bg-yellow-100 text-yellow-800;
-    }
-    .outbound-status.submitted {
-        @apply bg-green-100 text-green-800;
-    }
-    .outbound-status.cancelled {
-        @apply bg-gray-100 text-gray-800;
-    }
-    .outbound-status.rejected {
-        @apply bg-red-100 text-red-800;
-    }
-
-      .outbound-status.invalid {
-        @apply bg-red-100 text-red-800;
-    }
-    /* Responsive Design */
-    @media (max-width: 1280px) {
-        .outbound-table th, .outbound-table td {
-            @apply px-2 py-2 text-xs;
-        }
-        .outbound-table-container {
-            @apply mx-auto max-w-full;
-        }
-        .outbound-table {
-            @apply table-auto;
-        }
-    }
-</style>`;
-
-document.head.insertAdjacentHTML('beforeend', tableStyles);
-
-const additionalStyles = `
-<style>
-
-    /* Table Controls */
-    .outbound-controls {
-        @apply flex flex-wrap items-center justify-between p-4 border-b border-gray-200;
-    }
-
-    .outbound-length-control {
-        @apply flex items-center space-x-2;
-    }
-
-    .outbound-search-control {
-        @apply relative mt-2 sm:mt-0;
-    }
-
-    /* Table Footer */
-    .outbound-bottom {
-        @apply flex flex-wrap items-center justify-between p-4 border-t border-gray-200;
-    }
-
-    /* Pagination */
-    .outbound-pagination {
-        @apply flex items-center justify-end space-x-2;
-    }
-
-    .outbound-pagination .paginate_button {
-        @apply px-3 py-1 text-sm font-medium rounded-md transition-colors;
-    }
-
-    .outbound-pagination .paginate_button.current {
-        @apply bg-primary-600 text-white;
-    }
-
-    .outbound-pagination .paginate_button:not(.current) {
-        @apply text-gray-700 hover:bg-gray-100;
-    }
-
-    /* Action Buttons */
-    .outbound-action-btn {
-        @apply inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md shadow-sm 
-        transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2;
-    }
-
-    .outbound-action-btn.submit {
-        @apply bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
-    }
-
-    .outbound-action-btn.cancel {
-        @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
-    }
-
-    .outbound-action-btn[disabled] {
-        @apply bg-gray-200 text-gray-500 cursor-not-allowed opacity-70;
-    }
-    
-  
-</style>`;
-
-document.head.insertAdjacentHTML('beforeend', additionalStyles);
-
+}
 
 class DateTimeManager {
     static updateDateTime() {
@@ -194,7 +86,7 @@ class InvoiceTableManager {
 
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
-                processing: false,
+                processing: true,
                 serverSide: false,
                 ajax: {
                     url: '/api/outbound-files/list-all',
@@ -225,6 +117,9 @@ class InvoiceTableManager {
                             issueDate: file.issueDate,
                             issueTime: file.issueTime,
                             date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
+                            date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
+                            cancelled_by: file.cancelled_by || null,
+                            cancel_reason: file.cancel_reason || null,
                             status: file.status || 'Pending',
                             source: file.source,
                             uuid: file.uuid || null,
@@ -293,7 +188,7 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'buyerInfo',
-                        title: 'BUYER',
+                        title: 'RECEIVER',
                         render: (data, type, row) => this.renderBuyerInfo(data, type, row)
                     },
                     {
@@ -304,7 +199,7 @@ class InvoiceTableManager {
                     {
                         data: null,
                         title: 'DATE INFO',
-                        render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row)
+                        render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row)
                     },
                     {
                         data: 'status',
@@ -330,7 +225,7 @@ class InvoiceTableManager {
                 ],
                 scrollX: true,
                 scrollCollapse: true,
-                autoWidth: false,
+                autoWidth: true,
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 language: {
@@ -365,22 +260,7 @@ class InvoiceTableManager {
             this.showEmptyState('Error initializing table. Please refresh the page.');
         }
     }
-  
-    // Helper method to determine document type
-    getDocumentType(type) {
-        const types = {
-            '01': 'Invoice',
-            '02': 'Credit Note',
-            '03': 'Debit Note',
-            '04': 'Refund Note',
-            '11': 'Self-billed Invoice',
-            '12': 'Self-billed Credit Note',
-            '13': 'Self-billed Debit Note',
-            '14': 'Self-billed Refund Note'
-        };
-        return types[type] || 'Invoice';
-    }
-  
+
     // Helper method to show error message
     showErrorMessage(message) {
         Swal.fire({
@@ -574,11 +454,10 @@ class InvoiceTableManager {
             </div>`;
     }
 
-    renderDateInfo(issueDate, issueTime, submittedDate, row) {
-        const issueDateFormatted = this.formatIssueDate(issueDate);
-        const issueTimeFormatted = issueTime ? this.formatIssueTime(issueTime) : null;
+    renderDateInfo(issueDate, issueTime, submittedDate, date_cancelled, row) {
         const submittedFormatted = submittedDate ? this.formatDate(submittedDate) : null;
-        const showTimeRemaining = row.status === 'Submitted';
+        const cancelledFormatted = date_cancelled ? this.formatDate(date_cancelled) : null;
+        const showTimeRemaining = row.status === 'Submitted' && !cancelledFormatted;
         const timeRemaining = showTimeRemaining ? this.calculateRemainingTime(submittedDate) : null;
         
         return `
@@ -589,7 +468,24 @@ class InvoiceTableManager {
                          data-bs-placement="top" 
                          title="Date and time when document was submitted to LHDN">
                         <i class="bi bi-check-circle me-1 text-success"></i>
-                        <span class="date-value">${submittedFormatted}</span>
+                        <span class="date-value">
+                            <div>
+                                <span class="text-success">Date Submitted:</span> ${submittedFormatted}
+                            </div>
+                        </span>
+                    </div>
+                ` : ''}
+                ${cancelledFormatted ? `
+                    <div class="date-row cancelled-info" 
+                         data-bs-toggle="tooltip" 
+                         data-bs-placement="top" 
+                         title="${row.cancellation_reason ? `Cancel Reason: ${row.cancellation_reason}` : ''} ${row.cancelled_by ? `Cancelled by: ${row.cancelled_by}` : ''}">
+                        <i class="bi bi-x-circle me-1 text-warning"></i>
+                        <span class="date-value">
+                            <div>
+                                <span class="text-warning">Date Cancelled:</span> ${cancelledFormatted}
+                            </div>
+                        </span>
                     </div>
                 ` : ''}
                 ${showTimeRemaining && timeRemaining ? `
@@ -600,7 +496,7 @@ class InvoiceTableManager {
                         <i class="bi bi-clock${timeRemaining.hours < 24 ? '-fill' : ''} me-1"></i>
                         <span class="time-text">${timeRemaining.hours}h ${timeRemaining.minutes}m left</span>
                     </div>
-                ` : row.status !== 'Submitted' ? `
+                ` : row.status !== 'Submitted' || cancelledFormatted ? `
                     <div class="time-not-applicable" 
                          data-bs-toggle="tooltip" 
                          data-bs-placement="top" 
@@ -1430,47 +1326,7 @@ if (helpButton) {
             </div>
         `;
     }
-  }
-
-  const style = document.createElement('style');
-style.textContent = `
-    .help-modal-popup {
-        border-radius: 12px !important;
-        padding: 1.5rem !important;
-    }
-
-    .help-modal-content {
-        padding: 0 !important;
-        font-size: 14px !important;
-    }
-
-    .help-modal-confirm {
-        padding: 10px 24px !important;
-        font-weight: 500 !important;
-    }
-
-    .swal2-html-container {
-        margin: 1em 0 0 0 !important;
-    }
-
-    .swal2-icon {
-        border-color: #1e40af !important;
-        color: #1e40af !important;
-    }
-`;
-document.head.appendChild(style);
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    // Check if table element exists
-    const tableElement = document.getElementById('invoiceTable');
-    if (!tableElement) {
-        console.error('Table element #invoiceTable not found');
-        return;
-    }
-
-    const manager = InvoiceTableManager.getInstance();
-    DateTimeManager.updateDateTime();
-});
+}
 
 async function validateExcelFile(fileName, type, company, date) {
     console.log('Starting validation with params:', { fileName, type, company, date });
@@ -1766,15 +1622,6 @@ async function validateExcelFile(fileName, type, company, date) {
             propertyPath: null,
             validatorType: 'System'
         }], fileName);
-    }
-}
-
-class ValidationError extends Error {
-    constructor(message, validationErrors = [], fileName = null) {
-        super(message);
-        this.name = 'ValidationError';
-        this.validationErrors = validationErrors;
-        this.fileName = fileName;
     }
 }
 
@@ -2278,244 +2125,244 @@ async function showConfirmationDialog(fileName, type, company, date, version) {
     }).then((result) => result.isConfirmed);
 }
 
-async function showSubmissionStatus(fileName, type, company, date, version) {
-    console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
-    window.currentFileName = fileName;
+// async function showSubmissionStatus(fileName, type, company, date, version) {
+//     console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
+//     window.currentFileName = fileName;
 
-    let modal = null;
-    try {
-        // Create steps HTML
-        console.log('📋 Creating steps container');
-      // Update your showSubmissionStatus function's style section
-      const stepsHtml = `
-      <style>
-          .step-card {
-              transform: translateY(10px);
-              opacity: 0.6;
-              transition: all 0.3s ease;
-              margin-bottom: 1rem;
-              padding: 1rem;
-              border-radius: 8px;
-              border: 1px solid #e9ecef;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              text-align: center;
-              flex-direction: column;
-          }
+//     let modal = null;
+//     try {
+//         // Create steps HTML
+//         console.log('📋 Creating steps container');
+//       // Update your showSubmissionStatus function's style section
+//       const stepsHtml = `
+//       <style>
+//           .step-card {
+//               transform: translateY(10px);
+//               opacity: 0.6;
+//               transition: all 0.3s ease;
+//               margin-bottom: 1rem;
+//               padding: 1rem;
+//               border-radius: 8px;
+//               border: 1px solid #e9ecef;
+//               display: flex;
+//               align-items: center;
+//               justify-content: center;
+//               text-align: center;
+//               flex-direction: column;
+//           }
           
-          .step-card.processing {
-              transform: translateY(0);
-              opacity: 1;
-              border-color: var(--primary);
-              background: var(--primary-light);
-          }
+//           .step-card.processing {
+//               transform: translateY(0);
+//               opacity: 1;
+//               border-color: var(--primary);
+//               background: var(--primary-light);
+//           }
           
-          .step-card.completed {
-              opacity: 1;
-              border-color: var(--success);
-              background: var(--success-light);
-          }
+//           .step-card.completed {
+//               opacity: 1;
+//               border-color: var(--success);
+//               background: var(--success-light);
+//           }
           
-          .step-card.error {
-              opacity: 1;
-              border-color: var(--error);
-              background: var(--error-light);
-          }
+//           .step-card.error {
+//               opacity: 1;
+//               border-color: var(--error);
+//               background: var(--error-light);
+//           }
           
-          .step-badge {
-              width: 32px;
-              height: 32px;
-              border-radius: 50%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              margin-bottom: 0.5rem;
-          }
+//           .step-badge {
+//               width: 32px;
+//               height: 32px;
+//               border-radius: 50%;
+//               display: flex;
+//               align-items: center;
+//               justify-content: center;
+//               margin-bottom: 0.5rem;
+//           }
           
-          .step-card.processing .step-badge {
-              background: var(--primary-light);
-              color: var(--primary);
-          }
+//           .step-card.processing .step-badge {
+//               background: var(--primary-light);
+//               color: var(--primary);
+//           }
           
-          .step-card.completed .step-badge {
-              background: var(--success-light);
-              color: var(--success);
-          }
+//           .step-card.completed .step-badge {
+//               background: var(--success-light);
+//               color: var(--success);
+//           }
           
-          .step-card.error .step-badge {
-              background: var(--error-light);
-              color: var(--error);
-          }
+//           .step-card.error .step-badge {
+//               background: var(--error-light);
+//               color: var(--error);
+//           }
           
-          .step-badge.spinning::after {
-              content: '';
-              width: 20px;
-              height: 20px;
-              border: 2px solid var(--primary);
-              border-right-color: transparent;
-              border-radius: 50%;
-              animation: spin 0.8s linear infinite;
-              display: block;
-          }
+//           .step-badge.spinning::after {
+//               content: '';
+//               width: 20px;
+//               height: 20px;
+//               border: 2px solid var(--primary);
+//               border-right-color: transparent;
+//               border-radius: 50%;
+//               animation: spin 0.8s linear infinite;
+//               display: block;
+//           }
           
-          @keyframes spin {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-          }
+//           @keyframes spin {
+//               from { transform: rotate(0deg); }
+//               to { transform: rotate(360deg); }
+//           }
           
-          .step-content {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              gap: 0.25rem;
-          }
+//           .step-content {
+//               display: flex;
+//               flex-direction: column;
+//               align-items: center;
+//               gap: 0.25rem;
+//           }
           
-          .step-title {
-              font-weight: 500;
-              font-size: 1rem;
-              color: var(--text-main);
-          }
+//           .step-title {
+//               font-weight: 500;
+//               font-size: 1rem;
+//               color: var(--text-main);
+//           }
           
-          .step-status {
-              font-size: 0.875rem;
-              color: var(--text-muted);
-          }
-      </style>
-      <div class="steps-container">
-          ${getStepHtml(1, 'Validating Document')}
-          ${getStepHtml(2, 'Submit to LHDN')}
-          ${getStepHtml(3, 'Processing')}
-      </div>
-  `;
-        // Create and show modal
-        console.log('📦 Creating submission modal');
-        modal = await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Submitting Document to LHDN',
-                subtitle: 'Please wait while we process your request',
-                content: stepsHtml
-            }),
-            showConfirmButton: false,
-            allowOutsideClick: false,
-            allowEscapeKey: false,
-            width: 480,
-            padding: '1.5rem',
-            customClass: {
-                popup: 'semi-minimal-popup'
-            },
-            didOpen: async () => {
-                try {
-                    // Verify steps were created
-                    console.log('🔍 Verifying step elements:');
-                    for (let i = 1; i <= 3; i++) {
-                        const step = document.getElementById(`step${i}`);
-                        if (step) {
-                            console.log(`✅ Step ${i} element found`);
-                        } else {
-                            console.error(`❌ Step ${i} element not found`);
-                        }
-                    }
+//           .step-status {
+//               font-size: 0.875rem;
+//               color: var(--text-muted);
+//           }
+//       </style>
+//       <div class="steps-container">
+//           ${getStepHtml(1, 'Validating Document')}
+//           ${getStepHtml(2, 'Submit to LHDN')}
+//           ${getStepHtml(3, 'Processing')}
+//       </div>
+//   `;
+//         // Create and show modal
+//         console.log('📦 Creating submission modal');
+//         modal = await Swal.fire({
+//             html: createSemiMinimalDialog({
+//                 title: 'Submitting Document to LHDN',
+//                 subtitle: 'Please wait while we process your request',
+//                 content: stepsHtml
+//             }),
+//             showConfirmButton: false,
+//             allowOutsideClick: false,
+//             allowEscapeKey: false,
+//             width: 480,
+//             padding: '1.5rem',
+//             customClass: {
+//                 popup: 'semi-minimal-popup'
+//             },
+//             didOpen: async () => {
+//                 try {
+//                     // Verify steps were created
+//                     console.log('🔍 Verifying step elements:');
+//                     for (let i = 1; i <= 3; i++) {
+//                         const step = document.getElementById(`step${i}`);
+//                         if (step) {
+//                             console.log(`✅ Step ${i} element found`);
+//                         } else {
+//                             console.error(`❌ Step ${i} element not found`);
+//                         }
+//                     }
 
-                    // Step 1: Internal Validation
-                    console.log('🔍 Starting Step 1: Document Validation');
-                    await updateStepStatus(1, 'processing', 'Validating document...');
-                    const validatedData = await performStep1(fileName, type, company, date);
+//                     // Step 1: Internal Validation
+//                     console.log('🔍 Starting Step 1: Document Validation');
+//                     await updateStepStatus(1, 'processing', 'Validating document...');
+//                     const validatedData = await performStep1(fileName, type, company, date);
                     
-                    if (!validatedData) {
-                        throw new ValidationError('No data available for validation', [], fileName);
-                    }
-                    await updateStepStatus(1, 'completed', 'Validation completed');
+//                     if (!validatedData) {
+//                         throw new ValidationError('No data available for validation', [], fileName);
+//                     }
+//                     await updateStepStatus(1, 'completed', 'Validation completed');
 
-                    // Step 2: Submit to LHDN
-                    console.log('📤 Starting Step 2: LHDN Submission');
-                    await updateStepStatus(2, 'processing', 'Submitting to LHDN...');
+//                     // Step 2: Submit to LHDN
+//                     console.log('📤 Starting Step 2: LHDN Submission');
+//                     await updateStepStatus(2, 'processing', 'Submitting to LHDN...');
                     
-                    // Add the original parameters to the validated data
-                    const submissionData = {
-                        ...validatedData,
-                        fileName,
-                        type,
-                        company,
-                        date,
-                        version
-                    };
+//                     // Add the original parameters to the validated data
+//                     const submissionData = {
+//                         ...validatedData,
+//                         fileName,
+//                         type,
+//                         company,
+//                         date,
+//                         version
+//                     };
                     
-                    const submitted = await performStep2(submissionData, version);
+//                     const submitted = await performStep2(submissionData, version);
                     
-                    if (!submitted) {
-                        throw new Error('LHDN submission failed');
-                    }
-                    await updateStepStatus(2, 'completed', 'Submission completed');
+//                     if (!submitted) {
+//                         throw new Error('LHDN submission failed');
+//                     }
+//                     await updateStepStatus(2, 'completed', 'Submission completed');
 
-                    // Step 3: Process Response
-                    console.log('⚙️ Starting Step 3: Processing');
-                    await updateStepStatus(3, 'processing', 'Processing response...');
-                    const processed = await performStep3(submitted);
+//                     // Step 3: Process Response
+//                     console.log('⚙️ Starting Step 3: Processing');
+//                     await updateStepStatus(3, 'processing', 'Processing response...');
+//                     const processed = await performStep3(submitted);
                     
-                    if (!processed) {
-                        throw new Error('Response processing failed');
-                    }
-                    await updateStepStatus(3, 'completed', 'Processing completed');
+//                     if (!processed) {
+//                         throw new Error('Response processing failed');
+//                     }
+//                     await updateStepStatus(3, 'completed', 'Processing completed');
 
-                    console.log('🎉 All steps completed successfully');
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+//                     console.log('🎉 All steps completed successfully');
+//                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
-                    if (modal) {
-                        Swal.close();
-                    }
+//                     if (modal) {
+//                         Swal.close();
+//                     }
                     
-                    await showSuccessMessage(fileName, version);
-                    // Refresh the table
-                    window.location.reload();
-                } catch (error) {
-                    console.error('❌ Step execution failed:', error);
+//                     await showSuccessMessage(fileName, version);
+//                     // Refresh the table
+//                     window.location.reload();
+//                 } catch (error) {
+//                     console.error('❌ Step execution failed:', error);
                     
-                    // Find the current processing step and update its status to error
-                    const currentStep = document.querySelector('.step-card.processing');
-                    if (currentStep) {
-                        const stepNumber = parseInt(currentStep.id.replace('step', ''));
-                        console.log(`⚠️ Updating step ${stepNumber} to error state`);
-                        await updateStepStatus(stepNumber, 'error', 'Error occurred');
-                    }
+//                     // Find the current processing step and update its status to error
+//                     const currentStep = document.querySelector('.step-card.processing');
+//                     if (currentStep) {
+//                         const stepNumber = parseInt(currentStep.id.replace('step', ''));
+//                         console.log(`⚠️ Updating step ${stepNumber} to error state`);
+//                         await updateStepStatus(stepNumber, 'error', 'Error occurred');
+//                     }
 
-                    // Add delay for visual feedback
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+//                     // Add delay for visual feedback
+//                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
-                    // Close the current modal
-                    if (modal) {
-                        modal.close();
-                    }
+//                     // Close the current modal
+//                     if (modal) {
+//                         modal.close();
+//                     }
 
-                    // Show appropriate error modal based on error type
-                    if (error instanceof ValidationError) {
-                        console.log('📋 Showing Excel validation error modal');
-                        await showExcelValidationError(error);
-                    } else {
-                        console.log('🔴 Showing LHDN error modal');
-                        await showLHDNErrorModal(error);
-                    }
-                    throw error; // Re-throw to be caught by outer catch
-                }
-            }
-        });
+//                     // Show appropriate error modal based on error type
+//                     if (error instanceof ValidationError) {
+//                         console.log('📋 Showing Excel validation error modal');
+//                         await showExcelValidationError(error);
+//                     } else {
+//                         console.log('🔴 Showing LHDN error modal');
+//                         await showLHDNErrorModal(error);
+//                     }
+//                     throw error; // Re-throw to be caught by outer catch
+//                 }
+//             }
+//         });
 
-        return true;
+//         return true;
 
-    } catch (error) {
-        console.error('❌ Submission process failed:', error);
+//     } catch (error) {
+//         console.error('❌ Submission process failed:', error);
         
-        // Show appropriate error modal based on error type
-        if (error instanceof ValidationError) {
-            console.log('📋 Showing Excel validation error modal');
-            await showExcelValidationError(error);
-        } else {
-            console.log('🔴 Showing LHDN error modal');
-            await showLHDNErrorModal(error);
-        }
-        return false;
-    }
-} 
+//         // Show appropriate error modal based on error type
+//         if (error instanceof ValidationError) {
+//             console.log('📋 Showing Excel validation error modal');
+//             await showExcelValidationError(error);
+//         } else {
+//             console.log('🔴 Showing LHDN error modal');
+//             await showLHDNErrorModal(error);
+//         }
+//         return false;
+//     }
+// } 
 async function showSuccessMessage(fileName, version) {
     const content = `
         <div class="content-card">
@@ -2703,317 +2550,317 @@ async function updateStepStatus(stepNumber, status, message) {
     console.log(`✅ [Step ${stepNumber}] Status update completed`);
 }
 
-async function performStep2(data, version) {
-    try {
-        console.log('🚀 [Step 2] Starting LHDN submission with data:', data);
-        await updateStepStatus(2, 'processing', 'Connecting to to LHDN...');
-        await updateStepStatus(2, 'processing', 'Initializing Preparing Documents...');
-        console.log('📤 [Step 2] Initiating submission to LHDN');
+// async function performStep2(data, version) {
+//     try {
+//         console.log('🚀 [Step 2] Starting LHDN submission with data:', data);
+//         await updateStepStatus(2, 'processing', 'Connecting to to LHDN...');
+//         await updateStepStatus(2, 'processing', 'Initializing Preparing Documents...');
+//         console.log('📤 [Step 2] Initiating submission to LHDN');
         
-        // Extract the required parameters from the data
-        const {
-            fileName,
-            type,
-            company,  // Make sure we extract company
-            date
-        } = data;
+//         // Extract the required parameters from the data
+//         const {
+//             fileName,
+//             type,
+//             company,  // Make sure we extract company
+//             date
+//         } = data;
 
-        // Make the API call with all required parameters
-        const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                type,
-                company,  // Include company in the request body
-                date,
-                version
-            })
-        });
+//         // Make the API call with all required parameters
+//         const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn`, {
+//             method: 'POST',
+//             headers: {
+//                 'Content-Type': 'application/json'
+//             },
+//             body: JSON.stringify({
+//                 type,
+//                 company,  // Include company in the request body
+//                 date,
+//                 version
+//             })
+//         });
 
-        const result = await response.json();
+//         const result = await response.json();
 
-        if (!response.ok) {
-            console.error('❌ [Step 2] API error response:', result);
-            throw new Error(JSON.stringify(result.error));
-        }
+//         if (!response.ok) {
+//             console.error('❌ [Step 2] API error response:', result);
+//             throw new Error(JSON.stringify(result.error));
+//         }
 
-        console.log('✅ [Step 2] Submission successful:', result);
-        await updateStepStatus(2, 'completed', 'Submission completed');
-        return result;
+//         console.log('✅ [Step 2] Submission successful:', result);
+//         await updateStepStatus(2, 'completed', 'Submission completed');
+//         return result;
 
-    } catch (error) {
-        console.error('❌ [Step 2] LHDN submission failed:', error);
-        await updateStepStatus(2, 'error', 'Submission failed');
-        throw error;
-    }
-} 
+//     } catch (error) {
+//         console.error('❌ [Step 2] LHDN submission failed:', error);
+//         await updateStepStatus(2, 'error', 'Submission failed');
+//         throw error;
+//     }
+// } 
 
-async function performStep3(response) {
-    console.log('🚀 [Step 3] Starting response processing');
+// async function performStep3(response) {
+//     console.log('🚀 [Step 3] Starting response processing');
     
-    try {
-        // Start processing
-        console.log('📝 [Step 3] Processing LHDN response');
-        await updateStepStatus(3, 'processing', 'Processing response...');
+//     try {
+//         // Start processing
+//         console.log('📝 [Step 3] Processing LHDN response');
+//         await updateStepStatus(3, 'processing', 'Processing response...');
         
-        // Process response
-        if (!response || !response.success) {
-            console.error('❌ [Step 3] Invalid response data');
-        }
+//         // Process response
+//         if (!response || !response.success) {
+//             console.error('❌ [Step 3] Invalid response data');
+//         }
         
-        console.log('📝 [Step 3] Response data:', response ? 'Data present' : 'No data');
-        if (!response) {
-            console.error('❌ [Step 3] No response data to process');
-            console.log('Updating step status to error...');
-            await updateStepStatus(3, 'error', 'Processing failed');
-            throw new Error('No response data to process');
-        }
+//         console.log('📝 [Step 3] Response data:', response ? 'Data present' : 'No data');
+//         if (!response) {
+//             console.error('❌ [Step 3] No response data to process');
+//             console.log('Updating step status to error...');
+//             await updateStepStatus(3, 'error', 'Processing failed');
+//             throw new Error('No response data to process');
+//         }
 
-        // Simulate processing time (if needed)
-        console.log('⏳ [Step 3] Processing response data...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+//         // Simulate processing time (if needed)
+//         console.log('⏳ [Step 3] Processing response data...');
+//         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Complete successfully
-        console.log('✅ [Step 3] Response processing completed');
-        console.log('Updating step status to completed...');
-        await updateStepStatus(3, 'completed', 'Processing completed');
+//         // Complete successfully
+//         console.log('✅ [Step 3] Response processing completed');
+//         console.log('Updating step status to completed...');
+//         await updateStepStatus(3, 'completed', 'Processing completed');
         
-        return true;
-    } catch (error) {
-        console.error('❌ [Step 3] Response processing failed:', error);
-        console.error('Error details:', {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-        });
-        console.log('Updating step status to error...');
-        await updateStepStatus(3, 'error', 'Processing failed');
-        throw error;
-    }
-}
+//         return true;
+//     } catch (error) {
+//         console.error('❌ [Step 3] Response processing failed:', error);
+//         console.error('Error details:', {
+//             name: error.name,
+//             message: error.message,
+//             stack: error.stack
+//         });
+//         console.log('Updating step status to error...');
+//         await updateStepStatus(3, 'error', 'Processing failed');
+//         throw error;
+//     }
+// }
 
-async function cancelDocument(uuid, fileName, submissionDate) {
-    console.log('Cancelling document:', { uuid, fileName });
-    try {
-        const content = `
-        <div class="content-card swal2-content">
-            <div style="margin-bottom: 15px; text-align: center;">
-                <div class="warning-icon" style="color: #f8bb86; font-size: 24px; margin-bottom: 10%; animation: pulseWarning 1.5s infinite;">
-                    <i class="fas fa-exclamation-triangle"></i>
-                </div>
-                <h3 style="color: #595959; font-size: 1.125rem; margin-bottom: 5px;">Document Details</h3>
-                <div style="background: #fff3e0; border-left: 4px solid #f8bb86; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
-                    <i class="fas fa-info-circle" style="color: #f8bb86; margin-right: 5px;"></i>
-                    This action cannot be undone
-                </div>
-            </div>
+// async function cancelDocument(uuid, fileName, submissionDate) {
+//     console.log('Cancelling document:', { uuid, fileName });
+//     try {
+//         const content = `
+//         <div class="content-card swal2-content">
+//             <div style="margin-bottom: 15px; text-align: center;">
+//                 <div class="warning-icon" style="color: #f8bb86; font-size: 24px; margin-bottom: 10%; animation: pulseWarning 1.5s infinite;">
+//                     <i class="fas fa-exclamation-triangle"></i>
+//                 </div>
+//                 <h3 style="color: #595959; font-size: 1.125rem; margin-bottom: 5px;">Document Details</h3>
+//                 <div style="background: #fff3e0; border-left: 4px solid #f8bb86; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
+//                     <i class="fas fa-info-circle" style="color: #f8bb86; margin-right: 5px;"></i>
+//                     This action cannot be undone
+//                 </div>
+//             </div>
 
-            <div style="text-align: left; margin-bottom: 12px; padding: 8px; border-radius: 8px; background: rgba(248, 187, 134, 0.1);">
-                <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
-                    <span style="color: #595959; font-weight: 600;">File Name:</span>
-                    <span style="color: #595959;">${fileName}</span>
-                </div>
-                <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
-                    <span style="color: #595959; font-weight: 600;">UUID:</span>
-                    <span style="color: #595959;">${uuid}</span>
-                </div>
-                <div>
-                    <span style="color: #595959; font-weight: 600;">Submission Date:</span>
-                    <span style="color: #595959;">${submissionDate}</span>
-                </div>
-            </div>
+//             <div style="text-align: left; margin-bottom: 12px; padding: 8px; border-radius: 8px; background: rgba(248, 187, 134, 0.1);">
+//                 <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
+//                     <span style="color: #595959; font-weight: 600;">File Name:</span>
+//                     <span style="color: #595959;">${fileName}</span>
+//                 </div>
+//                 <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
+//                     <span style="color: #595959; font-weight: 600;">UUID:</span>
+//                     <span style="color: #595959;">${uuid}</span>
+//                 </div>
+//                 <div>
+//                     <span style="color: #595959; font-weight: 600;">Submission Date:</span>
+//                     <span style="color: #595959;">${submissionDate}</span>
+//                 </div>
+//             </div>
 
-            <div style="margin-top: 12px;">
-                <label style="display: block; color: #595959; font-weight: 600; margin-bottom: 5px;">
-                    <i class="fas fa-exclamation-circle" style="color: #f8bb86; margin-right: 5px;"></i>
-                    Cancellation Reason <span style="color: #dc3545;">*</span>
-                </label>
-                <textarea 
-                    id="cancellationReason"
-                    class="swal2-textarea"
-                    style="width: 80%; height: 30%; min-height: 70px; resize: none; border: 1px solid #d9d9d9; border-radius: 4px; padding: 8px; margin-top: 5px; transition: all 0.3s ease; font-size: 1rem;"
-                    placeholder="Please provide a reason for cancellation"
-                    onkeyup="this.style.borderColor = this.value.trim() ? '#28a745' : '#dc3545'"
-                ></textarea>
-            </div>
-        </div>
+//             <div style="margin-top: 12px;">
+//                 <label style="display: block; color: #595959; font-weight: 600; margin-bottom: 5px;">
+//                     <i class="fas fa-exclamation-circle" style="color: #f8bb86; margin-right: 5px;"></i>
+//                     Cancellation Reason <span style="color: #dc3545;">*</span>
+//                 </label>
+//                 <textarea 
+//                     id="cancellationReason"
+//                     class="swal2-textarea"
+//                     style="width: 80%; height: 30%; min-height: 70px; resize: none; border: 1px solid #d9d9d9; border-radius: 4px; padding: 8px; margin-top: 5px; transition: all 0.3s ease; font-size: 1rem;"
+//                     placeholder="Please provide a reason for cancellation"
+//                     onkeyup="this.style.borderColor = this.value.trim() ? '#28a745' : '#dc3545'"
+//                 ></textarea>
+//             </div>
+//         </div>
 
-        <style>
-            @keyframes pulseWarning {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.15); }
-                100% { transform: scale(1); }
-            }
+//         <style>
+//             @keyframes pulseWarning {
+//                 0% { transform: scale(1); }
+//                 50% { transform: scale(1.15); }
+//                 100% { transform: scale(1); }
+//             }
 
-            .warning-icon {
-                animation: pulseWarning 1.5s infinite;
-            }
-        </style>
-    `;
+//             .warning-icon {
+//                 animation: pulseWarning 1.5s infinite;
+//             }
+//         </style>
+//     `;
 
-        // Initial confirmation dialog using createSemiMinimalDialog
-        const result = await Swal.fire({
-            title: 'Cancel Document',
-            text: 'Are you sure you want to cancel this document?',
-            html: content,
-            showCancelButton: true,
-            confirmButtonText: 'Yes, cancel it',
-            cancelButtonText: 'No, keep it',
-            width: 480,
-            padding: '1.5rem',
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                cancelButton: 'outbound-action-btn cancel',
-                popup: 'semi-minimal-popup'
-            },
-            preConfirm: () => {
-                const reason = document.getElementById('cancellationReason').value;
-                if (!reason.trim()) {
-                    Swal.showValidationMessage('Please provide a cancellation reason');
-                    return false;
-                }
-                return reason;
-            }
-        });
+//         // Initial confirmation dialog using createSemiMinimalDialog
+//         const result = await Swal.fire({
+//             title: 'Cancel Document',
+//             text: 'Are you sure you want to cancel this document?',
+//             html: content,
+//             showCancelButton: true,
+//             confirmButtonText: 'Yes, cancel it',
+//             cancelButtonText: 'No, keep it',
+//             width: 480,
+//             padding: '1.5rem',
+//             customClass: {
+//                 confirmButton: 'outbound-action-btn submit',
+//                 cancelButton: 'outbound-action-btn cancel',
+//                 popup: 'semi-minimal-popup'
+//             },
+//             preConfirm: () => {
+//                 const reason = document.getElementById('cancellationReason').value;
+//                 if (!reason.trim()) {
+//                     Swal.showValidationMessage('Please provide a cancellation reason');
+//                     return false;
+//                 }
+//                 return reason;
+//             }
+//         });
 
-        if (!result.isConfirmed) {
-            console.log('Cancellation cancelled by user');
-            return;
-        }
+//         if (!result.isConfirmed) {
+//             console.log('Cancellation cancelled by user');
+//             return;
+//         }
 
-        const cancellationReason = result.value;
-        console.log('Cancellation reason:', cancellationReason);
+//         const cancellationReason = result.value;
+//         console.log('Cancellation reason:', cancellationReason);
 
-        // Show loading state
-        Swal.fire({
-            title: 'Cancelling Document...',
-            text: 'Please wait while we process your request',
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
-        });
+//         // Show loading state
+//         Swal.fire({
+//             title: 'Cancelling Document...',
+//             text: 'Please wait while we process your request',
+//             allowOutsideClick: false,
+//             didOpen: () => Swal.showLoading()
+//         });
 
-        console.log('Making API request to cancel document...');
-        const response = await fetch(`/api/outbound-files/${uuid}/cancel`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ reason: cancellationReason })
-        });
+//         console.log('Making API request to cancel document...');
+//         const response = await fetch(`/api/outbound-files/${uuid}/cancel`, {
+//             method: 'POST',
+//             headers: {
+//                 'Content-Type': 'application/json'
+//             },
+//             body: JSON.stringify({ reason: cancellationReason })
+//         });
 
-        console.log('API Response status:', response.status);
-        const data = await response.json();
-        console.log('API Response data:', data);
+//         console.log('API Response status:', response.status);
+//         const data = await response.json();
+//         console.log('API Response data:', data);
 
-        if (!response.ok) {
-            throw new Error(data.error?.message || data.message || 'Failed to cancel document');
-        }
-        await Swal.fire({
-            title: 'Cancelled Successfully',
-            html: `
-                <div class="content-card swal2-content" style="animation: slideIn 0.3s ease-out; max-height: 280px;">
-                    <div style="text-align: center; margin-bottom: 18px;">
-                        <div class="success-icon" style="color: #28a745; font-size: 28px; animation: pulseSuccess 1.5s infinite;">
-                            <i class="fas fa-check-circle"></i>
-                        </div>
-                        <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 6px; margin: 8px 0; border-radius: 4px; text-align: left;">
-                            <i class="fas fa-info-circle" style="color: #28a745; margin-right: 5px;"></i>
-                            Invoice cancelled successfully
-                        </div>
-                    </div>
+//         if (!response.ok) {
+//             throw new Error(data.error?.message || data.message || 'Failed to cancel document');
+//         }
+//         await Swal.fire({
+//             title: 'Cancelled Successfully',
+//             html: `
+//                 <div class="content-card swal2-content" style="animation: slideIn 0.3s ease-out; max-height: 280px;">
+//                     <div style="text-align: center; margin-bottom: 18px;">
+//                         <div class="success-icon" style="color: #28a745; font-size: 28px; animation: pulseSuccess 1.5s infinite;">
+//                             <i class="fas fa-check-circle"></i>
+//                         </div>
+//                         <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 6px; margin: 8px 0; border-radius: 4px; text-align: left;">
+//                             <i class="fas fa-info-circle" style="color: #28a745; margin-right: 5px;"></i>
+//                             Invoice cancelled successfully
+//                         </div>
+//                     </div>
         
-                    <div style="text-align: left; padding: 8px; border-radius: 8px; background: rgba(40, 167, 69, 0.05);">
-                        <div style="color: #595959; font-weight: 500; margin-bottom: 8px;">Document Details:</div>
-                        <div style="margin-bottom: 4px;">
-                            <span style="color: #595959; font-weight: 500;">File Name:</span>
-                            <span style="color: #595959; font-size: 0.9em;">${fileName}</span>
-                        </div>
-                        <div style="margin-bottom: 4px;">
-                            <span style="color: #595959; font-weight: 500;">UUID:</span>
-                            <span style="color: #595959; font-size: 0.9em;">${uuid}</span>
-                        </div>
-                        <div>
-                            <span style="color: #595959; font-weight: 500;">Time:</span>
-                            <span style="color: #595959; font-size: 0.9em;">${new Date().toLocaleString()}</span>
-                        </div>
-                    </div>
-                </div>
+//                     <div style="text-align: left; padding: 8px; border-radius: 8px; background: rgba(40, 167, 69, 0.05);">
+//                         <div style="color: #595959; font-weight: 500; margin-bottom: 8px;">Document Details:</div>
+//                         <div style="margin-bottom: 4px;">
+//                             <span style="color: #595959; font-weight: 500;">File Name:</span>
+//                             <span style="color: #595959; font-size: 0.9em;">${fileName}</span>
+//                         </div>
+//                         <div style="margin-bottom: 4px;">
+//                             <span style="color: #595959; font-weight: 500;">UUID:</span>
+//                             <span style="color: #595959; font-size: 0.9em;">${uuid}</span>
+//                         </div>
+//                         <div>
+//                             <span style="color: #595959; font-weight: 500;">Time:</span>
+//                             <span style="color: #595959; font-size: 0.9em;">${new Date().toLocaleString()}</span>
+//                         </div>
+//                     </div>
+//                 </div>
         
-                <style>
-                    @keyframes pulseSuccess {
-                        0% { transform: scale(1); }
-                        50% { transform: scale(1.15); }
-                        100% { transform: scale(1); }
-                    }
+//                 <style>
+//                     @keyframes pulseSuccess {
+//                         0% { transform: scale(1); }
+//                         50% { transform: scale(1.15); }
+//                         100% { transform: scale(1); }
+//                     }
         
-                    @keyframes slideIn {
-                        from { transform: translateY(-10px); opacity: 0; }
-                        to { transform: translateY(0); opacity: 1; }
-                    }
+//                     @keyframes slideIn {
+//                         from { transform: translateY(-10px); opacity: 0; }
+//                         to { transform: translateY(0); opacity: 1; }
+//                     }
         
-                    .success-icon {
-                        animation: pulseSuccess 1.5s infinite;
-                    }
-                </style>
-            `,
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                popup: 'semi-minimal-popup'
-            }
-        });
-        console.log('Document cancelled successfully');
-        // Refresh the table
-        window.location.reload();
+//                     .success-icon {
+//                         animation: pulseSuccess 1.5s infinite;
+//                     }
+//                 </style>
+//             `,
+//             customClass: {
+//                 confirmButton: 'outbound-action-btn submit',
+//                 popup: 'semi-minimal-popup'
+//             }
+//         });
+//         console.log('Document cancelled successfully');
+//         // Refresh the table
+//         window.location.reload();
 
-    } catch (error) {
-        console.error('Error in cancellation process:', error);
+//     } catch (error) {
+//         console.error('Error in cancellation process:', error);
         
-        // Show error message using createSemiMinimalDialog
-        await Swal.fire({
-            title: 'Error',
-            html: `
-                <div class="text-left">
-                    <p class="text-danger">${error.message}</p>
-                    <div class="mt-2 text-gray-600">
-                        <strong>Technical Details:</strong><br>
-                        File Name: ${fileName}<br>
-                        UUID: ${uuid}
-                    </div>
-                </div>
-            `,
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                cancelButton: 'outbound-action-btn cancel',
-                popup: 'semi-minimal-popup'
-            }
-        });
-    }
-}
+//         // Show error message using createSemiMinimalDialog
+//         await Swal.fire({
+//             title: 'Error',
+//             html: `
+//                 <div class="text-left">
+//                     <p class="text-danger">${error.message}</p>
+//                     <div class="mt-2 text-gray-600">
+//                         <strong>Technical Details:</strong><br>
+//                         File Name: ${fileName}<br>
+//                         UUID: ${uuid}
+//                     </div>
+//                 </div>
+//             `,
+//             customClass: {
+//                 confirmButton: 'outbound-action-btn submit',
+//                 cancelButton: 'outbound-action-btn cancel',
+//                 popup: 'semi-minimal-popup'
+//             }
+//         });
+//     }
+// }
 
-async function showErrorModal(title, message, fileName, uuid) {
-    await Swal.fire({
-        icon: 'error',
-        title: title,
-        html: `
-            <div class="text-left">
-                <p class="text-danger">${message}</p>
-                <div class="small text-muted mt-2">
-                    <strong>Technical Details:</strong><br>
-                    File Name: ${fileName}<br>
-                    UUID: ${uuid}
-                </div>
-            </div>
-        `,
-        confirmButtonText: 'OK',
-        customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
-            popup: 'semi-minimal-popup'
-        },
-    });
-}
+// async function showErrorModal(title, message, fileName, uuid) {
+//     await Swal.fire({
+//         icon: 'error',
+//         title: title,
+//         html: `
+//             <div class="text-left">
+//                 <p class="text-danger">${message}</p>
+//                 <div class="small text-muted mt-2">
+//                     <strong>Technical Details:</strong><br>
+//                     File Name: ${fileName}<br>
+//                     UUID: ${uuid}
+//                 </div>
+//             </div>
+//         `,
+//         confirmButtonText: 'OK',
+//         customClass: {
+//             confirmButton: 'outbound-action-btn submit',
+//             cancelButton: 'outbound-action-btn cancel',
+//             popup: 'semi-minimal-popup'
+//         },
+//     });
+// }
 
 
 // Helper function to get next steps based on error code
@@ -3055,271 +2902,6 @@ function getNextSteps(errorCode) {
 
     return specificSteps[errorCode] || commonSteps;
 }
-
-// Helper function to format field path for display
-function formatFieldPath(path) {
-    if (!path) return 'General';
-    
-    const fieldMap = {
-        'Invoice.ID': 'Invoice Number',
-        'Invoice.IssueDate': 'Issue Date',
-        'Invoice.InvoiceTypeCode': 'Invoice Type',
-        'Invoice.BillingReference': 'Billing Reference',
-        'Invoice.AdditionalDocumentReference': 'Additional Document Reference',
-        'Invoice.AccountingSupplierParty': 'Supplier Information',
-        'Invoice.AccountingCustomerParty': 'Customer Information',
-        'Invoice.TaxTotal': 'Tax Information',
-        'Invoice.LegalMonetaryTotal': 'Total Amounts',
-        'Invoice.InvoiceLine': 'Invoice Line Items',
-        'Invoice.InvoiceLine.Item.Classification': 'Item Classification',
-        'Invoice.InvoiceLine.TaxTotal': 'Line Tax Information',
-        'Invoice.InvoiceLine.Price': 'Item Price',
-        'DatetimeIssued': 'Issue Date and Time'
-    };
-
-    // Try to match the path with the map
-    for (const [key, value] of Object.entries(fieldMap)) {
-        if (path.includes(key)) {
-            return value;
-        }
-    }
-
-    // If no match found, format the path
-    return path
-        .split('.')
-        .pop()
-        .replace(/([A-Z])/g, ' $1')
-        .trim();
-}
-
-async function showExcelValidationError(error) {
-    console.log('Showing validation error for file:', error.fileName, 'Error:', error);
-
-    // Add delay before showing the validation error modal
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Format validation errors for display
-    let errorContent = '';
-    if (error.validationErrors && error.validationErrors.length > 0) {
-        const groupedErrors = error.validationErrors.reduce((acc, err) => {
-            const errors = Array.isArray(err.errors) ? err.errors : [err.errors];
-            acc[err.row] = acc[err.row] || [];
-            acc[err.row].push(...errors);
-            return acc;
-        }, {});
-
-        errorContent = Object.entries(groupedErrors).map(([row, errors]) => `
-            <div class="content-card">
-                <div class="content-header">
-                    <span class="content-badge error">
-                        <i class="fas fa-exclamation-circle"></i>
-                    </span>
-                    <span class="content-title" style="text-align: center;">${row}</span>
-                </div>
-                ${errors.map(e => `
-                    <div class="content-desc">
-                        ${typeof e === 'object' ? e.message : e}
-                    </div>
-                `).join('')}
-            </div>
-        `).join('');
-    } else {
-        errorContent = `
-            <div class="content-card">
-                <div class="content-header">
-                    <span class="content-badge error">
-                        <i class="fas fa-exclamation-circle"></i>
-                    </span>
-                    <span class="content-title" style="text-align: center;">Validation Error</span>
-                </div>
-                <div class="content-desc">
-                    ${error.message || 'Unknown validation error'}
-                </div>
-            </div>
-        `;
-    }
-
-    // Add user guidance
-    const guidance = `
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-title" style="text-align: center;">Next Steps</span>
-            </div>
-            <div class="content-desc">
-                <ul>
-                    <li>Review the errors listed above carefully.</li>
-                    <li>Ensure all mandatory fields are filled out correctly.</li>
-                    <li>Check the format of the data (e.g., dates, numbers).</li>
-                    <li>Try submitting the document again after corrections.</li>
-                </ul>
-            </div>
-        </div>
-    `;
-
-    return Swal.fire({
-        html: createSemiMinimalDialog({
-            title: 'Excel Validation Failed',
-            subtitle: 'Correct the issues listed and proceed with creating a new document using the Appwrap / Netsuite Template',
-            content: errorContent + guidance
-        }),
-        icon: 'error',
-        showCancelButton: false,
-        confirmButtonText: 'I Understand',
-        confirmButtonColor: '#405189',
-        width: 480,
-        padding: '1.5rem',
-        customClass: {
-            confirmButton: 'semi-minimal-confirm',
-            popup: 'semi-minimal-popup'
-        }
-    }).then((result) => {
-        if (result.isConfirmed && error.fileName) {
-            //openExcelFile(error.fileName);
-        }
-    });
-}
-
-
-async function showSystemErrorModal(error) {
-    console.log('System Error:', error);
-    
-    // Function to get user-friendly error message
-    function getErrorMessage(error) {
-        const statusMessages = {
-            '401': 'Authentication failed. Please try logging in again.',
-            '403': 'You do not have permission to perform this action.',
-            '404': 'The requested resource was not found.',
-            '500': 'An internal server error occurred.',
-            'default': 'An unexpected error occurred while processing your request.'
-        };
-
-        if (error.message && error.message.includes('status code')) {
-            const statusCode = error.message.match(/\d+/)[0];
-            return statusMessages[statusCode] || statusMessages.default;
-        }
-
-        return error.message || statusMessages.default;
-    }
-
-    const content = `
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-badge error">
-                    <i class="fas fa-exclamation-circle"></i>
-                </span>
-                <span class="content-title">System Error</span>
-            </div>
-            <div class="content-desc">
-                ${getErrorMessage(error)}
-                ${error.invoice_number ? `
-                    <div style="margin-top: 0.5rem;">
-                        <i class="fas fa-file-invoice"></i>
-                        Invoice Number: ${error.invoice_number}
-                    </div>
-                ` : ''}
-            </div>
-        </div>
-    `;
-
-    return Swal.fire({
-        html: createSemiMinimalDialog({
-            title: error.type || 'System Error',
-            subtitle: 'Please review the following issue:',
-            content: content
-        }),
-        confirmButtonText: 'I Understand',
-        confirmButtonColor: '#405189',
-        width: 480,
-        padding: '1.5rem',
-        showClass: {
-            popup: 'animate__animated animate__fadeIn'
-        },
-        hideClass: {
-            popup: 'animate__animated animate__fadeOut'
-        },
-        customClass: {
-            confirmButton: 'semi-minimal-confirm',
-            popup: 'semi-minimal-popup'
-        }
-    });
-}
-
-
-// Function to open Excel file
-function openExcelFile(fileName) {
-    console.log('Opening Excel file:', fileName);
-    
-    if (!fileName) {
-        console.error('No file name provided to openExcelFile');
-        Swal.fire({
-            icon: 'error',
-            title: 'Error Opening File',
-            text: 'No file name provided',
-            confirmButtonColor: '#405189'
-        });
-        return;
-    }
-
-    // Get the current row data from the DataTable
-    const table = $('#invoiceTable').DataTable();
-    if (!table) {
-        console.error('DataTable not initialized');
-        return;
-    }
-
-    const rows = table.rows().data();
-    console.log('Found rows:', rows.length);
-    
-    const rowData = rows.toArray().find(row => {
-        console.log('Comparing:', row.fileName, fileName);
-        return row.fileName === fileName;
-    });
-    console.log('Found row data:', rowData);
-
-    if (!rowData) {
-        console.error('Row data not found for file:', fileName);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error Opening File',
-            text: 'File information not found in the table',
-            confirmButtonColor: '#405189'
-        });
-        return;
-    }
-
-    // Log the attempt to open the file
-    console.log('Attempting to open file:', fileName, 'with data:', rowData);
-
-    // Make the API call to open the file
-    fetch(`/api/outbound-files/${fileName}/open`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            type: rowData.type,
-            company: rowData.company,
-            date: rowData.uploadedDate // Changed from date to uploadedDate to match the table data
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (!data.success) {
-            throw new Error(data.error?.message || 'Failed to open file');
-        }
-        console.log('Excel file opened successfully');
-    })
-    .catch(error => {
-        console.error('Error opening Excel file:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error Opening File',
-            text: error.message || 'Failed to open Excel file',
-            confirmButtonColor: '#405189'
-        });
-    });
-}
-
 
 // Step functions for the submission process
 async function performStep1(fileName, type, company, date) {
@@ -3935,6 +3517,137 @@ async function cancelDocument(uuid, fileName, submissionDate) {
     }
 }
 
+async function deleteDocument(fileName, type, company, date) {
+    try {
+        // Show confirmation dialog
+        const result = await Swal.fire({
+            html: createSemiMinimalDialog({
+                title: 'Delete Document',
+                subtitle: 'Are you sure you want to delete this document?',
+                content: `
+                    <div class="content-card">
+                        <div class="content-header">
+                            <span class="content-badge error">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </span>
+                            <span class="content-title">Warning</span>
+                        </div>
+                        <div class="content-desc">
+                            This action cannot be undone. The file will be permanently deleted.
+                        </div>
+                    </div>
+                    <div class="content-card">
+                        <div class="content-header">
+                            <span class="content-title">Document Details</span>
+                        </div>
+                        <div class="field-row">
+                            <span class="field-label">File Name:</span>
+                            <span class="field-value">${fileName}</span>
+                        </div>
+                        <div class="field-row">
+                            <span class="field-label">Type:</span>
+                            <span class="field-value">${type}</span>
+                        </div>
+                        <div class="field-row">
+                            <span class="field-label">Company:</span>
+                            <span class="field-value">${company}</span>
+                        </div>
+                    </div>
+                `
+            }),
+            showCancelButton: true,
+            confirmButtonText: 'Yes, delete it',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                cancelButton: 'outbound-action-btn cancel',
+                popup: 'semi-minimal-popup'
+            }
+        });
+
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        // Show loading state
+        Swal.fire({
+            title: 'Deleting Document...',
+            text: 'Please wait while we process your request',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        // Make API call to delete the file
+        const response = await fetch(`/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error?.message || 'Failed to delete document');
+        }
+
+        // Show success message
+        await Swal.fire({
+            html: createSemiMinimalDialog({
+                title: 'Document Deleted',
+                subtitle: 'The document has been successfully deleted',
+                content: `
+                    <div class="content-card">
+                        <div class="content-header">
+                            <span class="content-badge success">
+                                <i class="fas fa-check-circle"></i>
+                            </span>
+                            <span class="content-title">Success</span>
+                        </div>
+                        <div class="content-desc">
+                            The file has been permanently deleted from the system.
+                        </div>
+                    </div>
+                `
+            }),
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                popup: 'semi-minimal-popup'
+            }
+        });
+
+        // Refresh the table
+        window.location.reload();
+
+    } catch (error) {
+        console.error('Error deleting document:', error);
+        
+        await Swal.fire({
+            html: createSemiMinimalDialog({
+                title: 'Error',
+                subtitle: 'Failed to delete document',
+                content: `
+                    <div class="content-card">
+                        <div class="content-header">
+                            <span class="content-badge error">
+                                <i class="fas fa-times-circle"></i>
+                            </span>
+                            <span class="content-title">Error Details</span>
+                        </div>
+                        <div class="content-desc">
+                            ${error.message}
+                        </div>
+                    </div>
+                `
+            }),
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                popup: 'semi-minimal-popup'
+            }
+        });
+    }
+}
+
+
+// Error Modals
+
 async function showErrorModal(title, message, fileName, uuid) {
     await Swal.fire({
         icon: 'error',
@@ -3958,118 +3671,158 @@ async function showErrorModal(title, message, fileName, uuid) {
     });
 }
 
-// function showLHDNErrorModal(error) {
-//     console.log('LHDN Error:', error);
+async function showExcelValidationError(error) {
+    console.log('Showing validation error for file:', error.fileName, 'Error:', error);
+
+    // Add delay before showing the validation error modal
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Format validation errors for display
+    let errorContent = '';
+    if (error.validationErrors && error.validationErrors.length > 0) {
+        const groupedErrors = error.validationErrors.reduce((acc, err) => {
+            const errors = Array.isArray(err.errors) ? err.errors : [err.errors];
+            acc[err.row] = acc[err.row] || [];
+            acc[err.row].push(...errors);
+            return acc;
+        }, {});
+
+        errorContent = Object.entries(groupedErrors).map(([row, errors]) => `
+            <div class="content-card">
+                <div class="content-header">
+                    <span class="content-badge error">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </span>
+                    <span class="content-title" style="text-align: center;">${row}</span>
+                </div>
+                ${errors.map(e => `
+                    <div class="content-desc">
+                        ${typeof e === 'object' ? e.message : e}
+                    </div>
+                `).join('')}
+            </div>
+        `).join('');
+    } else {
+        errorContent = `
+            <div class="content-card">
+                <div class="content-header">
+                    <span class="content-badge error">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </span>
+                    <span class="content-title" style="text-align: center;">Validation Error</span>
+                </div>
+                <div class="content-desc">
+                    ${error.message || 'Unknown validation error'}
+                </div>
+            </div>
+        `;
+    }
+
+    // Add user guidance
+    const guidance = `
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-title" style="text-align: center;">Next Steps</span>
+            </div>
+            <div class="content-desc">
+                <ul>
+                    <li>Review the errors listed above carefully.</li>
+                    <li>Ensure all mandatory fields are filled out correctly.</li>
+                    <li>Check the format of the data (e.g., dates, numbers).</li>
+                    <li>Try submitting the document again after corrections.</li>
+                </ul>
+            </div>
+        </div>
+    `;
+
+    return Swal.fire({
+        html: createSemiMinimalDialog({
+            title: 'Excel Validation Failed',
+            subtitle: 'Correct the issues listed and proceed with creating a new document using the Appwrap / Netsuite Template',
+            content: errorContent + guidance
+        }),
+        icon: 'error',
+        showCancelButton: false,
+        confirmButtonText: 'I Understand',
+        confirmButtonColor: '#405189',
+        width: 480,
+        padding: '1.5rem',
+        customClass: {
+            confirmButton: 'semi-minimal-confirm',
+            popup: 'semi-minimal-popup'
+        }
+    }).then((result) => {
+        if (result.isConfirmed && error.fileName) {
+            //openExcelFile(error.fileName);
+        }
+    });
+}
+
+async function showSystemErrorModal(error) {
+    console.log('System Error:', error);
     
-//     // Parse error message if it's a string
-//     let errorDetails = error;
-//     try {
-//         if (typeof error === 'string') {
-//             errorDetails = JSON.parse(error);
-//         }
-//     } catch (e) {
-//         console.warn('Error parsing error message:', e);
-//     }
+    // Function to get user-friendly error message
+    function getErrorMessage(error) {
+        const statusMessages = {
+            '401': 'Authentication failed. Please try logging in again.',
+            '403': 'You do not have permission to perform this action.',
+            '404': 'The requested resource was not found.',
+            '500': 'An internal server error occurred.',
+            'default': 'An unexpected error occurred while processing your request.'
+        };
 
-//     // Extract error details from the new error format
-//     const errorData = Array.isArray(errorDetails) ? errorDetails[0] : errorDetails;
-//     const mainError = {
-//         code: errorData.code || 'VALIDATION_ERROR',
-//         message: errorData.message || 'An unknown error occurred',
-//         target: errorData.target || '',
-//         details: errorData.details || {}
-//     };
+        if (error.message && error.message.includes('status code')) {
+            const statusCode = error.message.match(/\d+/)[0];
+            return statusMessages[statusCode] || statusMessages.default;
+        }
 
-//     // Format the validation error details
-//     const validationDetails = mainError.details?.error?.details || [];
+        return error.message || statusMessages.default;
+    }
 
-//     Swal.fire({
-//         title: 'LHDN Submission Error',
-//         html: `
-//             <div class="content-card swal2-content">
-//                 <div style="margin-bottom: 15px; text-align: center;">
-//                     <div class="error-icon" style="color: #dc3545; font-size: 28px; margin-bottom: 10%; animation: pulseError 1.5s infinite;">
-//                         <i class="fas fa-times-circle"></i>
-//                     </div>
-//                     <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
-//                         <i class="fas fa-exclamation-circle" style="color: #dc3545; margin-right: 5px;"></i>
-//                         ${mainError.message}
-//                     </div>
-//                 </div>
-    
-//                 <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05);">
-//                     <div style="margin-bottom: 8px;">
-//                         <span style="color: #595959; font-weight: 600;">Error Code:</span>
-//                         <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 4px;">${mainError.code}</span>
-//                     </div>
+    const content = `
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-badge error">
+                    <i class="fas fa-exclamation-circle"></i>
+                </span>
+                <span class="content-title">System Error</span>
+            </div>
+            <div class="content-desc">
+                ${getErrorMessage(error)}
+                ${error.invoice_number ? `
+                    <div style="margin-top: 0.5rem;">
+                        <i class="fas fa-file-invoice"></i>
+                        Invoice Number: ${error.invoice_number}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
 
-//                     ${mainError.target ? `
-//                     <div style="margin-bottom: 8px;">
-//                         <span style="color: #595959; font-weight: 600;">Error Target:</span>
-//                         <span style="color: #595959;">${mainError.target}</span>
-//                     </div>
-//                     ` : ''}
-                    
-    
-//                     ${validationDetails.length > 0 ? `
-//                         <div>
-//                             <span style="color: #595959; font-weight: 600;">Validation Errors:</span>
-//                             <div style="margin-top: 4px; max-height: 200px; overflow-y: auto;">
-//                                 ${validationDetails.map(detail => `
-//                                     <div style="background: #fff; padding: 8px; border-radius: 4px; margin-bottom: 4px; border: 1px solid rgba(220, 53, 69, 0.2); font-size: 0.9em;">
-//                                         <div style="margin-bottom: 4px;">
-//                                             <strong>Path:</strong> ${detail.propertyPath || detail.target || 'Unknown'}
-//                                         </div>
-//                                         <div>
-//                                             <strong>Error:</strong> ${formatValidationMessage(detail.message)}
-//                                         </div>
-//                                         ${detail.code ? `
-//                                             <div style="margin-top: 4px; font-size: 0.9em; color: #6c757d;">
-//                                                 Code: ${detail.code}
-//                                             </div>
-//                                         ` : ''}
-//                                     </div>
-//                                 `).join('')}
-//                             </div>
-//                         </div>
-//                     ` : ''}
-//                 </div>
-//             </div>
-    
-//         `,
-//         customClass: {
-//             confirmButton: 'outbound-action-btn submit',
-//             popup: 'semi-minimal-popup'
-//         },
-//         confirmButtonText: 'OK',
-//         showCloseButton: true
-//     });
-// }
+    return Swal.fire({
+        html: createSemiMinimalDialog({
+            title: error.type || 'System Error',
+            subtitle: 'Please review the following issue:',
+            content: content
+        }),
+        confirmButtonText: 'I Understand',
+        confirmButtonColor: '#405189',
+        width: 480,
+        padding: '1.5rem',
+        showClass: {
+            popup: 'animate__animated animate__fadeIn'
+        },
+        hideClass: {
+            popup: 'animate__animated animate__fadeOut'
+        },
+        customClass: {
+            confirmButton: 'semi-minimal-confirm',
+            popup: 'semi-minimal-popup'
+        }
+    });
+}
 
-// Helper function to format validation messages
-
-
-
-// function formatValidationMessage(message) {
-//     if (!message) return 'Unknown error';
-    
-//     // Remove technical details and format the message
-//     return message
-//         .split('\n')
-//         .map(line => {
-//             // Remove JSON-like formatting
-//             line = line.replace(/[{}]/g, '');
-//             // Remove technical prefixes
-//             line = line.replace(/(ArrayItemNotValid|NoAdditionalPropertiesAllowed|#\/Invoice\[\d+\])/g, '');
-//             // Clean up extra spaces and punctuation
-//             line = line.trim().replace(/\s+/g, ' ').replace(/:\s+/g, ': ');
-//             return line;
-//         })
-//         .filter(line => line.length > 0)
-//         .join('<br>');
-// }
-
-function showLHDNErrorModal(error) {
+async function showLHDNErrorModal(error) {
     console.log('LHDN Error:', error);
     
     // Parse error message if it's a string
@@ -4259,130 +4012,16 @@ function formatValidationMessage(message) {
     return message;
 }
 
-async function deleteDocument(fileName, type, company, date) {
-    try {
-        // Show confirmation dialog
-        const result = await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Delete Document',
-                subtitle: 'Are you sure you want to delete this document?',
-                content: `
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-badge error">
-                                <i class="fas fa-exclamation-triangle"></i>
-                            </span>
-                            <span class="content-title">Warning</span>
-                        </div>
-                        <div class="content-desc">
-                            This action cannot be undone. The file will be permanently deleted.
-                        </div>
-                    </div>
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-title">Document Details</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">File Name:</span>
-                            <span class="field-value">${fileName}</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">Type:</span>
-                            <span class="field-value">${type}</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">Company:</span>
-                            <span class="field-value">${company}</span>
-                        </div>
-                    </div>
-                `
-            }),
-            showCancelButton: true,
-            confirmButtonText: 'Yes, delete it',
-            cancelButtonText: 'Cancel',
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                cancelButton: 'outbound-action-btn cancel',
-                popup: 'semi-minimal-popup'
-            }
-        });
 
-        if (!result.isConfirmed) {
-            return;
-        }
-
-        // Show loading state
-        Swal.fire({
-            title: 'Deleting Document...',
-            text: 'Please wait while we process your request',
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
-        });
-
-        // Make API call to delete the file
-        const response = await fetch(`/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}`, {
-            method: 'DELETE'
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error?.message || 'Failed to delete document');
-        }
-
-        // Show success message
-        await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Document Deleted',
-                subtitle: 'The document has been successfully deleted',
-                content: `
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-badge success">
-                                <i class="fas fa-check-circle"></i>
-                            </span>
-                            <span class="content-title">Success</span>
-                        </div>
-                        <div class="content-desc">
-                            The file has been permanently deleted from the system.
-                        </div>
-                    </div>
-                `
-            }),
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                popup: 'semi-minimal-popup'
-            }
-        });
-
-        // Refresh the table
-        window.location.reload();
-
-    } catch (error) {
-        console.error('Error deleting document:', error);
-        
-        await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Error',
-                subtitle: 'Failed to delete document',
-                content: `
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-badge error">
-                                <i class="fas fa-times-circle"></i>
-                            </span>
-                            <span class="content-title">Error Details</span>
-                        </div>
-                        <div class="content-desc">
-                            ${error.message}
-                        </div>
-                    </div>
-                `
-            }),
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                popup: 'semi-minimal-popup'
-            }
-        });
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if table element exists
+    const tableElement = document.getElementById('invoiceTable');
+    if (!tableElement) {
+        console.error('Table element #invoiceTable not found');
+        return;
     }
-}
+
+    const manager = InvoiceTableManager.getInstance();
+    DateTimeManager.updateDateTime();
+});

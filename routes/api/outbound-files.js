@@ -278,7 +278,7 @@ router.get('/list-all', async (req, res) => {
             outboundStatusesToUpdate = await WP_OUTBOUND_STATUS.findAll({
                 where: {
                     status: {
-                        [Op.notIn]: ['Cancelled', 'Failed'] // Don't update already cancelled or failed documents
+                        [Op.notIn]: ['Cancelled', 'Failed', 'Invalid'] // Don't update already cancelled or failed documents
                     }
                 },
                 raw: true
@@ -356,6 +356,9 @@ router.get('/list-all', async (req, res) => {
                 'invoice_number',
                 'status',
                 'date_submitted',
+                'date_cancelled',
+                'cancellation_reason',
+                'cancelled_by',
                 'updated_at'
             ],
             order: [['updated_at', 'DESC']],
@@ -371,6 +374,9 @@ router.get('/list-all', async (req, res) => {
                 SubmissionStatus: status.status,
                 DateTimeSent: status.date_submitted,
                 DateTimeUpdated: status.updated_at,
+                DateTimeCancelled: status.date_cancelled,
+                CancelledReason: status.cancellation_reason,
+                CancelledBy: status.cancelled_by,
                 FileName: status.fileName,
                 DocNum: status.invoice_number
             };
@@ -413,6 +419,9 @@ router.get('/list-all', async (req, res) => {
                 status: fileStatus,
                 statusUpdateTime: status?.DateTimeUpdated || null,
                 date_submitted: status?.DateTimeSent || null,
+                date_cancelled: status?.DateTimeCancelled || null,
+                cancellation_reason: status?.CancelledReason || null,
+                cancelled_by: status?.CancelledBy || null,
                 uuid: status?.UUID || null,
                 submissionUid: status?.SubmissionUID || null
             };

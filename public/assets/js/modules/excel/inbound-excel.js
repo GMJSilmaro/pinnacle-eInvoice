@@ -1,12 +1,42 @@
 // @ts-nocheck
 // Toast Manager Class
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing managers...');
+    try {
+        // Initialize invoice table using singleton
+        const invoiceManager = InvoiceTableManager.getInstance();
+     
+        // Initialize date/time display
+        DateTimeManager.updateDateTime();
+
+        console.log('Managers initialized successfully');
+    } catch (error) {
+        console.error('Error initializing managers:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Initialization Error',
+            text: 'Failed to initialize the application. Please refresh the page.',
+            confirmButtonText: 'Refresh',
+            showCancelButton: true,
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.reload();
+            }
+        });
+    }
+});
+
+
 class ToastManager {
     static container = null;
 
     static init() {
         if (!this.container) {
             this.container = document.createElement('div');
-            this.container.className = 'custom-toast-container';
+            this.container.className = 'toast-container position-fixed top-0 end-0 p-3';
+            this.container.style.zIndex = '1070';
             document.body.appendChild(this.container);
         }
     }
@@ -14,32 +44,38 @@ class ToastManager {
     static show(message, type = 'success') {
         this.init();
 
-        // Create toast element
-        const toast = document.createElement('div');
-        toast.className = `custom-toast ${type}`;
+        const toastElement = document.createElement('div');
+        toastElement.className = `toast align-items-center border-0 ${type === 'success' ? 'bg-success' : 'bg-danger'} text-white`;
+        toastElement.setAttribute('role', 'alert');
+        toastElement.setAttribute('aria-live', 'assertive');
+        toastElement.setAttribute('aria-atomic', 'true');
+        toastElement.style.minWidth = '280px';
 
-        // Create icon
-        const icon = document.createElement('div');
-        icon.className = `custom-toast-icon ${type}`;
-        icon.innerHTML = type === 'success'
-            ? '<i class="bi bi-check-circle-fill"></i>'
-            : '<i class="bi bi-x-circle-fill"></i>';
+        const toastContent = `
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi ${type === 'success' ? 'bi-check-circle' : 'bi-x-circle'} me-2"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        `;
+        toastElement.innerHTML = toastContent;
 
-        // Create message
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'custom-toast-message';
-        messageDiv.textContent = message;
+        this.container.appendChild(toastElement);
 
-        // Assemble toast
-        toast.appendChild(icon);
-        toast.appendChild(messageDiv);
-        this.container.appendChild(toast);
+        const toast = new bootstrap.Toast(toastElement, {
+            animation: true,
+            autohide: true,
+            delay: 3000
+        });
 
-        // Remove toast after delay
-        setTimeout(() => {
-            toast.style.animation = 'fadeOut 0.2s ease-in-out forwards';
-            setTimeout(() => toast.remove(), 200);
-        }, 1500);
+        toast.show();
+
+        // Remove the element after it's hidden
+        toastElement.addEventListener('hidden.bs.toast', () => {
+            toastElement.remove();
+        });
     }
 }
 
@@ -140,6 +176,18 @@ class InvoiceTableManager {
                         </div>`
                 },
                 {
+                    data: null,
+                    orderable: false,
+                    searchable: false,
+                    className: 'text-center',
+                    render: function (data, type, row, meta) {
+                        // Calculate the correct index based on the current page and page length
+                        const pageInfo = meta.settings._iDisplayStart;
+                        const index = pageInfo + meta.row + 1;
+                        return `<span class="row-index">${index}</span>`;
+                    }
+                },
+                {
                     data: 'uuid',
                     render: function (data) {
                         return `
@@ -150,16 +198,37 @@ class InvoiceTableManager {
                                        data-bs-placement="top" 
                                        title="${data}" 
                                        data-uuid="${data}"
-                                       style="
-                                            max-width: 100px; 
-                                              line-height: 1.2; /* Adjust line height */
-                                              display: block; /* Ensure block display */
-                                              padding: 4px 8px; /* Add some padding */
-                                              border-radius: 10px; /* Rounded corners */
-                                              font-family: monospace; /* Monospace font for better readability */
-                                              font-size: 0.875rem; /* Slightly smaller font size */
-                                              ">
-                                        ${data}
+                                         style="
+                                            max-width: 100px;
+                                            line-height: 1.2;
+                                            display: inline-flex;
+                                            align-items: center;
+                                            gap: 6px;
+                                            padding: 6px 10px;
+                                            border-radius: 6px;
+                                            font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                                            font-size: 0.813rem;
+                                            background: rgba(13, 110, 253, 0.08);
+                                            color: #0d6efd;
+                                            border: 1px solid rgba(13, 110, 253, 0.1);
+                                            transition: all 0.2s ease;
+                                            cursor: pointer;
+                                            white-space: nowrap;
+                                            text-decoration: none;
+                                            ">
+                                        <i class="bi bi-fingerprint" style="font-size: 0.875rem;"></i>
+                                        <span style="
+                                            max-width: 80px;
+                                            overflow: hidden;
+                                            text-overflow: ellipsis;
+                                            display: inline-block;
+                                        ">${data}</span>
+                                        <i class="bi bi-clipboard" style="
+                                            font-size: 0.875rem;
+                                            opacity: 0.6;
+                                            margin-left: auto;
+                                            transition: opacity 0.2s ease;
+                                        "></i>
                                     </a>
                                 </div>
                             </div>`;
@@ -170,7 +239,7 @@ class InvoiceTableManager {
                     render: function (data) {
                         return `
                             <div class="flex flex-col">
-                                <div class="overflow-hidden text-ellipsis flex items-center gap-2">
+                                <div class="overflow-hidden text-ellipsis flex gap-2">
                                     <a href="#" 
                                        class="inbound-badge-status copy-longId" 
                                        data-bs-toggle="tooltip" 
@@ -178,15 +247,36 @@ class InvoiceTableManager {
                                        title="${data || 'N/A'}" 
                                        data-longId="${data || ''}"
                                        style="
-                                              max-width: 200px; 
-                                              line-height: 1.2; 
-                                              display: block; 
-                                              padding: 4px 8px; 
-                                              border-radius: 10px;
-                                              font-family: monospace;
-                                              font-size: 0.875rem; 
-                                              ">
-                                        ${data || 'N/A'} 
+                                            max-width: 180px;
+                                            line-height: 1.2;
+                                            display: inline-flex;
+                                            align-items: center;
+                                            gap: 6px;
+                                            padding: 6px 10px;
+                                            border-radius: 6px;
+                                            font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                                            font-size: 0.813rem;
+                                            background: rgba(25, 135, 84, 0.08);
+                                            color: #198754;
+                                            border: 1px solid rgba(25, 135, 84, 0.1);
+                                            transition: all 0.2s ease;
+                                            cursor: pointer;
+                                            white-space: nowrap;
+                                            text-decoration: none;
+                                            ">
+                                        <i class="bi bi-hash" style="font-size: 0.875rem;"></i>
+                                        <span style="
+                                            max-width: 160px;
+                                            overflow: hidden;
+                                            text-overflow: ellipsis;
+                                            display: inline-block;
+                                        ">${data || 'N/A'}</span>
+                                        <i class="bi bi-clipboard" style="
+                                            font-size: 0.875rem;
+                                            opacity: 0.6;
+                                            margin-left: auto;
+                                            transition: opacity 0.2s ease;
+                                        "></i>
                                     </a>
                                 </div>
                             </div>`;
@@ -196,7 +286,6 @@ class InvoiceTableManager {
                     data: 'internalId',
                     title: 'INTERNAL ID',
                     className: 'text-nowrap',
-        
                     render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                 },
                 {
@@ -212,17 +301,8 @@ class InvoiceTableManager {
                 {
                     data: null,
                     className: '',
-                    title: 'ISSUE DATE',
-                    render: function (data, type, row) {
-                        return this.renderDateInfo(row.dateTimeIssued);
-                    }.bind(this)
-                },
-                {
-                    data: null,
-                    title: 'RECEIVED DATE',
-                    render: function (data, type, row) {
-                        return this.renderDateInfo(row.dateTimeReceived);
-                    }.bind(this)
+                    title: 'DATE INFO',
+                    render: (data, type, row) => this.renderDateInfo(row.dateTimeIssued, row.dateTimeReceived, row)
                 },
                 {
                     data: 'status',
@@ -327,14 +407,15 @@ class InvoiceTableManager {
             scrollCollapse: true,
             autoWidth: false,
             pageLength: 10,
-            dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>><"custom-filter-row"<"filter-container">>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+            order: [[5, 'desc']], // Order by date column descending
+            dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
             language: {
                 search: '',
-                searchPlaceholder: 'Search...',
-                lengthMenu: 'Show _MENU_ entries',
+                searchPlaceholder: 'Search in records...',
+                lengthMenu: '<i class="bi bi-list"></i> _MENU_',
                 info: 'Showing _START_ to _END_ of _TOTAL_ entries',
-                infoEmpty: 'Showing 0 to 0 of 0 entries',
-                infoFiltered: '(filtered from _MAX_ total entries)',
+                infoEmpty: 'No records available',
+                infoFiltered: '(filtered from _MAX_ total records)',
                 paginate: {
                     first: '<i class="bi bi-chevron-double-left"></i>',
                     previous: '<i class="bi bi-chevron-left"></i>',
@@ -349,11 +430,18 @@ class InvoiceTableManager {
                     }
                 }
             },
-            drawCallback: (settings) => {
-                // Only update totals if this is not the first draw
+            drawCallback: function(settings) {
+                // Use the stored reference 'self' to access the table
                 if (settings._iDisplayLength !== undefined) {
-                    this.updateCardTotals();
+                    self.updateCardTotals();
                 }
+
+                // Update row indexes when table is redrawn
+                const table = $(this).DataTable();
+                $(table.table().node()).find('tbody tr').each(function(index) {
+                    const pageInfo = settings._iDisplayStart;
+                    $(this).find('.row-index').text(pageInfo + index + 1);
+                });
             },
             initComplete: (settings, json) => {
                 // Update totals once table is fully initialized
@@ -364,7 +452,6 @@ class InvoiceTableManager {
             }
         });
 
-        // Assign the DataTable instance to the global variable
         window.inboundDataTable = this.table;
 
         this.initializeTableStyles();
@@ -373,78 +460,7 @@ class InvoiceTableManager {
         this.addExportButton();
         this.initializeTooltipsAndCopy();
 
-        // Add spinning animation CSS
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes spin {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
-            }
-            .spin {
-                animation: spin 1s linear infinite;
-                display: inline-block;
-            }
-            
-            /* Filter styling */
-            .custom-filter-row {
-                margin-bottom: 15px;
-                display: flex;
-                flex-wrap: wrap;
-                gap: 10px;
-            }
-            
-            .filter-container {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 10px;
-                width: 100%;
-            }
-            
-            .filter-group {
-                display: flex;
-                align-items: center;
-                margin-right: 15px;
-            }
-            
-            .filter-label {
-                margin-right: 8px;
-                font-weight: 500;
-                font-size: 0.85rem;
-            }
-            
-            .filter-select {
-                padding: 4px 8px;
-                border-radius: 4px;
-                border: 1px solid #ced4da;
-                background-color: #fff;
-                font-size: 0.85rem;
-                min-width: 120px;
-            }
-            
-            .filter-select:focus {
-                outline: none;
-                border-color: #86b7fe;
-                box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-            }
-            
-            .filter-reset {
-                padding: 4px 8px;
-                border-radius: 4px;
-                background-color: #f8f9fa;
-                border: 1px solid #ced4da;
-                font-size: 0.85rem;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                transition: all 0.2s;
-            }
-            
-            .filter-reset:hover {
-                background-color: #e9ecef;
-            }
-        `;
-        document.head.appendChild(style);
+        
 
         // Add refresh button with smart refresh logic
         const refreshButton = $(`
@@ -473,7 +489,13 @@ class InvoiceTableManager {
                         icon: 'info',
                         showCancelButton: true,
                         confirmButtonText: 'Yes, refresh anyway',
-                        cancelButtonText: 'No, keep current data'
+                        cancelButtonText: 'No, keep current data',
+                        confirmButtonColor: '#1e40af',
+                        cancelButtonColor: '#dc3545',
+                        customClass: {
+                            confirmButton: 'outbound-action-btn.submit',
+                            cancelButton: 'outbound-action-btn.cancel'
+                        }
                     });
 
                     if (!result.isConfirmed) {
@@ -561,9 +583,8 @@ class InvoiceTableManager {
         });
     }
 
-    // Add this new method to handle table styles initialization
+      
     initializeTableStyles() {
-        // Add custom search styling
         $('.dataTables_filter input').addClass('form-control form-control-sm');
         $('.dataTables_length select').addClass('form-select form-select-sm');
     }
@@ -575,16 +596,47 @@ class InvoiceTableManager {
         });
     }
 
-    cleanup() {
-        // Cleanup function to be called when page is unloaded
-        if (this.table) {
-            this.table.destroy();
-        }
-    }
 
     renderSource(data) {
         if (!data) return this.createSourceBadge('LHDN');
         return this.createSourceBadge(data);
+    }
+
+    
+    renderDateInfo(issueDate, receivedDate, row) {
+        const issueFormatted = issueDate ? this.formatDate(issueDate) : null;
+        const receivedFormatted = receivedDate ? this.formatDate(receivedDate) : null;      
+  
+     
+        return `
+            <div class="date-info"> 
+                ${issueFormatted ? `
+                    <div class="date-row" 
+                         data-bs-toggle="tooltip" 
+                         data-bs-placement="top" 
+                         title="Date and time when document was issued for submission to LHDN">
+                        <i class="bi bi-check-circle me-1 text-primary"></i>
+                        <span class="date-value">
+                            <div>
+                                <span class="text-primary mt-5">Date Issued:</span> ${issueFormatted}
+                            </div>
+                        </span>
+                    </div>
+                ` : ''}
+                ${receivedFormatted ? `
+                    <div class="date-row" 
+                         data-bs-toggle="tooltip" 
+                         data-bs-placement="top" 
+                         title="Date and time when document was received from LHDN">
+                        <i class="bi bi-check-circle me-1 text-success"></i>
+                        <span class="date-value">
+                            <div>
+                                <span class="text-success">Date Received:</span> ${receivedFormatted}
+                            </div>
+                        </span>
+                    </div>
+                ` : ''}
+            </div>`;
     }
 
     renderInvoiceNumber(data, type, row) {
@@ -697,58 +749,13 @@ class InvoiceTableManager {
             <div class="cell-group">
                 <div class="cell-main">
                     <i class="bi bi-building me-1"></i>
-                    <span>${data}</span>
+                    <span class="supplier-text">${data}</span>
                 </div>
                 <div class="cell-sub">
                     <i class="bi bi-card-text me-1"></i>
                     <span class="reg-text">Company Name</span>
                 </div>
             </div>`;
-    }
-
-    renderDateInfo(dateString) {
-        if (!dateString) return '<span class="text-muted">N/A</span>';
-
-        const date = new Date(dateString);
-
-        // Format date parts
-        const day = date.getDate().toString().padStart(2, '0');
-        const month = date.toLocaleString('en-US', { month: 'short' });
-        const year = date.getFullYear();
-        const time = date.toLocaleString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-        });
-
-        return `
-            <div class="date-info-wrapper" style="
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-            ">
-                <div class="date-main" style="
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    color: #2c3345;
-                    font-weight: 500;
-                ">
-                    <i class="bi bi-calendar3 text-primary"></i>
-                    <span>${day} ${month} ${year}</span>
-                </div>
-                <div class="time-info" style="
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    color: #6c757d;
-                    font-size: 0.85em;
-                ">
-                    <i class="bi bi-clock text-secondary"></i>
-                    <span>${time}</span>
-                </div>
-            </div>
-        `;
     }
 
     // Helper methods
@@ -1050,129 +1057,110 @@ class InvoiceTableManager {
     }
 
     initializeTooltipsAndCopy() {
-        // Initialize tooltips for new elements
-        const initTooltips = () => {
-            // First, dispose any existing tooltips
-            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-            tooltipTriggerList.forEach(element => {
+        const copyToClipboard = async (text, element) => {
+            try {
+                if (!text || text === 'N/A') {
+                    throw new Error('No valid text to copy');
+                }
+
+                // Create temporary textarea
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+
+                // Try to copy using document.execCommand first (more compatible)
+                let success = false;
+                try {
+                    success = document.execCommand('copy');
+                } catch (err) {
+                    success = false;
+                }
+
+                // If execCommand fails, try clipboard API
+                if (!success && navigator.clipboard) {
+                    await navigator.clipboard.writeText(text);
+                    success = true;
+                }
+
+                // Clean up textarea
+                document.body.removeChild(textarea);
+
+                if (!success) {
+                    throw new Error('Copy operation failed');
+                }
+
+                // Visual feedback
+                const clipboardIcon = element.querySelector('.bi-clipboard');
+                if (clipboardIcon) {
+                    clipboardIcon.classList.remove('bi-clipboard');
+                    clipboardIcon.classList.add('bi-check2');
+                    clipboardIcon.style.color = '#198754';
+                    clipboardIcon.style.opacity = '1';
+                }
+
+                // Update tooltip
                 const tooltip = bootstrap.Tooltip.getInstance(element);
                 if (tooltip) {
                     tooltip.dispose();
                 }
-            });
-    
-            // Initialize new tooltips
-            tooltipTriggerList.forEach(tooltipTriggerEl => {
-                new bootstrap.Tooltip(tooltipTriggerEl, {
-                    trigger: 'hover',
-                    container: 'body'
-                });
-            });
+                element.setAttribute('data-bs-original-title', 'Copied!');
+                new bootstrap.Tooltip(element, { trigger: 'manual' }).show();
+
+                // Reset after 1.5 seconds
+                setTimeout(() => {
+                    if (clipboardIcon) {
+                        clipboardIcon.classList.remove('bi-check2');
+                        clipboardIcon.classList.add('bi-clipboard');
+                        clipboardIcon.style.color = '';
+                        clipboardIcon.style.opacity = '0.6';
+                    }
+                    
+                    const currentTooltip = bootstrap.Tooltip.getInstance(element);
+                    if (currentTooltip) {
+                        currentTooltip.dispose();
+                    }
+                    element.setAttribute('data-bs-original-title', 'Click to copy');
+                    new bootstrap.Tooltip(element);
+                }, 1500);
+
+                // Show success toast with specific message based on what was copied
+                const itemType = element.classList.contains('copy-uuid') ? 'UUID' : 'Long ID';
+                ToastManager.show(`${itemType} copied to clipboard!`, 'success');
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                const itemType = element.classList.contains('copy-uuid') ? 'UUID' : 'Long ID';
+                ToastManager.show(`Failed to copy ${itemType}`, 'error');
+            }
         };
-    
-        // Initialize tooltips on first load
+
+        // Initialize tooltips
+        const initTooltips = () => {
+            $('[data-bs-toggle="tooltip"]').tooltip('dispose').tooltip();
+        };
+
+        // Initialize tooltips on load
         initTooltips();
-    
+
         // Reinitialize tooltips after table draw
-        this.table.on('draw', () => {
-            initTooltips();
+        this.table.on('draw', initTooltips);
+
+        // Handle UUID copy
+        $(document).on('click', '.copy-uuid', function(e) {
+            e.preventDefault();
+            const uuid = $(this).data('uuid');
+            copyToClipboard(uuid, this);
         });
-    
+
         // Handle longId copy
-        $(document).on('click', '.copy-longId', async (e) => {
+        $(document).on('click', '.copy-longId', function(e) {
             e.preventDefault();
-            const element = e.currentTarget;
-            const longId = element.getAttribute('data-longid');
-    
-            if (!longId) {
-                console.error('LongId not found:', element);
-                ToastManager.show('Unable to copy: LongId not found', 'error');
-                return;
-            }
-    
-            try {
-                await navigator.clipboard.writeText(longId);
-                
-                // Get tooltip instance and update content temporarily
-                const tooltip = bootstrap.Tooltip.getInstance(element);
-                if (tooltip) {
-                    const originalTitle = element.getAttribute('title');
-                    element.setAttribute('title', 'Copied!');
-                    tooltip.dispose();
-                    new bootstrap.Tooltip(element, {
-                        title: 'Copied!',
-                        trigger: 'manual'
-                    }).show();
-    
-                    // Reset tooltip after 1 second
-                    setTimeout(() => {
-                        const currentTooltip = bootstrap.Tooltip.getInstance(element);
-                        if (currentTooltip) {
-                            currentTooltip.dispose();
-                        }
-                        element.setAttribute('title', originalTitle);
-                        new bootstrap.Tooltip(element, {
-                            title: originalTitle,
-                            trigger: 'hover'
-                        });
-                    }, 1000);
-                }
-    
-                ToastManager.show('LONGID copied to clipboard!', 'success');
-            } catch (err) {
-                console.error('Failed to copy:', err);
-                ToastManager.show('Failed to copy LONGID', 'error');
-            }
-        });
-    
-        // Handle UUID copy (similar enhancement)
-        $(document).on('click', '.copy-uuid', async (e) => {
-            e.preventDefault();
-            const element = e.currentTarget;
-            const uuid = element.getAttribute('data-uuid');
-    
-            if (!uuid) {
-                console.error('UUID not found:', element);
-                ToastManager.show('Unable to copy: UUID not found', 'error');
-                return;
-            }
-    
-            try {
-                await navigator.clipboard.writeText(uuid);
-                
-                // Get tooltip instance and update content temporarily
-                const tooltip = bootstrap.Tooltip.getInstance(element);
-                if (tooltip) {
-                    const originalTitle = element.getAttribute('title');
-                    element.setAttribute('title', 'Copied!');
-                    tooltip.dispose();
-                    new bootstrap.Tooltip(element, {
-                        title: 'Copied!',
-                        trigger: 'manual'
-                    }).show();
-    
-                    // Reset tooltip after 1 second
-                    setTimeout(() => {
-                        const currentTooltip = bootstrap.Tooltip.getInstance(element);
-                        if (currentTooltip) {
-                            currentTooltip.dispose();
-                        }
-                        element.setAttribute('title', originalTitle);
-                        new bootstrap.Tooltip(element, {
-                            title: originalTitle,
-                            trigger: 'hover'
-                        });
-                    }, 1000);
-                }
-    
-                ToastManager.show('UUID copied to clipboard!', 'success');
-            } catch (err) {
-                console.error('Failed to copy:', err);
-                ToastManager.show('Failed to copy UUID', 'error');
-            }
+            const longId = $(this).data('longid');
+            copyToClipboard(longId, this);
         });
     }
-
 
     // Add new function to check data freshness
     checkDataFreshness() {
@@ -1465,34 +1453,21 @@ class InvoiceTableManager {
         // Redraw the table with no filters
         this.table.draw();
     }
+
+ 
+    refresh() {
+        this.table?.ajax.reload(null, false);
+    }
+  
+    cleanup() {
+        if (this.table) {
+            this.table.destroy();
+            this.table = null;
+        }
+    }
+  
 }
 
-const copyToClipboard = async (text, elementId) => {
-    try {
-        await navigator.clipboard.writeText(text);
-        
-        // Show success toast with a custom message
-        const customMessage = text.length > 20 ? `Copied ${text.substring(0, 20)}... to clipboard!` : `Copied ${text} to clipboard!`;
-        ToastManager.show(customMessage, 'success');
-        
-        // Update the element to show copied state
-        const element = document.getElementById(elementId);
-        const icon = element.querySelector('.copy-icon');
-        const originalHTML = icon.innerHTML;
-        
-        // Add animation class
-        element.classList.add('copy-animation');
-        icon.innerHTML = '<i class="bi bi-check-lg"></i>';
-        
-        // Reset after animation
-        setTimeout(() => {
-            element.classList.remove('copy-animation');
-            icon.innerHTML = originalHTML;
-        }, 2000);
-    } catch (err) {
-        ToastManager.show('Failed to copy text. Please try again.', 'error');
-    }
-};
 
 async function viewInvoiceDetails(uuid) {
     try {
@@ -1635,8 +1610,10 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
         totalExcludingTax: result.paymentInfo?.totalExcludingTax || 0,
         taxAmount: result.paymentInfo?.taxAmount || 0,
         irbmUniqueNo: documentInfo.uuid,
-        irbmlongId: documentInfo.longId || documentInfo.irbmlongId || 'N/A',
-        irbmURL: 'https://myinvois.hasil.gov.my/'+documentInfo.uuid+'/share/'+documentInfo.longId
+        irbmlongId: documentInfo.longId || documentInfo.irbmlongId,
+        irbmURL: 'https://myinvois.hasil.gov.my/'+documentInfo.uuid+'/share/'+documentInfo.longId,
+        uuid: documentInfo.uuid,
+        longId: documentInfo.longId
     };
 
     // Update info sections content
@@ -1712,75 +1689,11 @@ function createPaymentContent(paymentInfo) {
     const totalAmount = parseFloat(paymentInfo?.totalIncludingTax || 0);
     const subtotal = parseFloat(paymentInfo?.totalExcludingTax || 0);
     const taxAmount = parseFloat(paymentInfo?.taxAmount || 0);
+    const uuid = paymentInfo?.uuid || 'N/A';
 
     return `
         <style>
-            .custom-toast-container {
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 1070;
-            }
-            .custom-toast {
-                display: flex;
-                align-items: center;
-                padding: 12px 20px;
-                background: white;
-                border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                margin-bottom: 10px;
-                animation: slideInRight 0.1s ease-out;
-            }
-            @keyframes slideInRight {
-                from {
-                    opacity: 0;
-                    transform: translateX(100%);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
-            }
-            @keyframes fadeOut {
-                to {
-                    opacity: 0;
-                    transform: translateX(100%);
-                }
-            }
-            .custom-toast.success {
-                border-left: 4px solid #10B981;
-            }
-            .custom-toast.error {
-                border-left: 4px solid #EF4444;
-            }
-            .custom-toast-icon {
-                margin-right: 12px;
-                font-size: 20px;
-            }
-            .custom-toast-icon.success {
-                color: #10B981;
-            }
-            .custom-toast-icon.error {
-                color: #EF4444;
-            }
-       
-            .badge {
-                display: inline-flex;
-                align-items: flex-start;
-                gap: 1px;
-                padding: 8px 12px; /* Reduced padding to fit more text */
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                color: #212529;
-                line-height: 1.2; /* Improved line height for readability */
-                max-width: 100%; /* Ensure badge doesn't overflow container */
-                overflow-wrap: break-word; /* Allow words (or characters) to break at any point */
-                white-space: normal; /* Allow text to wrap to new lines */
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            }
+          
          
             .info-row {
                 display: block; /* Maintain stacked layout */
@@ -1829,6 +1742,47 @@ function createPaymentContent(paymentInfo) {
             .payment-card {
                 background-color: #f8f9fa;
             }
+            .copy-animation {
+                animation: copyPulse 0.3s ease-in-out;
+            }
+            @keyframes copyPulse {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.05); }
+                100% { transform: scale(1); }
+            }
+            .badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 8px 12px;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                color: #212529;
+                line-height: 1.2;
+                max-width: 100%;
+                overflow-wrap: break-word;
+                white-space: normal;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+                user-select: none;
+            }
+            .badge:hover {
+                background-color: #e9ecef;
+            }
+            .badge:active {
+                transform: scale(0.98);
+            }
+            .copy-icon {
+                opacity: 0.6;
+                transition: all 0.2s ease;
+                display: inline-flex;
+                align-items: center;
+            }
+            .badge:hover .copy-icon {
+                opacity: 1;
+            }
         </style>
         <div class="info-content">
             <div class="info-row highlight-row">
@@ -1847,73 +1801,23 @@ function createPaymentContent(paymentInfo) {
                 <div class="label">IRBM UNIQUE IDENTIFIER NO</div>
                 <div class="value text-align-left">
                     <span 
-                        id="uniqueId"
+                        id="${uuid}"
                         class="badge bg-light text-dark border"
-                        onclick="copyToClipboard('${paymentInfo?.irbmUniqueNo || 'N/A'}', 'uniqueId')"
-                        data-bs-toggle="tooltip"
+                        data-bs-toggle="tooltip" 
                         data-bs-placement="top"
-                        title="${paymentInfo?.irbmUniqueNo || 'N/A'}"
+                        title="Click to copy"
+                        onclick="copyToClipboard('${uuid}', '${uuid}') disabled"
+                        style="cursor: pointer;"
                     >
-                        ${paymentInfo?.irbmUniqueNo || 'N/A'}
+                        ${uuid}
                         <span class="copy-icon">
                             <i class="bi bi-clipboard"></i>
                         </span>
                     </span>
                 </div>
             </div>
-            <div class="info-row highlight-row">
-                <div class="label">IRBM LONG ID NO</div>
-                <div class="value">
-                    <span 
-                        id="longId"
-                        class="badge bg-light text-dark border"
-                        onclick="copyToClipboard('${paymentInfo?.irbmlongId || 'N/A'}', 'longId'); showToast('success', 'Copied to clipboard!')"
-                        data-bs-toggle="tooltip"
-                        data-bs-placement="top"
-                        title="${paymentInfo?.irbmlongId || 'N/A'}"
-                    >
-                        ${paymentInfo?.irbmlongId || 'N/A'}
-                        <span class="copy-icon">
-                            <i class="bi bi-clipboard"></i>
-                        </span>
-                    </span>
-                </div>
-            </div>
-<div class="info-row highlight-row">
-    <div class="label">IRBM VALIDATION LINK</div>
-    <div class="value">
-        <span 
-            id="irbmURL"
-            class="badge bg-light text-dark border"
-            onclick="showCustomAlert('${paymentInfo?.irbmURL || 'N/A'}')"
-            data-bs-toggle="tooltip"
-            data-bs-placement="top"
-            title="${paymentInfo?.irbmURL || 'N/A'}"
-        >
-            ${paymentInfo?.irbmURL || 'N/A'}
-            <span class="copy-icon">
-                <i class="bi bi-clipboard"></i>
-            </span>
-        </span>
-    </div>
-</div>
+            
 
-<!-- Custom Confirmation Box -->
-<div id="confirmationPopup" class="confirmation-popup">
-    <div class="confirmation-box">
-        <div class="popup-header">
-            <h4>Confirm Navigation</h4>
-            <span class="close-popup" onclick="closePopup()">×</span>
-        </div>
-        <div class="popup-body">
-            Are you sure you want to open this link in a new tab?
-        </div>
-        <div class="popup-footer">
-            <button class="outbound-action-btn cancel btn-sm ms-2" onclick="closePopup()">Cancel</button>
-            <button class="outbound-action-btn submit btn-sm ms-2" id="confirmButton">Yes, Open Link</button>
-        </div>
-    </div>
-</div>
 
         </div>
     `;
@@ -1936,6 +1840,112 @@ function showCustomAlert(url) {
     };
 }
 
+
+function copyToClipboard(text, elementId) {
+    // Don't copy if text is N/A
+    if (!text || text === 'N/A') {
+        ToastManager.show('No valid text to copy', 'error');
+        return;
+    }
+
+    try {
+        // Create temporary textarea
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        
+        // Make it readonly to avoid focus and virtual keyboard on mobile
+        textarea.setAttribute('readonly', '');
+        
+        // Hide the textarea
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        
+        // Append to body
+        document.body.appendChild(textarea);
+        
+        // Check if the device is iOS
+        const isIOS = navigator.userAgent.match(/ipad|iphone/i);
+        
+        if (isIOS) {
+            // Save current scroll position
+            const scrollY = window.scrollY;
+            
+            // Create selection range
+            const range = document.createRange();
+            range.selectNodeContents(textarea);
+            
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            
+            // Special handling for iOS
+            textarea.setSelectionRange(0, textarea.value.length);
+            
+            // Restore scroll position
+            window.scrollTo(0, scrollY);
+        } else {
+            // Select the text
+            textarea.select();
+        }
+        
+        // Copy the text
+        const successful = document.execCommand('copy');
+        
+        // Remove the temporary textarea
+        document.body.removeChild(textarea);
+        
+        if (successful) {
+            // Show success message
+            const customMessage = text.length > 20 ? 
+                `Copied ${text.substring(0, 20)}... to clipboard!` : 
+                `Copied ${text} to clipboard!`;
+            ToastManager.show(customMessage, 'success');
+            
+            // Update visual feedback if elementId is provided
+            if (elementId) {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    // Update icon
+                    const icon = element.querySelector('.copy-icon');
+                    if (icon) {
+                        const originalHTML = icon.innerHTML;
+                        icon.innerHTML = '<i class="bi bi-check-lg"></i>';
+                        
+                        // Add animation class
+                        element.classList.add('copy-animation');
+                        
+                        // Reset after animation
+                        setTimeout(() => {
+                            element.classList.remove('copy-animation');
+                            icon.innerHTML = originalHTML;
+                        }, 2000);
+                    }
+                    
+                    // Update tooltip
+                    const tooltip = bootstrap.Tooltip.getInstance(element);
+                    if (tooltip) {
+                        tooltip.dispose();
+                        element.setAttribute('data-bs-original-title', 'Copied!');
+                        const newTooltip = new bootstrap.Tooltip(element);
+                        newTooltip.show();
+                        
+                        // Reset tooltip after delay
+                        setTimeout(() => {
+                            newTooltip.dispose();
+                            element.setAttribute('data-bs-original-title', 'Click to copy');
+                            new bootstrap.Tooltip(element);
+                        }, 2000);
+                    }
+                }
+            }
+        } else {
+            throw new Error('Copy command failed');
+        }
+    } catch (err) {
+        console.error('Copy failed:', err);
+        ToastManager.show('Failed to copy text. Please try again.', 'error');
+    }
+};
 // Close the popup when "Cancel" or the "×" button is clicked
 function closePopup() {
     const popup = document.getElementById('confirmationPopup');
@@ -2223,36 +2233,5 @@ async function openValidationResultsModal(uuid) {
     }
 }
 
-// Cleanup on page unload
-window.addEventListener('unload', () => {
-    if (window.invoiceTable) {
-        window.invoiceTable.cleanup();
-    }
-});
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM loaded, initializing managers...');
-    try {
-        // Initialize invoice table using singleton
-        const invoiceManager = InvoiceTableManager.getInstance();
-     
-        // Initialize date/time display
-        DateTimeManager.updateDateTime();
 
-        console.log('Managers initialized successfully');
-    } catch (error) {
-        console.error('Error initializing managers:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Initialization Error',
-            text: 'Failed to initialize the application. Please refresh the page.',
-            confirmButtonText: 'Refresh',
-            showCancelButton: true,
-        }).then((result) => {
-            if (result.isConfirmed) {
-                window.location.reload();
-            }
-        });
-    }
-});
