@@ -76,7 +76,7 @@
     padding: 1rem;
     font-weight: 600;
     color: #475569;
-    font-size: 0.875rem;
+    font-size: 0.675rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     border-bottom: 2px solid #e2e8f0;
@@ -87,10 +87,10 @@
 }
 
 .outbound-table tbody td {
-    padding: 1rem;
+    padding: 0.5rem;
     vertical-align: middle;
     color: #475569;
-    font-size: 0.875rem;
+    font-size: 0.835rem;
     border-bottom: 1px solid #e2e8f0;
     white-space: normal;
     word-wrap: break-word;
@@ -1308,11 +1308,11 @@ body.swal2-shown {
     align-items: center;
 }
 
-.table-title {
-    font-size: 1.25rem;
+/* .table-title {
+    font-size: 0.5rem;
     font-weight: 600;
     color: #1e293b;
-}
+} */
 
 /* Table Controls */
 .table-controls {

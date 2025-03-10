@@ -603,7 +603,7 @@ class InvoiceTableManager {
                     if (['submitted', 'cancelled', 'rejected', 'invalid'].includes(status)) {
                         $(row).addClass('non-selectable-row');
                         // Add a tooltip to explain why the row can't be selected
-                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for bulk submission`);
+                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
                     } else {
                         $(row).addClass('selectable-row');
                     }
