@@ -88,6 +88,26 @@ class InvoiceTableManager {
             this.table = $('#invoiceTable').DataTable({
                 processing: false,
                 serverSide: false,
+                // Add default sorting by status with pending items at the top
+                order: [[8, 'asc'], [6, 'desc']], // 8 is the index of the status column, 6 is the index of the date column
+                // Add custom sorting function for status column to prioritize 'Pending' status
+                columnDefs: [
+                    {
+                        targets: 8, // Status column index
+                        type: 'string',
+                        render: function(data, type, row) {
+                            // For sorting purposes only
+                            if (type === 'sort') {
+                                // Prioritize 'Pending' status by prefixing with 'A'
+                                // Other statuses will be sorted alphabetically after pending
+                                const status = (data || 'Pending').toLowerCase();
+                                return status === 'pending' ? 'A_pending' : 'B_' + status;
+                            }
+                            // For display, use the regular render function
+                            return null; // Let the regular render function handle display
+                        }
+                    }
+                ],
                 ajax: {
                     url: '/api/outbound-files/list-all',
                     method: 'GET',
@@ -154,10 +174,17 @@ class InvoiceTableManager {
                         data: null,
                         orderable: false,
                         searchable: false,
-                        className: 'outbound-checkbox-column',
-                        defaultContent: `<div class="outbound-checkbox-header">
-                            <input type="checkbox" class="outbound-checkbox row-checkbox">
-                        </div>`
+                        render: function(data, type, row) {
+                            // Only enable checkbox for Pending status
+                            const status = (row.status || 'Pending').toLowerCase();
+                            const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
+                            const disabledAttr = disabledStatus ? 'disabled' : '';
+                            const title = disabledStatus ? `Cannot select ${status} items` : '';
+                            
+                            return `<div class="outbound-checkbox-header">
+                                <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
+                            </div>`;
+                        }
                     },
                     {
                         data: null,
@@ -227,7 +254,7 @@ class InvoiceTableManager {
                 scrollCollapse: true,
                 autoWidth: false,
                 pageLength: 10,
-                dom: '<"outbound-controls"<"outbound-length-control"l><"outbound-search-control"f>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+                dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 language: {
                     search: '',
                     searchPlaceholder: 'Search...',
@@ -244,14 +271,28 @@ class InvoiceTableManager {
                     emptyTable: this.getEmptyStateHtml(),
                     zeroRecords: this.getEmptyStateHtml('Searching for data...')
                 },
-                order: [[6, 'desc']], // Keep newest first sorting
+                order: [[8, 'asc'], [6, 'desc']], // First sort by status (pending first), then by date (newest first)
+                orderFixed: {
+                    pre: [[8, 'asc']] // Ensure status sorting is always applied first
+                },
                 drawCallback: function(settings) {
                     // Update row indexes when table is redrawn (sorting, filtering, pagination)
                     $(this).find('tbody tr').each(function(index) {
                         const pageInfo = settings._iDisplayStart;
                         $(this).find('.row-index').text(pageInfo + index + 1);
                     });
-                }
+                },
+                createdRow: (row, data, dataIndex) => {
+                    // Add a class to the row based on status
+                    const status = (data.status || 'Pending').toLowerCase();
+                    if (['submitted', 'cancelled', 'rejected', 'invalid'].includes(status)) {
+                        $(row).addClass('non-selectable-row');
+                        // Add a tooltip to explain why the row can't be selected
+                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for bulk submission`);
+                    } else {
+                        $(row).addClass('selectable-row');
+                    }
+                },
             });
 
             this.initializeFeatures();
@@ -720,31 +761,22 @@ class InvoiceTableManager {
             return time;
         }
     }   
+
     initializeSelectAll() {
         $(document).on('change', '#selectAll', (e) => {
             const isChecked = $(e.target).prop('checked');
-            $('.row-checkbox').prop('checked', isChecked);
+            // Only select checkboxes that are not disabled (Pending status)
+            $('.row-checkbox:not([disabled])').prop('checked', isChecked);
             this.updateExportButton();
         });
   
         $('#invoiceTable').on('change', '.row-checkbox', () => {
-            const totalCheckboxes = $('.row-checkbox').length;
-            const checkedCheckboxes = $('.row-checkbox:checked').length;
-            $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes);
+            // Count only checkboxes that are not disabled
+            const totalCheckboxes = $('.row-checkbox:not([disabled])').length;
+            const checkedCheckboxes = $('.row-checkbox:not([disabled]):checked').length;
+            $('#selectAll').prop('checked', totalCheckboxes === checkedCheckboxes && totalCheckboxes > 0);
             this.updateExportButton();
         });
-    }
-  
-    addExportButton() {
-        const exportBtn = $(`
-            <button id="exportSelected" class="outbound-export-btn" disabled>
-                <i class="bi bi-download"></i>Export Selected
-                <span class="selected-count">(0)</span>
-            </button>
-        `);
-        
-        $('.outbound-length-control').append(exportBtn);
-        $('#exportSelected').on('click', () => this.exportSelectedRecords());
     }
   
     initializeTooltips() {
@@ -775,12 +807,104 @@ class InvoiceTableManager {
             setTimeout(initTooltips, 100); // Small delay to ensure DOM is updated
         });
     }
+    
   
     updateExportButton() {
-        const selectedCount = $('.row-checkbox:checked').length;
+        // Count checked checkboxes instead of using DataTables selection
+        // Only count checkboxes that are not disabled (Pending status)
+        const selectedRows = $('.row-checkbox:not([disabled]):checked').length;
+        console.log('Selected rows by checkbox:', selectedRows);
+        
         const exportBtn = $('#exportSelected');
-        exportBtn.prop('disabled', selectedCount === 0);
-        exportBtn.find('.selected-count').text(`(${selectedCount})`);
+        const consolidatedBtn = $('#submitConsolidated');
+        
+        exportBtn.prop('disabled', selectedRows === 0);
+        consolidatedBtn.prop('disabled', selectedRows === 0);
+        exportBtn.find('.selected-count').text(`(${selectedRows})`);
+        consolidatedBtn.find('.selected-count-bulk').text(`(${selectedRows})`);
+    }
+    
+    async exportSelectedRecords() {
+        try {
+            const selectedRows = [];
+            // Only get rows with enabled checkboxes (Pending status)
+            $('.row-checkbox:not([disabled]):checked').each((_, checkbox) => {
+                const rowData = this.table.row($(checkbox).closest('tr')).data();
+                selectedRows.push(rowData);
+            });
+
+            if (selectedRows.length === 0) {
+                ToastManager.show('Please select at least one pending record to export', 'error');
+                return;
+            }
+
+            // Show loading state
+            const exportBtn = $('#exportSelected');
+            const originalHtml = exportBtn.html();
+            exportBtn.prop('disabled', true);
+            exportBtn.html('<i class="bi bi-arrow-repeat spin me-1"></i>Exporting...');
+
+            // Prepare export data
+            const exportData = selectedRows.map(row => ({
+                UUID: row.uuid,
+                'File Name': row.fileName,
+                Type: row.typeName,
+                Company: row.company,
+                Supplier: row.supplierName,
+                Buyer: row.buyerName,
+                'Issue Date': this.formatIssueDate(row.issueDate),
+                'Issue Time': this.formatIssueTime(row.issueTime),
+                'Submitted Date': row.submittedDate ? new Date(row.submittedDate).toLocaleString() : '',
+                Status: row.status,
+                'Total Amount': `RM ${parseFloat(row.totalAmount).toFixed(2)}`
+            }));
+
+            // Convert to CSV
+            const csvContent = this.convertToCSV(exportData);
+
+            // Create and trigger download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `outbound_invoices_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Reset button state
+            exportBtn.prop('disabled', false);
+            exportBtn.html(originalHtml);
+
+            // Show success message
+            ToastManager.show(`Successfully exported ${selectedRows.length} records`, 'success');
+
+        } catch (error) {
+            console.error('Export error:', error);
+            ToastManager.show('Failed to export selected records', 'error');
+        }
+    }
+    
+    // Helper method to convert data to CSV
+    convertToCSV(data) {
+        if (data.length === 0) return '';
+        
+        const headers = Object.keys(data[0]);
+        const csvRows = [];
+        
+        // Add headers
+        csvRows.push(headers.join(','));
+        
+        // Add rows
+        for (const row of data) {
+            const values = headers.map(header => {
+                const value = row[header] || '';
+                // Escape quotes and wrap in quotes if contains comma or newline
+                return `"${String(value).replace(/"/g, '""')}"`;
+            });
+            csvRows.push(values.join(','));
+        }
+        
+        return csvRows.join('\n');
     }
   
     updateCardTotals() {
@@ -929,10 +1053,44 @@ class InvoiceTableManager {
         this.initializeTooltips();
         this.initializeEventListeners();
         this.initializeSelectAll();
-        this.addExportButton();
     }
-  
+    
+
     initializeTableStyles() {
+        // Add custom styles to the table
+        const style = document.createElement('style');
+        style.textContent = `
+            #invoiceTable_wrapper .dataTables_length {
+                margin-bottom: 15px;
+            }
+            #invoiceTable th, #invoiceTable td {
+                padding: 12px 15px;
+                vertical-align: middle;
+            }
+            #invoiceTable tbody tr {
+                transition: background-color 0.2s;
+            }
+            #invoiceTable tbody tr:hover {
+                background-color: rgba(0, 123, 255, 0.05);
+            }
+            .non-selectable-row {
+                opacity: 0.7;
+                background-color: rgba(0, 0, 0, 0.03);
+            }
+            .non-selectable-row:hover {
+                cursor: not-allowed;
+            }
+            .selectable-row {
+                cursor: pointer;
+            }
+            .outbound-checkbox-column {
+                width: 40px;
+                text-align: center;
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Apply Bootstrap classes to DataTables elements
         $('.dataTables_filter input').addClass('form-control form-control-sm');
         $('.dataTables_length select').addClass('form-select form-select-sm');
     }
@@ -954,7 +1112,7 @@ class InvoiceTableManager {
                 <div class="modal-header">
                 <div class="icon primary">
                     <i class="fas fa-file-earmark-text"></i>
-                    </div>
+                </div>
                 <div class="title">${title}</div>
                 <div class="subtitle">${message}</div>
                 </div>
@@ -1018,7 +1176,7 @@ class InvoiceTableManager {
                     <button class="btn btn-primary">
                         <i class="fas fa-file-excel"></i>
                         Open Excel File
-                    </button>
+                </button>
                     <button class="btn btn-light">
                         I Understand
                     </button>
@@ -1272,7 +1430,7 @@ if (helpButton) {
                             <li>Accepted formats: .xls, .xlsx</li>
                             <li>Maximum file size: 10MB</li>
                             <li>File naming format: {fileName}.xls</li>
-                        </ul>
+                </ul>
                     </div>
 
                     <div class="space-y-3">
@@ -3270,7 +3428,6 @@ async function showSystemErrorModal(error) {
 
         return error.message || statusMessages.default;
     }
-
     const content = `
         <div class="content-card">
             <div class="content-header">
@@ -3517,3 +3674,171 @@ document.addEventListener('DOMContentLoaded', () => {
     const manager = InvoiceTableManager.getInstance();
     DateTimeManager.updateDateTime();
 });
+
+class ConsolidatedSubmissionManager {
+    constructor() {
+        this.selectedDocs = new Set();
+        this.initializeEventListeners();
+    }
+
+    initializeEventListeners() {
+        // Handle consolidated submit button click
+        document.getElementById('submitConsolidatedBtn').addEventListener('click', () => {
+            this.handleConsolidatedSubmit();
+        });
+
+        // Update selected docs list when checkboxes change
+        // Only listen to enabled checkboxes (Pending status)
+        document.addEventListener('change', (e) => {
+            if (e.target.matches('.row-checkbox:not([disabled])') || e.target.id === 'selectAll') {
+                this.updateSelectedDocs();
+            }
+        });
+    }
+
+    updateSelectedDocs() {
+        // Only get rows with enabled checkboxes (Pending status)
+        const checkboxes = document.querySelectorAll('.row-checkbox:not([disabled]):checked:not(#selectAll)');
+        this.selectedDocs.clear();
+        
+        checkboxes.forEach(checkbox => {
+            const row = checkbox.closest('tr');
+            const rowData = InvoiceTableManager.getInstance().table.row(row).data();
+            if (rowData) {
+                // Double-check that the status is Pending
+                if (rowData.status && rowData.status.toLowerCase() === 'pending') {
+                    this.selectedDocs.add({
+                        fileName: rowData.fileName,
+                        type: rowData.type,
+                        company: rowData.company,
+                        date: rowData.date
+                    });
+                }
+            }
+        });
+
+        this.updateSelectedDocsList();
+        this.updateSubmitButton();
+    }
+
+    updateSelectedDocsList() {
+        const listContainer = $('#selectedDocsList');
+        listContainer.empty();
+
+        if (this.selectedDocs.size === 0) {
+            return; // Empty state is handled by CSS
+        }
+
+        this.selectedDocs.forEach(doc => {
+            const docItem = $(`
+                <div class="doc-item">
+                    <i class="bi bi-file-earmark-text text-primary"></i>
+                    <span class="flex-grow-1">${doc.fileName}</span>
+                    <span class="company-badge">${doc.company || 'PXC Branch'}</span>
+            </div>
+        `);
+            listContainer.append(docItem);
+        });
+    }
+
+    updateSubmitButton() {
+        const submitBtn = document.getElementById('submitConsolidatedBtn');
+        submitBtn.disabled = this.selectedDocs.size === 0;
+    }
+
+    async handleConsolidatedSubmit() {
+        const version = document.getElementById('lhdnVersion').value;
+        const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
+        const submissionProgress = document.getElementById('submissionProgress');
+
+        try {
+            progressModal.show();
+            submissionProgress.innerHTML = '<div class="alert alert-info">Starting consolidated submission...</div>';
+
+            let successCount = 0;
+            let failureCount = 0;
+            const results = [];
+
+            for (const doc of this.selectedDocs) {
+                try {
+                    submissionProgress.innerHTML += `
+                        <div class="alert alert-info">
+                            Processing ${doc.fileName}...
+                        </div>
+                    `;
+
+                    // First validate the document
+                    const validationResult = await validateExcelFile(doc.fileName, doc.type, doc.company, doc.date);
+                    
+                    if (validationResult.success) {
+                        // If validation successful, submit to LHDN
+                        const submitResult = await submitToLHDN(doc.fileName, doc.type, doc.company, doc.date, version);
+                        
+                        if (submitResult.success) {
+                            successCount++;
+                            results.push({
+                                fileName: doc.fileName,
+                                status: 'success',
+                                message: 'Successfully submitted'
+                            });
+                        } else {
+                            failureCount++;
+                            results.push({
+                                fileName: doc.fileName,
+                                status: 'error',
+                                message: submitResult.error || 'Submission failed'
+                            });
+                        }
+                    } else {
+                        failureCount++;
+                        results.push({
+                            fileName: doc.fileName,
+                            status: 'error',
+                            message: 'Validation failed'
+                        });
+                    }
+                } catch (error) {
+                    failureCount++;
+                    results.push({
+                        fileName: doc.fileName,
+                        status: 'error',
+                        message: error.message
+                    });
+                }
+            }
+
+            // Show final results
+            submissionProgress.innerHTML = `
+                <div class="alert ${successCount === this.selectedDocs.size ? 'alert-success' : 'alert-warning'}">
+                    <h6>Submission Complete</h6>
+                    <p>Successfully submitted: ${successCount}</p>
+                    <p>Failed: ${failureCount}</p>
+                </div>
+                <div class="results-list">
+                    ${results.map(result => `
+                        <div class="alert alert-${result.status === 'success' ? 'success' : 'danger'}">
+                            <strong>${result.fileName}</strong>: ${result.message}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            // Refresh the table after submission
+            InvoiceTableManager.getInstance().refresh();
+
+        } catch (error) {
+            submissionProgress.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Submission Failed</h6>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+    }
+}
+
+// Initialize the consolidated submission manager when the document is ready
+document.addEventListener('DOMContentLoaded', () => {
+    new ConsolidatedSubmissionManager();
+});
+

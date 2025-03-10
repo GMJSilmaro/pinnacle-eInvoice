@@ -7,17 +7,574 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
 <link href="/assets/css/components/outbound-invoice-modal.css" rel="stylesheet">
+<link href="/assets/css/components/consolidated-submit.css" rel="stylesheet">
 
 <link href="/assets/css/pages/outbound/card.css" rel="stylesheet">
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
+
+<style>
+    /* Tutorial Modal Styles */
+    .tutorial-content {
+        position: relative;
+    }
+    
+    .tutorial-progress {
+        padding: 15px 15px 5px;
+        background-color: #f8f9fa;
+    }
+    
+    .step-indicators {
+        margin-top: 10px;
+    }
+    
+    .step-dot {
+        width: 12px;
+        height: 12px;
+        background-color: #dee2e6;
+        border-radius: 50%;
+        display: inline-block;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .step-dot.active {
+        background-color: #0d6efd;
+        transform: scale(1.2);
+    }
+    
+    .tutorial-step {
+        display: none;
+    }
+    
+    .tutorial-step.active {
+        display: block;
+    }
+    
+    .step-content {
+        min-height: 300px;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+    
+    .step-image img {
+        max-height: 200px;
+        object-fit: contain;
+        border: 1px solid #dee2e6;
+    }
+    
+    /* Highlight elements during tutorial */
+    .tutorial-highlight {
+        position: relative;
+        z-index: 1060;
+        box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.5), 0 0 15px rgba(0, 0, 0, 0.3) !important;
+        border-radius: 4px;
+        transition: box-shadow 0.3s ease;
+    }
+    
+    /* Tutorial tip styles */
+    .tutorial-tip {
+        background-color: #e7f5ff;
+        border-left: 4px solid #0d6efd;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+    }
+    
+    .tutorial-note {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+    }
+    
+    /* Modal header styling */
+    #tutorialModal .modal-header {
+        background: linear-gradient(135deg, #0d6efd, #0a58ca);
+    }
+    
+    /* Progress bar styling */
+    #tutorialModal .progress {
+        height: 8px;
+        border-radius: 4px;
+        background-color: #e9ecef;
+    }
+    
+    #tutorialModal .progress-bar {
+        background: linear-gradient(90deg, #0d6efd, #0a58ca);
+        transition: width 0.5s ease;
+    }
+
+    /* Guided Tour Styles */
+    .guided-tour-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.2) !important;
+        backdrop-filter: blur(1px);
+        z-index: 1050;
+        display: none;
+    }
+    
+    /* Prevent scrolling during tutorial */
+    body.tour-active {
+        overflow: hidden !important;
+        position: fixed;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .guided-tour-tooltip {
+        position: fixed;
+        width: min(360px, 90vw);
+        background-color: #fff;
+        border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        z-index: 1060;
+        display: none;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        --arrow-position: 50%;
+        max-height: min(600px, 90vh);
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* Header styling */
+    .tooltip-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #eee;
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        flex-shrink: 0;
+    }
+    
+    .tooltip-step-indicator {
+        font-size: 14px;
+        font-weight: 600;
+        color: #0d6efd;
+        background-color: rgba(13, 110, 253, 0.1);
+        padding: 4px 12px;
+        border-radius: 20px;
+    }
+    
+    .tooltip-close-btn {
+        background: none;
+        border: none;
+        color: #6c757d;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        transition: all 0.2s;
+    }
+    
+    .tooltip-close-btn:hover {
+        background-color: rgba(108, 117, 125, 0.1);
+        color: #495057;
+    }
+    
+    /* Body styling */
+    .tooltip-body {
+        padding: 20px;
+        overflow-y: auto;
+        flex-grow: 1;
+        min-height: 100px;
+        max-height: calc(90vh - 180px);
+    }
+    
+    .tooltip-title {
+        font-size: clamp(16px, 4vw, 18px);
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 16px;
+    }
+    
+    .tooltip-content {
+        font-size: clamp(13px, 3.5vw, 14px);
+        line-height: 1.6;
+        color: #495057;
+    }
+    
+    .tooltip-content p {
+        margin-bottom: 12px;
+    }
+    
+    .tooltip-content ul, .tooltip-content ol {
+        padding-left: 20px;
+        margin-bottom: 12px;
+    }
+    
+    .tooltip-content li {
+        margin-bottom: 6px;
+    }
+    
+    /* Progress styling */
+    .tooltip-progress {
+        padding: 12px 20px;
+        background: #fff;
+        border-top: 1px solid #eee;
+        position: sticky;
+        bottom: 56px;
+        z-index: 3;
+        flex-shrink: 0;
+    }
+    
+    .tooltip-progress .progress {
+        height: 4px;
+        border-radius: 2px;
+        background-color: #e9ecef;
+        margin-bottom: 12px;
+        overflow: hidden;
+    }
+    
+    .tooltip-progress .progress-bar {
+        background: linear-gradient(90deg, #0d6efd, #6610f2);
+        transition: width 0.5s ease;
+    }
+    
+    .step-dot {
+        width: 8px;
+        height: 8px;
+        background-color: #dee2e6;
+        border-radius: 50%;
+        display: inline-block;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    
+    .step-dot.active {
+        background-color: #0d6efd;
+        transform: scale(1.3);
+    }
+    
+    /* Footer styling */
+    .tooltip-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 20px;
+        background-color: #f8f9fa;
+        border-top: 1px solid #eee;
+        position: sticky;
+        bottom: 0;
+        z-index: 3;
+        flex-shrink: 0;
+        height: 56px;
+    }
+    
+    .tooltip-btn {
+        border: none;
+        background: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: clamp(12px, 3.5vw, 14px);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+        min-width: 70px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+    }
+    
+    .tooltip-btn-prev {
+        color: #6c757d;
+        background-color: #f8f9fa;
+    }
+    
+    .tooltip-btn-prev:hover:not(:disabled) {
+        background-color: #e9ecef;
+    }
+    
+    .tooltip-btn-prev:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .tooltip-btn-skip {
+        color: #dc3545;
+        background-color: #fff;
+        border: 1px solid #dc3545;
+    }
+    
+    .tooltip-btn-skip:hover {
+        background-color: #dc3545;
+        color: #fff;
+    }
+    
+    .tooltip-btn-next {
+        color: #fff;
+        background-color: #0d6efd;
+        border-radius: 8px;
+        padding: 8px 20px;
+        min-width: 80px;
+    }
+    
+    .tooltip-btn-next:hover {
+        background-color: #0b5ed7;
+    }
+    
+    /* Highlight elements during tutorial */
+    .tour-highlight {
+        position: relative !important;
+        z-index: 1055 !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.4),
+                   0 0 15px 5px rgba(13, 110, 253, 0.2) !important;
+        border-radius: 4px !important;
+        animation: glow-highlight 2s infinite !important;
+        isolation: isolate;
+    }
+    
+    /* Row highlighting for table rows */
+    .tour-highlight-row {
+        position: relative !important;
+        z-index: 1054 !important;
+        background-color: rgba(13, 110, 253, 0.04) !important;
+    }
+    
+    /* Special handling for table cells */
+    .outbound-table td.tour-highlight,
+    .outbound-table th.tour-highlight {
+        position: relative !important;
+        z-index: 1056 !important;
+        background-color: rgba(255, 255, 255, 0.98) !important;
+        animation: glow-highlight 2s infinite;
+    }
+    
+    /* Special handling for action buttons */
+    .tour-highlight .outbound-action-btn {
+        position: relative !important;
+        z-index: 1057 !important;
+        animation: glow-highlight 2s infinite;
+    }
+    
+    /* Special handling for checkboxes */
+    .tour-highlight .outbound-checkbox {
+        position: relative !important;
+        z-index: 1057 !important;
+        animation: glow-highlight 2s infinite;
+    }
+    
+    /* Table container styles */
+    .table-container-wrapper {
+        position: relative;
+        z-index: 1;
+        background: #fff;
+    }
+    
+    /* Table styles during tour */
+    .outbound-table {
+        position: relative;
+        z-index: 1;
+    }
+    
+    .outbound-table td,
+    .outbound-table th {
+        position: relative;
+    }
+    
+    /* Make sure highlighted elements are clickable */
+    .tour-highlight {
+        pointer-events: auto !important;
+    }
+    
+    /* Ensure tooltip arrow stays visible */
+    .guided-tour-tooltip::after {
+        z-index: 1061 !important;
+    }
+    
+    /* Fix for scrollable containers */
+    .table-body-container,
+    .responsive-table-container {
+        position: relative;
+        z-index: 1;
+    }
+    
+    /* Ensure highlighted rows are visible */
+    tr.tour-highlight-row td {
+        background-color: rgba(13, 110, 253, 0.04) !important;
+    }
+    
+    /* Special handling for highlighted cells in highlighted rows */
+    tr.tour-highlight-row td.tour-highlight {
+        background-color: rgba(255, 255, 255, 0.98) !important;
+        box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.2), 0 0 15px rgba(13, 110, 253, 0.1) !important;
+    }
+
+    /* Animated arrow styles */
+    .tour-arrow {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background-color: #0d6efd;
+        clip-path: polygon(0% 20%, 60% 20%, 60% 0%, 100% 50%, 60% 100%, 60% 80%, 0% 80%);
+        animation: pulse-arrow 1.5s infinite;
+        z-index: 1060;
+        filter: drop-shadow(0 0 4px rgba(13, 110, 253, 0.5));
+    }
+
+    /* Arrow positions */
+    .tour-arrow.left {
+        transform: rotate(180deg);
+    }
+
+    .tour-arrow.right {
+        transform: rotate(0deg);
+    }
+
+    .tour-arrow.top {
+        transform: rotate(-90deg);
+    }
+
+    .tour-arrow.bottom {
+        transform: rotate(90deg);
+    }
+
+    /* Animations */
+    @keyframes pulse-arrow {
+        0% {
+            transform: translate(0, 0) rotate(0deg);
+            opacity: 1;
+        }
+        50% {
+            transform: translate(8px, 0) rotate(0deg);
+            opacity: 0.7;
+        }
+        100% {
+            transform: translate(0, 0) rotate(0deg);
+            opacity: 1;
+        }
+    }
+
+    @keyframes glow-highlight {
+        0% {
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.4),
+                       0 0 15px 5px rgba(13, 110, 253, 0.2);
+        }
+        50% {
+            box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.5),
+                       0 0 20px 8px rgba(13, 110, 253, 0.3);
+        }
+        100% {
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.4),
+                       0 0 15px 5px rgba(13, 110, 253, 0.2);
+        }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .guided-tour-tooltip {
+            width: 85vw;
+            margin: 20px auto;
+            position: fixed;
+            left: 50% !important;
+            transform: translateX(-50%);
+            max-height: min(600px, 80vh);
+            bottom: 20px;
+        }
+
+        .tooltip-body {
+            max-height: calc(80vh - 180px);
+            padding: 16px;
+        }
+
+        .tooltip-header,
+        .tooltip-footer {
+            padding: 12px 16px;
+        }
+
+        .tooltip-progress {
+            padding: 8px 16px;
+        }
+
+        .tooltip-btn {
+            padding: 8px 12px;
+            min-width: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tour-arrow {
+            display: none;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .guided-tour-tooltip {
+            width: 92vw;
+            margin: 10px auto;
+            bottom: 10px;
+        }
+
+        .tooltip-step-indicator {
+            font-size: 12px;
+            padding: 3px 10px;
+        }
+
+        .tooltip-btn {
+            padding: 6px 10px;
+            font-size: 12px;
+            min-width: 50px;
+        }
+
+        .tooltip-content ul,
+        .tooltip-content ol {
+            padding-left: 16px;
+        }
+    }
+
+    /* Ensure highlighted elements are visible on mobile */
+    .tour-highlight {
+        background-color: #ffffff !important;
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.4),
+                   0 0 15px 5px rgba(13, 110, 253, 0.2) !important;
+        border-radius: 4px !important;
+        animation: glow-highlight 2s infinite !important;
+        isolation: isolate;
+        position: relative !important;
+        z-index: 1055 !important;
+    }
+
+    /* Adjust animations for better performance on mobile */
+    @media (prefers-reduced-motion: reduce) {
+        .guided-tour-tooltip {
+            transition: none;
+        }
+
+        .tour-highlight {
+            animation: none !important;
+        }
+
+        .tour-arrow {
+            animation: none !important;
+        }
+    }
+</style>
 
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid px-2 px-md-2 px-lg-2">
     <!-- Welcome Card - Full width -->
-    <div class="profile-welcome-section">
-        <!-- Welcome Card - Full width -->
+    <div class="profile-welcome-section mb-4">
+        <!-- Welcome Card content -->
         <div class="profile-welcome-card">
             <div class="d-flex align-items-center justify-content-between">
             <div class="d-flex align-items-center">
@@ -27,30 +584,12 @@
                 <div class="welcome-content">
                     <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">Outbound</h3>
                             <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" 
-                            title="<div class='tooltip-content'>
-                                        <div class='tooltip-row'>
-                                        <i class='bi bi-info-circle'></i>
-                                        <span><b>Outbound Overview:</b></span>
-                                        </div>
-                                        <div class='tooltip-row'>
-                                        <i class='bi bi-1-circle'></i>
-                                        <span>Monitor outbound document submissions</span>
-                                        </div>
-                                        <div class='tooltip-row'>
-                                        <i class='bi bi-2-circle'></i>
-                                        <span>Verify document validation status</span>
-                                        </div>
-                                        <div class='tooltip-row'> 
-                                        <i class='bi bi-3-circle'></i>
-                                        <span>Address any submission errors</span>
-                                        </div>
-                                        <div class='tooltip-row'>
-                                        <i class='bi bi-4-circle'></i>
-                                        <span>Keep track of submission timelines</span>
-                                        </div>
-                                    </div>">
+                            title="">
                     Manage and track your outbound document submissions, including validation and submission status.
                 </p>
+                <button id="openTutorialBtn" class="btn btn-sm btn-outline-light mt-2">
+                    <i class="bi bi-question-circle me-1"></i> How to use this page
+                </button>
                 </div>
             </div>
             <div class="d-flex align-items-start">
@@ -71,8 +610,8 @@
   
         <!-- Content Section - With margins -->
         <div class="content-section">
-        <!-- Cards Section -->
-            <div class="cards-container">
+            <!-- Cards Section -->
+            <div class="cards-container mb-4">
                 <!-- Invoices Card -->
                 <div class="info-card total-invoice-card">
                     <div class="card-info">
@@ -158,54 +697,83 @@
                     <span class="card-title-new">PENDING</span>
                 </div>
             </div>
-
-            <!-- Table Container -->
-            <div class="table-section">
-                <div>
-                    <div class="d-flex justify-content-between align-items-center p-3">
-                        <div class="table-filter"></div>
+            
+            <!-- Table Section -->
+            <div class="table-container-wrapper">
+                <div class="table-card">
+                    <div class="table-header">
+                        <div class="table-header-content">
+                            <h2 class="table-title">Outbound Document List</h2>
+                            <div class="table-actions">
+                                <button id="exportSelected" class="btn outbound-action-btn submit btn-sm ms-1" disabled>
+                                    <i class="bi bi-download me-2"></i>Export Selected
+                                </button>
+                                <!-- <button id="submitConsolidated" class="btn outbound-action-btn submit btn-sm ms-1" disabled data-bs-toggle="modal" data-bs-target="#consolidatedSubmitModal">
+                                    <i class="bi bi-file-earmark-arrow-up"></i> Bulk Submission
+                                    <span class="selected-count-bulk ms-1">(0)</span>
+                                </button> -->
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <table id="invoiceTable" class="outbound-table">
-                        <thead>
-                            <tr>
-                                <th class="outbound-checkbox-column">
-                                    <div class="outbound-checkbox-header">
-                                        <input type="checkbox" class="outbound-checkbox" id="selectAll">
-                                    </div>
-                                </th>
-                                <th>#</th>
-                                <th>INVOICE NO.</th>
-                                <th>COMPANY</th>
-                                <th>SUPPLIER</th>
-                                <th>BUYER</th>
-                                <th>UPLOAD DATE</th>
-                                <th>DATE INFO</th>
-                                <th>STATUS</th>
-                                <th>SOURCE</th>
-                                <th>TOTAL AMOUNT</th>
-                                <th>ACTION</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Table body will be populated by DataTables -->
-                        </tbody>
-                    </table>
-
-                    <!-- Loading Overlay -->
-                    <div id="tableLoadingOverlay" class="outbound-loading-overlay d-none">
-                        <div class="outbound-loading-content">
+                    
+                    <div class="table-controls">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="modern-length">
+                                <!-- Length control will be inserted by DataTables -->
+                            </div>
+                            <div class="modern-search">
+                                <!-- Search control will be inserted by DataTables -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="table-body-container">
+                        <div class="responsive-table-container">
+                            <table id="invoiceTable" class="table outbound-table">
+                                <thead>
+                                    <tr>
+                                        <th class="outbound-checkbox-column">
+                                            <div class="outbound-checkbox-header">
+                                                <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                                            </div>
+                                        </th>
+                                        <th>#</th>
+                                        <th>INVOICE NO.</th>
+                                        <th>COMPANY</th>
+                                        <th>SUPPLIER</th>
+                                        <th>BUYER</th>
+                                        <th>UPLOAD DATE</th>
+                                        <th>DATE INFO</th>
+                                        <th>STATUS</th>
+                                        <th>SOURCE</th>
+                                        <th>TOTAL AMOUNT</th>
+                                        <th class="outbound-action-column">ACTION</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Table body will be populated by DataTables -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Loading Overlay -->
+                        <div id="tableLoadingOverlay" class="table-loading-overlay d-none">
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Loading...</span>
                             </div>
-                            <p class="mt-2">Fetching invoices...</p>
+                            <p class="mt-2">Fetching documents...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="table-footer">
+                        <div class="pagination-container">
+                            <!-- Pagination will be inserted by DataTables -->
                         </div>
                     </div>
                 </div>
-                </div>    
             </div>
-        
         </div>
+    </div>
 </div>
 
 <!-- Modal for Validation Results -->
@@ -271,9 +839,156 @@
     </div>
 </template>
 
+<!-- Add Consolidated Submit Modal -->
+<div class="modal fade" id="consolidatedSubmitModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-earmark-arrow-up"></i>
+                    Submit Bulk Documents
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- User Guidance Section -->
+                <div class="user-guidance mb-4">
+                    <div class="guidance-header">
+                        <i class="bi bi-info-circle"></i>
+                        <h6>How to Submit Multiple Documents</h6>
+                    </div>
+                    <div class="guidance-steps">
+                        <div class="guidance-step">
+                            <span class="step-number">1</span>
+                            <span class="step-text">Select documents from the table (ensure all documents comply with LHDN format)</span>
+                        </div>
+                        <div class="guidance-step">
+                            <span class="step-number">2</span>
+                            <span class="step-text">Verify selected documents have valid TIN numbers and company details</span>
+                        </div>
+                        <div class="guidance-step">
+                            <span class="step-number">3</span>
+                            <span class="step-text">Choose LHDN version (v1.0 for standard submission)</span>
+                        </div>
+                        <div class="guidance-step">
+                            <span class="step-number">4</span>
+                            <span class="step-text">Review and submit documents for batch processing</span>
+                        </div>
+                    </div>
+                    <div class="guidance-requirements mt-3">
+                        <h6 class="requirements-title">
+                            <i class="bi bi-shield-check"></i>
+                            LHDN Compliance Requirements
+                        </h6>
+                        <ul class="requirements-list">
+                            <li>
+                                <i class="bi bi-check-circle"></i>
+                                All documents must have valid Tax Identification Numbers (TIN)
+                            </li>
+                            <li>
+                                <i class="bi bi-check-circle"></i>
+                                Company details must match LHDN registered information
+                            </li>
+                            <li>
+                                <i class="bi bi-check-circle"></i>
+                                Documents must be in the correct format (JSON/XML)
+                            </li>
+                            <li>
+                                <i class="bi bi-check-circle"></i>
+                                Each document must pass LHDN schema validation
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="guidance-note">
+                        <i class="bi bi-exclamation-circle"></i>
+                        <span>Important: Documents will be processed individually. All documents must meet LHDN requirements for successful submission.</span>
+                    </div>
+                </div>
+
+                <div class="selected-docs-container">
+                    <h6>Selected Documents</h6>
+                    <div id="selectedDocsList" class="selected-docs-list">
+                        <!-- Selected documents will be listed here -->
+                    </div>
+                </div>
+                <div class="submission-options">
+                    <div class="mb-0">
+                        <label class="form-label">LHDN Version</label>
+                        <select class="form-select" id="lhdnVersion">
+                            <option value="1.0">Version 1.0</option>
+                            <option value="1.1" disabled>Version 1.1 (with Digital Signature) COMING SOON</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn outbound-action-btn cancel" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn outbound-action-btn submit" id="submitConsolidatedBtn">
+                    Submit Documents
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Modal -->
+<div class="modal fade" id="submissionProgressModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Submission Progress</h5>
+            </div>
+            <div class="modal-body">
+                <div id="submissionProgress">
+                    <!-- Progress will be shown here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tutorial Modal -->
+<div class="guided-tour-overlay" id="guidedTourOverlay"></div>
+<div class="guided-tour-tooltip" id="guidedTourTooltip">
+    <div class="tooltip-header">
+        <div class="tooltip-step-indicator">
+            <span id="currentStepIndicator">1</span>/<span id="totalStepsIndicator">6</span>
+        </div>
+        <button type="button" class="tooltip-close-btn" id="closeTourBtn">
+            <i class="bi bi-x"></i>
+        </button>
+    </div>
+    <div class="tooltip-body">
+        <h4 class="tooltip-title" id="tooltipTitle">Welcome to Outbound</h4>
+        <div class="tooltip-content" id="tooltipContent">
+            <!-- Content will be dynamically inserted -->
+        </div>
+    </div>
+    <div class="tooltip-progress">
+        <div class="progress">
+            <div class="progress-bar" id="tourProgressBar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <div class="step-indicators d-flex justify-content-between px-3 mt-2" id="stepIndicators">
+            <!-- Step indicators will be dynamically inserted -->
+        </div>
+    </div>
+    <div class="tooltip-footer">
+        <button type="button" class="tooltip-btn tooltip-btn-prev" id="prevStepBtn" disabled>
+            <i class="bi bi-arrow-left"></i>
+        </button>
+        <button type="button" class="tooltip-btn tooltip-btn-skip" id="skipTourBtn">
+            Skip
+        </button>
+        <button type="button" class="tooltip-btn tooltip-btn-next" id="nextStepBtn">
+            Next <i class="bi bi-arrow-right"></i>
+        </button>
+    </div>
+</div>
+
 {% endblock %} 
 {% block scripts %}
 <script src="/assets/js/modules/excel/outbound-excel.js"></script>
+<script src="/assets/js/modules/tutorial/guided-tour.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <!-- Initialize tooltips -->
 <script>
@@ -284,7 +999,13 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 
-    // Example usage of alerts
+    // Add event listener for the tutorial button
+    document.getElementById('openTutorialBtn').addEventListener('click', function() {
+        if (window.tourManager) {
+            window.tourManager.startTour();
+        }
+    });
+
     // Success alert
     window.showSuccessAlert = function(message) {
         showAlert('success', 'Success', message);

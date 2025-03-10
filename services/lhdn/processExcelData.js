@@ -609,8 +609,9 @@ const processExcelData = (rawData) => {
                 currentDocument.items = [];
               }
               
-              // Add line item if it has required data
-              if (lineItem.lineId && lineItem.quantity && lineItem.lineExtensionAmount) {
+              if (lineItem.lineId && lineItem.quantity !== undefined && 
+                (lineItem.lineExtensionAmount !== undefined || lineItem.lineExtensionAmount === 0)) {
+                
                 const existingLineIndex = currentDocument.items.findIndex(item => item.lineId === lineItem.lineId);
                 
                 if (existingLineIndex >= 0) {
