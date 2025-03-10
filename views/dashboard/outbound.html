@@ -6,15 +6,25 @@
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
-<link href="/assets/css/components/outbound-invoice-modal.css" rel="stylesheet">
-<link href="/assets/css/components/consolidated-submit.css" rel="stylesheet">
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<link href="/assets/css/pages/outbound/card.css" rel="stylesheet">
+<link href="/assets/css/pages/inbound/card.css" rel="stylesheet">
+<link href="/assets/css/pages/inbound/notice.css" rel="stylesheet">
+
+<link href="/assets/css/pages/profile.css" rel="stylesheet">
+
+<link href="/assets/css/pages/inbound/validation-modal.css" rel="stylesheet">
+<link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
+<!-- Template Main CSS Files -->
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
 
+<script src="/assets/js/config/validation-translations.js"></script>
+
 <style>
-    /* Tutorial Modal Styles */
-    .tutorial-content {
+
+     /* Tutorial Modal Styles */
+     .tutorial-content {
         position: relative;
     }
     
@@ -371,201 +381,264 @@
         animation: glow-highlight 2s infinite;
     }
     
-    /* Table container styles */
-    .table-container-wrapper {
-        position: relative;
-        z-index: 1;
-        background: #fff;
+/* Enhanced UI Styles */
+.statistics-section .card,
+.quick-actions-section .card,
+.enhanced-filter-section .card,
+.document-preview-section .card {
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.statistics-section .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.quick-actions-section .btn {
+    transition: all 0.2s ease;
+    border: none;
+    padding: 0.5rem 1rem;
+}
+
+.quick-actions-section .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.enhanced-filter-section .form-floating > .form-control,
+.enhanced-filter-section .form-floating > .form-select {
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    padding: 1rem 0.75rem;
+}
+
+.enhanced-filter-section .form-floating > label {
+    padding: 1rem 0.75rem;
+}
+
+.document-preview-section .document-info {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.document-preview-section .info-item {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.document-preview-section .info-item:last-child {
+    border-bottom: none;
+}
+
+.document-preview-frame {
+    min-height: 300px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+/* Animation for refresh icon */
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Chart container styles */
+.statistics-section canvas {
+    max-height: 200px;
+}
+
+/* Card title styles */
+.card-title {
+    color: #495057;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Quick action button styles */
+.quick-actions-section .btn i {
+    font-size: 1rem;
+}
+
+/* Enhanced filter styles */
+.enhanced-filter-section .btn-link {
+    color: #6c757d;
+    text-decoration: none;
+}
+
+.enhanced-filter-section .btn-link:hover {
+    color: #495057;
+}
+
+/* Document preview styles */
+.document-preview-section .badge {
+    padding: 0.5em 0.75em;
+    font-weight: 500;
+}
+
+.document-preview-section .fw-medium {
+    font-weight: 500;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .statistics-section .card {
+        margin-bottom: 1rem;
     }
     
-    /* Table styles during tour */
-    .outbound-table {
-        position: relative;
-        z-index: 1;
+    .quick-actions-section .btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
     }
     
-    .outbound-table td,
-    .outbound-table th {
-        position: relative;
+    .enhanced-filter-section .form-floating {
+        margin-bottom: 1rem;
+    }
+}
+
+/* Filter Styles */
+.filter-container {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.search-wrapper {
+    position: relative;
+}
+
+.search-wrapper .form-control {
+    padding-left: 2.5rem;
+    height: 48px;
+    border-radius: 24px;
+    border: 2px solid #e9ecef;
+    transition: all 0.2s ease;
+}
+
+.search-wrapper .form-control:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13,110,253,.15);
+}
+
+
+.quick-filters .btn.active {
+    background-color: #0a3d8a;
+    color: white;
+    box-shadow: 0 2px 4px rgba(13,110,253,0.2);
+}
+
+/* Filter Tags */
+.active-filter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+}
+
+.filter-tag {
+    display: inline-flex;
+    align-items: center;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 16px;
+    padding: 4px 12px;
+    font-size: 0.875rem;
+    color: #495057;
+    transition: all 0.2s ease;
+}
+
+.filter-tag:hover {
+    background-color: #e9ecef;
+}
+
+.filter-tag .close-btn {
+    background: none;
+    border: none;
+    color: #6c757d;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 0 0 8px;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.filter-tag .close-btn:hover {
+    color: #dc3545;
+}
+
+/* Advanced Filters */
+.advanced-filters-content {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+
+.advanced-filters-content .form-label {
+    font-weight: 500;
+    color: #495057;
+    margin-bottom: 0.5rem;
+}
+
+.advanced-filters-content .form-control,
+.advanced-filters-content .form-select {
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+}
+
+.advanced-filters-content .input-group-text {
+    border: 2px solid #e9ecef;
+    background-color: #f8f9fa;
+}
+
+/* Loading State */
+.filter-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    display: none;
+}
+
+.filter-loading.active {
+    display: flex;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .quick-filters {
+        flex-wrap: wrap;
     }
     
-    /* Make sure highlighted elements are clickable */
-    .tour-highlight {
-        pointer-events: auto !important;
+    .quick-filters .btn {
+        flex: 1 1 auto;
+        min-width: calc(33.333% - 8px);
+        margin-bottom: 8px;
     }
     
-    /* Ensure tooltip arrow stays visible */
-    .guided-tour-tooltip::after {
-        z-index: 1061 !important;
+    .quick-filters .ms-auto {
+        width: 100%;
+        margin-top: 0.5rem;
+        display: flex;
+        gap: 0.5rem;
     }
-    
-    /* Fix for scrollable containers */
-    .table-body-container,
-    .responsive-table-container {
-        position: relative;
-        z-index: 1;
-    }
-    
-    /* Ensure highlighted rows are visible */
-    tr.tour-highlight-row td {
-        background-color: rgba(13, 110, 253, 0.04) !important;
-    }
-    
-    /* Special handling for highlighted cells in highlighted rows */
-    tr.tour-highlight-row td.tour-highlight {
-        background-color: rgba(255, 255, 255, 0.98) !important;
-        box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.2), 0 0 15px rgba(13, 110, 253, 0.1) !important;
-    }
-
-    /* Animated arrow styles */
-    .tour-arrow {
-        position: absolute;
-        width: 20px;
-        height: 20px;
-        background-color: #0d6efd;
-        clip-path: polygon(0% 20%, 60% 20%, 60% 0%, 100% 50%, 60% 100%, 60% 80%, 0% 80%);
-        animation: pulse-arrow 1.5s infinite;
-        z-index: 1060;
-        filter: drop-shadow(0 0 4px rgba(13, 110, 253, 0.5));
-    }
-
-    /* Arrow positions */
-    .tour-arrow.left {
-        transform: rotate(180deg);
-    }
-
-    .tour-arrow.right {
-        transform: rotate(0deg);
-    }
-
-    .tour-arrow.top {
-        transform: rotate(-90deg);
-    }
-
-    .tour-arrow.bottom {
-        transform: rotate(90deg);
-    }
-
-    /* Animations */
-    @keyframes pulse-arrow {
-        0% {
-            transform: translate(0, 0) rotate(0deg);
-            opacity: 1;
-        }
-        50% {
-            transform: translate(8px, 0) rotate(0deg);
-            opacity: 0.7;
-        }
-        100% {
-            transform: translate(0, 0) rotate(0deg);
-            opacity: 1;
-        }
-    }
-
-    @keyframes glow-highlight {
-        0% {
-            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.4),
-                       0 0 15px 5px rgba(13, 110, 253, 0.2);
-        }
-        50% {
-            box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.5),
-                       0 0 20px 8px rgba(13, 110, 253, 0.3);
-        }
-        100% {
-            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.4),
-                       0 0 15px 5px rgba(13, 110, 253, 0.2);
-        }
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .guided-tour-tooltip {
-            width: 85vw;
-            margin: 20px auto;
-            position: fixed;
-            left: 50% !important;
-            transform: translateX(-50%);
-            max-height: min(600px, 80vh);
-            bottom: 20px;
-        }
-
-        .tooltip-body {
-            max-height: calc(80vh - 180px);
-            padding: 16px;
-        }
-
-        .tooltip-header,
-        .tooltip-footer {
-            padding: 12px 16px;
-        }
-
-        .tooltip-progress {
-            padding: 8px 16px;
-        }
-
-        .tooltip-btn {
-            padding: 8px 12px;
-            min-width: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .tour-arrow {
-            display: none;
-        }
-    }
-
-    @media (max-width: 480px) {
-        .guided-tour-tooltip {
-            width: 92vw;
-            margin: 10px auto;
-            bottom: 10px;
-        }
-
-        .tooltip-step-indicator {
-            font-size: 12px;
-            padding: 3px 10px;
-        }
-
-        .tooltip-btn {
-            padding: 6px 10px;
-            font-size: 12px;
-            min-width: 50px;
-        }
-
-        .tooltip-content ul,
-        .tooltip-content ol {
-            padding-left: 16px;
-        }
-    }
-
-    /* Ensure highlighted elements are visible on mobile */
-    .tour-highlight {
-        background-color: #ffffff !important;
-        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.4),
-                   0 0 15px 5px rgba(13, 110, 253, 0.2) !important;
-        border-radius: 4px !important;
-        animation: glow-highlight 2s infinite !important;
-        isolation: isolate;
-        position: relative !important;
-        z-index: 1055 !important;
-    }
-
-    /* Adjust animations for better performance on mobile */
-    @media (prefers-reduced-motion: reduce) {
-        .guided-tour-tooltip {
-            transition: none;
-        }
-
-        .tour-highlight {
-            animation: none !important;
-        }
-
-        .tour-arrow {
-            animation: none !important;
-        }
-    }
+}
 </style>
 
 {% endblock %}
@@ -610,111 +683,217 @@
   
         <!-- Content Section - With margins -->
         <div class="content-section">
-            <!-- Cards Section -->
-            <div class="cards-container mb-4">
-                <!-- Invoices Card -->
-                <div class="info-card total-invoice-card">
-                    <div class="card-info">
-                        <div class="card-icon position-relative">
-                            <i class="bi bi-file-earmark-text"></i>
-                        </div>
-                        <div class="count-info">
-                            <div class="spinner-border text-primary loading-spinner" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <h6 class="total-invoice-count" style="display: none;">0</h6>
-                            <span class="text-muted">Total</span>
-                        </div>
-                    </div>
-                    <span class="card-title-new">INVOICES</span>
+      <!-- Cards Section -->
+      <div class="cards-container">
+        <!-- Invoices Card -->
+        <div class="info-card invoices-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-file-earmark-text"></i>
                 </div>
-
-                <!-- Submitted Card -->
-                <div class="info-card total-submitted-card">
-                    <div class="card-info">
-                        <div class="card-icon position-relative">
-                            <i class="bi bi-check2-circle"></i>
-                        </div>
-                        <div class="count-info">
-                            <div class="spinner-border text-success loading-spinner" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <h6 class="total-submitted-count" style="display: none;">0</h6>
-                            <span class="text-muted">Total</span>
-                        </div>
+                <div class="count-info">
+                    <div class="spinner-border text-primary loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
                     </div>
-                    <span class="card-title-new">SUBMITTED</span>
-                </div>
-
-                <!-- Rejected Card -->
-                <div class="info-card total-rejected-card">
-                    <div class="card-info">
-                        <div class="card-icon position-relative">
-                            <i class="bi bi-file-earmark-excel-fill"></i>
-                        </div>
-                        <div class="count-info">
-                            <div class="spinner-border text-danger loading-spinner" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <h6 class="total-rejected-count" style="display: none;">0</h6>
-                            <span class="text-muted">Total</span>
-                        </div>
-                    </div>
-                    <span class="card-title-new">REJECTED</span>
-                </div>
-
-                <!-- Invalid Card -->
-                <div class="info-card total-invalid-card">
-                    <div class="card-info">
-                        <div class="card-icon position-relative">
-                            <i class="bi bi-file-earmark-excel-fill"></i>
-                        </div>
-                        <div class="count-info">
-                            <div class="spinner-border text-danger loading-spinner" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <h6 class="total-invalid-count" style="display: none;">0</h6>
-                            <span class="text-muted">Total</span>
-                        </div>
-                    </div>
-                    <span class="card-title-new">INVALID</span>
-                </div>
-
-                <!-- Cancelled Card -->
-                <div class="info-card total-cancelled-card">
-                    <div class="card-info">
-                        <div class="card-icon position-relative">
-                            <i class="bi bi-exclamation-triangle-fill"></i>
-                        </div>
-                        <div class="count-info">
-                            <div class="spinner-border text-warning loading-spinner" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <h6 class="total-cancelled-count" style="display: none;">0</h6>
-                            <span class="text-muted">Total</span>
-                        </div>
-                    </div>
-                    <span class="card-title-new">CANCELLED</span>
-                </div>
-
-                <!-- Pending Card -->
-                <div class="info-card total-pending-card">
-                    <div class="card-info">
-                        <div class="card-icon position-relative">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                        <div class="count-info">
-                            <div class="spinner-border text-warning loading-spinner" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <h6 class="total-pending-count" style="display: none;">0</h6>
-                            <span class="text-muted">Total</span>
-                        </div>
-                    </div>
-                    <span class="card-title-new">PENDING</span>
+                    <h6 class="total-invoice-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
                 </div>
             </div>
-            
+            <span class="card-title-new">INVOICES</span>
+        </div>
+
+        <!-- Valid Card -->
+        <div class="info-card valid-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-check2-circle"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-success loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-submitted-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">SUBMITTED</span>
+        </div>
+
+        <!-- Invalid Card -->
+        <div class="info-card invalid-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-file-earmark-excel-fill"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-danger loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-invalid-count" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">INVALID</span>
+        </div>
+         
+        <!-- PENDING Card -->
+        <div class="info-card pending-card">
+            <div class="card-info">
+                <div class="card-icon position-relative">
+                    <i class="bi bi-exclamation-circle-fill"></i>
+                </div>
+                <div class="count-info">
+                    <div class="spinner-border text-warning loading-spinner" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="total-queue-value" style="display: none;">0</h6>
+                    <span class="text-muted">Total</span>
+                </div>
+            </div>
+            <span class="card-title-new">PENDING</span>
+        </div>
+
+              <!-- Invalid Card -->
+       <div class="info-card cancelled-card">
+        <div class="card-info">
+            <div class="card-icon position-relative">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+            </div>
+            <div class="count-info">
+                <div class="spinner-border text-warning loading-spinner" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h6 class="total-cancelled-count" style="display: none;">0</h6>
+                <span class="text-muted">Total</span>
+            </div>
+        </div>
+        <span class="card-title-new">CANCELLED</span>
+    </div>
+     
+    </div>
+
+ 
+
+    <!-- Statistics Section -->
+    <div class="statistics-section mb-4">
+      <div class="row">
+        <!-- Document Status Chart -->
+        <div class="col-md-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h6 class="card-title d-flex align-items-center mb-3">
+                <i class="bi bi-pie-chart-fill me-2"></i>
+                Document Status Distribution
+              </h6>
+              <div style="height: 200px; position: relative;">
+                <canvas id="documentStatusChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Processing Time Chart -->
+        <div class="col-md-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h6 class="card-title d-flex align-items-center mb-3">
+                <i class="bi bi-bar-chart-fill me-2"></i>
+                Submission Success Rate
+                <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
+                   title="<div class='p-2'>
+                           <strong>How Success Rate is Calculated:</strong><br>
+                           <small>Success Rate = (Submitted Documents / Total Documents) × 100<br>
+                           Total Documents = Submitted + Invalid + Pending</small>
+                         </div>"></i>
+              </h6>
+              <div class="validation-rate-container" style="height: 200px; position: relative;">
+                <div class="validation-stats mb-3">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted">Overall Success Rate</span>
+                    <span class="fw-bold success-rate" data-bs-toggle="tooltip" data-bs-html="true"
+                          title="<div class='p-2'>
+                                  <strong>Current Success Rate:</strong> 0%<br>
+                                  <small>Based on successfully validated documents out of total submissions</small>
+                                </div>">0%</span>
+                  </div>
+                  <div class="progress" style="height: 25px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: 0%;" 
+                         aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                  </div>
+                </div>
+                <div class="validation-breakdown">
+                  <div class="breakdown-item mb-2">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <span class="text-muted small">
+                        Submitted
+                        <i class="bi bi-info-circle-fill ms-1" data-bs-toggle="tooltip" data-bs-html="true"
+                           title="<div class='p-2'>
+                                   <strong>Submitted Documents:</strong><br>
+                                   • Successfully validated by LHDN<br>
+                                   • Meets all format requirements<br>
+                                   • Ready for submission
+                                 </div>"></i>
+                      </span>
+                      <span class="text-success small">0%</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                      <div class="progress-bar bg-success" role="progressbar" style="width: 0%;" 
+                           aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                  </div>
+                  <div class="breakdown-item mb-2">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <span class="text-muted small">
+                        Invalid
+                        <i class="bi bi-info-circle-fill ms-1" data-bs-toggle="tooltip" data-bs-html="true"
+                           title="<div class='p-2'>
+                                   <strong>Invalid Documents:</strong><br>
+                                   • Failed LHDN validation<br>
+                                   • Format or data issues detected<br>
+                                   • Requires correction and resubmission
+                                 </div>"></i>
+                      </span>
+                      <span class="text-danger small">0%</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                      <div class="progress-bar bg-danger" role="progressbar" style="width: 0%;" 
+                           aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                  </div>
+                  <div class="breakdown-item">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <span class="text-muted small">
+                        Pending
+                        <i class="bi bi-info-circle-fill ms-1" data-bs-toggle="tooltip" data-bs-html="true"
+                           title="<div class='p-2'>
+                                   <strong>Pending Documents:</strong><br>
+                                   • Awaiting LHDN validation<br>
+                                   • In processing queue<br>
+                                   • May take up to 24 hours
+                                 </div>"></i>
+                      </span>
+                      <span class="text-warning small">0%</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                      <div class="progress-bar bg-warning" role="progressbar" style="width: 0%;" 
+                           aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="calculation-note mt-3">
+                  <small class="text-muted">
+                    <!-- <i class="bi bi-calculator me-1"></i> -->
+                    <!-- <span class="loading-text-outbound">Loading statistics...</span> -->
+                    <span class="stats-text" style="display: none;">Percentages are calculated based on total document count</span>
+                  </small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
             <!-- Table Section -->
             <div class="table-container-wrapper">
                 <div class="table-card">
@@ -725,16 +904,43 @@
                                 <button id="exportSelected" class="btn outbound-action-btn submit btn-sm ms-1" disabled>
                                     <i class="bi bi-download me-2"></i>Export Selected
                                 </button>
-                                <!-- <button id="submitConsolidated" class="btn outbound-action-btn submit btn-sm ms-1" disabled data-bs-toggle="modal" data-bs-target="#consolidatedSubmitModal">
-                                    <i class="bi bi-file-earmark-arrow-up"></i> Bulk Submission
-                                    <span class="selected-count-bulk ms-1">(0)</span>
-                                </button> -->
+                            </div>
+                            
+                        </div>
+                        <div class="text-muted fst-italic small mt-1">
+                            <i class="bi bi-shield-check me-1"></i>
+                            For a smooth submission process, verify all required fields are complete and accurate.
+                        </div>
+                        <div class="text-muted fst-italic small mt-1">   
+                            Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission.
+                        </div>
+                        <div class="filter-note alert alert-warning mt-2" role="alert">
+                            <div class="d-flex align-items-start">
+                                <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+                                <div>
+                                    <h6 class="mb-1"><strong>Note: LHDN Submission Process</strong></h6>
+                                    <small>
+                                        <ul class="mb-0 ps-3">
+                                            <li><i class="bi bi-file-earmark-check me-1"></i>Please ensure all invoice details are accurate before submission</li>
+                                            <li><i class="bi bi-exclamation-circle me-1"></i>Once submitted, invoices cannot be modified but can be cancelled within time period.</li>
+                                            <li><i class="bi bi-clock me-1"></i>Submission processing may take up to 24 hours</li>
+                                            <li><i class="bi bi-arrow-clockwise me-1"></i>Check submission status by refreshing periodically</li>
+                                        </ul>
+                                        <div class="mt-0">
+                                            <div class="d-flex align-items-center">
+                                                <span class="badge bg-primary me-2">
+                                                    <i class="bi bi-info-circle me-1"></i>Important
+                                                </span>
+                                                <span>Submissions are final and will be processed in the order received.</span>
+                                            </div>
+                                        </div>
+                                    </small>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    
                     <div class="table-controls">
-                        <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-1">
                             <div class="modern-length">
                                 <!-- Length control will be inserted by DataTables -->
                             </div>
@@ -743,34 +949,189 @@
                             </div>
                         </div>
                     </div>
-                    
                     <div class="table-body-container">
                         <div class="responsive-table-container">
-                            <table id="invoiceTable" class="table outbound-table">
-                                <thead>
-                                    <tr>
-                                        <th class="outbound-checkbox-column">
-                                            <div class="outbound-checkbox-header">
-                                                <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                            <div class="table-section">
+                                <div class="outbound-table-container">
+                                    <!-- Replace the entire filter section with new design -->
+                                    <div class="filter-container bg-white p-3 rounded-3 shadow-sm">
+                                        <!-- Primary Filters Row -->
+                                        <div class="row g-3 mb-3">
+                                            <!-- Global Search -->
+                                            <div class="col-md-4">
+                                                <div class="search-wrapper position-relative">
+                                                    <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                                                    <input type="text" class="form-control form-control-lg ps-5" id="globalSearch" 
+                                                        placeholder="Search documents...">
+                                                </div>
                                             </div>
-                                        </th>
-                                        <th>#</th>
-                                        <th>INVOICE NO.</th>
-                                        <th>COMPANY</th>
-                                        <th>SUPPLIER</th>
-                                        <th>BUYER</th>
-                                        <th>UPLOAD DATE</th>
-                                        <th>DATE INFO</th>
-                                        <th>STATUS</th>
-                                        <th>SOURCE</th>
-                                        <th>TOTAL AMOUNT</th>
-                                        <th class="outbound-action-column">ACTION</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <!-- Table body will be populated by DataTables -->
-                                </tbody>
-                            </table>
+                                            
+                                            <!-- Quick Filters -->
+                                            <div class="col-md-8">
+                                                <div class="quick-filters d-flex gap-2">
+                                                    <button class="btn outbound-action-btn submit active" data-filter="all">
+                                                        <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
+                                                    </button>
+                                                    <!-- <button class="btn outbound-action-btn submit" data-filter="submitted">
+                                                        <i class="bi bi-check-circle me-1 text-success"></i>Submitted
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="invalid">
+                                                        <i class="bi bi-x-circle me-1 text-danger"></i>Invalid
+                                                    </button>
+                                                    
+                                                    <button class="btn outbound-action-btn submit" data-filter="cancelled">
+                                                        <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Cancelled
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="pending">
+                                                        <i class="bi bi-clock-history me-1 text-warning"></i>Pending
+                                                    </button> -->
+                                                    <!-- <div class="ms-auto">
+                                                        <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
+                                                            <i class="bi bi-eraser me-1"></i>Clear
+                                                        </button>
+                                                        <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                                                            <i class="bi bi-sliders me-1"></i>Advanced
+                                                        </button>
+                                                    </div> -->
+                                                </div>
+                                            </div>
+                                        </div>
+                    
+                                        <!-- Advanced Filters (Collapsible) -->
+                                        <div class="collapse" id="advancedFilters">
+                                            <div class="advanced-filters-content border-top pt-3">
+                                                <div class="row g-3">
+                                                    <!-- Date Range -->
+                                                    <div class="col-md-6">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-calendar-range me-2"></i>Date Range
+                                                        </label>
+                                                        <div class="input-group">
+                                                            <input type="date" class="form-control" id="tableStartDate">
+                                                            <span class="input-group-text bg-light">to</span>
+                                                            <input type="date" class="form-control" id="tableEndDate">
+                                                        </div>
+                                                    </div>
+                    
+                                                    <!-- Amount Range -->
+                                                    <div class="col-md-6">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-currency-dollar me-2"></i>Amount Range
+                                                        </label>
+                                                        <div class="input-group">
+                                                            <input type="number" class="form-control" id="minAmount" placeholder="Min">
+                                                            <span class="input-group-text bg-light">to</span>
+                                                            <input type="number" class="form-control" id="maxAmount" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                    
+                                                    <!-- Company Filter -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-building me-2"></i>Company
+                                                        </label>
+                                                        <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
+                                                    </div>
+                    
+                                                    <!-- Document Type -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-file-text me-2"></i>Document Type
+                                                        </label>
+                                                        <select class="form-select" id="documentTypeFilter">
+                                                            <option value="">All Types</option>
+                                                            <option value="Invoice">Invoice</option>
+                                                            <option value="Credit Note">Credit Note</option>
+                                                            <option value="Debit Note">Debit Note</option>
+                                                        </select>
+                                                    </div>
+                    
+                                                    <!-- Source -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-diagram-2 me-2"></i>Source
+                                                            <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
+                                                            title="<div class='tooltip-content'>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-info-circle'></i>
+                                                                        <span><b>LHDN Validation:</b></span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-check-circle text-success'></i>
+                                                                        <span>Valid: Document passed validation</span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-x-circle text-danger'></i>
+                                                                        <span>Invalid: Failed validation checks</span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-clock-history text-warning'></i>
+                                                                        <span>Pending: Awaiting for Submission to LHDN for validation</span>
+                                                                    </div>
+                                                                </div>"></i>
+                                                        </label>
+                                                        <select class="form-select" id="sourceFilter">
+                                                            <option value="">LHDN</option>
+                                                            
+                                                        </select>
+                                                        <small class="text-muted mt-1 d-block">
+                                                            <i class="bi bi-info-circle-fill me-1"></i>
+                                                            LHDN responses include validation status and timestamps
+                                                        </small>
+                                                    </div>
+                                                </div>
+                    
+                                            
+                                                <!-- Filter Note -->
+                                                <div class="filter-note alert alert-info mt-3" role="alert">
+                                                    <i class="bi bi-info-circle me-2"></i>
+                                                    <small>
+                                                        Use the filters above to narrow down your results. Active filters will appear below as tags that you can easily remove. Click the 'x' on any tag to remove that filter, or use 'Clear all filters' to reset.
+                                                    </small>
+                                                </div>
+                    
+                                                <!-- Active Filters Display -->
+                                                <div class="active-filters mt-3 pt-3 border-top">
+                                                    <div class="d-flex align-items-center">
+                                                        <small class="text-muted me-2">Active Filters:</small>
+                                                        <div class="active-filter-tags" id="activeFilterTags">
+                                                            <!-- Active filter tags will be added here dynamically -->
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- End of new filter section -->
+                                  
+                    
+                                        <table id="invoiceTable" class="outbound-table">
+                                            <thead>
+                                                <tr>
+                                                    <th class="outbound-checkbox-column">
+                                                        <div class="outbound-checkbox-header">
+                                                            <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                                                        </div>
+                                                    </th>
+                                                    <th>#</th>
+                                                    <th>INVOICE NO.</th>
+                                                    <th>COMPANY</th>
+                                                    <th>SUPPLIER</th>
+                                                    <th>BUYER</th>
+                                                    <th>UPLOAD DATE</th>
+                                                    <th>DATE INFO</th>
+                                                    <th>STATUS</th>
+                                                    <th>SOURCE</th>
+                                                    <th>TOTAL AMOUNT</th>
+                                                    <th class="outbound-action-column">ACTION</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                    
+                                                </tbody>
+                                            </table>
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Loading Overlay -->
@@ -782,6 +1143,8 @@
                         </div>
                     </div>
                     
+                    
+       
                     <div class="table-footer">
                         <div class="pagination-container">
                             <!-- Pagination will be inserted by DataTables -->
@@ -789,7 +1152,9 @@
                     </div>
                 </div>
             </div>
-        </div>
+        
+        
+    </div>
     </div>
 </div>
 
@@ -1007,17 +1372,20 @@
 <script src="/assets/js/modules/excel/outbound-excel.js"></script>
 <script src="/assets/js/modules/tutorial/guided-tour.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-<!-- Initialize tooltips -->
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
+    // Initialize all tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.forEach(tooltipTriggerEl => {
+        new bootstrap.Tooltip(tooltipTriggerEl, {
+            html: true,
+            container: 'body'
+        });
     });
 
     // Add event listener for the tutorial button
-    document.getElementById('openTutorialBtn').addEventListener('click', function() {
+    document.getElementById('openTutorialBtn')?.addEventListener('click', function() {
         if (window.tourManager) {
             window.tourManager.startTour();
         }

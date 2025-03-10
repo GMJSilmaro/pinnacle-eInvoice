@@ -1331,11 +1331,19 @@ body.swal2-shown {
     position: relative;
 }
 
-/* Responsive Table Container */
-.responsive-table-container {
-    overflow-x: auto;
-    margin: 0 -1px;
-    padding: 0 1px;
+
+.quick-filters .btn.active {
+    background-color: #0a3d8a;
+    color: white;
+    box-shadow: 0 2px 4px rgba(13,110,253,0.2);
+}
+
+/* Filter Tags */
+.active-filter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
 }
 
 /* Table Footer */

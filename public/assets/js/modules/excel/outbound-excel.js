@@ -41,7 +41,7 @@ class DateTimeManager {
 
 class InvoiceTableManager {
     static instance = null;
-
+    
     static getInstance() {
         if (!InvoiceTableManager.instance) {
             InvoiceTableManager.instance = new InvoiceTableManager();
@@ -50,30 +50,367 @@ class InvoiceTableManager {
     }
 
     constructor() {
-        if (InvoiceTableManager.instance) return InvoiceTableManager.instance;
-
-        // Check if table element exists before initializing
-        const tableElement = document.getElementById('invoiceTable');
-        if (!tableElement) {
-            console.error('Table element #invoiceTable not found');
-            return;
+        if (InvoiceTableManager.instance) {
+            return InvoiceTableManager.instance;
         }
-
-        // Ensure table has proper structure
-        if (!tableElement.querySelector('thead')) {
-            const thead = document.createElement('thead');
-            const tr = document.createElement('tr');
-            thead.appendChild(tr);
-            tableElement.insertBefore(thead, tableElement.firstChild);
-        }
-
-        if (!tableElement.querySelector('tbody')) {
-            const tbody = document.createElement('tbody');
-            tableElement.appendChild(tbody);
-        }
-
-        this.initializeTable();
         InvoiceTableManager.instance = this;
+        this.table = null;
+        this.selectedRows = new Set();
+        this.initializeTable();
+        this.initializeCharts();
+        this.initializeEventListeners();
+    }
+
+    initializeTable() {
+        const tableElement = document.getElementById('invoiceTable');
+        if (!tableElement) return;
+
+        this.table = $(tableElement).DataTable({
+            serverSide: true,
+            processing: true,
+            ajax: {
+                url: '/api/outbound/list',
+                type: 'POST',
+                data: (d) => {
+                    // Add custom filter parameters
+                    d.dateRange = {
+                        start: document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value,
+                        end: document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value
+                    };
+                    d.amountRange = {
+                        min: document.getElementById('minAmount').value,
+                        max: document.getElementById('maxAmount').value
+                    };
+                    d.company = document.querySelector('input[placeholder="Filter by company name"]').value;
+                    d.documentType = document.getElementById('documentTypeFilter').value;
+                    d.quickFilter = document.querySelector('.quick-filters .btn.active').dataset.filter;
+                    return d;
+                }
+            },
+            // ... rest of your DataTable configuration ...
+        });
+
+        // Initialize filters
+        this.initializeFilters();
+    }
+
+    initializeFilters() {
+        // Quick Filters
+        document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
+            button.addEventListener('click', (e) => {
+                document.querySelectorAll('.quick-filters .btn').forEach(btn => 
+                    btn.classList.remove('active'));
+                e.target.closest('.btn').classList.add('active');
+                this.applyFilters();
+            });
+        });
+
+        // Global Search
+        const globalSearch = document.getElementById('globalSearch');
+        if (globalSearch) {
+            globalSearch.addEventListener('input', (e) => {
+                this.table.search(e.target.value).draw();
+            });
+        }
+
+        // Advanced Filters
+        const advancedFilterInputs = [
+            'input[placeholder="mm/dd/yyyy"]',
+            '#minAmount',
+            '#maxAmount',
+            'input[placeholder="Filter by company name"]',
+            '#documentTypeFilter'
+        ].join(',');
+
+        document.querySelectorAll(advancedFilterInputs).forEach(input => {
+            input.addEventListener(input.type === 'select-one' ? 'change' : 'input', 
+                () => this.applyFilters());
+        });
+
+        // Clear Filters
+        document.getElementById('clearFilters')?.addEventListener('click', 
+            () => this.clearAllFilters());
+    }
+
+    applyFilters() {
+        if (!this.table) return;
+
+        // Store current filter values
+        const filters = this.getActiveFilters();
+        
+        // Apply filters to DataTable
+        this.table.draw();
+
+        // Update filter tags
+        this.updateFilterTags(filters);
+    }
+
+    getActiveFilters() {
+        return {
+            quickFilter: document.querySelector('.quick-filters .btn.active')?.dataset.filter,
+            dateStart: document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value,
+            dateEnd: document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value,
+            minAmount: document.getElementById('minAmount').value,
+            maxAmount: document.getElementById('maxAmount').value,
+            company: document.querySelector('input[placeholder="Filter by company name"]').value,
+            documentType: document.getElementById('documentTypeFilter').value
+        };
+    }
+
+    updateFilterTags(filters) {
+        const container = document.getElementById('activeFilterTags');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        const createTag = (label, value, type) => {
+            if (!value) return;
+            
+            const tag = document.createElement('div');
+            tag.className = 'filter-tag';
+            tag.innerHTML = `
+                ${label}: ${value}
+                <button class="close-btn" data-filter-type="${type}">×</button>
+            `;
+            tag.querySelector('.close-btn').addEventListener('click', 
+                () => this.removeFilter(type));
+            container.appendChild(tag);
+        };
+
+        // Create tags for active filters
+        if (filters.quickFilter && filters.quickFilter !== 'all') {
+            createTag('Status', filters.quickFilter, 'quickFilter');
+        }
+        if (filters.dateStart && filters.dateEnd) {
+            createTag('Date', `${filters.dateStart} - ${filters.dateEnd}`, 'date');
+        }
+        if (filters.minAmount || filters.maxAmount) {
+            createTag('Amount', `${filters.minAmount || '0'} - ${filters.maxAmount || '∞'}`, 'amount');
+        }
+        if (filters.company) {
+            createTag('Company', filters.company, 'company');
+        }
+        if (filters.documentType) {
+            createTag('Type', filters.documentType, 'documentType');
+        }
+    }
+
+    clearAllFilters() {
+        // Reset form inputs
+        document.querySelectorAll([
+            'input[placeholder="mm/dd/yyyy"]',
+            '#minAmount',
+            '#maxAmount',
+            'input[placeholder="Filter by company name"]',
+            '#documentTypeFilter',
+            '#globalSearch'
+        ].join(',')).forEach(input => input.value = '');
+
+        // Reset quick filters
+        document.querySelectorAll('.quick-filters .btn').forEach(btn => 
+            btn.classList.remove('active'));
+        document.querySelector('.quick-filters .btn[data-filter="all"]')
+            .classList.add('active');
+
+        // Clear DataTable filters
+        this.table.search('').columns().search('').draw();
+
+        // Clear filter tags
+        document.getElementById('activeFilterTags').innerHTML = '';
+    }
+
+    removeFilter(filterType) {
+        switch (filterType) {
+            case 'quickFilter':
+                document.querySelector('.quick-filters .btn[data-filter="all"]').click();
+                break;
+            case 'date':
+                document.querySelectorAll('input[placeholder="mm/dd/yyyy"]')
+                    .forEach(input => input.value = '');
+                break;
+            case 'amount':
+                document.getElementById('minAmount').value = '';
+                document.getElementById('maxAmount').value = '';
+                break;
+            case 'company':
+                document.querySelector('input[placeholder="Filter by company name"]').value = '';
+                break;
+            case 'documentType':
+                document.getElementById('documentTypeFilter').value = '';
+                break;
+        }
+        this.applyFilters();
+    }
+
+    initializeCharts() {
+        // Initialize Document Status Distribution Chart
+        const statusCtx = document.getElementById('documentStatusChart');
+        if (statusCtx) {
+            window.documentStatusChart = new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Submitted', 'Invalid', 'Pending', 'Cancelled'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: [
+                            '#1d9a5c',  // Submitted - Semi Light Green
+                            '#dc3545',  // Invalid - Red
+                            '#ff8307',  // Pending - Orange
+                            '#ffc107'   // Cancelled - Yellow
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                    return `${label}: ${value} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize Outbound Document Trend Chart
+        const dailyCtx = document.getElementById('dailySubmissionsChart');
+        if (dailyCtx) {
+            window.dailySubmissionsChart = new Chart(dailyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Total Documents',
+                        data: [],
+                        borderColor: '#0d6efd',
+                        tension: 0.1,
+                        fill: true,
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)'
+                    }, {
+                        label: 'Successfully Validated',
+                        data: [],
+                        borderColor: '#198754',
+                        tension: 0.1,
+                        fill: true,
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.raw || 0;
+                                    return `${label}: ${value} documents`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            },
+                            title: {
+                                display: true,
+                                text: 'Number of Documents'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize Validation Success Rate Chart
+        const processingCtx = document.getElementById('processingTimeChart');
+        if (processingCtx) {
+            window.processingTimeChart = new Chart(processingCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Valid', 'Invalid', 'Pending'],
+                    datasets: [{
+                        data: [0, 0, 0],
+                        backgroundColor: [
+                            '#1d9a5c',  // Valid - Green
+                            '#dc3545',  // Invalid - Red
+                            '#ff8307',  // Pending - Orange
+                            '#1d9a5c',  // Submitted - Semi Light Green
+                            '#ffc107'   // Cancelled - Yellow
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    return `${label}: ${value.toFixed(1)}%`;
+                                },
+                                afterBody: function(context) {
+                                    return [
+                                        '',
+                                        'How this is calculated:',
+                                        '• Valid: Successfully validated documents',
+                                        '• Invalid: Failed validation',
+                                        '• Pending: Awaiting validation',
+                                        '',
+                                        'Percentage = (Status Count / Total Documents) × 100'
+                                    ];
+                                }
+                            }
+                        }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
     }
 
     initializeTable() {
@@ -231,8 +568,8 @@ class InvoiceTableManager {
                         render: (data, type, row) => this.renderActions(row)
                     }
                 ],
-                scrollX: false,
-                scrollCollapse: false,
+                scrollX: true,
+                scrollCollapse: true,
                 autoWidth: false,
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
@@ -252,11 +589,7 @@ class InvoiceTableManager {
                     emptyTable: this.getEmptyStateHtml(),
                     zeroRecords: this.getEmptyStateHtml('Searching for data...')
                 },
-                order: [6, 'desc'], // First sort by status (pending first), then by date (newest first)
-                orderFixed: {
-                    pre: [[6, 'desc'], [8, 'asc']] // Ensure status sorting is always applied first
-                },
-                
+                order: [6, 'desc'], 
                 drawCallback: function (settings) {
                     // Update row indexes when table is redrawn (sorting, filtering, pagination)
                     $(this).find('tbody tr').each(function (index) {
@@ -691,17 +1024,255 @@ class InvoiceTableManager {
     }
 
     initializeEventListeners() {
-        $('#invoiceTable').on('click', '.submit-btn', async (e) => {
-            const btn = $(e.currentTarget);
-            const data = btn.data();
-            await submitToLHDN(data.fileName, '01', 'Brahims', data.date);
+        // Quick Filter buttons
+        document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
+            button.addEventListener('click', (e) => {
+                // Remove active class from all buttons
+                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
+                // Add active class to clicked button
+                e.target.closest('.btn').classList.add('active');
+                
+                const filterValue = e.target.closest('.btn').dataset.filter;
+                this.applyQuickFilter(filterValue);
+            });
         });
 
+        // Global Search
+        const globalSearch = document.getElementById('globalSearch');
+        if (globalSearch) {
+            globalSearch.addEventListener('input', (e) => {
+                this.table.search(e.target.value).draw();
+            });
+        }
 
-        $('#invoiceTable').on('click', '.cancel-btn', async (e) => {
-            const fileName = $(e.currentTarget).data('fileName');
-            await cancelDocument(fileName, uuid);
+        // Advanced Filters
+        // Date Range
+        const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type');
+        const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type');
+        if (startDate && endDate) {
+            [startDate, endDate].forEach(input => {
+                input.addEventListener('change', () => this.applyAdvancedFilters());
+            });
+        }
+
+        // Amount Range
+        const minAmount = document.getElementById('minAmount');
+        const maxAmount = document.getElementById('maxAmount');
+        if (minAmount && maxAmount) {
+            [minAmount, maxAmount].forEach(input => {
+                input.addEventListener('input', () => this.applyAdvancedFilters());
+            });
+        }
+
+        // Company Filter
+        const companyFilter = document.querySelector('input[placeholder="Filter by company name"]');
+        if (companyFilter) {
+            companyFilter.addEventListener('input', () => this.applyAdvancedFilters());
+        }
+
+        // Document Type Filter
+        const documentTypeFilter = document.getElementById('documentTypeFilter');
+        if (documentTypeFilter) {
+            documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
+        }
+
+        // Clear Filters
+        const clearFiltersBtn = document.getElementById('clearFilters');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
+        }
+    }
+
+    applyQuickFilter(filterValue) {
+        if (!this.table) return;
+
+        // Clear the global search
+        const globalSearch = document.getElementById('globalSearch');
+        if (globalSearch) globalSearch.value = '';
+
+        // Apply filter based on value
+        this.table.column('status:name').search(
+            filterValue === 'all' ? '' : filterValue, 
+            false, 
+            false
+        ).draw();
+
+        // Update active filter tags
+        this.updateActiveFilterTags();
+    }
+
+    applyAdvancedFilters() {
+        if (!this.table) return;
+
+        // Create a custom filter function
+        $.fn.dataTable.ext.search.push((settings, data, dataIndex) => {
+            const row = this.table.row(dataIndex).data();
+            let passFilter = true;
+
+            // Date Range Filter
+            const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value;
+            const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value;
+            if (startDate && endDate) {
+                const rowDate = new Date(row.uploaded_date);
+                const filterStart = new Date(startDate);
+                const filterEnd = new Date(endDate);
+                
+                if (rowDate < filterStart || rowDate > filterEnd) {
+                    passFilter = false;
+                }
+            }
+
+            // Amount Range Filter
+            const minAmount = parseFloat(document.getElementById('minAmount').value) || 0;
+            const maxAmount = parseFloat(document.getElementById('maxAmount').value) || Infinity;
+            const rowAmount = parseFloat(row.total_amount?.replace(/[^0-9.-]+/g, '') || 0);
+            
+            if (rowAmount < minAmount || rowAmount > maxAmount) {
+                passFilter = false;
+            }
+
+            // Company Filter
+            const companyFilter = document.querySelector('input[placeholder="Filter by company name"]').value.toLowerCase();
+            if (companyFilter && !row.company?.toLowerCase().includes(companyFilter)) {
+                passFilter = false;
+            }
+
+            // Document Type Filter
+            const documentType = document.getElementById('documentTypeFilter').value;
+            if (documentType && row.document_type !== documentType) {
+                passFilter = false;
+            }
+
+            return passFilter;
         });
+
+        // Redraw the table
+        this.table.draw();
+
+        // Remove the custom filter
+        $.fn.dataTable.ext.search.pop();
+
+        // Update active filter tags
+        this.updateActiveFilterTags();
+    }
+
+    clearAllFilters() {
+        // Reset all form inputs
+        document.getElementById('globalSearch').value = '';
+        document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value = '';
+        document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value = '';
+        document.getElementById('minAmount').value = '';
+        document.getElementById('maxAmount').value = '';
+        document.querySelector('input[placeholder="Filter by company name"]').value = '';
+        document.getElementById('documentTypeFilter').value = '';
+
+        // Reset quick filter buttons
+        document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector('.quick-filters .btn[data-filter="all"]').classList.add('active');
+
+        // Clear DataTable filters
+        this.table.search('').columns().search('').draw();
+
+        // Clear active filter tags
+        this.updateActiveFilterTags();
+    }
+
+    updateActiveFilterTags() {
+        const activeFiltersContainer = document.getElementById('activeFilterTags');
+        if (!activeFiltersContainer) return;
+
+        // Clear existing tags
+        activeFiltersContainer.innerHTML = '';
+
+        // Helper function to create a filter tag
+        const createFilterTag = (label, value, type) => {
+            const tag = document.createElement('div');
+            tag.className = 'filter-tag';
+            tag.innerHTML = `
+                ${label}: ${value}
+                <button class="close-btn" data-filter-type="${type}">×</button>
+            `;
+            tag.querySelector('.close-btn').addEventListener('click', () => {
+                this.removeFilter(type);
+            });
+            return tag;
+        };
+
+        // Add tags for active filters
+        const activeFilters = this.getActiveFilters();
+        Object.entries(activeFilters).forEach(([type, value]) => {
+            if (value) {
+                activeFiltersContainer.appendChild(
+                    createFilterTag(type.charAt(0).toUpperCase() + type.slice(1), value, type)
+                );
+            }
+        });
+    }
+
+    getActiveFilters() {
+        const filters = {};
+
+        // Quick filter
+        const activeQuickFilter = document.querySelector('.quick-filters .btn.active');
+        if (activeQuickFilter && activeQuickFilter.dataset.filter !== 'all') {
+            filters.status = activeQuickFilter.textContent.trim();
+        }
+
+        // Date range
+        const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value;
+        const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value;
+        if (startDate && endDate) {
+            filters.dateRange = `${startDate} to ${endDate}`;
+        }
+
+        // Amount range
+        const minAmount = document.getElementById('minAmount').value;
+        const maxAmount = document.getElementById('maxAmount').value;
+        if (minAmount || maxAmount) {
+            filters.amountRange = `${minAmount || '0'} to ${maxAmount || '∞'}`;
+        }
+
+        // Company
+        const company = document.querySelector('input[placeholder="Filter by company name"]').value;
+        if (company) {
+            filters.company = company;
+        }
+
+        // Document type
+        const documentType = document.getElementById('documentTypeFilter').value;
+        if (documentType) {
+            filters.documentType = documentType;
+        }
+
+        return filters;
+    }
+
+    removeFilter(filterType) {
+        switch (filterType) {
+            case 'status':
+                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
+                document.querySelector('.quick-filters .btn[data-filter="all"]').classList.add('active');
+                this.applyQuickFilter('all');
+                break;
+            case 'dateRange':
+                document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value = '';
+                document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value = '';
+                this.applyAdvancedFilters();
+                break;
+            case 'amountRange':
+                document.getElementById('minAmount').value = '';
+                document.getElementById('maxAmount').value = '';
+                this.applyAdvancedFilters();
+                break;
+            case 'company':
+                document.querySelector('input[placeholder="Filter by company name"]').value = '';
+                this.applyAdvancedFilters();
+                break;
+            case 'documentType':
+                document.getElementById('documentTypeFilter').value = '';
+                this.applyAdvancedFilters();
+                break;
+        }
     }
 
     formatDate(date) {
@@ -903,29 +1474,22 @@ class InvoiceTableManager {
     }
 
     updateCardTotals() {
-        if (!this.table) return;
-
-        const data = this.table.rows().data();
         const totals = {
             total: 0,
             submitted: 0,
-            pending: 0,
-            rejected: 0,
+            invalid: 0,
             cancelled: 0,
-            invalid: 0
+            pending: 0
         };
 
-        // Count all rows
-        data.each(row => {
-            const status = (row.status || 'Pending').toLowerCase();
+        // Calculate totals from table data
+        this.table.rows().every((rowIdx) => {
+            const data = this.table.row(rowIdx).data();
             totals.total++;
 
-            switch (status) {
+            switch (data.status?.toLowerCase()) {
                 case 'submitted':
                     totals.submitted++;
-                    break;
-                case 'rejected':
-                    totals.rejected++;
                     break;
                 case 'invalid':
                     totals.invalid++;
@@ -933,11 +1497,7 @@ class InvoiceTableManager {
                 case 'cancelled':
                     totals.cancelled++;
                     break;
-                case 'processing':
-                case 'pending':
-                case '':
-                case null:
-                case undefined:
+                case 'queue':
                     totals.pending++;
                     break;
                 default:
@@ -957,14 +1517,297 @@ class InvoiceTableManager {
         // Update card values with animation
         this.animateNumber(document.querySelector('.total-invoice-count'), totals.total);
         this.animateNumber(document.querySelector('.total-submitted-count'), totals.submitted);
-        this.animateNumber(document.querySelector('.total-rejected-count'), totals.rejected);
-        this.animateNumber(document.querySelector('.total-cancelled-count'), totals.cancelled);
         this.animateNumber(document.querySelector('.total-invalid-count'), totals.invalid);
-        this.animateNumber(document.querySelector('.total-pending-count'), totals.pending);
+        this.animateNumber(document.querySelector('.total-cancelled-count'), totals.cancelled);
+        this.animateNumber(document.querySelector('.total-queue-value'), totals.pending);
 
+        // Calculate percentages for validation rate
+        const totalForValidation = totals.submitted + totals.invalid + totals.pending;
+        const validPercentage = totalForValidation > 0 ? (totals.submitted / totalForValidation * 100) : 0;
+        const invalidPercentage = totalForValidation > 0 ? (totals.invalid / totalForValidation * 100) : 0;
+        const pendingPercentage = totalForValidation > 0 ? (totals.pending / totalForValidation * 100) : 0;
 
+        // Update validation rate display
+        const validationRateElement = document.querySelector('.success-rate');
+        if (validationRateElement) {
+            validationRateElement.textContent = `${Math.round(validPercentage)}%`;
+            validationRateElement.setAttribute('data-bs-original-title', 
+                `<div class='p-2'>
+                    <strong>Current Success Rate:</strong> ${Math.round(validPercentage)}%<br>
+                    <small>Based on ${totals.submitted} successfully validated documents out of ${totalForValidation} total submissions</small>
+                </div>`
+            );
+        }
+
+        // Update main progress bar
+        const mainProgressBar = document.querySelector('.validation-stats .progress-bar');
+        if (mainProgressBar) {
+            mainProgressBar.style.width = `${validPercentage}%`;
+            mainProgressBar.setAttribute('aria-valuenow', validPercentage);
+        }
+
+        // Update breakdown progress bars and percentages
+        // Valid
+        const validBar = document.querySelector('.breakdown-item:nth-child(1) .progress-bar');
+        const validPercentText = document.querySelector('.breakdown-item:nth-child(1) .text-success');
+        if (validBar && validPercentText) {
+            validBar.style.width = `${validPercentage}%`;
+            validBar.setAttribute('aria-valuenow', validPercentage);
+            validPercentText.textContent = `${Math.round(validPercentage)}%`;
+        }
+
+        // Invalid
+        const invalidBar = document.querySelector('.breakdown-item:nth-child(2) .progress-bar');
+        const invalidPercentText = document.querySelector('.breakdown-item:nth-child(2) .text-danger');
+        if (invalidBar && invalidPercentText) {
+            invalidBar.style.width = `${invalidPercentage}%`;
+            invalidBar.setAttribute('aria-valuenow', invalidPercentage);
+            invalidPercentText.textContent = `${Math.round(invalidPercentage)}%`;
+        }
+
+        // Pending
+        const pendingBar = document.querySelector('.breakdown-item:nth-child(3) .progress-bar');
+        const pendingPercentText = document.querySelector('.breakdown-item:nth-child(3) .text-warning');
+        if (pendingBar && pendingPercentText) {
+            pendingBar.style.width = `${pendingPercentage}%`;
+            pendingBar.setAttribute('aria-valuenow', pendingPercentage);
+            pendingPercentText.textContent = `${Math.round(pendingPercentage)}%`;
+        }
+
+        // Add detailed information to tooltips
+        const validTooltip = document.querySelector('.breakdown-item:nth-child(1) .bi-info-circle-fill');
+        if (validTooltip) {
+            validTooltip.setAttribute('data-bs-original-title',
+                `<div class='p-2'>
+                    <strong>Submitted Documents:</strong><br>
+                    • ${totals.submitted} documents successfully validated<br>
+                    • ${Math.round(validPercentage)}% of total submissions<br>
+                    • Ready for LHDN processing
+                </div>`
+            );
+        }
+
+        const invalidTooltip = document.querySelector('.breakdown-item:nth-child(2) .bi-info-circle-fill');
+        if (invalidTooltip) {
+            invalidTooltip.setAttribute('data-bs-original-title',
+                `<div class='p-2'>
+                    <strong>Invalid Documents:</strong><br>
+                    • ${totals.invalid} documents failed validation<br>
+                    • ${Math.round(invalidPercentage)}% of total submissions<br>
+                    • Requires correction and resubmission
+                </div>`
+            );
+        }
+
+        const pendingTooltip = document.querySelector('.breakdown-item:nth-child(3) .bi-info-circle-fill');
+        if (pendingTooltip) {
+            pendingTooltip.setAttribute('data-bs-original-title',
+                `<div class='p-2'>
+                    <strong>Pending Documents:</strong><br>
+                    • ${totals.pending} documents in queue<br>
+                    • ${Math.round(pendingPercentage)}% of total submissions<br>
+                    • Awaiting LHDN validation
+                </div>`
+            );
+        }
+
+        // Reinitialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.forEach(tooltipTriggerEl => {
+            const tooltip = bootstrap.Tooltip.getInstance(tooltipTriggerEl);
+            if (tooltip) {
+                tooltip.dispose();
+            }
+            new bootstrap.Tooltip(tooltipTriggerEl, {
+                html: true,
+                container: 'body'
+            });
+        });
+
+        // Update statistics charts
+        this.updateStatisticsCharts(totals);
     }
 
+    updateStatisticsCharts(totals) {
+        // Update Document Status Distribution Chart
+        if (window.documentStatusChart) {
+            window.documentStatusChart.data.datasets[0].data = [
+                totals.submitted,
+                totals.invalid,
+                totals.pending,
+                totals.cancelled
+            ];
+            window.documentStatusChart.update();
+        }
+
+        // Update Outbound Document Trend Chart
+        if (window.dailySubmissionsChart && this.table) {
+            const data = Array.from(this.table.rows().data());
+            const dateGroups = {};
+            const validatedGroups = {};
+            
+            // Group documents by date
+            data.forEach(row => {
+                const date = this.formatDate(row.uploaded_date);
+                dateGroups[date] = (dateGroups[date] || 0) + 1;
+                
+                // Count validated documents separately
+                if (row.status === 'submitted') {
+                    validatedGroups[date] = (validatedGroups[date] || 0) + 1;
+                }
+            });
+
+            // Get last 7 days
+            const today = new Date();
+            const last7Days = Array.from({length: 7}, (_, i) => {
+                const d = new Date(today);
+                d.setDate(d.getDate() - i);
+                return this.formatDate(d);
+            }).reverse();
+
+            // Update chart data with status counts over time
+            window.dailySubmissionsChart.data.labels = last7Days;
+            window.dailySubmissionsChart.data.datasets = [
+                {
+                    label: 'Submitted',
+                    data: last7Days.map(date => {
+                        return data.filter(row => 
+                            this.formatDate(row.uploaded_date) === date && 
+                            row.status === 'submitted'
+                        ).length;
+                    }),
+                    borderColor: '#198754', // Success green
+                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Invalid',
+                    data: last7Days.map(date => {
+                        return data.filter(row => 
+                            this.formatDate(row.uploaded_date) === date && 
+                            row.status === 'invalid'
+                        ).length;
+                    }),
+                    borderColor: '#dc3545', // Danger red
+                    backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Pending',
+                    data: last7Days.map(date => {
+                        return data.filter(row => 
+                            this.formatDate(row.uploaded_date) === date && 
+                            row.status === 'pending'
+                        ).length;
+                    }),
+                    borderColor: '#ffc107', // Warning yellow
+                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Cancelled',
+                    data: last7Days.map(date => {
+                        return data.filter(row => 
+                            this.formatDate(row.uploaded_date) === date && 
+                            row.status === 'cancelled'
+                        ).length;
+                    }),
+                    borderColor: '#6c757d', // Secondary gray
+                    backgroundColor: 'rgba(108, 117, 125, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }
+            ];
+
+            // Update chart options for better visibility
+            window.dailySubmissionsChart.options = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 15,
+                            font: {
+                                size: 11
+                            }
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        titleColor: '#000',
+                        bodyColor: '#666',
+                        borderColor: '#ddd',
+                        borderWidth: 1,
+                        padding: 10,
+                        boxPadding: 3,
+                        usePointStyle: true,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.y + ' documents';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            font: {
+                                size: 11
+                            }
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            borderDash: [2, 2]
+                        },
+                        ticks: {
+                            font: {
+                                size: 11
+                            },
+                            stepSize: 1,
+                            callback: function(value) {
+                                if (Math.floor(value) === value) {
+                                    return value;
+                                }
+                            }
+                        }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            };
+            window.dailySubmissionsChart.update('none'); // Use 'none' to prevent animation flicker
+        }
+
+        // Update Validation Success Rate Chart
+        if (window.processingTimeChart && this.table) {
+            const total = totals.submitted + totals.invalid + totals.pending;
+            const validPercentage = total > 0 ? (totals.submitted / total) * 100 : 0;
+            const invalidPercentage = total > 0 ? (totals.invalid / total) * 100 : 0;
+            const pendingPercentage = total > 0 ? (totals.pending / total) * 100 : 0;
+
+            window.processingTimeChart.data.datasets[0].data = [
+                Math.round(validPercentage * 10) / 10,
+                Math.round(invalidPercentage * 10) / 10,
+                Math.round(pendingPercentage * 10) / 10
+            ];
+            window.processingTimeChart.update();
+        }
+    }
     // Helper method to animate number changes
     animateNumber(element, targetValue) {
         const startValue = parseInt(element.textContent) || 0;
@@ -3846,4 +4689,3 @@ class ConsolidatedSubmissionManager {
 document.addEventListener('DOMContentLoaded', () => {
     new ConsolidatedSubmissionManager();
 });
-
