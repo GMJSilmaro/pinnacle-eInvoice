@@ -779,7 +779,7 @@
     display: flex;
     gap: 1rem;
     padding: 1rem;
-    background: linear-gradient(to right, rgba(13, 110, 253, 0.03), rgba(13, 110, 253, 0.01));
+    /* background: linear-gradient(to right, rgba(13, 110, 253, 0.03), rgba(13, 110, 253, 0.01)); */
     border-radius: 8px;
     border: 1px solid rgba(13, 110, 253, 0.1);
     position: relative;
@@ -1006,10 +1006,10 @@
     <div class="statistics-section mb-4">
       <div class="row">
         <!-- Document Status Chart -->
-        <div class="col-md-4">
-          <div class="card shadow-sm h-100">
+        <div class="col-md-3">
+          <div class="card shadow-sm h-100 ">
             <div class="card-body">
-              <h6 class="card-title d-flex align-items-center mb-3">
+              <h6 class="card-title d-flex align-items-center mb-3 ">
                 <i class="bi bi-pie-chart-fill me-2"></i>
                 Document Status Distribution
               </h6>
@@ -1020,8 +1020,45 @@
           </div>
         </div>
         
+        <!-- Middleware Disclaimer -->
+        <div class="col-md-5">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body middleware-disclaimer">
+                        <div class="disclaimer-icon">
+                        <i class="bi bi-arrow-left-right"></i>
+                    </div>
+                        <div class="disclaimer-content">
+                            <h6 class="mb-1">Middleware Service</h6>
+                            <div class="info-banner mb-3 d-flex align-items-center">
+                                <span class="badge rounded-pill bg-info-subtle text-warning me-2">
+                                    <i class="bi bi-info-circle"></i>
+                                </span>
+                                <small class="text-secondary"><div class="note-badge">
+                                    <span>Important Note!</span>
+                                </div></small>
+                            </div>
+    
+                            <p class="mb-0 small">We act as a transmission channel between you and LHDN. Our role:</p>
+                            <ul class="small mb-0 ps-3 mt-1">
+                                <li><i class="bi bi-check-circle me-2"></i>Format validation & data verification before submission</li>
+                                <li><i class="bi bi-shield-lock me-2"></i>Secure transmission channel to LHDN's systems</li>
+                                <li><i class="bi bi-graph-up me-2"></i>Real-time status tracking through dashboard</li>
+                            </ul>
+                            <div class="disclaimer-note mt-2">
+                                <i class="bi bi-exclamation-circle"></i>
+                                <span>Final acceptance and validation are determined by LHDN</span>
+                            </div>
+                            <div class="disclaimer-info mt-2">
+                                <i class="bi bi-link-45deg"></i>
+                                <span>Official LHDN SDK Documentation: <a href="https://sdk.hasil.gov.my" target="_blank" class="text-primary">sdk.hasil.gov.my</a></span>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+        </div>
+
         <!-- Processing Time Chart -->
-        <div class="col-md-3">
+        <div class="col-md-4">
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h6 class="card-title d-flex align-items-center mb-3">
@@ -1120,38 +1157,7 @@
           </div>
         </div>
 
-        <!-- Middleware Disclaimer -->
-        <div class="col-md-5">
-            <div class="card shadow-sm h-100">
-                <div class="card-body middleware-disclaimer">
-                    <div class="disclaimer-icon">
-                    <i class="bi bi-arrow-left-right"></i>
-                </div>
-                    <div class="disclaimer-content">
-                        <h6 class="mb-1">Middleware Service</h6>
-                        <div class="info-banner mb-3 d-flex align-items-center">
-                            <span class="badge rounded-pill bg-info-subtle text-warning me-2">
-                                <i class="bi bi-info-circle"></i>
-                            </span>
-                            <small class="text-secondary"><div class="note-badge">
-                                <span>Important Note!</span>
-                            </div></small>
-                        </div>
-
-                        <p class="mb-0 small">We act as a transmission channel between you and LHDN. Our role:</p>
-                        <ul class="small mb-0 ps-3 mt-1">
-                            <li>Format validation & data verification before submission</li>
-                            <li>Secure transmission channel to LHDN's systems</li>
-                            <li>Real-time status tracking through dashboard</li>
-                        </ul>
-                        <div class="disclaimer-note mt-2">
-                            <i class="bi bi-exclamation-circle"></i>
-                            <span>Final acceptance and validation are determined by LHDN</span>
-                        </div>
-                    </div>
-                </div>
-                </div>
-      </div>
+   
     </div>
             <!-- Table Section -->
             <div class="table-container-wrapper">
@@ -1168,52 +1174,106 @@
                         </div>
                         <div class="disclaimer-note mt-2">
                             <i class="bi bi-exclamation-circle"></i>
-                            <span>For a smooth submission process, verify all required fields are complete and accurate on your ERP System.</span>
+                            <span>For a smooth submission process, verify all required fields are complete and accurate on your ERP System Before Submitting to LHDN. </br>
+                            <span>Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission</span>
+                            <a href="/help" class="ms-1 text-decoration-none" target="_blank">
+                                <i class="bi bi-question-circle" data-bs-toggle="tooltip" title="Click for help documentation"></i>
+                            </a>
                         </div>
-                        <div class="disclaimer-note mt-2">
-                            <i class="bi bi-exclamation-circle"></i>
-                            <span>Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission.</span>
+                        <div class="disclaimer-note mt-2" style="background: rgba(220, 53, 69, 0.1); color: #842029;">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span><strong>Important Disclaimer:</strong> <br>
+                            Our platform provides validation services, but the ultimate responsibility for data accuracy lies with the user. 
+                            <br>
+                            We are not liable for any consequences, penalties, or issues arising from submission of incomplete, inaccurate or non-compliant data to LHDN.</span>
                         </div>
-                       
-                        <!-- Consolidation Guidelines -->
-                        <div class="consolidation-section mt-3">
+                        
+                    </div>
+                    <div class="table-controls">
+                        <div class="d-flex align-items-center gap-1">
+                            <div class="modern-length">
+                                <!-- Length control will be inserted by DataTables -->
+                            </div>
+                            <div class="modern-search">
+                                <!-- Search control will be inserted by DataTables -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-body-container">
+                        <div class="responsive-table-container">
+                            <div class="table-section">
+                                <div class="outbound-table-container">
+                    <!-- Consolidation Guidelines -->
+                        <div class="mt-3 mb-4">
+                            <div class="middleware-disclaimer mb-3">
+                                <div class="disclaimer-icon">
+                                    <i class="bi bi-info-circle-fill text-primary"></i>
+                                </div>
+                                <div class="disclaimer-content">
+                                    <h6 class="mb-0 text-primary fw-bold">Important Information About Consolidation</h6>
+                                    <p class="mb-2">This section outlines critical requirements for LHDN e-Invoice consolidation. Please review carefully before proceeding.</p>
+                                </div>
+                            </div>
 
-                            <div class="d-flex align-items-center justify-content-between mb-3">
+                            <div class="d-flex align-items-center justify-content-between mb-3 clickable-header" 
+                                 style="cursor: pointer; transition: all 0.2s ease; background: #f8f9fa; padding: 1rem; border-radius: 8px; border: 1px solid #e9ecef;">
                                 <div class="d-flex align-items-center">
-                                    <span class="badge rounded-pill bg-primary-subtle text-primary me-2">
+                                    <span class="badge rounded-pill bg-primary me-2" style="padding: 8px;" data-bs-toggle="tooltip" title="Consolidation allows grouping multiple invoices into a single submission">
                                         <i class="bi bi-boxes"></i>
                                     </span>
-                                    <h6 class="mb-0 text-primary">LHDN e-Invoice Consolidation Requirements</h6>
+                                    <h6 class="mb-0 text-primary fw-bold">LHDN e-Invoice Consolidation Requirements <i class="bi bi-info-circle-fill ms-1 small" data-bs-toggle="tooltip" data-bs-html="true" 
+                                        title="<div class='p-2'>
+                                            <strong>Before Submitting a Consolidation:</strong><br>
+                                            • Must Group multiple invoices together<br>
+                                            • Must meet LHDN requirements<br>
+                                            • Streamlines submission process</div>">
+                                        </i>
+                                        </h6>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
                                     <a href="https://www.hasil.gov.my/media/uwwehxwq/irbm-e-invoice-specific-guideline.pdf" 
                                        target="_blank" 
-                                       class="btn btn-sm btn-link text-muted p-0 d-flex align-items-center"
+                                       class="btn btn-sm btn-link text-primary p-0 d-flex align-items-center hover-effect"
                                        data-bs-toggle="tooltip"
-                                       title="View LHDN Guidelines">
+                                       data-bs-html="true"
+                                       title="<div class='p-2'>
+                                               <strong>LHDN Official Guidelines:</strong><br>
+                                               • Review consolidation requirements<br>
+                                               • Ensure compliance with LHDN standards<br>
+                                               • Understand submission protocols
+                                             </div>">
                                         <i class="bi bi-file-pdf fs-5"></i>
+                                        <span class="ms-1 small">LHDN Guidelines</span>
                                     </a>
-                                    <button class="btn btn-sm btn-link text-muted p-0 d-flex align-items-center" 
+                                    <button class="btn btn-sm btn-link text-primary p-0 d-flex align-items-center toggle-btn" 
                                             type="button" 
                                             data-bs-toggle="collapse" 
                                             data-bs-target="#consolidationDetails" 
-                                            aria-expanded="true" 
-                                            aria-controls="consolidationDetails">
-                                        <i class="bi bi-chevron-up toggle-icon fs-5"></i>
+                                            aria-expanded="false" 
+                                            aria-controls="consolidationDetails"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-html="true"
+                                            title="<div class='p-2'>
+                                                    <strong>Consolidation Requirements:</strong><br>
+                                                    • View detailed formatting guidelines<br>
+                                                    • Check buyer information requirements<br>
+                                                    • Review receipt number formatting
+                                                  </div>">
+                                        <i class="bi bi-chevron-down toggle-icon fs-5"></i>
+                                        
                                     </button>
                                 </div>
                             </div>
 
-                            <div class="collapse show" id="consolidationDetails">
-
+                            <div class="collapse" id="consolidationDetails">
                                 <div class="consolidation-content">
                                     <div class="row g-3">
                                         <!-- Buyer's Details -->
                                         <div class="col-md-6">
-                                            <div class="content-card h-100">
-                                                <div class="card-header">
+                                            <div class="content-card h-100" style="border: 1px solid #e9ecef; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                                                <div class="card-header bg-light">
                                                     <i class="bi bi-person-badge text-primary"></i>
-                                                    <span>Buyer's Details</span>
+                                                    <span class="fw-bold">Buyer's Details</span>
                                                 </div>
                                                 <div class="card-content">
                                                     <div class="detail-item">
@@ -1238,10 +1298,10 @@
 
                                         <!-- Description Format -->
                                         <div class="col-md-6">
-                                            <div class="content-card h-100">
-                                                <div class="card-header">
+                                            <div class="content-card h-100" style="border: 1px solid #e9ecef; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                                                <div class="card-header bg-light">
                                                     <i class="bi bi-list-check text-primary"></i>
-                                                    <span>Description Format</span>
+                                                    <span class="fw-bold">Description Format</span>
                                                 </div>
                                                 <div class="card-content">
                                                     <div class="format-item">
@@ -1271,29 +1331,47 @@
                         <script>
                             document.addEventListener('DOMContentLoaded', function() {
                                 const toggleBtn = document.querySelector('[data-bs-toggle="collapse"]');
+                                const clickableHeader = document.querySelector('.clickable-header');
+                                
+                                // Add hover effect to the entire header
+                                clickableHeader.addEventListener('mouseenter', function() {
+                                    this.style.transform = 'translateY(-2px)';
+                                    this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+                                });
+                                
+                                clickableHeader.addEventListener('mouseleave', function() {
+                                    this.style.transform = 'translateY(0)';
+                                    this.style.boxShadow = 'none';
+                                });
+
+                                // Make the entire header trigger the collapse
+                                clickableHeader.addEventListener('click', function(e) {
+                                    if (!e.target.closest('a')) { // Prevent triggering when clicking the PDF link
+                                        toggleBtn.click();
+                                    }
+                                });
+
                                 toggleBtn.addEventListener('click', function() {
                                     const isCollapsed = this.getAttribute('aria-expanded') === 'false';
                                     this.setAttribute('aria-expanded', isCollapsed);
+                                    const icon = this.querySelector('.toggle-icon');
+                                    icon.style.transition = 'transform 0.3s ease';
+                                    icon.style.transform = isCollapsed ? 'rotate(180deg)' : 'rotate(0)';
+                                });
+
+                                // Add hover effect for PDF link
+                                const pdfLink = document.querySelector('.hover-effect');
+                                pdfLink.addEventListener('mouseenter', function() {
+                                    this.style.transform = 'scale(1.1)';
+                                    this.style.transition = 'transform 0.2s ease';
+                                });
+                                
+                                pdfLink.addEventListener('mouseleave', function() {
+                                    this.style.transform = 'scale(1)';
                                 });
                             });
                         </script>
-                    </div>
-                    <div class="table-controls">
-                        <div class="d-flex align-items-center gap-1">
-                            <div class="modern-length">
-                                <!-- Length control will be inserted by DataTables -->
-                            </div>
-                            <div class="modern-search">
-                                <!-- Search control will be inserted by DataTables -->
-                            </div>
-                        </div>
-                    </div>
-                    <div class="table-body-container">
-                        <div class="responsive-table-container">
-                            <div class="table-section">
-                                <div class="outbound-table-container">
-                                    <!-- Replace the entire filter section with new design -->
-                                    <div class="filter-container bg-white p-3 rounded-3 shadow-sm">
+                                    <div>
                                         <!-- Primary Filters Row -->
                                         <div class="row g-3 mb-3">
                                             <!-- Global Search -->
@@ -1440,6 +1518,7 @@
                                                 </div>
                                             </div>
                                         </div>
+                      
                                     </div>
                                     <!-- End of new filter section -->
                                   
