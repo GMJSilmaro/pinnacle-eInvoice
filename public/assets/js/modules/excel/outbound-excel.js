@@ -11,10 +11,10 @@ class DateTimeManager {
     static updateDateTime() {
         const timeElement = document.getElementById('currentTime');
         const dateElement = document.getElementById('currentDate');
-        
+
         function update() {
             const now = new Date();
-            
+
             if (timeElement) {
                 timeElement.textContent = now.toLocaleTimeString('en-US', {
                     hour: '2-digit',
@@ -23,7 +23,7 @@ class DateTimeManager {
                     hour12: true
                 });
             }
-            
+
             if (dateElement) {
                 dateElement.textContent = now.toLocaleDateString('en-US', {
                     weekday: 'long',
@@ -33,7 +33,7 @@ class DateTimeManager {
                 });
             }
         }
-        
+
         update();
         setInterval(update, 1000);
     }
@@ -41,17 +41,17 @@ class DateTimeManager {
 
 class InvoiceTableManager {
     static instance = null;
-  
+
     static getInstance() {
         if (!InvoiceTableManager.instance) {
             InvoiceTableManager.instance = new InvoiceTableManager();
         }
         return InvoiceTableManager.instance;
     }
-  
+
     constructor() {
         if (InvoiceTableManager.instance) return InvoiceTableManager.instance;
-        
+
         // Check if table element exists before initializing
         const tableElement = document.getElementById('invoiceTable');
         if (!tableElement) {
@@ -75,7 +75,7 @@ class InvoiceTableManager {
         this.initializeTable();
         InvoiceTableManager.instance = this;
     }
-  
+
     initializeTable() {
         try {
             // Destroy existing table if it exists
@@ -88,26 +88,6 @@ class InvoiceTableManager {
             this.table = $('#invoiceTable').DataTable({
                 processing: false,
                 serverSide: false,
-                // Add default sorting by status with pending items at the top
-                order: [[8, 'asc'], [6, 'desc']], // 8 is the index of the status column, 6 is the index of the date column
-                // Add custom sorting function for status column to prioritize 'Pending' status
-                columnDefs: [
-                    {
-                        targets: 8, // Status column index
-                        type: 'string',
-                        render: function(data, type, row) {
-                            // For sorting purposes only
-                            if (type === 'sort') {
-                                // Prioritize 'Pending' status by prefixing with 'A'
-                                // Other statuses will be sorted alphabetically after pending
-                                const status = (data || 'Pending').toLowerCase();
-                                return status === 'pending' ? 'A_pending' : 'B_' + status;
-                            }
-                            // For display, use the regular render function
-                            return null; // Let the regular render function handle display
-                        }
-                    }
-                ],
                 ajax: {
                     url: '/api/outbound-files/list-all',
                     method: 'GET',
@@ -117,12 +97,12 @@ class InvoiceTableManager {
                             this.showEmptyState(json.error?.message || 'Failed to load data');
                             return [];
                         }
-                        
+
                         if (!json.files || json.files.length === 0) {
                             this.showEmptyState('No EXCEL files found');
                             return [];
                         }
-                        
+
                         // Process the files data
                         const processedData = json.files.map(file => ({
                             ...file,
@@ -150,13 +130,13 @@ class InvoiceTableManager {
 
                         // Update card totals after data is loaded
                         setTimeout(() => this.updateCardTotals(), 0);
-                        
+
                         return processedData;
                     },
                     error: (xhr, error, thrown) => {
                         console.error('Ajax error:', error);
                         let errorMessage = 'Error loading data. Please try again.';
-                        
+
                         try {
                             const response = xhr.responseJSON;
                             if (response && response.error) {
@@ -165,22 +145,23 @@ class InvoiceTableManager {
                         } catch (e) {
                             console.error('Error parsing error response:', e);
                         }
-                        
+
                         this.showEmptyState(errorMessage);
                     }
                 },
+               
                 columns: [
                     {
                         data: null,
                         orderable: false,
                         searchable: false,
-                        render: function(data, type, row) {
+                        render: function (data, type, row) {
                             // Only enable checkbox for Pending status
                             const status = (row.status || 'Pending').toLowerCase();
                             const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
                             const disabledAttr = disabledStatus ? 'disabled' : '';
                             const title = disabledStatus ? `Cannot select ${status} items` : '';
-                            
+
                             return `<div class="outbound-checkbox-header">
                                 <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
                             </div>`;
@@ -250,8 +231,8 @@ class InvoiceTableManager {
                         render: (data, type, row) => this.renderActions(row)
                     }
                 ],
-                scrollX: true,
-                scrollCollapse: true,
+                scrollX: false,
+                scrollCollapse: false,
                 autoWidth: false,
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
@@ -271,13 +252,14 @@ class InvoiceTableManager {
                     emptyTable: this.getEmptyStateHtml(),
                     zeroRecords: this.getEmptyStateHtml('Searching for data...')
                 },
-                order: [[8, 'asc'], [6, 'desc']], // First sort by status (pending first), then by date (newest first)
+                order: [6, 'desc'], // First sort by status (pending first), then by date (newest first)
                 orderFixed: {
-                    pre: [[8, 'asc']] // Ensure status sorting is always applied first
+                    pre: [[6, 'desc'], [8, 'asc']] // Ensure status sorting is always applied first
                 },
-                drawCallback: function(settings) {
+                
+                drawCallback: function (settings) {
                     // Update row indexes when table is redrawn (sorting, filtering, pagination)
-                    $(this).find('tbody tr').each(function(index) {
+                    $(this).find('tbody tr').each(function (index) {
                         const pageInfo = settings._iDisplayStart;
                         $(this).find('.row-index').text(pageInfo + index + 1);
                     });
@@ -296,7 +278,7 @@ class InvoiceTableManager {
             });
 
             this.initializeFeatures();
-            
+
         } catch (error) {
             console.error('Error initializing DataTable:', error);
             this.showEmptyState('Error initializing table. Please refresh the page.');
@@ -325,7 +307,7 @@ class InvoiceTableManager {
 
     renderTotalAmount(data) {
         if (!data) return '<span class="text-muted">N/A</span>';
-        
+
         return `
             <div class="total-amount-wrapper" style="
                 display: flex;
@@ -349,10 +331,10 @@ class InvoiceTableManager {
             </div>
         `;
     }
-  
+
     renderInvoiceNumber(data, type, row) {
         if (!data) return '<span class="text-muted">N/A</span>';
-        
+
         // Get document type icon based on type
         const getDocTypeIcon = (docType) => {
             const icons = {
@@ -459,7 +441,7 @@ class InvoiceTableManager {
             </div>`;
     }
 
-    
+
     renderSupplierInfo(data) {
         if (!data) {
             return '<span class="text-muted">Company Name</span>';
@@ -501,7 +483,7 @@ class InvoiceTableManager {
         const cancelledFormatted = date_cancelled ? this.formatDate(date_cancelled) : null;
         const showTimeRemaining = row.status === 'Submitted' && !cancelledFormatted;
         const timeRemaining = showTimeRemaining ? this.calculateRemainingTime(submittedDate) : null;
-        
+
         return `
             <div class="date-info"> 
                 ${submittedFormatted ? `
@@ -558,15 +540,15 @@ class InvoiceTableManager {
         if (!data) return '<span class="text-muted">N/A</span>';
         return `<span class="time-text text-muted" title="${data}">${formattedDate}</span>`;
     }
-  
+
     renderTimeRemaining(date, row) {
-        if (!date || row.status === 'Cancelled' || row.status === 'Failed' || row.status === 'Rejected') {
+        if (!date || row.status === 'Cancelled' || row.status === 'Failed' || row.status === 'Rejected' || row.status === 'Invalid') {
             return `<span class="badge-cancellation not-applicable bg-gray-300 text-gray-700">
                 <i class="bi bi-dash-circle"></i>
                 Not Applicable
             </span>`;
         }
-  
+
         const timeInfo = this.calculateRemainingTime(date);
         if (!timeInfo) {
             return `<span class="badge-cancellation expired">
@@ -574,18 +556,18 @@ class InvoiceTableManager {
                 Expired
             </span>`;
         }
-  
+
         return `<span class="badge-cancellation ${timeInfo.badgeClass}">
             <i class="bi bi-clock${timeInfo.hours < 24 ? '-fill' : ''} me-1"></i>
             ${timeInfo.hours}h ${timeInfo.minutes}m left
         </span>`;
     }
-  
+
     renderSource(data) {
         if (!data) return '<span class="text-muted">N/A</span>';
         return `<span class="badge-source ${data.toLowerCase()}">${data}</span>`;
     }
-  
+
     renderFileName(data) {
         return data ? `
             <div class="outbound-file-name">
@@ -593,11 +575,11 @@ class InvoiceTableManager {
                 <span class="outbound-file-name-text" title="${data}">${data}</span>
             </div>` : '<span class="text-muted">N/A</span>';
     }
-  
+
     renderDocumentType(data) {
         return `<span class="badge-type documentType" data-bs-toggle="tooltip" title="${data}">${data}</span>`;
     }
-  
+
     renderStatus(data) {
         const status = data || 'Pending';
         const statusClass = status.toLowerCase();
@@ -624,11 +606,11 @@ class InvoiceTableManager {
 
         // Add spinning animation for processing status
         const spinClass = statusClass === 'processing' ? 'spin' : '';
-        
+
         return `<span class="outbound-status ${statusClass}" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: ${color}15; color: ${color}; font-weight: 500; transition: all 0.2s ease;">
             <i class="bi bi-${icon} ${spinClass}" style="font-size: 14px;"></i>${status}</span>`;
     }
-  
+
     renderActions(row) {
         if (!row.status || row.status === 'Pending') {
             return `
@@ -648,7 +630,7 @@ class InvoiceTableManager {
                     </button>
                 </div>`;
         }
-        
+
         if (row.status === 'Submitted') {
             const timeInfo = this.calculateRemainingTime(row.date_submitted);
             if (timeInfo && !timeInfo.expired) {
@@ -663,7 +645,20 @@ class InvoiceTableManager {
                     </button>`;
             }
         }
-        
+
+        if (row.status === 'Invalid') {
+            return `
+             <button 
+                class="outbound-action-btn"
+                disabled
+                data-bs-toggle="tooltip" 
+                data-bs-placement="top"
+                title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'LHDN Cancellation successfully processed' : 'LHDN Validation is finalized, Kindly check the Inbound Page status for more details'}">
+                <i class="bi bi-check-circle"></i>
+                ${row.status}
+            </button>`;
+        }
+
         return `
             <button 
                 class="outbound-action-btn"
@@ -675,40 +670,40 @@ class InvoiceTableManager {
                 ${row.status}
             </button>`;
     }
-  
+
     calculateRemainingTime(submissionDate) {
         if (!submissionDate) return null;
         const submitted = new Date(submissionDate);
         const now = new Date();
         const deadline = new Date(submitted.getTime() + (72 * 60 * 60 * 1000));
-        
+
         if (now >= deadline) return null;
-        
+
         const remaining = deadline - now;
         const hours = Math.floor(remaining / (60 * 60 * 1000));
         const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-        
+
         let badgeClass = 'success';
         if (hours < 6) badgeClass = 'danger';
         else if (hours < 24) badgeClass = 'warning';
-        
+
         return { hours, minutes, badgeClass, expired: false };
     }
-  
+
     initializeEventListeners() {
         $('#invoiceTable').on('click', '.submit-btn', async (e) => {
             const btn = $(e.currentTarget);
             const data = btn.data();
             await submitToLHDN(data.fileName, '01', 'Brahims', data.date);
         });
-  
-  
+
+
         $('#invoiceTable').on('click', '.cancel-btn', async (e) => {
             const fileName = $(e.currentTarget).data('fileName');
             await cancelDocument(fileName, uuid);
         });
     }
-  
+
     formatDate(date) {
         if (!date) return '-';
         return new Date(date).toLocaleString('en-US', {
@@ -732,7 +727,7 @@ class InvoiceTableManager {
 
     formatIssueTime(time) {
         if (!time) return null;
-        
+
         try {
             // If time is in ISO format with Z (UTC)
             if (time.includes('Z')) {
@@ -741,17 +736,17 @@ class InvoiceTableManager {
                 const hour = parseInt(hours, 10);
                 const ampm = hour >= 12 ? 'PM' : 'AM';
                 const hour12 = hour % 12 || 12;
-                
+
                 // Format as "HH:MM AM/PM"
                 return `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
             }
-            
+
             // For other time formats, try to parse and format consistently
             const [hours, minutes] = time.split(':');
             const hour = parseInt(hours, 10);
             const ampm = hour >= 12 ? 'PM' : 'AM';
             const hour12 = hour % 12 || 12;
-            
+
             return `${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
         } catch (error) {
             console.error('Error formatting time:', error, {
@@ -760,7 +755,7 @@ class InvoiceTableManager {
             // If parsing fails, return the original time
             return time;
         }
-    }   
+    }
 
     initializeSelectAll() {
         $(document).on('change', '#selectAll', (e) => {
@@ -769,7 +764,7 @@ class InvoiceTableManager {
             $('.row-checkbox:not([disabled])').prop('checked', isChecked);
             this.updateExportButton();
         });
-  
+
         $('#invoiceTable').on('change', '.row-checkbox', () => {
             // Count only checkboxes that are not disabled
             const totalCheckboxes = $('.row-checkbox:not([disabled])').length;
@@ -778,7 +773,7 @@ class InvoiceTableManager {
             this.updateExportButton();
         });
     }
-  
+
     initializeTooltips() {
         const initTooltips = () => {
             // First dispose any existing tooltips
@@ -789,7 +784,7 @@ class InvoiceTableManager {
                     tooltip.dispose();
                 }
             });
-    
+
             // Initialize new tooltips
             tooltipTriggerList.forEach(tooltipTriggerEl => {
                 new bootstrap.Tooltip(tooltipTriggerEl, {
@@ -798,32 +793,32 @@ class InvoiceTableManager {
                 });
             });
         };
-    
+
         // Initialize tooltips on first load
         initTooltips();
-    
+
         // Reinitialize tooltips after table draw
         this.table.on('draw', () => {
             setTimeout(initTooltips, 100); // Small delay to ensure DOM is updated
         });
     }
-    
-  
+
+
     updateExportButton() {
         // Count checked checkboxes instead of using DataTables selection
         // Only count checkboxes that are not disabled (Pending status)
         const selectedRows = $('.row-checkbox:not([disabled]):checked').length;
         console.log('Selected rows by checkbox:', selectedRows);
-        
+
         const exportBtn = $('#exportSelected');
         const consolidatedBtn = $('#submitConsolidated');
-        
+
         exportBtn.prop('disabled', selectedRows === 0);
         consolidatedBtn.prop('disabled', selectedRows === 0);
         exportBtn.find('.selected-count').text(`(${selectedRows})`);
         consolidatedBtn.find('.selected-count-bulk').text(`(${selectedRows})`);
     }
-    
+
     async exportSelectedRecords() {
         try {
             const selectedRows = [];
@@ -883,17 +878,17 @@ class InvoiceTableManager {
             ToastManager.show('Failed to export selected records', 'error');
         }
     }
-    
+
     // Helper method to convert data to CSV
     convertToCSV(data) {
         if (data.length === 0) return '';
-        
+
         const headers = Object.keys(data[0]);
         const csvRows = [];
-        
+
         // Add headers
         csvRows.push(headers.join(','));
-        
+
         // Add rows
         for (const row of data) {
             const values = headers.map(header => {
@@ -903,33 +898,37 @@ class InvoiceTableManager {
             });
             csvRows.push(values.join(','));
         }
-        
+
         return csvRows.join('\n');
     }
-  
+
     updateCardTotals() {
         if (!this.table) return;
-  
+
         const data = this.table.rows().data();
         const totals = {
             total: 0,
             submitted: 0,
             pending: 0,
             rejected: 0,
-            cancelled: 0
+            cancelled: 0,
+            invalid: 0
         };
-  
+
         // Count all rows
         data.each(row => {
             const status = (row.status || 'Pending').toLowerCase();
             totals.total++;
-            
+
             switch (status) {
                 case 'submitted':
                     totals.submitted++;
                     break;
                 case 'rejected':
                     totals.rejected++;
+                    break;
+                case 'invalid':
+                    totals.invalid++;
                     break;
                 case 'cancelled':
                     totals.cancelled++;
@@ -946,7 +945,7 @@ class InvoiceTableManager {
                     break;
             }
         });
-  
+
         // Hide all loading spinners and show counts
         document.querySelectorAll('.loading-spinner').forEach(spinner => {
             spinner.style.display = 'none';
@@ -954,17 +953,18 @@ class InvoiceTableManager {
         document.querySelectorAll('.count-info h6').forEach(count => {
             count.style.display = 'block';
         });
-  
+
         // Update card values with animation
         this.animateNumber(document.querySelector('.total-invoice-count'), totals.total);
         this.animateNumber(document.querySelector('.total-submitted-count'), totals.submitted);
         this.animateNumber(document.querySelector('.total-rejected-count'), totals.rejected);
         this.animateNumber(document.querySelector('.total-cancelled-count'), totals.cancelled);
+        this.animateNumber(document.querySelector('.total-invalid-count'), totals.invalid);
         this.animateNumber(document.querySelector('.total-pending-count'), totals.pending);
 
- 
+
     }
-  
+
     // Helper method to animate number changes
     animateNumber(element, targetValue) {
         const startValue = parseInt(element.textContent) || 0;
@@ -993,7 +993,7 @@ class InvoiceTableManager {
         const radius = 40; // Should match your SVG circle radius
         const circumference = 2 * Math.PI * radius;
         const offset = circumference - (percentage / 100) * circumference;
-        
+
         const progressCircle = element.querySelector('.progress-circle');
         if (progressCircle) {
             progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
@@ -1013,27 +1013,32 @@ class InvoiceTableManager {
             'total-invoice': {
                 element: '.total-invoice-card',
                 value: totals.total,
-         
+
             },
             'total-submitted': {
                 element: '.total-submitted-card',
                 value: totals.submitted,
-               
+
             },
             'total-rejected': {
                 element: '.total-rejected-card',
                 value: totals.rejected,
-            
+
+            },
+            'total-invalid': {
+                element: '.total-invalid-card',
+                value: totals.invalid,
+
             },
             'total-cancelled': {
                 element: '.total-cancelled-card',
                 value: totals.cancelled,
-               
+
             },
             'total-pending': {
                 element: '.total-pending-card',
                 value: totals.pending,
-                
+
             }
         };
 
@@ -1046,7 +1051,7 @@ class InvoiceTableManager {
             }
         });
     }
-  
+
     initializeFeatures() {
         console.log('Initializing features');
         this.initializeTableStyles();
@@ -1054,7 +1059,7 @@ class InvoiceTableManager {
         this.initializeEventListeners();
         this.initializeSelectAll();
     }
-    
+
 
     initializeTableStyles() {
         // Add custom styles to the table
@@ -1089,23 +1094,23 @@ class InvoiceTableManager {
             }
         `;
         document.head.appendChild(style);
-        
+
         // Apply Bootstrap classes to DataTables elements
         $('.dataTables_filter input').addClass('form-control form-control-sm');
         $('.dataTables_length select').addClass('form-select form-select-sm');
     }
-  
+
     refresh() {
         this.table?.ajax.reload(null, false);
     }
-  
+
     cleanup() {
         if (this.table) {
             this.table.destroy();
             this.table = null;
         }
     }
-  
+
     showProgressModal(title = 'Submitting Document to LHDN', message = 'Please wait while we process your request') {
         return `
             <div class="modal-content">
@@ -1150,7 +1155,7 @@ class InvoiceTableManager {
         </div>
     `;
     }
-  
+
     showErrorModal(title = 'XML Validation Failed', errors = []) {
         const errorList = errors.map(error => `
             <div class="error-item">
@@ -1158,7 +1163,7 @@ class InvoiceTableManager {
                 <div class="error-content">${error}</div>
             </div>
         `).join('');
-  
+
         return `
         <div class="modal-content">
             <div class="modal-header">
@@ -1185,7 +1190,7 @@ class InvoiceTableManager {
         </div>
     `;
     }
-  
+
     showConfirmModal(fileDetails) {
         return `
             <div class="modal-content">
@@ -1412,13 +1417,13 @@ class InvoiceTableManager {
         const tableContainer = document.querySelector('.outbound-table-container');
         if (tableContainer) {
             tableContainer.innerHTML = emptyState;
-            
+
             const helpButton = tableContainer.querySelector('button[onclick*="show-help"]');
-if (helpButton) {
-    helpButton.addEventListener('click', () => {
-        Swal.fire({
-            title: '<div class="text-xl font-semibold mb-2">Excel Files Guide</div>',
-            html: `
+            if (helpButton) {
+                helpButton.addEventListener('click', () => {
+                    Swal.fire({
+                        title: '<div class="text-xl font-semibold mb-2">Excel Files Guide</div>',
+                        html: `
                 <div class="text-left px-2">
                     <div class="mb-4">
                         <p class="text-gray-600 mb-3">Not seeing your Excel files? Here's a comprehensive checklist to help you:</p>
@@ -1461,20 +1466,20 @@ if (helpButton) {
                     </div>
                 </div>
             `,
-            icon: 'info',
-            confirmButtonText: 'Got it',
-            confirmButtonColor: '#1e40af',
-            customClass: {
-                container: 'help-modal-container',
-                popup: 'help-modal-popup',
-                content: 'help-modal-content',
-                confirmButton: 'help-modal-confirm'
-            },
-            showCloseButton: true,
-            width: '600px'
-        });
-    });
-}
+                        icon: 'info',
+                        confirmButtonText: 'Got it',
+                        confirmButtonColor: '#1e40af',
+                        customClass: {
+                            container: 'help-modal-container',
+                            popup: 'help-modal-popup',
+                            content: 'help-modal-content',
+                            confirmButton: 'help-modal-confirm'
+                        },
+                        showCloseButton: true,
+                        width: '600px'
+                    });
+                });
+            }
         }
     }
 
@@ -1489,12 +1494,12 @@ if (helpButton) {
         `;
     }
 
-    
+
 }
 
 async function validateExcelFile(fileName, type, company, date) {
     console.log('Starting validation with params:', { fileName, type, company, date });
-    
+
     if (!fileName || !type || !company || !date) {
         console.error('Missing required parameters:', { fileName, type, company, date });
         throw new ValidationError('Missing required parameters for validation', [], fileName);
@@ -1507,13 +1512,13 @@ async function validateExcelFile(fileName, type, company, date) {
         const encodedFileName = encodeURIComponent(fileName);
         const response = await fetch(`/api/outbound-files/${encodedFileName}/content`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ 
-                type, 
-                company, 
+            body: JSON.stringify({
+                type,
+                company,
                 date: formattedDate,
                 filePath: `${type}/${company}/${formattedDate}/${fileName}`
             })
@@ -1546,7 +1551,7 @@ async function validateExcelFile(fileName, type, company, date) {
                 validatorType: 'System'
             }], fileName);
         }
-        
+
         const fileData = await response.json();
         console.log('Received file data:', fileData);
 
@@ -1592,7 +1597,7 @@ async function validateExcelFile(fileName, type, company, date) {
 
             if (!header.invoiceNo) headerErrors.push('Missing invoice number');
             if (!header.invoiceType) headerErrors.push('Missing invoice type');
-            
+
             // Validate issue date
             if (!header.issueDate?.[0]?._) {
                 headerErrors.push('Missing issue date');
@@ -1600,7 +1605,7 @@ async function validateExcelFile(fileName, type, company, date) {
                 const issueDate = moment(header.issueDate[0]._);
                 const today = moment();
                 const daysDiff = today.diff(issueDate, 'days');
-                
+
                 if (daysDiff > 7) {
                     headerErrors.push({
                         code: 'CF321',
@@ -1610,10 +1615,10 @@ async function validateExcelFile(fileName, type, company, date) {
                     });
                 }
             }
-            
+
             if (!header.issueTime?.[0]?._) headerErrors.push('Missing issue time');
             if (!header.currency) headerErrors.push('Missing currency');
-          
+
             if (headerErrors.length > 0) {
                 validationErrors.push({
                     row: 'Header',
@@ -1628,20 +1633,20 @@ async function validateExcelFile(fileName, type, company, date) {
         const buyer = rawData.buyer;
 
         console.log("SUPPLIER: ", supplier);
-        console.log("BUYER: ", buyer);  
+        console.log("BUYER: ", buyer);
 
         if (!supplier || !buyer) {
             validationErrors.push({
                 row: 'Supplier and Buyer',
                 errors: ['Missing supplier or buyer information']
             });
-        }else{
+        } else {
             const supplierErrors = [];
             const buyerErrors = [];
 
             if (!supplier.name) supplierErrors.push('Missing supplier name');
             if (!buyer.name) buyerErrors.push('Missing buyer name');
-            
+
             if (supplierErrors.length > 0) {
                 validationErrors.push({
                     row: 'Supplier',
@@ -1657,18 +1662,18 @@ async function validateExcelFile(fileName, type, company, date) {
             }
         }
 
-         // Items Validation - Updated to match new structure
-         console.log("ITEMS: ", rawData.items);
-         if (!rawData.items || !Array.isArray(rawData.items)) {
+        // Items Validation - Updated to match new structure
+        console.log("ITEMS: ", rawData.items);
+        if (!rawData.items || !Array.isArray(rawData.items)) {
             validationErrors.push({
                 row: 'Items',
                 errors: ['No items found in document']
             });
         } else {
-            const validItems = rawData.items.filter(item => 
+            const validItems = rawData.items.filter(item =>
                 item &&
                 item.lineId &&
-                item.quantity > 0 && 
+                item.quantity > 0 &&
                 item.unitPrice > 0 &&
                 item.item?.classification?.code &&
                 item.item?.classification?.type &&
@@ -1697,7 +1702,7 @@ async function validateExcelFile(fileName, type, company, date) {
                             });
                         } else {
                             const taxTypeCode = taxSubtotal.taxCategory?.id;
-                            
+
                             if (!['01', '02', '03', '04', '05', '06', 'E'].includes(taxTypeCode)) {
                                 itemErrors.push({
                                     code: 'CF366',
@@ -1725,7 +1730,7 @@ async function validateExcelFile(fileName, type, company, date) {
                                         propertyPath: `Invoice.InvoiceLine[${lineNumber}].TaxTotal`
                                     });
                                 }
-                                
+
                                 if (!taxSubtotal.taxCategory?.exemptionReason) {
                                     itemErrors.push({
                                         code: 'CF369',
@@ -1774,7 +1779,7 @@ async function validateExcelFile(fileName, type, company, date) {
                 });
             } else {
                 const taxTotal = summary.taxTotal;
-                
+
                 if (!taxTotal.taxSubtotal || !Array.isArray(taxTotal.taxSubtotal)) {
                     summaryErrors.push({
                         code: 'CF381',
@@ -2002,7 +2007,7 @@ function createSemiMinimalDialog(options) {
         width = 480,
         padding = '1.5rem',
         customClass = {},
-        didOpen = () => {}
+        didOpen = () => { }
     } = options;
 
     return `
@@ -2328,16 +2333,16 @@ async function showConfirmationDialog(fileName, type, company, date, version) {
 // Step functions for the submission process
 async function performStep1(fileName, type, company, date) {
     console.log('🚀 [Step 1] Starting validation with params:', { fileName, type, company, date });
-    
+
     try {
         // Start processing
         console.log('🔍 [Step 1] Starting validation');
         await updateStepStatus(1, 'processing', 'Validating document format...');
-        
+
         // Perform validation
         console.log('🔍 [Step 1] Calling validateExcelFile');
         const validatedData = await validateExcelFile(fileName, type, company, date);
-        
+
         if (!validatedData) {
             console.error('❌ [Step 1] No data available for validation');
             await updateStepStatus(1, 'error', 'Validation failed');
@@ -2347,7 +2352,7 @@ async function performStep1(fileName, type, company, date) {
         // Complete successfully
         console.log('✅ [Step 1] Validation successful');
         await updateStepStatus(1, 'completed', 'Validation completed');
-        
+
         return validatedData;
     } catch (error) {
         console.error('❌ [Step 1] Validation failed:', error);
@@ -2412,32 +2417,32 @@ async function showSuccessMessage(fileName, version) {
 // Main submission function
 async function submitToLHDN(fileName, type, company, date) {
     console.log('🚀 Starting submission process:', { fileName, type, company, date });
-    
+
     try {
         // 1. Show version selection dialog
         console.log('📋 Step 1: Showing version selection dialog');
         const version = await showVersionDialog();
         console.log('📋 Version selected:', version);
-        
+
         if (!version) {
             console.log('❌ Version selection cancelled');
             return;
         }
-        
+
         // 2. Show confirmation dialog
         console.log('🔍 Step 2: Showing confirmation dialog');
         const confirmed = await showConfirmationDialog(fileName, type, company, date, version);
         console.log('🔍 Confirmation result:', confirmed);
-        
+
         if (!confirmed) {
             console.log('❌ Submission cancelled by user');
             return;
         }
-        
+
         // 3. Show submission status modal and start process
         console.log('📤 Step 3: Starting submission status process');
         await showSubmissionStatus(fileName, type, company, date, version);
-        
+
     } catch (error) {
         console.error('❌ Submission error:', error);
         showSystemErrorModal({
@@ -2450,10 +2455,10 @@ async function submitToLHDN(fileName, type, company, date) {
 // Function to get step HTML
 function getStepHtml(stepNumber, title) {
     console.log(`🔨 [Step ${stepNumber}] Creating HTML for step: ${title}`);
-    
+
     const stepId = `step${stepNumber}`;
     console.log(`🏷️ [Step ${stepNumber}] Step ID created: ${stepId}`);
-    
+
     return `
         <style>
             .step-badge.spinning::after {
@@ -2688,7 +2693,7 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     console.log('🔍 Starting Step 1: Document Validation');
                     await updateStepStatus(1, 'processing', 'Validating document...');
                     const validatedData = await performStep1(fileName, type, company, date);
-                    
+
                     if (!validatedData) {
                         throw new ValidationError('No data available for validation', [], fileName);
                     }
@@ -2697,7 +2702,7 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     // Step 2: Submit to LHDN
                     console.log('📤 Starting Step 2: LHDN Submission');
                     await updateStepStatus(2, 'processing', 'Submitting to LHDN...');
-                    
+
                     // Add the original parameters to the validated data
                     const submissionData = {
                         ...validatedData,
@@ -2707,9 +2712,9 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                         date,
                         version
                     };
-                    
+
                     const submitted = await performStep2(submissionData, version);
-                    
+
                     if (!submitted) {
                         throw new Error('LHDN submission failed');
                     }
@@ -2719,7 +2724,7 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     console.log('⚙️ Starting Step 3: Processing');
                     await updateStepStatus(3, 'processing', 'Processing response...');
                     const processed = await performStep3(submitted);
-                    
+
                     if (!processed) {
                         throw new Error('Response processing failed');
                     }
@@ -2727,17 +2732,17 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
 
                     console.log('🎉 All steps completed successfully');
                     await new Promise(resolve => setTimeout(resolve, 1000));
-                    
+
                     if (modal) {
                         modal.close();
                     }
-                    
+
                     await showSuccessMessage(fileName, version);
                     // Refresh the table
                     window.location.reload();
                 } catch (error) {
                     console.error('❌ Step execution failed:', error);
-                    
+
                     // Find the current processing step and update its status to error
                     const currentStep = document.querySelector('.step-card.processing');
                     if (currentStep) {
@@ -2748,7 +2753,7 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
 
                     // Add delay for visual feedback
                     await new Promise(resolve => setTimeout(resolve, 1000));
-                    
+
                     // Close the current modal
                     if (modal) {
                         modal.close();
@@ -2771,7 +2776,7 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
 
     } catch (error) {
         console.error('❌ Submission process failed:', error);
-        
+
         // Show appropriate error modal based on error type
         if (error instanceof ValidationError) {
             console.log('📋 Showing Excel validation error modal');
@@ -2790,7 +2795,7 @@ async function performStep2(data, version) {
         await updateStepStatus(2, 'processing', 'Connecting to to LHDN...');
         await updateStepStatus(2, 'processing', 'Initializing Preparing Documents...');
         console.log('📤 [Step 2] Initiating submission to LHDN');
-        
+
         // Extract the required parameters from the data
         const {
             fileName,
@@ -2831,21 +2836,21 @@ async function performStep2(data, version) {
         await updateStepStatus(2, 'error', 'Submission failed');
         throw error;
     }
-} 
+}
 
 async function performStep3(response) {
     console.log('🚀 [Step 3] Starting response processing');
-    
+
     try {
         // Start processing
         console.log('📝 [Step 3] Processing LHDN response');
         await updateStepStatus(3, 'processing', 'Processing response...');
-        
+
         // Process response
         if (!response || !response.success) {
             console.error('❌ [Step 3] Invalid response data');
         }
-        
+
         console.log('📝 [Step 3] Response data:', response ? 'Data present' : 'No data');
         if (!response) {
             console.error('❌ [Step 3] No response data to process');
@@ -2862,7 +2867,7 @@ async function performStep3(response) {
         console.log('✅ [Step 3] Response processing completed');
         console.log('Updating step status to completed...');
         await updateStepStatus(3, 'completed', 'Processing completed');
-        
+
         return true;
     } catch (error) {
         console.error('❌ [Step 3] Response processing failed:', error);
@@ -3052,7 +3057,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
 
     } catch (error) {
         console.error('Error in cancellation process:', error);
-        
+
         // Show error message using createSemiMinimalDialog
         await Swal.fire({
             title: 'Error',
@@ -3176,7 +3181,7 @@ async function deleteDocument(fileName, type, company, date) {
 
     } catch (error) {
         console.error('Error deleting document:', error);
-        
+
         await Swal.fire({
             html: createSemiMinimalDialog({
                 title: 'Error',
@@ -3410,7 +3415,7 @@ async function showExcelValidationError(error) {
 
 async function showSystemErrorModal(error) {
     console.log('System Error:', error);
-    
+
     // Function to get user-friendly error message
     function getErrorMessage(error) {
         const statusMessages = {
@@ -3473,7 +3478,7 @@ async function showSystemErrorModal(error) {
 
 async function showLHDNErrorModal(error) {
     console.log('LHDN Error:', error);
-    
+
     // Parse error message if it's a string
     let errorDetails = error;
     try {
@@ -3495,10 +3500,10 @@ async function showLHDNErrorModal(error) {
 
     // Format the validation error details
     const validationDetails = mainError.details?.error?.details || [];
-    
+
     // Check if this is a TIN matching error and provide specific guidance
     const isTINMatchingError = mainError.message.includes("authenticated TIN and documents TIN is not matching");
-    
+
     // Create tooltip help content for TIN matching errors
     const tinErrorGuidance = `
         <div class="tin-matching-guidance" style="margin-top: 15px; padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #17a2b8;">
@@ -3651,13 +3656,13 @@ async function showLHDNErrorModal(error) {
 // Helper function to format validation messages
 function formatValidationMessage(message) {
     if (!message) return 'Unknown validation error';
-    
+
     // Enhance common LHDN error messages with more helpful information
     if (message.includes('authenticated TIN and documents TIN is not matching')) {
         return `The TIN (Tax Identification Number) in your document doesn't match with the authenticated TIN. 
                 Please ensure the supplier's TIN matches exactly with the one registered with LHDN.`;
     }
-    
+
     return message;
 }
 
@@ -3700,7 +3705,7 @@ class ConsolidatedSubmissionManager {
         // Only get rows with enabled checkboxes (Pending status)
         const checkboxes = document.querySelectorAll('.row-checkbox:not([disabled]):checked:not(#selectAll)');
         this.selectedDocs.clear();
-        
+
         checkboxes.forEach(checkbox => {
             const row = checkbox.closest('tr');
             const rowData = InvoiceTableManager.getInstance().table.row(row).data();
@@ -3769,11 +3774,11 @@ class ConsolidatedSubmissionManager {
 
                     // First validate the document
                     const validationResult = await validateExcelFile(doc.fileName, doc.type, doc.company, doc.date);
-                    
+
                     if (validationResult.success) {
                         // If validation successful, submit to LHDN
                         const submitResult = await submitToLHDN(doc.fileName, doc.type, doc.company, doc.date, version);
-                        
+
                         if (submitResult.success) {
                             successCount++;
                             results.push({

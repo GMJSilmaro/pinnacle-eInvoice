@@ -1529,6 +1529,8 @@ async function getTemplateData(uuid, accessToken, user) {
     const taxTotal = invoice.TaxTotal?.[0];
     const taxSubtotal = taxTotal?.TaxSubtotal?.[0];
     const taxCategory = taxSubtotal?.TaxCategory?.[0];
+    const totalTaxAmount = taxTotal?.TaxAmount?.[0]._ || 0;
+    const taxExempReason = taxCategory?.TaxExemptionReason?.[0]._ || 'Not Applicable';
 
     // Map the tax type according to SDK documentation
     const getTaxTypeDescription = (code) => {
@@ -1619,13 +1621,13 @@ async function getTemplateData(uuid, accessToken, user) {
             Description: line.Item?.[0]?.Description?.[0]._ || 'NA',
             Quantity: formattedQuantity,
             UOM: unitType, // Display unit type name instead of code
-            UnitPrice: taxlineCurrency + ' ' + formattedUnitPrice,
+            UnitPrice: formattedUnitPrice,
             QtyAmount: lineAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             Disc: discount === 0 ? '0.00' : discount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             Charges: allowanceCharges.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00',
             LineTaxPercent: taxPercent.toFixed(2),
-            LineTaxAmount: taxlineCurrency + ' ' + lineTax.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-            Total: taxlineCurrency + ' ' + (lineAmount + lineTax).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            LineTaxAmount: lineTax.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            Total: (parseFloat(line.ItemPriceExtension?.[0]?.Amount?.[0]._ || 0) + lineTax).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             TaxType: getTaxTypeDescription(taxTypeCode)
         };
     }) || []);
@@ -1637,7 +1639,8 @@ async function getTemplateData(uuid, accessToken, user) {
         baseAmount: parseFloat(summary.baseAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         taxType: getTaxTypeDescription(summary.taxType),
         taxRate: parseFloat(summary.taxRate).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        taxAmount: parseFloat(summary.taxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        taxAmount: parseFloat(summary.taxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        LHDNtaxExemptionReason: taxExempReason || 'Not Applicable',
     }));
     
     // Sort the taxSummaryArray based on the desired order
@@ -1712,11 +1715,19 @@ async function getTemplateData(uuid, accessToken, user) {
         TaxType: taxCategory?.ID?.[0]._ || '06',
         TaxSchemeId: getTaxTypeDescription(taxCategory?.ID?.[0]._ || '06'),
 
+        // taxSummary: taxSummaryArray.map(item => ({
+        //     taxType: item.taxType,
+        //     taxRate: item.taxRate,
+        //     totalAmount: item.baseAmount || '0.00',
+        //     totalTaxAmount: item.taxAmount || '0.00'
+        // })),
+
         taxSummary: taxSummaryArray.map(item => ({
             taxType: item.taxType,
             taxRate: item.taxRate,
             totalAmount: item.baseAmount || '0.00',
-            totalTaxAmount: item.taxAmount || '0.00'
+            totalTaxAmount: item.taxAmount || '0.00',
+            LHDNtaxExemptionReason: taxExempReason || 'Not Applicable',
         })),
 
         companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NNot ApplicableA',

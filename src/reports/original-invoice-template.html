@@ -145,27 +145,37 @@
 
         /* Table Styles */
         .details-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 15px 0;
-            font-size: 10px;
-        }
+        width: 100%;
+        border-collapse: collapse;
+        margin: 15px 0;
+        font-size: 10px;
+    }
 
-        .details-table th,
-        .details-table td {
-            border: 1px solid #000;
-            padding: 4px;
-            text-align: left;
-        }
+    .details-table th,
+    .details-table td {
+        border: 1px solid #000;
+        padding: 4px;
+        /*text-align: left;*/
+    }
+    
+    /* Add this class for the Description column */
+    .w-100 {
+        width: 30%;
+        min-width: 200px;
+    }
 
-        .details-table th {
-            background-color: #000;
-            color: #fff;
-            font-weight: bold;
-            font-size: 10px;
-            white-space: nowrap;
-        }
-
+    .text-right {
+        text-align: right;
+    }
+    
+    .details-table th {
+        background-color: #000;
+        color: #fff;
+        font-weight: bold;
+        font-size: 10px;
+        white-space: nowrap;
+    }
+    
         .text-center {
             text-align: center;
         }
@@ -332,8 +342,8 @@
                     <div class="info-row"><span class="info-label">Telephone Number:</span> {{:BuyerPhone}}</div>
                     <div class="info-row"><span class="info-label">Email:</span> <a href="mailto:{{:companyEmail}}"
                             class="email-link">{{:BuyerEmail}}</a></div>
-                    <div class="info-row"><span class="info-label">MSIC Code:</span> {{:BuyerMSICCode}}</div>
-                    <div class="info-row"><span class="info-label">Business Activity:</span> {{:BuyerBusinessActivity}}
+                    <div class="info-row"></div>
+                    <div class="info-row">
                     </div>
                 </div>
             </div>
@@ -377,24 +387,24 @@
                 <th>Description</th>
                 <th>Quantity</th>
                 <th>UOM</th>
-                <th>Unit Price</th>
-                <th>Subtotal</th>
-                <th>(A) Discount</th>
-                <th>(B) Fee / Charges</th>
-                <th>Tax Rate</th>
-                <th>Tax Amount</th>
-                <th>Amount</th>
+                <th>Unit Price ({{:documentCurrency}})</th>
+                <th>Subtotal ({{:documentCurrency}})</th>
+                <th>(A) Discount ({{:documentCurrency}})</th>
+                <th>(B) Fee / Charges ({{:documentCurrency}})</th>
+                <th>Tax Rate ({{:documentCurrency}})</th>
+                <th>Tax Amount ({{:documentCurrency}})</th>
+                <th>Amount ({{:documentCurrency}})</th>
             </tr>
             {{for items}}
             <tr>
                 <td class="text-center">{{:No}}</td>
                 <td class="text-center">{{:Cls}}</td>
-                <td>{{:Description}}</td>
+                <td class="text-left w-100">{{if Description === 'NA'}}No Description{{else}}{{:Description}}{{/if}}</td>
                 <td class="text-right">{{:Quantity}}</td>
                 <td class="text-right">{{:UOM}}</td>
                 <td class="text-right">{{:UnitPrice}}</td>
                 <td class="text-right">{{:QtyAmount}}</td>
-                <td class="text-right">{{if Disc === '0.00'}}{{:Disc}}{{else}} {{:Disc}}{{/if}}</td>
+                <td class="text-right">{{if Disc === '0.00'}}0.00{{else}}{{:Disc}}{{/if}}</td>
                 <td class="text-right">{{:Charges}}</td>
                 <td class="text-center">{{:LineTaxPercent}}%</td>
                 <td class="text-right">{{:LineTaxAmount}}</td>
@@ -422,12 +432,13 @@
         </div>
 
         <!-- Tax Summary Table -->
-        <table class="details-table" style="margin-top: 20px;">
+        <table class="details-table" style="margin-top: 20px; width: 50%;">
             <tr>
                 <th>Tax Type</th>
                 <th>Tax Rate</th>
                 <th>Total Amount ({{:documentCurrency}})</th>
-                <th>Total Tax Amount Per Tax Type ({{:documentCurrency}})</th>
+                <th>Total Tax Amount ({{:documentCurrency}})</th>
+                <th>Details of Tax Exemption</th>
             </tr>
             {{for taxSummary}}
             <tr>
@@ -435,6 +446,7 @@
                 <td class="text-center">{{:taxRate}}%</td>
                 <td class="text-right">{{:totalAmount}}</td>
                 <td class="text-right">{{:totalTaxAmount}}</td>
+                <td class="text-center">{{if LHDNtaxExemptionReason === 'NA'}}Not Applicable{{else}}{{:LHDNtaxExemptionReason}}{{/if}}</td>
             </tr>
             {{/for}}
         </table>

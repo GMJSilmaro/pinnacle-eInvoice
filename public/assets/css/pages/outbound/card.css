@@ -137,7 +137,17 @@
     border-top-color: #ef4444;
 }
 
+
 .total-rejected-card .card-icon {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+}
+
+.total-invalid-card {
+    border-top-color: #ef4444;
+}
+
+.total-invalid-card .card-icon {
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     color: white;
 }

@@ -144,8 +144,16 @@ const formatDateTime = (date) => {
 const mapAddressLines = (line) => {
   if (!line) return undefined;
   
+  // Convert to string and handle special cases
+  const addressStr = String(line);
+  if (addressStr.toLowerCase() === 'na' || addressStr.trim() === '') {
+    return [{
+      "Line": [{ "_": "NA" }]
+    }];
+  }
+  
   // Split the address line by commas or line breaks
-  const lines = line.split(/[,\n]/).map(l => l.trim()).filter(l => l);
+  const lines = addressStr.split(/[,\n]/).map(l => l.trim()).filter(l => l);
   
   return lines.map(l => ({
     "Line": [{ "_": l }]

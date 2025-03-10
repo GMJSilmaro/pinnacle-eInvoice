@@ -406,7 +406,7 @@ class InvoiceTableManager {
             scrollCollapse: true,
             autoWidth: false,
             pageLength: 10,
-            order: [[5, 'desc']], // Order by date column descending
+            order: [[7, 'desc']], // Order by date column descending
             dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
             language: {
                 //search: '',
