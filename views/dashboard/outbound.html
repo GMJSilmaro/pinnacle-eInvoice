@@ -832,6 +832,21 @@
     font-size: 0.75rem;
 }
 
+.disclaimer-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(255, 193, 7, 0.1);
+    border-radius: 4px;
+    color: #084298;
+    font-size: 0.75rem;
+}
+
+.disclaimer-info i {
+    font-size: 0.875rem;
+}
+
 .disclaimer-note i {
     font-size: 0.875rem;
 }
@@ -991,7 +1006,7 @@
     <div class="statistics-section mb-4">
       <div class="row">
         <!-- Document Status Chart -->
-        <div class="col-md-6">
+        <div class="col-md-4">
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h6 class="card-title d-flex align-items-center mb-3">
@@ -1006,7 +1021,7 @@
         </div>
         
         <!-- Processing Time Chart -->
-        <div class="col-md-6">
+        <div class="col-md-3">
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h6 class="card-title d-flex align-items-center mb-3">
@@ -1104,9 +1119,40 @@
             </div>
           </div>
         </div>
+
+        <!-- Middleware Disclaimer -->
+        <div class="col-md-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-body middleware-disclaimer">
+                    <div class="disclaimer-icon">
+                    <i class="bi bi-arrow-left-right"></i>
+                </div>
+                    <div class="disclaimer-content">
+                        <h6 class="mb-1">Middleware Service</h6>
+                        <div class="info-banner mb-3 d-flex align-items-center">
+                            <span class="badge rounded-pill bg-info-subtle text-warning me-2">
+                                <i class="bi bi-info-circle"></i>
+                            </span>
+                            <small class="text-secondary"><div class="note-badge">
+                                <span>Important Note!</span>
+                            </div></small>
+                        </div>
+
+                        <p class="mb-0 small">We act as a transmission channel between you and LHDN. Our role:</p>
+                        <ul class="small mb-0 ps-3 mt-1">
+                            <li>Format validation & data verification before submission</li>
+                            <li>Secure transmission channel to LHDN's systems</li>
+                            <li>Real-time status tracking through dashboard</li>
+                        </ul>
+                        <div class="disclaimer-note mt-2">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span>Final acceptance and validation are determined by LHDN</span>
+                        </div>
+                    </div>
+                </div>
+                </div>
       </div>
     </div>
-
             <!-- Table Section -->
             <div class="table-container-wrapper">
                 <div class="table-card">
@@ -1120,45 +1166,18 @@
                             </div>
                             
                         </div>
-                        <div class="text-muted fst-italic small mt-1">
-                            <i class="bi bi-shield-check me-1"></i>
-                            For a smooth submission process, verify all required fields are complete and accurate.
+                        <div class="disclaimer-note mt-2">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span>For a smooth submission process, verify all required fields are complete and accurate on your ERP System.</span>
                         </div>
-                        <div class="text-muted fst-italic small mt-1">   
-                            Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission.
+                        <div class="disclaimer-note mt-2">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span>Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission.</span>
                         </div>
                        
                         <!-- Consolidation Guidelines -->
                         <div class="consolidation-section mt-3">
-                    <!-- Middleware Disclaimer -->
-<div class="middleware-disclaimer mb-3">
-    
-    <div class="disclaimer-icon">
-        <i class="bi bi-arrow-left-right"></i>
-    </div>
-    <div class="disclaimer-content">
-        <h6 class="mb-1">Middleware Service</h6>
-        <div class="info-banner mb-3 d-flex align-items-center">
-            <span class="badge rounded-pill bg-info-subtle text-warning me-2">
-                <i class="bi bi-info-circle"></i>
-            </span>
-            <small class="text-secondary"><div class="note-badge">
-                <span>Important Note!</span>
-            </div></small>
-        </div>
 
-        <p class="mb-0 small">We act as a transmission channel between you and LHDN. Our role:</p>
-        <ul class="small mb-0 ps-3 mt-1">
-            <li>Format validation & data verification before submission</li>
-            <li>Secure transmission channel to LHDN's systems</li>
-            <li>Real-time status tracking through dashboard</li>
-        </ul>
-        <div class="disclaimer-note mt-2">
-            <i class="bi bi-exclamation-circle"></i>
-            <span>Final acceptance and validation are determined by LHDN</span>
-        </div>
-    </div>
-</div>
                             <div class="d-flex align-items-center justify-content-between mb-3">
                                 <div class="d-flex align-items-center">
                                     <span class="badge rounded-pill bg-primary-subtle text-primary me-2">
