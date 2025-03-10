@@ -639,6 +639,219 @@
         gap: 0.5rem;
     }
 }
+
+.toggle-icon {
+    transition: transform 0.3s ease;
+}
+[aria-expanded="false"] .toggle-icon {
+    transform: rotate(180deg);
+}
+#consolidationDetails {
+    transition: all 0.3s ease;
+}
+.btn-outline-secondary:hover .toggle-icon {
+    color: #6c757d;
+}
+
+.fs-7 {
+    font-size: 0.875rem;
+}
+.filter-note .card {
+    box-shadow: none;
+    background-color: rgba(255, 255, 255, 0.5) !important;
+}
+.filter-note .list-unstyled li {
+    margin-bottom: 0.25rem;
+}
+.filter-note .list-unstyled li:last-child {
+    margin-bottom: 0;
+}
+.filter-note .btn-link {
+    text-decoration: none;
+}
+.filter-note .btn-link:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+}
+.filter-note .alert-light {
+    background-color: rgba(255, 255, 255, 0.8);
+}
+
+.consolidation-section {
+    background: #fff;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+}
+
+.info-banner {
+    padding: 0.75rem;
+    background: rgba(13, 110, 253, 0.04);
+    border-radius: 8px;
+}
+
+.content-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    overflow: hidden;
+    transition: transform 0.2s;
+}
+
+.content-card:hover {
+    transform: translateY(-2px);
+}
+
+.card-header {
+    padding: 0.75rem 1rem;
+    background: #fff;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.card-content {
+    padding: 1rem;
+}
+
+.detail-item, .format-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    background: #fff;
+}
+
+.detail-item:last-child, .format-item:last-child {
+    margin-bottom: 0;
+}
+
+.detail-item .label {
+    color: #6c757d;
+    min-width: 100px;
+    font-size: 0.875rem;
+}
+
+.detail-item .value {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+}
+
+.format-item {
+    font-size: 0.875rem;
+}
+
+.format-item i {
+    font-size: 1rem;
+}
+
+.badge.rounded-pill {
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-link:hover {
+    opacity: 0.75;
+}
+
+@media (max-width: 768px) {
+    .consolidation-section {
+        padding: 1rem;
+    }
+    
+    .detail-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+    
+    .detail-item .label {
+        min-width: auto;
+    }
+}
+
+.middleware-disclaimer {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: linear-gradient(to right, rgba(13, 110, 253, 0.03), rgba(13, 110, 253, 0.01));
+    border-radius: 8px;
+    border: 1px solid rgba(13, 110, 253, 0.1);
+    position: relative;
+}
+
+.disclaimer-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    flex-shrink: 0;
+}
+
+.disclaimer-icon i {
+    font-size: 1.25rem;
+    color: #0d6efd;
+}
+
+.disclaimer-content {
+    flex: 1;
+}
+
+.disclaimer-content h6 {
+    color: #0d6efd;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.disclaimer-content ul {
+    margin-top: 0.25rem;
+}
+
+.disclaimer-content ul li {
+    color: #6c757d;
+    margin-bottom: 0.25rem;
+}
+
+.disclaimer-note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(255, 193, 7, 0.1);
+    border-radius: 4px;
+    color: #856404;
+    font-size: 0.75rem;
+}
+
+.disclaimer-note i {
+    font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+    .middleware-disclaimer {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .disclaimer-content ul {
+        text-align: left;
+    }
+
+    .disclaimer-note {
+        text-align: left;
+    }
+}
 </style>
 
 {% endblock %}
@@ -914,30 +1127,137 @@
                         <div class="text-muted fst-italic small mt-1">   
                             Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission.
                         </div>
-                        <div class="filter-note alert alert-warning mt-2" role="alert">
-                            <div class="d-flex align-items-start">
-                                <i class="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
-                                <div>
-                                    <h6 class="mb-1"><strong>Note: LHDN Submission Process</strong></h6>
-                                    <small>
-                                        <ul class="mb-0 ps-3">
-                                            <li><i class="bi bi-file-earmark-check me-1"></i>Please ensure all invoice details are accurate before submission</li>
-                                            <li><i class="bi bi-exclamation-circle me-1"></i>Once submitted, invoices cannot be modified but can be cancelled within time period.</li>
-                                            <li><i class="bi bi-clock me-1"></i>Submission processing may take up to 24 hours</li>
-                                            <li><i class="bi bi-arrow-clockwise me-1"></i>Check submission status by refreshing periodically</li>
-                                        </ul>
-                                        <div class="mt-0">
-                                            <div class="d-flex align-items-center">
-                                                <span class="badge bg-primary me-2">
-                                                    <i class="bi bi-info-circle me-1"></i>Important
-                                                </span>
-                                                <span>Submissions are final and will be processed in the order received.</span>
+                       
+                        <!-- Consolidation Guidelines -->
+                        <div class="consolidation-section mt-3">
+                    <!-- Middleware Disclaimer -->
+<div class="middleware-disclaimer mb-3">
+    
+    <div class="disclaimer-icon">
+        <i class="bi bi-arrow-left-right"></i>
+    </div>
+    <div class="disclaimer-content">
+        <h6 class="mb-1">Middleware Service</h6>
+        <div class="info-banner mb-3 d-flex align-items-center">
+            <span class="badge rounded-pill bg-info-subtle text-warning me-2">
+                <i class="bi bi-info-circle"></i>
+            </span>
+            <small class="text-secondary"><div class="note-badge">
+                <span>Important Note!</span>
+            </div></small>
+        </div>
+
+        <p class="mb-0 small">We act as a transmission channel between you and LHDN. Our role:</p>
+        <ul class="small mb-0 ps-3 mt-1">
+            <li>Format validation & data verification before submission</li>
+            <li>Secure transmission channel to LHDN's systems</li>
+            <li>Real-time status tracking through dashboard</li>
+        </ul>
+        <div class="disclaimer-note mt-2">
+            <i class="bi bi-exclamation-circle"></i>
+            <span>Final acceptance and validation are determined by LHDN</span>
+        </div>
+    </div>
+</div>
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <div class="d-flex align-items-center">
+                                    <span class="badge rounded-pill bg-primary-subtle text-primary me-2">
+                                        <i class="bi bi-boxes"></i>
+                                    </span>
+                                    <h6 class="mb-0 text-primary">LHDN e-Invoice Consolidation Requirements</h6>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <a href="https://www.hasil.gov.my/media/uwwehxwq/irbm-e-invoice-specific-guideline.pdf" 
+                                       target="_blank" 
+                                       class="btn btn-sm btn-link text-muted p-0 d-flex align-items-center"
+                                       data-bs-toggle="tooltip"
+                                       title="View LHDN Guidelines">
+                                        <i class="bi bi-file-pdf fs-5"></i>
+                                    </a>
+                                    <button class="btn btn-sm btn-link text-muted p-0 d-flex align-items-center" 
+                                            type="button" 
+                                            data-bs-toggle="collapse" 
+                                            data-bs-target="#consolidationDetails" 
+                                            aria-expanded="true" 
+                                            aria-controls="consolidationDetails">
+                                        <i class="bi bi-chevron-up toggle-icon fs-5"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="collapse show" id="consolidationDetails">
+
+                                <div class="consolidation-content">
+                                    <div class="row g-3">
+                                        <!-- Buyer's Details -->
+                                        <div class="col-md-6">
+                                            <div class="content-card h-100">
+                                                <div class="card-header">
+                                                    <i class="bi bi-person-badge text-primary"></i>
+                                                    <span>Buyer's Details</span>
+                                                </div>
+                                                <div class="card-content">
+                                                    <div class="detail-item">
+                                                        <span class="label">Name</span>
+                                                        <span class="value">"General Public"</span>
+                                                    </div>
+                                                    <div class="detail-item">
+                                                        <span class="label">TIN</span>
+                                                        <span class="value">"EI00000000010"</span>
+                                                    </div>
+                                                    <div class="detail-item">
+                                                        <span class="label">Registration/ID</span>
+                                                        <span class="value">"NA"</span>
+                                                    </div>
+                                                    <div class="detail-item">
+                                                        <span class="label">Other Details</span>
+                                                        <span class="value text-muted">Address/Contact/SST: "NA"</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                    </small>
+
+                                        <!-- Description Format -->
+                                        <div class="col-md-6">
+                                            <div class="content-card h-100">
+                                                <div class="card-header">
+                                                    <i class="bi bi-list-check text-primary"></i>
+                                                    <span>Description Format</span>
+                                                </div>
+                                                <div class="card-content">
+                                                    <div class="format-item">
+                                                        <i class="bi bi-check2 text-success"></i>
+                                                        <span>Summary per receipt as line items (Use Classification Code: 004)</span>
+                                                    </div>
+                                                    <div class="format-item">
+                                                        <i class="bi bi-check2 text-success"></i>
+                                                        <span>Continuous receipt number chain</span>
+                                                    </div>
+                                                    <div class="format-item">
+                                                        <i class="bi bi-check2 text-success"></i>
+                                                        <span>Branch consolidated submissions</span>
+                                                    </div>
+                                                    <div class="format-item text-danger">
+                                                        <i class="bi bi-exclamation-circle"></i>
+                                                        <span>Receipt reference numbers required</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+
+                        <script>
+                            document.addEventListener('DOMContentLoaded', function() {
+                                const toggleBtn = document.querySelector('[data-bs-toggle="collapse"]');
+                                toggleBtn.addEventListener('click', function() {
+                                    const isCollapsed = this.getAttribute('aria-expanded') === 'false';
+                                    this.setAttribute('aria-expanded', isCollapsed);
+                                });
+                            });
+                        </script>
                     </div>
                     <div class="table-controls">
                         <div class="d-flex align-items-center gap-1">
