@@ -245,7 +245,7 @@ class InvoiceTableManager {
                                        title="${data || 'N/A'}" 
                                        data-longId="${data || ''}"
                                        style="
-                                            max-width: 180px;
+                                            max-width: 100px;
                                             line-height: 1.2;
                                             display: inline-flex;
                                             align-items: center;

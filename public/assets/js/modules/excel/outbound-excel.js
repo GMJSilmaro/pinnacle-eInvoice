@@ -499,7 +499,7 @@ class InvoiceTableManager {
                             const disabledAttr = disabledStatus ? 'disabled' : '';
                             const title = disabledStatus ? `Cannot select ${status} items` : '';
 
-                            return `<div class="outbound-checkbox-header">
+                            return `<div>
                                 <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
                             </div>`;
                         }
@@ -508,7 +508,6 @@ class InvoiceTableManager {
                         data: null,
                         orderable: false,
                         searchable: false,
-                        className: 'text-center',
                         render: function (data, type, row, meta) {
                             // Calculate the correct index based on the current page and page length
                             const pageInfo = meta.settings._iDisplayStart;
@@ -538,12 +537,12 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'uploadedDate',
-                        title: 'FILE UPLOADED',
+                        title: 'FILE DATE',
                         render: (data, type, row) => this.renderUploadedDate(data, type, row)
                     },
                     {
                         data: null,
-                        title: 'DATE INFO',
+                        title: 'INV. DATE INFO',
                         render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row)
                     },
                     {
@@ -871,7 +870,7 @@ class InvoiceTableManager {
     renderUploadedDate(data) {
         const formattedDate = this.formatIssueDate(data);
         if (!data) return '<span class="text-muted">N/A</span>';
-        return `<span class="time-text text-muted" title="${data}">${formattedDate}</span>`;
+        return `<span class="text-muted" title="${data}">${formattedDate}</span>`;
     }
 
     renderTimeRemaining(date, row) {
@@ -1905,38 +1904,7 @@ class InvoiceTableManager {
 
 
     initializeTableStyles() {
-        // Add custom styles to the table
-        const style = document.createElement('style');
-        style.textContent = `
-            #invoiceTable_wrapper .dataTables_length {
-                margin-bottom: 15px;
-            }
-            #invoiceTable th, #invoiceTable td {
-                padding: 12px 15px;
-                vertical-align: middle;
-            }
-            #invoiceTable tbody tr {
-                transition: background-color 0.2s;
-            }
-            #invoiceTable tbody tr:hover {
-                background-color: rgba(0, 123, 255, 0.05);
-            }
-            .non-selectable-row {
-                opacity: 0.7;
-                background-color: rgba(0, 0, 0, 0.03);
-            }
-            .non-selectable-row:hover {
-                cursor: not-allowed;
-            }
-            .selectable-row {
-                cursor: pointer;
-            }
-            .outbound-checkbox-column {
-                width: 40px;
-                text-align: center;
-            }
-        `;
-        document.head.appendChild(style);
+
 
         // Apply Bootstrap classes to DataTables elements
         $('.dataTables_filter input').addClass('form-control form-control-sm');
