@@ -9,17 +9,17 @@
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 0;
+            padding: 0.5rem;
             background-color: #ffffff;
             font-size: 11px;
-            line-height: 1.3;
+            line-height: 1.2;
         }
 
         .container {
             width: 100%;
             max-width: 100%;
             margin: 0;
-            padding: 10px 0;
+            padding: 1rem 0;
             background-color: #ffffff;
             position: relative;
         }
@@ -86,11 +86,6 @@
             clear: both;
             margin-top: 20px;
         }
-
-        .info-row {
-            margin: 1px 0;
-        }
-
         /* Buyer section specific styling */
         .buyer-section {
             margin-top: 15px;
@@ -108,11 +103,11 @@
         }
 
         .column {
-            width: 45%;
+            width: 55%;
         }
 
         .info-row {
-            margin: 1px 0;
+            margin: 2px 0;
         }
 
         .info-label {
@@ -143,13 +138,48 @@
             border-radius: 5px;
         }
 
+        .details-table-line-items {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 10px;
+            min-width: 100px;
+            text-align: left;
+            border: 1px solid #000;
+            padding: 3px;
+        }
+
+        .details-table-line-items th,
+        .details-table-line-items td {
+            border: 1px solid #000;
+            padding: 1px;
+            text-align: left;
+        }
+        
+        .details-table-line-items th {
+            background-color: #000;
+            color: #fff;
+            font-weight: bold;
+            padding: 2px 4px;
+            height: 10px;
+            line-height: 1.3;
+            vertical-align: middle;
+        }
+        
+        /* Ensure content is vertically centered */
+        .details-table-line-items td {
+            height: 18px;
+            vertical-align: middle;
+            padding: 1px 4px;
+        }
+
         /* Table Styles */
         .details-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 15px 0;
-        font-size: 10px;
-    }
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 10px;
+        }
 
     .details-table th,
     .details-table td {
@@ -158,23 +188,24 @@
         /*text-align: left;*/
     }
     
-    /* Add this class for the Description column */
-    .w-100 {
-        width: 30%;
-        min-width: 200px;
-    }
-
-    .text-right {
-        text-align: right;
-    }
-    
     .details-table th {
         background-color: #000;
         color: #fff;
         font-weight: bold;
         font-size: 10px;
-        white-space: nowrap;
+       
     }
+    
+    /* Add this class for the Description column */
+        .w-100 {
+            width: 30%;
+            min-width: 150px;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
     
         .text-center {
             text-align: center;
@@ -305,6 +336,17 @@
             margin-top: 20px;
             color: #666;
         }
+        .col-no {
+            width: 20px;
+            min-width: 20px;
+            max-width: 20px;
+        }
+
+        .col-class-code {
+            width: 35px;
+            min-width: 35px;
+            max-width: 35px;
+        }
     </style>
 </head>
 
@@ -380,25 +422,25 @@
 
         <!-- Main Table -->
         <hr class="solid">
-        <table class="details-table">
+        <table class="details-table-line-items">
             <tr>
-                <th>No.</th>
-                <th>Class. Code</th>
+                <th class="text-left col-no">No.</th>
+                <th class="text-left col-class-code">Class. Code</th>
                 <th>Description</th>
-                <th>Qty.</th>
-                <th>UOM</th>
-                <th>U. Price ({{:documentCurrency}})</th>
-                <th>Subtotal ({{:documentCurrency}})</th>
-                <th>(A) Disc. ({{:documentCurrency}})</th>
-                <th>(B) Fee / Charges ({{:documentCurrency}})</th>
-                <th>Tax Rate ({{:documentCurrency}})</th>
-                <th>Tax Amount ({{:documentCurrency}})</th>
-                <th>Amount ({{:documentCurrency}})</th>
+                <th class="text-center">Qty.</th>
+                <th class="text-center">UOM</th>
+                <th class="text-right">U. Price <small>({{:documentCurrency}})</small></th>
+                <th class="text-right">Subtotal <small>({{:documentCurrency}})</small></th>
+                <th class="text-right">(A) Disc. <small>({{:documentCurrency}})</small></th>
+                <th class="text-right">(B) Fee/Charges <small>({{:documentCurrency}})</small></th>
+                <th class="text-center">Tax Rate %</th>
+                <th class="text-right">Tax Amount <small>({{:documentCurrency}})</small></th>
+                <th class="text-right">Total Amount <small>({{:documentCurrency}})</small></th>
             </tr>
             {{for items}}
             <tr>
-                <td class="text-center">{{:No}}</td>
-                <td class="text-center">{{:Cls}}</td>
+                <td class="text-center col-no">{{:No}}</td>
+                <td class="text-center col-class-code">{{:Cls}}</td>
                 <td class="text-left w-100">{{if Description === 'NA'}}No Description{{else}}{{:Description}}{{/if}}</td>
                 <td class="text-right">{{:Quantity}}</td>
                 <td class="text-right">{{:UOM}}</td>
@@ -432,17 +474,17 @@
         </div>
 
         <!-- Tax Summary Table -->
-        <table class="details-table" style="margin-top: 20px; width: 50%;">
+        <table class="details-table" style="margin-top: 0px; width: 85%;">
             <tr>
-                <th>Tax Type</th>
-                <th>Tax Rate</th>
-                <th>Total Amount ({{:documentCurrency}})</th>
-                <th>Total Tax Amount ({{:documentCurrency}})</th>
-                <th>Details of Tax Exemption</th>
+                <th class="text-center">Tax Type</th>
+                <th class="text-center">Tax Rate %</th>
+                <th class="text-right">Total Amount <small>({{:documentCurrency}})</small></th>
+                <th class="text-right">Total Tax Amount <small>({{:documentCurrency}})</small></th>
+                <th class="text-center">Details of Tax Exemption</th>
             </tr>
             {{for taxSummary}}
             <tr>
-                <td>{{:taxType}}</td>
+                <td class="text-center">{{:taxType}}</td>
                 <td class="text-center">{{:taxRate}}%</td>
                 <td class="text-right">{{:totalAmount}}</td>
                 <td class="text-right">{{:totalTaxAmount}}</td>
@@ -454,27 +496,27 @@
         <!-- Totals -->
         <table class="totals-table">
             <tr>
-                <td class="total-label">Total Tax Amount ({{:documentCurrency}})</td>
+                <td class="total-label">Total Tax Amount <small>({{:documentCurrency}})</small></td>
                 <td class="total-amount">{{:TotalTaxAmount}}</td>
             </tr>
             <tr>
-                <td class="total-label">Total Net Amount ({{:documentCurrency}})</td>
+                <td class="total-label">Total Net Amount <small>({{:documentCurrency}})</small></td>
                 <td class="total-amount">{{:TotalNetAmount}}</td>
             </tr>
             <tr>
-                <td class="total-label">Total excluding Tax ({{:documentCurrency}})</td>
+                <td class="total-label">Total Excluding Tax <small>({{:documentCurrency}})</small></td>
                 <td class="total-amount">{{:TotalExcludingTax}}</td>
             </tr>
             <tr>
-                <td class="total-label">Total including Tax ({{:documentCurrency}})</td>
+                <td class="total-label">Total Including Tax <small>({{:documentCurrency}})</small></td>
                 <td class="total-amount">{{:TotalIncludingTax}}</td>
             </tr>
             <tr>
-                <td class="total-label">Prepayment Amount ({{:documentCurrency}})</td>
+                <td class="total-label">Prepayment Amount <small>({{:documentCurrency}})</small></td>
                 <td class="total-amount">{{:Prepayment}}</td>
             </tr>
             <tr>
-                <td class="total-label">Total Payable Amount ({{:documentCurrency}})</td>
+                <td class="total-label">Total Payable Amount <small>({{:documentCurrency}})</small></td>
                 <td class="total-amount final">{{:TotalPayableAmount}}</td>
             </tr>
         </table>
