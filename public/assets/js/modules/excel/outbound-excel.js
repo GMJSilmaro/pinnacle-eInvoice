@@ -537,12 +537,12 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'uploadedDate',
-                        title: 'FILE DATE',
+                        title: 'FILE UPLOADED',
                         render: (data, type, row) => this.renderUploadedDate(data, type, row)
                     },
                     {
                         data: null,
-                        title: 'INV. DATE INFO',
+                        title: 'E-INV. DATE INFO',
                         render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row)
                     },
                     {
@@ -869,8 +869,8 @@ class InvoiceTableManager {
 
     renderUploadedDate(data) {
         const formattedDate = this.formatIssueDate(data);
-        if (!data) return '<span class="text-muted">N/A</span>';
-        return `<span class="text-muted" title="${data}">${formattedDate}</span>`;
+        if (!data) return '<span class="text-muted fs-6">N/A</span>';
+        return `<span class="cell-main w-2 text-left" title="${data}">${formattedDate}</span>`;
     }
 
     renderTimeRemaining(date, row) {

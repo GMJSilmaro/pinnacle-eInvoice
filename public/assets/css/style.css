@@ -55,9 +55,10 @@ h6 {
 # Main
 --------------------------------------------------------------*/
 #main {
-  margin-top: 2rem;
-  padding: 20px 30px;
+  margin-top: 1rem;
+  padding: 40px 60px;
   transition: all 0.3s;
+  font-size: 16px;
 }
 
 @media (max-width: 1199px) {
@@ -1192,49 +1193,6 @@ h6 {
   margin-left: 95px;
 }
 
-/* Recent Sales */
-.dashboard .recent-sales {
-  font-size: 14px;
-}
-
-
-.dashboard .recent-sales .table thead {
-  background: #f6f6fe;
-}
-
-.dashboard .recent-sales .table thead th {
-  border: 0;
-}
-
-.dashboard .recent-sales .dataTable-top {
-  padding: 0 0 10px 0;
-}
-
-.dashboard .recent-sales .dataTable-bottom {
-  padding: 10px 0 0 0;
-}
-
-/* Top Selling */
-.dashboard .top-selling {
-  font-size: 14px;
-}
-
-.dashboard .top-selling .table thead {
-  background: #f6f6fe;
-}
-
-.dashboard .top-selling .table thead th {
-  border: 0;
-}
-
-.dashboard .top-selling .table tbody td {
-  vertical-align: middle;
-}
-
-.dashboard .top-selling img {
-  border-radius: 5px;
-  max-width: 60px;
-}
 
 /*--------------------------------------------------------------
 # Icons list page
@@ -1606,4 +1564,4 @@ h6 {
   opacity: 0.9;
   margin-top: 0.25rem;
 }
- */
+ 

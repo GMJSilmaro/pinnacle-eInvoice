@@ -76,10 +76,10 @@
     padding: 0.6rem;
     font-weight: 800;
     color: #475569;
-    font-size: 0.675rem;
+    font-size: 0.775rem;
     text-transform: uppercase;
     border-bottom: 2px solid #e2e8f0;
-    white-space: nowrap;
+    white-space: no-wrap;
     position: sticky;
     z-index: 1;
     vertical-align: middle;
@@ -131,26 +131,6 @@
     background: #3b82f6;
     border-color: #3b82f6;
     color: #fff;
-}
-
-/* Modern Scrollbar */
-.outbound-table-container::-webkit-scrollbar {
-    height: 6px;
-    width: 6px;
-}
-
-.outbound-table-container::-webkit-scrollbar-track {
-    background: #f1f5f9;
-    border-radius: 3px;
-}
-
-.outbound-table-container::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 3px;
-}
-
-.outbound-table-container::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
 }
 
 /* Status Badges */
@@ -229,14 +209,14 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    width: 100%;
-    max-width: 100px;
-    //margin-right: 10px;
+    width: 80%;
+    max-width: 180px;
     justify-content: flex-start;
     white-space: no-wrap;
     text-overflow: ellipsis;
     overflow: hidden;
     text-wrap: no-wrap;
+    font-size: 0.875rem;
 }
 
 .cell-main i {
@@ -278,12 +258,11 @@
 
 /* Date Info Styles */
 .date-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    width: 100%;
-    max-width: 200px;
-    white-space: no-wrap;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  white-space: no-wrap;
 }
 
 .date-row {

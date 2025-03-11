@@ -258,7 +258,7 @@ const fetchRecentDocuments = async (req) => {
                                 params: {
                                     pageNo: pageNo,
                                     pageSize: pageSize,
-                                    sortBy: 'dateTimeReceived',
+                                    sortBy: 'dateTimeValidated',
                                     sortOrder: 'desc'
                                 },
                                 headers: {
@@ -305,6 +305,7 @@ const fetchRecentDocuments = async (req) => {
                             typeName: doc.typeName,
                             typeVersionName: doc.typeVersionName,
                             dateTimeReceived: doc.dateTimeReceived,
+                            dateTimeIssued: doc.dateTimeIssued,
                             dateTimeValidated: doc.dateTimeValidated,
                             status: doc.status,
                             documentStatusReason: doc.documentStatusReason,
@@ -314,6 +315,8 @@ const fetchRecentDocuments = async (req) => {
                             totalNetAmount: doc.totalNetAmount || 0,
                             totalPayableAmount: doc.totalPayableAmount || 0
                         }));
+
+                        console.log(mappedDocuments);
 
                         documents.push(...mappedDocuments);
                         console.log(`Successfully fetched page ${pageNo} with ${mappedDocuments.length} documents`);
@@ -454,7 +457,6 @@ const fetchRecentDocuments = async (req) => {
         };
     }
 };
-
 // Caching function
 const getCachedDocuments = async (req) => {
     const cacheKey = `recentDocuments_${req.session?.user?.TIN || 'default'}`;
@@ -970,6 +972,7 @@ router.get('/documents/recent', async (req, res) => {
                 internalId: doc.internalId,
                 dateTimeIssued: doc.dateTimeIssued,
                 dateTimeReceived: doc.dateTimeReceived,
+                dateTimeValidated: doc.dateTimeValidated,
                 status: doc.status,
                 totalSales: doc.totalSales || doc.total || doc.netAmount || 0,
                 totalExcludingTax: doc.totalExcludingTax || 0,
@@ -1086,6 +1089,7 @@ router.get('/documents/recent', async (req, res) => {
                     internalId: doc.internalId,
                     dateTimeIssued: doc.dateTimeIssued,
                     dateTimeReceived: doc.dateTimeReceived,
+                    dateTimeValidated: doc.dateTimeValidated,
                     status: doc.status,
                     totalSales: doc.totalSales || 0,
                     totalExcludingTax: doc.totalExcludingTax || 0,

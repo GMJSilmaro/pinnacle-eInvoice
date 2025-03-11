@@ -138,7 +138,6 @@ class InvoiceTableManager {
         if ($.fn.DataTable.isDataTable('#invoiceTable')) {
             this.table.destroy();
         }
-
         const self = this;
         this.table = $('#invoiceTable').DataTable({
             processing: false,
@@ -298,9 +297,9 @@ class InvoiceTableManager {
                 },
                 {
                     data: null,
-                    className: '',
+                    className: 'text-nowrap',
                     title: 'DATE INFO',
-                    render: (data, type, row) => this.renderDateInfo(row.dateTimeIssued, row.dateTimeReceived, row)
+                    render: (data, type, row) => this.renderDateInfo(row.dateTimeIssued, row.dateTimeValidated, row)
                 },
                 {
                     data: 'status',
@@ -406,7 +405,13 @@ class InvoiceTableManager {
             scrollCollapse: true,
             autoWidth: false,
             pageLength: 10,
-            order: [[7, 'desc']], // Order by date column descending
+            "order": [[ 6, 'desc' ]], // The 6 should be the index of your date column
+            "columnDefs": [
+                {
+                    "targets": 6, // The DATE INFO column index
+                    "type": "date"
+                },
+            ],
             dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
             language: {
                 //search: '',
@@ -684,40 +689,65 @@ class InvoiceTableManager {
     }
 
     
-    renderDateInfo(issueDate, receivedDate, row) {
+    renderDateInfo(issueDate, validatedDate, row) {
+        console.log(validatedDate);
         const issueFormatted = issueDate ? this.formatDate(issueDate) : null;
-        const receivedFormatted = receivedDate ? this.formatDate(receivedDate) : null;      
-  
+        const validatedFormatted = validatedDate ? this.formatDate(validatedDate) : null;
      
         return `
-            <div class="date-info"> 
+            <div class="date-info" style="position: relative;">
                 ${issueFormatted ? `
-                    <div class="date-row" 
-                         data-bs-toggle="tooltip" 
-                         data-bs-placement="top" 
-                         title="Date and time when document was issued for submission to LHDN">
-                        <i class="bi bi-check-circle me-1 text-primary"></i>
-                        <span class="date-value">
-                            <div>
-                                <span class="text-primary mt-5">Date Issued:</span> ${issueFormatted}
+                    <div class="date-row issued" 
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
+                         title="Document was issued on ${issueFormatted}"
+                         style="position: relative; padding-left: 28px;">
+                        <i class="bi bi-send text-primary" 
+                           style="position: absolute; left: 0; top: 3px; font-size: 1.1rem;"></i>
+                        <div class="date-content">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="date-value text-dark fw-medium">
+                                    ${issueFormatted}
+                                </span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary py-1 px-2" 
+                                      style="font-size: 0.55rem; border: 1px solid rgba(13, 110, 253, 0.15);">
+                                    Issued
+                                </span>
                             </div>
-                        </span>
+                            <div class="date-label text-muted" style="font-size: 0.65rem;">
+                                Document Issue Date
+                            </div>
+                        </div>
                     </div>
                 ` : ''}
-                ${receivedFormatted ? `
-                    <div class="date-row" 
-                         data-bs-toggle="tooltip" 
-                         data-bs-placement="top" 
-                         title="Date and time when document was received from LHDN">
-                        <i class="bi bi-check-circle me-1 text-success"></i>
-                        <span class="date-value">
-                            <div>
-                                <span class="text-success">Date Received:</span> ${receivedFormatted}
+
+                ${validatedFormatted ? `
+                    <div class="date-separator" style="height: 1px; background: rgba(0,0,0,0.08); margin: 5px 0;"></div>
+                    <div class="date-row validated" 
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
+                         title="LHDN validation completed on ${validatedFormatted}"
+                         style="position: relative; padding-left: 28px;">
+                        <i class="bi bi-shield-check text-success" 
+                           style="position: absolute; left: 0; top: 3px; font-size: 1.1rem;"></i>
+                        <div class="date-content">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="date-value text-dark fw-medium">
+                                    ${validatedFormatted}
+                                </span>
+                                <span class="badge bg-success bg-opacity-10 text-success py-1 px-2" 
+                                      style="font-size: 0.55rem; border: 1px solid rgba(25, 135, 84, 0.15);">
+                                    Validated
+                                </span>
                             </div>
-                        </span>
+                            <div class="date-label text-muted" style="font-size: 0.65rem;">
+                                LHDN Validation Date
+                            </div>
+                        </div>
                     </div>
                 ` : ''}
-            </div>`;
+            </div>
+        `;
     }
 
     renderInvoiceNumber(data, type, row) {
@@ -998,6 +1028,7 @@ class InvoiceTableManager {
                 Receiver: row.receiverName,
                 'Issue Date': new Date(row.dateTimeIssued).toLocaleString(),
                 'Received Date': new Date(row.dateTimeReceived).toLocaleString(),
+                'Validated Date': new Date(row.dateTimeValidated).toLocaleString(),
                 Status: row.status,
                 'Total Sales': `RM ${parseFloat(row.totalSales).toFixed(2)}`
             }));
