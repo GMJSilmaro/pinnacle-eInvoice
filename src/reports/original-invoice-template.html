@@ -438,38 +438,39 @@
         <table class="details-table-line-items">
             <tr>
                 <th class="text-left col-no">No.</th>
-                <th class="text-left col-class-code">Class. Code</th>
+                <th class="text-left col-class-code">Code</th>
                 <th>Description</th>
-                <th class="text-center">Qty.</th>
-                <th class="text-center">UOM</th>
-                <th class="text-right">U. Price <small>({{:documentCurrency}})</small></th>
-                <th class="text-right">Subtotal <small>({{:documentCurrency}})</small></th>
-                <th class="text-right">(A) Disc. <small>({{:documentCurrency}})</small></th>
-                <th class="text-right">(B) Fee/Charges <small>({{:documentCurrency}})</small></th>
-                <th class="text-center">Tax Rate %</th>
-                <th class="text-right">Tax Amount <small>({{:documentCurrency}})</small></th>
-                <th class="text-right">Total Amount <small>({{:documentCurrency}})</small></th>
+                <th style="text-align: center;">Qty.</th>
+                <th style="text-align: center;">UOM</th>
+                <th style="text-align: right;">U. Price <small>({{:documentCurrency}})</small></th>
+                <th style="text-align: right;">Subtotal <small>({{:documentCurrency}})</small></th>
+                <th style="text-align: right;">(A) Disc. <small>({{:documentCurrency}})</small></th>
+                <th style="text-align: right;">(B) Fee/Charges <small>({{:documentCurrency}})</small></th>
+                <th style="text-align: center;">Tax Rate %</th>
+                <th style="text-align: right;">Tax Amount <small>({{:documentCurrency}})</small></th>
+                <th style="text-align: center;">Amount Exempted from Tax ({{:documentCurrency}})</th>
+                <th style="text-align: right;">Total Amount <small>({{:documentCurrency}})</small></th>
             </tr>
             {{for items}}
             <tr>
                 <td class="text-center col-no">{{:No}}</td>
                 <td class="text-center col-class-code">{{:Cls}}</td>
                 <td class="text-left w-100">{{if Description === 'NA'}}No Description{{else}}{{:Description}}{{/if}}</td>
-                <td class="text-right">{{:Quantity}}</td>
-                <td class="text-right">{{:UOM}}</td>
-                <td class="text-right">{{:UnitPrice}}</td>
-                <td class="text-right">{{:QtyAmount}}</td>
-                <td class="text-right">{{if Disc === '0.00'}}0.00{{else}}{{:Disc}}{{/if}}</td>
-                <td class="text-right">{{:Charges}}</td>
+                <td style="text-align: center;">{{:Quantity}}</td>
+                <td style="text-align: center;">{{:UOM}}</td>
+                <td style="text-align: right;">{{:UnitPrice}}</td>
+                <td style="text-align: right;">{{:QtyAmount}}</td>
+                <td style="text-align: right;">{{if Disc === '0.00'}}0.00{{else}}{{:Disc}}{{/if}}</td>
+                <td style="text-align: right;">{{:Charges}}</td>
                 <td class="text-center">{{:LineTaxPercent}}%</td>
-                <td class="text-right">{{:LineTaxAmount}}</td>
-                <td class="text-right">{{:Total}}</td>
+                <td style="text-align: right;">{{:LineTaxAmount}}</td>
+                <td style="text-align: right;">{{if TaxType === "Tax exemption" || TaxType === "Not Applicable"}}{{:HypotheticalTax}}*{{else}}-{{/if}}</td>
+                <td style="text-align: right;">{{:Total}}</td>
             </tr>
             {{/for}}
         </table>
         <div class="line-items-note">
-            Note: Classification Code, UOM - Unit of Measurement, ( ) - Additional data present, * will be displayed in
-            Line Items /Additional Details table.
+            Note: Classification Code, UOM - Unit of Measurement, ( ) - Additional data present, * Hypothetical Tax shows the tax amount that would have been charged at 8% if the item was not tax exempt.
         </div>
 
         <!-- Currency Section -->
@@ -487,20 +488,22 @@
         </div>
 
         <!-- Tax Summary Table -->
-        <table class="details-table" style="margin-top: 0px; width: 85%;">
+        <table class="details-table" style="margin-top: 20px;">
             <tr>
                 <th class="text-center">Tax Type</th>
                 <th class="text-center">Tax Rate %</th>
                 <th class="text-right">Total Amount <small>({{:documentCurrency}})</small></th>
                 <th class="text-right">Total Tax Amount <small>({{:documentCurrency}})</small></th>
+                <th style="text-align: center;">Total Amount Exempted from Tax ({{:documentCurrency}})</th>
                 <th class="text-center">Details of Tax Exemption</th>
             </tr>
             {{for taxSummary}}
             <tr>
                 <td class="text-center">{{:taxType}}</td>
                 <td class="text-center">{{:taxRate}}%</td>
-                <td class="text-right">{{:totalAmount}}</td>
-                <td class="text-right">{{:totalTaxAmount}}</td>
+                <td style="text-align: right;">{{:totalAmount}}</td>
+                <td style="text-align: right;">{{:totalTaxAmount}}</td>
+                <td style="text-align: right;">{{if taxType === "Tax exemption" || taxType === "Not Applicable"}}{{:hypotheticalTaxAmount}}*{{else}}-{{/if}}</td>
                 <td class="text-center">{{if LHDNtaxExemptionReason === 'NA'}}Not Applicable{{else}}{{:LHDNtaxExemptionReason}}{{/if}}</td>
             </tr>
             {{/for}}

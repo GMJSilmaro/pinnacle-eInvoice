@@ -1592,18 +1592,32 @@ async function getTemplateData(uuid, accessToken, user) {
         const taxTypeCode = lineTaxCategory?.ID?.[0]._ || '06';
         const taxPercent = parseFloat(lineTaxCategory?.Percent?.[0]._ || 0);
     
-        // Add to tax summary
-        const taxKey = `${taxTypeCode}_${taxPercent}`;
-        if (!taxSummary[taxKey]) {
-            taxSummary[taxKey] = {
-                taxType: taxTypeCode,
-                taxRate: taxPercent,
-                baseAmount: 0,
-                taxAmount: 0
-            };
-        }
-        taxSummary[taxKey].baseAmount += lineAmount;
-        taxSummary[taxKey].taxAmount += lineTax;
+         // Calculate hypothetical tax for exempt items
+         let hypotheticalTax = '0.00';
+         let isExempt = taxTypeCode === 'E' || taxTypeCode === '06';
+         if (isExempt) {
+             // Use standard service tax rate of 8% if item is exempt
+             hypotheticalTax = (lineAmount * 8 / 100).toLocaleString('en-MY', { 
+                 minimumFractionDigits: 2, 
+                 maximumFractionDigits: 2 
+             });
+         }
+     
+         // Add to tax summary
+         const taxKey = `${taxTypeCode}_${taxPercent}`;
+         if (!taxSummary[taxKey]) {
+             taxSummary[taxKey] = {
+                 taxType: taxTypeCode,
+                 taxRate: taxPercent,
+                 baseAmount: 0,
+                 taxAmount: 0,
+                 hypotheticalTaxAmount: 0
+             };
+         }
+         taxSummary[taxKey].baseAmount += lineAmount;
+         taxSummary[taxKey].taxAmount += lineTax;
+         taxSummary[taxKey].hypotheticalTaxAmount += isExempt ? parseFloat(hypotheticalTax.replace(/,/g, '')) : 0;
+     
     
         // Format quantity with exactly 2 decimal places
         const formattedQuantity = quantity.toLocaleString('en-MY', {
@@ -1631,6 +1645,7 @@ async function getTemplateData(uuid, accessToken, user) {
             Charges: allowanceCharges.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00',
             LineTaxPercent: taxPercent.toFixed(2),
             LineTaxAmount: lineTax.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            HypotheticalTax: hypotheticalTax,  // Add hypothetical tax to line items
             Total: (parseFloat(line.ItemPriceExtension?.[0]?.Amount?.[0]._ || 0) + lineTax).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             TaxType: getTaxTypeDescription(taxTypeCode)
         };
@@ -1645,8 +1660,11 @@ async function getTemplateData(uuid, accessToken, user) {
         taxRate: parseFloat(summary.taxRate).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         taxAmount: parseFloat(summary.taxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         LHDNtaxExemptionReason: taxExempReason || 'Not Applicable',
+        hypotheticalTaxAmount: summary.taxType === 'E' || summary.taxType === '06' ? 
+        parseFloat(summary.hypotheticalTaxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
+        '0.00'
     }));
-    
+
     // Sort the taxSummaryArray based on the desired order
     const taxTypeOrder = ['Service Tax', 'Sales Tax', 'Tourism Tax', 'High-Value Goods Tax', 'Sales Tax on Low Value Goods', 'Not Applicable', 'Tax exemption', 'Other'];
     taxSummaryArray.sort((a, b) => taxTypeOrder.indexOf(a.taxType) - taxTypeOrder.indexOf(b.taxType));
@@ -1726,13 +1744,15 @@ async function getTemplateData(uuid, accessToken, user) {
         //     totalTaxAmount: item.taxAmount || '0.00'
         // })),
 
-        taxSummary: taxSummaryArray.map(item => ({
+         taxSummary: taxSummaryArray.map(item => ({
             taxType: item.taxType,
             taxRate: item.taxRate,
             totalAmount: item.baseAmount || '0.00',
             totalTaxAmount: item.taxAmount || '0.00',
+            hypotheticalTaxAmount: item.hypotheticalTaxAmount || '0.00',
             LHDNtaxExemptionReason: taxExempReason || 'Not Applicable',
         })),
+
 
         companyName: supplierParty.PartyLegalEntity?.[0]?.RegistrationName?.[0]._ || 'NNot ApplicableA',
         companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'Not Applicable',

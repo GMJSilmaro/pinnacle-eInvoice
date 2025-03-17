@@ -35,6 +35,14 @@ router.get('/outbound', (req, res) => {
   });
 });
 
+router.get('/consolidated', auth.middleware, (req, res) => {
+  res.render('dashboard/consolidated.html', {
+      title: 'Outbound Consolidation',
+      user: req.session.user || null,
+      layout: 'layout'
+  });
+});
+
 router.get('/inbound', (req, res) => {
   res.render('dashboard/inbound.html', {
     title: 'Inbound',

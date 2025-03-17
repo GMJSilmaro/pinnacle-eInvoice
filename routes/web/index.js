@@ -45,6 +45,15 @@ router.get('/outbound', auth.middleware, (req, res) => {
     });
 });
 
+// Outbound redirect
+router.get('/consolidated', auth.middleware, (req, res) => {
+    res.render('dashboard/consolidated.html', {
+        title: 'Outbound Consolidation',
+        user: req.session.user || null,
+        layout: 'layout'
+    });
+});
+
 // Help & Support route
 router.get('/help', auth.middleware, (req, res) => {
     res.render('dashboard/help.html', {

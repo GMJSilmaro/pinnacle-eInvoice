@@ -3,11 +3,9 @@
     background: #fff;
     border-radius: 1rem;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
-    padding: 1.5rem;
+    padding: 1.1rem;
     width: 100%;
-    max-width: 100%;
-    margin: 1.5rem auto 0;
-    overflow: hidden;
+    min-width: none;
 }
 
 
@@ -86,13 +84,11 @@
 }
 
 .outbound-table-responsive tbody td {
-    padding: 0.6rem;
+    padding: 0.3rem;
     color: #475569;
     font-size: 0.735rem;
     border-bottom: 1px solid #e2e8f0;
     white-space: normal;
-    word-wrap: break-word;
-    vertical-align: middle;
 }
 
 .outbound-table-responsive tbody tr:hover {
