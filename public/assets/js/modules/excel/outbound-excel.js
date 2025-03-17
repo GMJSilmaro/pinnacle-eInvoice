@@ -702,58 +702,71 @@ class InvoiceTableManager {
         const docTypeColor = getDocTypeColor(docType);
 
         return `
-            <div class="invoice-info-wrapper" style="display: flex; flex-direction: column; gap: 8px; text-align: left;">
-                <div class="invoice-main" style="display: flex; align-items: left; gap: 12px;">
-                      <div class="invoice-number" style="
+            <div class="invoice-info-wrapper" style="
+                display: flex; 
+                flex-direction: column; 
+                gap: 4px; 
+                text-align: left;
+                min-width: 200px;
+            ">
+                <div class="invoice-number" style="
                     display: flex;
-                    align-items: left;
+                    align-items: center;
                     gap: 6px;
                     font-weight: 500;
                     color: #2c3345;
-                    padding-left: 0;
+                    width: 100%;
                 ">
                     <i class="bi bi-hash text-primary"></i>
-                    <span class="invoice-text" title="${data}" style="
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                    ">${data}</span>
+                    <span class="invoice-text" 
+                        title="${data}" 
+                        style="
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            max-width: calc(100% - 24px);
+                        ">${data}</span>
                 </div>
+                
                 <div class="file-info" style="
                     display: flex;
-                    align-items: left;
+                    align-items: center;
                     gap: 6px;
                     font-size: 0.75rem;
                     color: #6c757d;
-                    position: relative;
-                    padding-left: 20px;
+                    width: 100%;
                 ">
-                    <i class="bi bi-filetype-xml" style="
-                        position: absolute;
-                        left: 0;
+                    <i class="bi bi-file-earmark-text-fill" style="
                         color: #198754;
                         font-size: 1rem;
+                        flex-shrink: 0;
                     "></i>
                     <span title="${row.fileName}" style="
-                        text-truncate;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
                     ">${row.fileName}</span>
                 </div>
-                    <div class="document-type" style="padding-left: 0;">
-                        <span class="badge-document-type" style="
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 4px;
-                            padding: 4px 8px;
-                            border-radius: 4px;
-                            font-size: 0.75rem;
-                            font-weight: 500;
-                            background-color: ${docTypeColor}15;
-                            color: ${docTypeColor};
-                        ">
-                            <i class="bi bi-${docTypeIcon}"></i>
-                            ${docType}
-                        </span>
-                    </div>
+
+                <div class="document-type" style="
+                    width: 100%;
+                    margin-top: 2px;
+                ">
+                    <span class="badge-document-type" style="
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 0.75rem;
+                        font-weight: 500;
+                        background-color: ${docTypeColor}15;
+                        color: ${docTypeColor};
+                        white-space: nowrap;
+                    ">
+                        <i class="bi bi-${docTypeIcon}"></i>
+                        ${docType}
+                    </span>
                 </div>
             </div>`;
     }
@@ -817,7 +830,7 @@ class InvoiceTableManager {
         const timeRemaining = showTimeRemaining ? this.calculateRemainingTime(submittedDate) : null;
 
         return `
-            <div class="date-info"> 
+            <div class="date-info" style="width: 140px;"> 
                 ${submittedFormatted ? `
                     <div class="date-row" 
                          data-bs-toggle="tooltip" 

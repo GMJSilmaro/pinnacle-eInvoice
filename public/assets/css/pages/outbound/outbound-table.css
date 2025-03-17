@@ -226,12 +226,6 @@
 }
 
 
-.invoice-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: no-wrap;
-    font-weight: 600;
-}
 
 .cell-sub {
     font-size: 0.75rem;
@@ -260,9 +254,10 @@
 .date-info {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-
+  gap: 2px;
   white-space: no-wrap;
+  width: 100%;
+  min-width: 80px;
 }
 
 .date-row {
@@ -882,9 +877,11 @@ body.swal2-shown {
 
 /* Invoice Column Styles */
 .invoice-info-wrapper {
-    display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 2px;
+    width: 100%;
+    max-width: 150px;
+    padding-left: 10px;
 }
 
 .invoice-main {
@@ -908,9 +905,6 @@ body.swal2-shown {
 .invoice-text {
     font-weight: 600;
     color: #405189;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .document-type {
