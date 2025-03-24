@@ -2022,97 +2022,81 @@ async function handleCertificateSelection(event) {
 
 // Update the validateLHDNCertificateRequirements function
 function validateLHDNCertificateRequirements(cert) {
-    try {
-        // First check if we have a valid certificate object
-        if (!cert || typeof cert !== 'object') {
-            throw new Error('Invalid certificate object');
-        }
-
-        const validation = {
-            isValid: false,
-            requirements: {
-                distinguishedName: false,
-                keyUsage: false,
-                enhancedKeyUsage: false
-            },
-            errors: []
-        };
-
-        // Check Distinguished Name requirements
-        try {
-            // Extract subject components from the certificate
-            const subjectParts = cert.subject.split(',').map(part => part.trim());
-            const requiredFields = {
-                CN: false,  // Common Name
-                C: false,   // Country
-                O: false,   // Organization
-                OID: false, // Organization Identifier
-                SERIALNUMBER: false // Business Registration Number
-            };
-
-            // Parse each subject component
-            subjectParts.forEach(part => {
-                const [key, value] = part.split('=').map(s => s.trim());
-                if (key in requiredFields) {
-                    requiredFields[key] = true;
+    if (!cert) return { valid: false, missingFields: ['Certificate is required'] };
+    
+    console.log('Validating LHDN requirements for certificate:', cert);
+    
+    // Extract subject components
+    const subjectParts = {};
+    if (cert.subject) {
+        cert.subject.split(', ').forEach(part => {
+            const [key, value] = part.split('=');
+            if (key && value) {
+                subjectParts[key] = value;
+                
+                // Check for OID in undefined attribute
+                // Match both C58474705050 (with zero) and C5847470505O (with letter O)
+                if (key === 'undefined' && (value.match(/^C[0-9]+O$/) || value.match(/^C[0-9]+0$/))) {
+                    console.log('Found OID in undefined attribute during validation:', value);
+                    subjectParts.OID = value;
                 }
-            });
-
-            // Check for missing fields
-            const missingFields = Object.entries(requiredFields)
-                .filter(([_, present]) => !present)
-                .map(([field]) => field);
-
-            if (missingFields.length > 0) {
-                validation.errors.push(`Missing required fields in subject: ${missingFields.join(', ')}`);
-            } else {
-                validation.requirements.distinguishedName = true;
             }
-        } catch (error) {
-            validation.errors.push(`Error checking distinguished name: ${error.message}`);
-        }
-
-        // Check Key Usage
-        try {
-            if (cert.keyUsage && cert.keyUsage.includes('nonRepudiation')) {
-                validation.requirements.keyUsage = true;
-            } else {
-                validation.errors.push('Certificate must have Non-Repudiation key usage');
-            }
-        } catch (error) {
-            validation.errors.push(`Error checking key usage: ${error.message}`);
-        }
-
-        // Check Enhanced Key Usage
-        try {
-            if (cert.extKeyUsage && cert.extKeyUsage.includes('documentSigning')) {
-                validation.requirements.enhancedKeyUsage = true;
-            } else {
-                validation.errors.push('Certificate must have Document Signing enhanced key usage');
-            }
-        } catch (error) {
-            validation.errors.push(`Error checking enhanced key usage: ${error.message}`);
-        }
-
-        // Overall validation
-        validation.isValid = Object.values(validation.requirements).every(req => req === true);
-
-        return validation;
-
-    } catch (error) {
-        return {
-            isValid: false,
-            requirements: {
-                distinguishedName: false,
-                keyUsage: false,
-                enhancedKeyUsage: false
-            },
-            errors: [`Certificate validation error: ${error.message}`]
-        };
+        });
     }
+    
+    // Use extracted values if available
+    const cn = cert.extractedCN || subjectParts.CN;
+    const c = cert.extractedC || subjectParts.C;
+    const o = cert.extractedO || subjectParts.O;
+    let oid = cert.extractedOID || subjectParts.OID;
+    const serialNumber = cert.extractedSERIALNUMBER || subjectParts.SERIALNUMBER || cert.serialNumber;
+    
+    // Special check for OID in the subject string
+    if (!oid) {
+        // Check for both patterns in the subject string
+        const oidMatch = cert.subject?.match(/C[0-9]+O/) || cert.subject?.match(/C[0-9]+0/);
+        if (oidMatch) {
+            console.log('Found OID in subject string during validation:', oidMatch[0]);
+            oid = oidMatch[0];
+        }
+    }
+    
+    // Check required fields
+    const missingFields = [];
+    if (!cn) missingFields.push('CN (Common Name)');
+    if (!c) missingFields.push('C (Country)');
+    if (!o) missingFields.push('O (Organization)');
+    if (!oid) missingFields.push('OID (Organization Identifier)');
+    if (!serialNumber) missingFields.push('SERIALNUMBER');
+    
+    // Check key usage
+    const hasNonRepudiation = cert.keyUsage && (
+        cert.keyUsage.includes('nonRepudiation') || 
+        cert.keyUsage.includes('Non Repudiation') || 
+        cert.keyUsage.includes('Digital Signature')
+    );
+    if (!hasNonRepudiation) {
+        missingFields.push('Key Usage: Non-Repudiation');
+    }
+    
+    // Check extended key usage
+    const hasDocumentSigning = cert.extKeyUsage && (
+        cert.extKeyUsage.includes('documentSigning') || 
+        cert.extKeyUsage.includes('Document Signing') || 
+        cert.extKeyUsage.includes('1.3.6.1.4.1.311.10.3.12') ||
+        cert.extKeyUsage.includes('Email Protection')
+    );
+    if (!hasDocumentSigning) {
+        missingFields.push('Extended Key Usage: Document Signing');
+    }
+    
+    return {
+        valid: missingFields.length === 0,
+        missingFields
+    };
 }
 
-// Update validateCertificate function
+// Update validateCertificate function to always enable save button
 async function validateCertificate() {
     try {
         if (!currentCertificate) {
@@ -2160,32 +2144,40 @@ async function validateCertificate() {
             throw new Error(result.error || 'Certificate validation failed');
         }
 
-        // Check if LHDN validation is required
-        const requireLHDN = document.getElementById('lhdnRequirementsCheck').checked;
-        if (requireLHDN) {
-            const lhdnValidation = validateLHDNCertificateRequirements(result.certInfo);
-            console.log('LHDN Validation result:', lhdnValidation);
-            
-            if (!lhdnValidation.isValid) {
-                throw new Error(`Certificate does not meet LHDN requirements:\n${lhdnValidation.errors.join('\n')}`);
-            }
-        }
-
-        // Update validation state and enable save button
+        // Always enable save button if certificate is valid, regardless of LHDN requirements
         isValidated = true;
         document.getElementById('saveCertBtn').disabled = false;
 
-        // Update UI
-        updateCertificateInfo({
-            ...result.certInfo,
-            lhdnValidation: requireLHDN ? lhdnValidation : null
-        });
+        // Update UI with certificate info
+        updateCertificateInfo(result.certInfo);
 
         // Show success message
+        let message = 'Certificate is valid';
+        let icon = 'success';
+        
+        // Check for missing requirements but don't block validation
+        if (result.missingRequirements && result.missingRequirements.length > 0) {
+            console.log('Missing requirements:', result.missingRequirements);
+            
+            // Check if OID is the only missing requirement
+            const onlyMissingOID = result.missingRequirements.length === 1 && 
+                                  result.missingRequirements[0].includes('OID');
+            
+            if (onlyMissingOID) {
+                message = 'Certificate validated successfully. The OID field is detected in a non-standard format but will be used.';
+                icon = 'success';
+            } else {
+                message = 'Certificate validated with warnings. Some LHDN requirements may be missing but the system will attempt to use the certificate.';
+                icon = 'warning';
+            }
+        } else {
+            message = 'Certificate meets all requirements';
+        }
+
         await Swal.fire({
-            icon: 'success',
-            title: 'Certificate Valid',
-            text: requireLHDN ? 'Certificate meets all LHDN requirements' : 'Certificate is valid',
+            icon: icon,
+            title: 'Certificate Validated',
+            text: message,
             timer: 3000,
             timerProgressBar: true,
             showConfirmButton: false,
@@ -2210,20 +2202,25 @@ async function validateCertificate() {
     }
 }
 
+// Update saveCertificateConfig function
 async function saveCertificateConfig() {
     try {
         if (!currentCertificate) {
             throw new Error('Please select a certificate file first.');
         }
 
+        if (!isValidated) {
+            throw new Error('Please validate the certificate before saving.');
+        }
+
         const password = document.getElementById('certificatePassword').value;
         if (!password) {
-            throw new Error('Certificate password is required');
+            throw new Error('Please enter the certificate password.');
         }
 
         // Show loading state
         Swal.fire({
-            title: 'Saving Certificate',
+            title: 'Saving Configuration',
             text: 'Please wait while we save your certificate configuration...',
             allowOutsideClick: false,
             allowEscapeKey: false,
@@ -2236,10 +2233,10 @@ async function saveCertificateConfig() {
 
         // Create form data
         const formData = new FormData();
-        formData.append('certificate', currentCertificate);
-        formData.append('password', password); // Store the raw password
+        formData.append('certificate', currentCertificate, currentCertificate.name);
+        formData.append('password', password);
 
-        // Send to backend
+        // Send to backend for saving
         const response = await fetch('/api/config/certificate/save', {
             method: 'POST',
             body: formData
@@ -2258,7 +2255,7 @@ async function saveCertificateConfig() {
             document.getElementById('certLastModifiedInfo').style.display = 'block';
         }
 
-        // Show success message
+        // Show success message and reload certificate info
         await Swal.fire({
             icon: 'success',
             title: 'Configuration Saved',
@@ -2269,6 +2266,12 @@ async function saveCertificateConfig() {
             position: 'top-end',
             toast: true
         });
+
+        // Show remove certificate button
+        document.getElementById('disableCertBtn').style.display = 'inline-block';
+        
+        // Reload certificate config to ensure everything is up to date
+        await loadCertificateConfig();
 
     } catch (error) {
         console.error('Error saving certificate config:', error);
@@ -2419,169 +2422,139 @@ async function disableCertificate() {
     }
 }
 
+// Helper function to get certificate status class
+function getCertStatusClass(status) {
+    switch (status?.toLowerCase()) {
+        case 'valid':
+            return 'bg-success';
+        case 'expired':
+            return 'bg-danger';
+        case 'pending':
+        case 'future':
+            return 'bg-warning';
+        default:
+            return 'bg-success';
+    }
+}
+
 // Update certificate info display
 function updateCertificateInfo(certInfo) {
-    const certInfoElement = document.getElementById('certificateInfo');
-    
-    if (certInfo) {
-        // Parse subject components
-        const subjectParts = {};
-        certInfo.subject.split(', ').forEach(part => {
-            const [key, value] = part.split('=');
-            subjectParts[key] = value;
-        });
 
-        // Update basic info
-        document.getElementById('certCN').textContent = subjectParts.CN || 'Not specified';
-        document.getElementById('certO').textContent = subjectParts.O || 'Not specified';
-        document.getElementById('certC').textContent = subjectParts.C || 'Not specified';
-        document.getElementById('certOID').textContent = subjectParts.OID || 'Not specified';
-        document.getElementById('certSerial').textContent = certInfo.serialNumber;
+    // Parse the raw subject attributes if available
+    let subjectAttributes = [];
+    try {
+        if (typeof certInfo.rawSubjectAttributes === 'string') {
+            subjectAttributes = JSON.parse(certInfo.rawSubjectAttributes);
+        } else if (Array.isArray(certInfo.rawSubjectAttributes)) {
+            subjectAttributes = certInfo.rawSubjectAttributes;
+        }
+    } catch (e) {
+        console.error('Error parsing raw subject attributes:', e);
+    }
 
-        // Update validity dates
-        document.getElementById('certValidFrom').textContent = new Date(certInfo.validFrom).toLocaleDateString('en-MY', {
+    // Extract values from subject string
+    const subjectParts = {};
+    certInfo.subject.split(', ').forEach(part => {
+        const [key, value] = part.split('=');
+        subjectParts[key] = value;
+        if (key === 'undefined' && (value.match(/^C[0-9]+O$/) || value.match(/^C[0-9]+0$/))) {
+            console.log('Found OID in undefined attribute:', value);
+            subjectParts.OID = value;
+        }
+    });
+    console.log('Parsed subject parts:', subjectParts);
+
+    // Extract OID and SERIALNUMBER
+    const oid = certInfo.extractedOID || subjectParts.OID || 'Not specified';
+    const serialNumber = certInfo.extractedSERIALNUMBER || subjectParts.serialNumber || 'Not specified';
+    console.log('OID after extraction:', oid);
+    console.log('SERIALNUMBER after extraction:', serialNumber);
+
+    // Show certificate info section
+    document.getElementById('certificateInfo').style.display = 'block';
+    document.getElementById('disableCertBtn').style.display = 'block';
+
+    // Get values from subject parts
+    const cn = subjectParts.CN || certInfo.extractedCN || 'Not specified';
+    const o = subjectParts.O || certInfo.extractedO || 'Not specified';
+    const c = subjectParts.C || certInfo.extractedC || 'Not specified';
+
+    // Update all certificate information
+    const elements = {
+        certStatus: { value: certInfo.status || 'valid', className: `badge ${getCertStatusClass(certInfo.status)}` },
+        certCN: { value: cn },
+        certO: { value: o },
+        certC: { value: c },
+        certOID: { value: oid },
+        certSerial: { value: serialNumber },
+        certValidFrom: { value: certInfo.validFrom ? new Date(certInfo.validFrom).toLocaleDateString('en-MY', {
             year: 'numeric',
             month: 'long',
             day: 'numeric'
-        });
-        document.getElementById('certValidTo').textContent = new Date(certInfo.validTo).toLocaleDateString('en-MY', {
+        }) : 'Not specified' },
+        certValidTo: { value: certInfo.validTo ? new Date(certInfo.validTo).toLocaleDateString('en-MY', {
             year: 'numeric',
             month: 'long',
             day: 'numeric'
-        });
+        }) : 'Not specified' }
+    };
 
-        // Update LHDN requirements
-        const requirementsContainer = document.getElementById('lhdnRequirements');
-        requirementsContainer.innerHTML = '';
-
-        // Subject requirements
-        certInfo.requirements.subject.forEach(field => {
-            const reqElement = document.createElement('div');
-            reqElement.className = `requirement-item ${field.present ? 'valid' : 'invalid'}`;
-            reqElement.innerHTML = `
-                <i class="fas ${field.present ? 'fa-check-circle' : 'fa-times-circle'}"></i>
-                <div>
-                    <div class="requirement-name">${field.field}</div>
-                    <div class="requirement-value">${field.value || 'Missing'}</div>
-                </div>
-            `;
-            requirementsContainer.appendChild(reqElement);
-        });
-
-        // Key usage requirement
-        const keyUsageReq = document.createElement('div');
-        keyUsageReq.className = `requirement-item ${certInfo.requirements.keyUsage.nonRepudiation ? 'valid' : 'invalid'}`;
-        keyUsageReq.innerHTML = `
-            <i class="fas ${certInfo.requirements.keyUsage.nonRepudiation ? 'fa-check-circle' : 'fa-times-circle'}"></i>
-            <div>
-                <div class="requirement-name">Key Usage</div>
-                <div class="requirement-value">${certInfo.requirements.keyUsage.required}</div>
-            </div>
-        `;
-        requirementsContainer.appendChild(keyUsageReq);
-
-        // Extended key usage requirement
-        const extKeyUsageReq = document.createElement('div');
-        extKeyUsageReq.className = `requirement-item ${certInfo.requirements.extKeyUsage.documentSigning ? 'valid' : 'invalid'}`;
-        extKeyUsageReq.innerHTML = `
-            <i class="fas ${certInfo.requirements.extKeyUsage.documentSigning ? 'fa-check-circle' : 'fa-times-circle'}"></i>
-            <div>
-                <div class="requirement-name">Extended Key Usage</div>
-                <div class="requirement-value">${certInfo.requirements.extKeyUsage.required}</div>
-            </div>
-        `;
-        requirementsContainer.appendChild(extKeyUsageReq);
-
-        // Update technical details
-        if (certInfo.keyUsage && certInfo.keyUsage.length > 0) {
-            document.getElementById('certKeyUsage').innerHTML = `
-                <ul>
-                    ${certInfo.keyUsage.map(usage => `
-                        <li>
-                            <i class="fas fa-check-circle text-success me-2"></i>
-                            ${usage}
-                        </li>
-                    `).join('')}
-                </ul>
-            `;
-        } else {
-            document.getElementById('certKeyUsage').innerHTML = '<p class="text-muted">No key usage specified</p>';
+    // Update all elements
+    Object.entries(elements).forEach(([id, config]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = config.value;
+            if (config.className) {
+                element.className = config.className;
+            }
         }
+    });
 
-        if (certInfo.extKeyUsage && certInfo.extKeyUsage.length > 0) {
-            document.getElementById('certExtKeyUsage').innerHTML = `
-                <ul>
-                    ${certInfo.extKeyUsage.map(usage => `
-                        <li>
-                            <i class="fas fa-check-circle text-success me-2"></i>
-                            ${usage}
-                        </li>
-                    `).join('')}
-                </ul>
-            `;
-        } else {
-            document.getElementById('certExtKeyUsage').innerHTML = '<p class="text-muted">No extended key usage specified</p>';
-        }
+    // Update LHDN requirements section
+    const requirementsList = [
+        { field: 'CN', value: cn, required: true },
+        { field: 'C', value: c, required: true },
+        { field: 'O', value: o, required: true },
+        { field: 'OID', value: oid, required: true },
+        { field: 'SERIALNUMBER', value: serialNumber, required: true },
+        { field: 'KEYUSAGE', value: certInfo.keyUsage, required: true },
+        { field: 'EXTKEYUSAGE', value: certInfo.extKeyUsage, required: true }
+    ];
 
-        // Format issuer information
-        if (certInfo.issuer) {
-            const issuerParts = certInfo.issuer.split(', ');
-            document.getElementById('certIssuer').innerHTML = `
-                <ul>
-                    ${issuerParts.map(part => {
-                        const [key, value] = part.split('=');
-                        return `
-                            <li>
-                                <span class="label">${key}:</span>
-                                <span class="value">${value}</span>
-                            </li>
-                        `;
-                    }).join('')}
-                </ul>
-            `;
-        }
+    document.getElementById('lhdnRequirements').innerHTML = requirementsList.map(req => `
+        <div class="requirement-item ${req.value !== 'Not specified' ? 'success' : 'error'}">
+            <i class="fas ${req.value !== 'Not specified' ? 'fa-check-circle text-success' : 'fa-times-circle text-danger'}"></i>
+            <span>${req.field}</span>
+            <span class="requirement-value">${req.value}</span>
+        </div>
+    `).join('');
 
-        // Format subject information
-        if (certInfo.subject) {
-            const subjectParts = certInfo.subject.split(', ');
-            document.getElementById('certSubject').innerHTML = `
-                <ul>
-                    ${subjectParts.map(part => {
-                        const [key, value] = part.split('=');
-                        return `
-                            <li>
-                                <span class="label">${key}:</span>
-                                <span class="value">${value}</span>
-                            </li>
-                        `;
-                    }).join('')}
-                </ul>
-            `;
-        }
+    // Update key usage and extended key usage sections
+    if (certInfo.keyUsage && Array.isArray(certInfo.keyUsage)) {
+        document.getElementById('certKeyUsage').innerHTML = certInfo.keyUsage
+            .map(usage => `<span class="badge bg-info me-2">${usage}</span>`)
+            .join('') || '<span class="text-muted">No key usage specified</span>';
+    }
 
-        // Update status badge
-        const statusBadge = document.getElementById('certStatus');
-        statusBadge.className = 'badge';
-        
-        if (certInfo.status === 'VALID' && certInfo.lhdnCompliant) {
-            statusBadge.classList.add('valid');
-            statusBadge.textContent = 'Valid for LHDN';
-        } else if (certInfo.status === 'VALID') {
-            statusBadge.classList.add('warning');
-            statusBadge.textContent = 'Valid but not LHDN compliant';
-        } else {
-            statusBadge.classList.add('error');
-            statusBadge.textContent = certInfo.status === 'EXPIRED' ? 'Expired' : 'Invalid';
-        }
+    if (certInfo.extKeyUsage && Array.isArray(certInfo.extKeyUsage)) {
+        document.getElementById('certExtKeyUsage').innerHTML = certInfo.extKeyUsage
+            .map(usage => `<span class="badge bg-info me-2">${usage}</span>`)
+            .join('') || '<span class="text-muted">No extended key usage specified</span>';
+    }
 
-        // Show certificate info with animation
-        certInfoElement.style.display = 'block';
-        setTimeout(() => {
-            certInfoElement.classList.add('show');
-        }, 10);
-    } else {
-        certInfoElement.style.display = 'none';
-        certInfoElement.classList.remove('show');
+    // Update issuer and subject details
+    if (certInfo.issuer) {
+        document.getElementById('certIssuer').innerHTML = certInfo.issuer
+            .split(', ')
+            .map(part => `<div>${part}</div>`)
+            .join('');
+    }
+
+    if (certInfo.subject) {
+        document.getElementById('certSubject').innerHTML = certInfo.subject
+            .split(', ')
+            .map(part => `<div>${part}</div>`)
+            .join('');
     }
 }
 

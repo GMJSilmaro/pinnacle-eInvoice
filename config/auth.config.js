@@ -5,7 +5,7 @@ module.exports = {
     timeout: parseInt(process.env.SESSION_TIMEOUT) || 30 * 60 * 1000, // 30 minutes
     cookie: {
       maxAge: parseInt(process.env.COOKIE_MAX_AGE) || 24 * 60 * 60 * 1000, // 24 hours
-      secure: process.env.NODE_ENV !== 'development',
+      secure: process.env.SECURE_COOKIE === 'true',
       httpOnly: true,
       sameSite: 'lax'
     },

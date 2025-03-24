@@ -1918,4 +1918,204 @@ router.get('/real-time-updates', async (req, res) => {
     }
 });
 
+/**
+ * Submit multiple documents to LHDN in bulk
+ */
+router.post('/bulk-submit', async (req, res) => {
+    try {
+        const { documents, version } = req.body;
+
+        if (!Array.isArray(documents) || documents.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No documents provided for bulk submission'
+                }
+            });
+        }
+
+        // Initialize LHDNSubmitter
+        const submitter = new LHDNSubmitter(req);
+        const results = [];
+
+        for (const doc of documents) {
+            const { fileName, type, company, date } = doc;
+            
+            try {
+                // Check for existing submission
+                const existingCheck = await submitter.checkExistingSubmission(fileName);
+                if (existingCheck.blocked) {
+                    results.push({
+                        fileName,
+                        success: false,
+                        error: existingCheck.response.error
+                    });
+                    continue;
+                }
+
+                // Get and process document data
+                const processedData = await submitter.getProcessedData(fileName, type, company, date);
+                
+                if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
+                    results.push({
+                        fileName,
+                        success: false,
+                        error: {
+                            code: 'PROCESSING_ERROR',
+                            message: 'Failed to process Excel data - no valid documents found'
+                        }
+                    });
+                    continue;
+                }
+
+                // Map to LHDN format
+                const lhdnJson = mapToLHDNFormat(processedData, version);
+                if (!lhdnJson) {
+                    results.push({
+                        fileName,
+                        success: false,
+                        error: {
+                            code: 'MAPPING_ERROR',
+                            message: 'Failed to map data to LHDN format'
+                        }
+                    });
+                    continue;
+                }
+
+                // Prepare document for submission
+                const { payload, invoice_number } = await submitter.prepareDocumentForSubmission(lhdnJson, version);
+                if (!payload) {
+                    results.push({
+                        fileName,
+                        success: false,
+                        error: {
+                            code: 'PREPARATION_ERROR',
+                            message: 'Failed to prepare document for submission'
+                        }
+                    });
+                    continue;
+                }
+
+                // Submit to LHDN
+                const result = await submitter.submitToLHDNDocument(payload.documents);
+
+                if (result.status === 'failed') {
+                    if (result.error?.error?.details) {
+                        await submitter.updateSubmissionStatus({
+                            invoice_number,
+                            uuid: 'NA',
+                            submissionUid: 'NA',
+                            fileName,
+                            filePath: processedData.filePath || fileName,
+                            status: 'Failed',
+                            error: JSON.stringify(result.error.error.details)
+                        });
+
+                        results.push({
+                            fileName,
+                            success: false,
+                            error: result.error.error.details,
+                            docNum: invoice_number
+                        });
+                        continue;
+                    }
+                }
+
+                if (result.data?.acceptedDocuments?.length > 0) {
+                    const acceptedDoc = result.data.acceptedDocuments[0];
+                    
+                    // Update submission status
+                    await submitter.updateSubmissionStatus({
+                        invoice_number,
+                        uuid: acceptedDoc.uuid,
+                        submissionUid: result.data.submissionUid,
+                        fileName,
+                        filePath: processedData.filePath || fileName,
+                        status: 'Submitted',
+                    });
+
+                    // Update Excel file
+                    const excelUpdateResult = await submitter.updateExcelWithResponse(
+                        fileName,
+                        type,
+                        company,
+                        date,
+                        acceptedDoc.uuid,
+                        invoice_number
+                    );
+
+                    results.push({
+                        fileName,
+                        success: true,
+                        submissionUID: result.data.submissionUid,
+                        acceptedDocuments: result.data.acceptedDocuments,
+                        docNum: invoice_number,
+                        fileUpdates: {
+                            success: excelUpdateResult.success,
+                            ...(excelUpdateResult.success ? 
+                                { excelPath: excelUpdateResult.outgoingPath } : 
+                                { error: excelUpdateResult.error }
+                            )
+                        }
+                    });
+                } else if (result.data?.rejectedDocuments?.length > 0) {
+                    const rejectedDoc = result.data.rejectedDocuments[0];
+                    await submitter.updateSubmissionStatus({
+                        invoice_number,
+                        uuid: rejectedDoc.uuid || 'NA',
+                        submissionUid: 'NA',
+                        fileName,
+                        filePath: processedData.filePath || fileName,
+                        status: 'Rejected',
+                        error: JSON.stringify(rejectedDoc.error || rejectedDoc)
+                    });
+
+                    results.push({
+                        fileName,
+                        success: false,
+                        error: rejectedDoc.error || rejectedDoc,
+                        docNum: invoice_number,
+                        rejectedDocuments: result.data.rejectedDocuments
+                    });
+                }
+
+            } catch (docError) {
+                console.error(`Error processing document ${fileName}:`, docError);
+                results.push({
+                    fileName,
+                    success: false,
+                    error: {
+                        code: 'PROCESSING_ERROR',
+                        message: docError.message
+                    }
+                });
+            }
+        }
+
+        // Invalidate the cache after bulk submission
+        invalidateFileCache();
+
+        return res.json({
+            success: true,
+            results
+        });
+
+    } catch (error) {
+        console.error('=== Bulk Submit Error ===', {
+            error: error.message,
+            stack: error.stack
+        });
+
+        return res.status(500).json({
+            success: false,
+            error: {
+                code: 'BULK_SUBMISSION_ERROR',
+                message: error.message || 'An unexpected error occurred during bulk submission',
+                details: error.stack
+            }
+        });
+    }
+});
+
 module.exports = router;

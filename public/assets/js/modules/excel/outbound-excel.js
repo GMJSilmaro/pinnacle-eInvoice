@@ -87,6 +87,15 @@ class InvoiceTableManager {
                     return d;
                 }
             },
+            createdRow: function(row, data, dataIndex) {
+                // Add data attributes to the row
+                $(row).attr({
+                    'data-file-name': data.fileName,
+                    'data-type': data.type,
+                    'data-company': data.company,
+                    'data-date': data.date
+                });
+            },
             // ... rest of your DataTable configuration ...
         });
 
@@ -1364,10 +1373,11 @@ class InvoiceTableManager {
             tooltipTriggerList.forEach(element => {
                 const tooltip = bootstrap.Tooltip.getInstance(element);
                 if (tooltip) {
-                    tooltip.dispose();
+                    tooltip.hide();
                 }
             });
 
+           
             // Initialize new tooltips
             tooltipTriggerList.forEach(tooltipTriggerEl => {
                 new bootstrap.Tooltip(tooltipTriggerEl, {
@@ -1375,10 +1385,8 @@ class InvoiceTableManager {
                     container: 'body'
                 });
             });
-        };
 
-        // Initialize tooltips on first load
-        initTooltips();
+        };
 
         // Reinitialize tooltips after table draw
         this.table.on('draw', () => {
@@ -1622,20 +1630,7 @@ class InvoiceTableManager {
                 </div>`
             );
         }
-
-        // Reinitialize tooltips
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.forEach(tooltipTriggerEl => {
-            const tooltip = bootstrap.Tooltip.getInstance(tooltipTriggerEl);
-            if (tooltip) {
-                tooltip.dispose();
-            }
-            new bootstrap.Tooltip(tooltipTriggerEl, {
-                html: true,
-                container: 'body'
-            });
-        });
-
+      
         // Update statistics charts
         this.updateStatisticsCharts(totals);
     }
@@ -1913,12 +1908,913 @@ class InvoiceTableManager {
         this.initializeTooltips();
         this.initializeEventListeners();
         this.initializeSelectAll();
+        this.initializeTINValidation(); // Add TIN validation initialization
     }
 
+    // New method to initialize TIN validation
+    initializeTINValidation() {
+        console.log('Initializing TIN validation functionality');
+        
+        // Get form elements
+        const validationForm = document.getElementById('tinValidationForm');
+        const tinInput = document.getElementById('tinNumber');
+        const idTypeInput = document.getElementById('idType');
+        const idValueInput = document.getElementById('idValue');
+        const validateButton = document.getElementById('validateSingleTin');
+        const clearHistoryButton = document.getElementById('clearHistory');
+        const historyContainer = document.getElementById('validationHistory');
+        
+        // Check if elements exist
+        if (!tinInput || !idTypeInput || !idValueInput || !validateButton) {
+            console.warn('TIN validation elements not found in the DOM');
+            return;
+        }
+        
+        // Initialize tooltips
+        const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        tooltips.forEach(tooltip => {
+            new bootstrap.Tooltip(tooltip, {
+                html: true,
+                placement: 'auto'
+            });
+        });
+        
+        // Initialize validation history
+        this.initValidationHistory();
+        
+        // Add validation form submit handler
+        if (validationForm && validateButton) {
+            validateButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                
+                // Validate form inputs
+                if (!this.validateForm(validationForm)) {
+                    return;
+                }
+                
+                // Perform validation
+                await this.validateTIN(tinInput, idTypeInput, idValueInput);
+            });
+        }
+        
+        // Event listener for Enter key in the inputs
+        [tinInput, idTypeInput, idValueInput].forEach(input => {
+            input.addEventListener('keypress', async (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (validationForm && this.validateForm(validationForm)) {
+                        await this.validateTIN(tinInput, idTypeInput, idValueInput);
+                    }
+                }
+            });
+        });
+        
+        // Clear history button
+        if (clearHistoryButton) {
+            clearHistoryButton.addEventListener('click', () => {
+                this.clearValidationHistory();
+            });
+        }
+        
+        // Add ID type guidance
+        if (idTypeInput) {
+            idTypeInput.addEventListener('change', () => {
+                this.showIdTypeGuidance(idTypeInput.value);
+            });
+        }
+        
+        // Initialize modal behavior
+        const tinValidationModal = document.getElementById('tinValidationModal');
+        if (tinValidationModal) {
+            tinValidationModal.addEventListener('hidden.bs.modal', () => {
+                // Reset form on modal close
+                if (validationForm) {
+                    validationForm.reset();
+                    validationForm.classList.remove('was-validated');
+                }
+                
+                // Reset result section
+                const resultContent = document.getElementById('validationResultContent');
+                const emptyState = document.getElementById('emptyResultState');
+                
+                if (resultContent && emptyState) {
+                    resultContent.classList.add('d-none');
+                    emptyState.classList.remove('d-none');
+                }
+                
+                // Hide guidance
+                const guidanceSection = document.getElementById('idTypeGuidance');
+                if (guidanceSection) {
+                    guidanceSection.classList.add('d-none');
+                }
+                
+                // Clear search input
+                const searchInput = document.getElementById('historySearchInput');
+                if (searchInput) {
+                    searchInput.value = '';
+                }
+            });
+        }
+        
+        // Add event listeners to validate TIN buttons in table rows
+        this.addTableTinValidationListeners();
+    }
+    
+    // Validate form using Bootstrap's validation
+    validateForm(form) {
+        form.classList.add('was-validated');
+        return form.checkValidity();
+    }
+    
+    // Show ID type guidance
+    showIdTypeGuidance(idType) {
+        const guidanceSection = document.getElementById('idTypeGuidance');
+        const guidanceContent = document.getElementById('guidanceContent');
+        
+        if (!guidanceSection || !guidanceContent) return;
+        
+        let content = '';
+        
+        switch(idType) {
+            case 'NRIC':
+                content = `
+                    <p class="mb-1 small">Malaysian NRIC format: <strong>YYMMDD-PP-NNNN</strong></p>
+                    <ul class="mb-0 small ps-3">
+                        <li>12 digits total</li>
+                        <li>First 6 digits: birthdate (YYMMDD)</li>
+                        <li>Middle 2 digits: place of birth code</li>
+                        <li>Last 4 digits: random numbers</li>
+                    </ul>
+                `;
+                break;
+                
+            case 'PASSPORT':
+                content = `
+                    <p class="mb-1 small">Passport format varies by country:</p>
+                    <ul class="mb-0 small ps-3">
+                        <li>Malaysian passport: 9 characters (1 letter + 8 digits)</li>
+                        <li>Include letters and numbers exactly as shown on passport</li>
+                        <li>Do not include spaces or special characters</li>
+                    </ul>
+                `;
+                break;
+                
+            case 'BRN':
+                content = `
+                    <p class="mb-1 small">Business Registration Number format:</p>
+                    <ul class="mb-0 small ps-3">
+                        <li>Usually 12 digits</li>
+                        <li>Format: YYYYNNNNNNNNN</li>
+                        <li>First 4 digits typically represent registration year</li>
+                    </ul>
+                `;
+                break;
+                
+            case 'ARMY':
+                content = `
+                    <p class="mb-1 small">Army Number format:</p>
+                    <ul class="mb-0 small ps-3">
+                        <li>Format varies by military branch</li>
+                        <li>Enter the full number as shown on military ID</li>
+                    </ul>
+                `;
+                break;
+                
+            default:
+                content = '';
+        }
+        
+        if (content) {
+            guidanceContent.innerHTML = content;
+            guidanceSection.classList.remove('d-none');
+        } else {
+            guidanceSection.classList.add('d-none');
+        }
+    }
+    
+    // Add TIN validation listeners to table buttons
+    addTableTinValidationListeners() {
+        // Use event delegation since table rows may be dynamically added
+        $(document).on('click', '[data-validate-tin]', async (e) => {
+            const button = e.currentTarget;
+            const row = button.closest('tr');
+            
+            if (row) {
+                const tin = row.dataset.tin;
+                const idType = row.dataset.idType;
+                const idValue = row.dataset.idValue;
+                
+                if (tin && idType && idValue) {
+                    try {
+                        button.disabled = true;
+                        button.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Validating';
+                        
+                        const result = await this.callValidateAPI(tin, idType, idValue);
+                        
+                        // Show validation result
+                        this.showValidationResultModal(result, tin, idType, idValue);
+                        
+                        // Add to history
+                        this.addToValidationHistory(tin, idType, idValue, result.isValid);
+                        
+                    } catch (error) {
+                        this.showErrorMessage(`TIN validation failed: ${error.message}`);
+                    } finally {
+                        button.disabled = false;
+                        button.innerHTML = '<i class="bi bi-shield-check"></i> Validate TIN';
+                    }
+                } else {
+                    this.showErrorMessage('Missing TIN information. Please ensure TIN, ID Type, and ID Value are available.');
+                }
+            }
+        });
+    }
+    
+    // Validate TIN using the UI form
+    async validateTIN(tinInput, idTypeInput, idValueInput) {
+        // Get input values
+        const tin = tinInput.value.trim();
+        const idType = idTypeInput.value;
+        const idValue = idValueInput.value.trim();
+        
+        // Check for recent validations to prevent spam
+        const isDuplicate = this.checkRecentValidation(tin, idType, idValue);
+        if (isDuplicate) {
+            // Show warning message about duplicate validation
+            this.showWarningMessage("This TIN and ID combination was recently validated. Please wait before validating again.");
+            return;
+        }
+        
+        // // Check session validation limit
+        // if (!this.incrementValidationCounter()) {
+        //     return; // Session limit reached, warning already shown
+        // }
+        
+        // Show loading state
+        const validateButton = document.getElementById('validateSingleTin');
+        const originalContent = validateButton.innerHTML;
+        validateButton.disabled = true;
+        validateButton.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i> Validating...';
+        
+        try {
+            // Add to recent validations with timestamp to track cooldown
+            this.addToRecentValidations(tin, idType, idValue);
+            
+            // Call API
+            const result = await this.callValidateAPI(tin, idType, idValue);
+            
+            // Show validation result in the modal
+            this.showValidationResultInModal(result, tin, idType, idValue);
+            
+            // Add to history
+            this.addToValidationHistory(tin, idType, idValue, result.isValid);
+            
+            // Clear form on success
+            if (result.isValid) {
+                // Don't clear the form immediately to allow user to see the result
+                // The form will be reset when the modal is closed
+            }
+            
+        } catch (error) {
+            this.showErrorMessage(`TIN validation failed: ${error.message}`);
+        } finally {
+            // Restore button state
+            validateButton.disabled = false;
+            validateButton.innerHTML = originalContent;
+        }
+    }
+    
+    // Check if this TIN+ID combination was recently validated (anti-spam)
+    checkRecentValidation(tin, idType, idValue) {
+        try {
+            // Get stored recent validations
+            const recentValidations = localStorage.getItem('recent_validations');
+            if (!recentValidations) return false;
+            
+            const validations = JSON.parse(recentValidations);
+            
+            // Create a unique key for this validation
+            const validationKey = `${tin}-${idType}-${idValue}`.toLowerCase();
+            
+            // Check if this combination was validated recently (within the last 30 seconds)
+            const now = Date.now();
+            const recentValidation = validations.find(v => 
+                v.key === validationKey && 
+                (now - v.timestamp) < 30000 // 30 seconds cooldown
+            );
+            
+            return !!recentValidation;
+        } catch (e) {
+            console.error('Error checking recent validations:', e);
+            return false;
+        }
+    }
+    
+    // Add TIN to recent validations to prevent spam
+    addToRecentValidations(tin, idType, idValue) {
+        try {
+            // Get stored recent validations
+            let validations = [];
+            const stored = localStorage.getItem('recent_validations');
+            if (stored) {
+                validations = JSON.parse(stored);
+            }
+            
+            // Create a unique key for this validation
+            const validationKey = `${tin}-${idType}-${idValue}`.toLowerCase();
+            
+            // Add this validation
+            validations.push({
+                key: validationKey,
+                timestamp: Date.now()
+            });
+            
+            // Keep only validations from the last 5 minutes
+            const now = Date.now();
+            validations = validations.filter(v => (now - v.timestamp) < 300000); // 5 minutes
+            
+            // Store updated list
+            localStorage.setItem('recent_validations', JSON.stringify(validations));
+        } catch (e) {
+            console.error('Error updating recent validations:', e);
+        }
+    }
+    
+    // Show warning message
+    showWarningMessage(message) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Validation Limit',
+            text: message,
+            timer: 3000,
+            timerProgressBar: true
+        });
+    }
+    
+    // Show validation result in the modal
+    showValidationResultInModal(result, tin, idType, idValue) {
+        const resultSection = document.getElementById('validationResultSection');
+        const resultContent = document.getElementById('validationResultContent');
+        const emptyState = document.getElementById('emptyResultState');
+        
+        if (!resultSection || !resultContent || !emptyState) {
+            console.error('Validation result elements not found');
+            return;
+        }
+        
+        // Create result content
+        let resultHtml = '';
+        
+        if (result.isValid) {
+            resultHtml = `
+                <div class="text-center mb-4">
+                    <div class="validation-status-badge">
+                        <span class="badge rounded-circle bg-success p-3">
+                            <i class="bi bi-check-circle-fill"></i>
+                        </span>
+                    </div>
+                    <h4 class="mt-3 text-success">Valid TIN</h4>
+                    <p class="text-success mt-2 small">This TIN is validated and ready to use in your invoices</p>
+                </div>
+                
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-info-circle text-primary me-2"></i>
+                        <strong>Validation Details</strong>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">TIN:</div>
+                                <div class="col-8 fw-medium">${tin}</div>
+                            </div>
+                        </li>
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">ID Type:</div>
+                                <div class="col-8 fw-medium">${idType}</div>
+                            </div>
+                        </li>
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">ID Value:</div>
+                                <div class="col-8 fw-medium">${idValue}</div>
+                            </div>
+                        </li>
+                        ${result.timestamp ? `
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">Validated at:</div>
+                                <div class="col-8">${new Date(result.timestamp).toLocaleString()}</div>
+                            </div>
+                        </li>
+                        ` : ''}
+                        ${result.cached ? `
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">Source:</div>
+                                <div class="col-8"><span class="badge bg-secondary">Cached result</span></div>
+                            </div>
+                        </li>
+                        ` : ''}
+                    </ul>
+                </div>
+                
+            `;
+        } else {
+            resultHtml = `
+                <div class="text-center mb-4">
+                    <div class="validation-status-badge">
+                        <span class="badge rounded-circle bg-danger p-3">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </span>
+                    </div>
+                    <h4 class="mt-3 text-danger">Invalid TIN</h4>
+                    <p class="text-muted">${result.message || 'The TIN and ID combination is invalid.'}</p>
+                </div>
+                
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header d-flex align-items-center">
+                        <i class="bi bi-info-circle text-primary me-2"></i>
+                        <strong>Validation Details</strong>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">TIN:</div>
+                                <div class="col-8 fw-medium">${tin}</div>
+                            </div>
+                        </li>
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">ID Type:</div>
+                                <div class="col-8 fw-medium">${idType}</div>
+                            </div>
+                        </li>
+                        <li class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-4 text-muted">ID Value:</div>
+                                <div class="col-8 fw-medium">${idValue}</div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="alert alert-danger border-0 shadow-sm mb-0">
+                    <div class="d-flex">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                        </div>
+                        <div class="flex-grow-1 ms-2">
+                            <p class="mb-0">Please verify that the information is correct and try again.</p>
+                            <small>If you continue to receive this error, contact LHDN for assistance.</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Set content and show result section
+        resultContent.innerHTML = resultHtml;
+        
+        // Hide empty state, show result content
+        emptyState.classList.add('d-none');
+        resultContent.classList.remove('d-none');
+    }
+    
+    // Call the validate API
+    async callValidateAPI(tin, idType, idValue) {
+        try {
+            // Generate request ID for tracking
+            const requestId = Math.random().toString(36).substring(2, 15);
+            
+            // Get current date in ISO format for X-Date header
+            const currentDate = new Date().toISOString();
+            
+            // Build standard LHDN headers according to SDK specification
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Request-ID': requestId,
+                'X-Date': currentDate,
+                'X-Client-ID': 'eInvoice-WebApp',
+                'X-User-Agent': navigator.userAgent || '',
+                'X-Channel': 'Web'
+            };
+            
+            // Call the backend API endpoint - Update to the correct route path
+            const response = await fetch(`/api/lhdn/taxpayer/validate/${tin}?idType=${idType}&idValue=${idValue}`, {
+                method: 'GET',
+                headers: headers,
+                credentials: 'same-origin' // Include cookies for session authentication
+            });
+            
+            // Check if response is JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                if (response.status === 401) {
+                    return {
+                        isValid: false,
+                        message: 'Authentication error. Please log in again.'
+                    };
+                } else {
+                    throw new Error('Unexpected server response. Please try again later.');
+                }
+            }
+            
+            const data = await response.json();
+            
+            // Handle different response status codes
+            if (!response.ok) {
+                if (response.status === 404) {
+                    return {
+                        isValid: false,
+                        message: 'Invalid TIN or ID combination'
+                    };
+                } else if (response.status === 400) {
+                    return {
+                        isValid: false,
+                        message: 'Invalid input parameters'
+                    };
+                } else if (response.status === 429) {
+                    return {
+                        isValid: false,
+                        message: 'Too many validation requests. Please try again later.'
+                    };
+                } else {
+                    throw new Error(data.message || 'TIN validation failed');
+                }
+            }
+            
+            // Handle successful response
+            if (data.success && data.result) {
+                return {
+                    isValid: data.result.isValid,
+                    message: 'TIN validation successful',
+                    timestamp: data.result.timestamp,
+                    cached: data.cached || false,
+                    requestId: requestId
+                };
+            } else {
+                throw new Error('Invalid response format');
+            }
+        } catch (error) {
+            console.error('TIN validation error:', error);
+            return {
+                isValid: false,
+                message: error.message || 'Error validating TIN. Please try again later.'
+            };
+        }
+    }
+    
+    // Show validation result in modal
+    showValidationResultModal(result, tin, idType, idValue) {
+        const modal = document.getElementById('validationResultsModal');
+        const modalBody = document.getElementById('validationResults');
+        
+        if (!modal || !modalBody) {
+            console.error('Validation result modal elements not found');
+            return;
+        }
+        
+        // Create result content
+        let resultHtml = '';
+        if (result.isValid) {
+            resultHtml = `
+                <div class="validation-result success">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <div class="result-details">
+                        <h6>Valid TIN</h6>
+                        <p>The TIN and ID combination is valid.</p>
+                        <div class="d-flex flex-column">
+                            <small><strong>TIN:</strong> ${tin}</small>
+                            <small><strong>ID Type:</strong> ${idType}</small>
+                            <small><strong>ID Value:</strong> ${idValue}</small>
+                            ${result.timestamp ? `<small><strong>Validated at:</strong> ${new Date(result.timestamp).toLocaleString()}</small>` : ''}
+                            ${result.cached ? '<small><em>(Result from cache)</em></small>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            resultHtml = `
+                <div class="validation-result error">
+                    <i class="bi bi-x-circle-fill"></i>
+                    <div class="result-details">
+                        <h6>Invalid TIN</h6>
+                        <p>${result.message || 'The TIN and ID combination is invalid.'}</p>
+                        <div class="d-flex flex-column">
+                            <small><strong>TIN:</strong> ${tin}</small>
+                            <small><strong>ID Type:</strong> ${idType}</small>
+                            <small><strong>ID Value:</strong> ${idValue}</small>
+                        </div>
+                        <div class="error-details mt-2">
+                            <p>Please verify that the information is correct and try again.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Add summary stats
+        resultHtml += `
+            <div class="summary-stats mt-3">
+                <div class="stat-item ${result.isValid ? 'success' : 'error'}">
+                    <i class="bi bi-${result.isValid ? 'check-circle' : 'x-circle'}-fill"></i>
+                    <div>
+                        <strong>Validation Status</strong>
+                        <div>${result.isValid ? 'Valid' : 'Invalid'}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Set modal content
+        modalBody.innerHTML = resultHtml;
+        
+        // Show modal
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+    }
+    
+    // Initialize validation history from localStorage
+    initValidationHistory() {
+        const historyContainer = document.getElementById('validationHistory');
+        const searchInput = document.getElementById('historySearchInput');
+        
+        if (!historyContainer) return;
+        
+        // Initialize session counter for validations
+        this.initValidationSessionCounter();
+        
+        const history = this.getValidationHistory();
+        if (history.length === 0) {
+            historyContainer.innerHTML = `
+                <div class="text-center text-muted py-2">
+                    <i class="bi bi-shield-check mb-1 d-block" style="font-size: 1.2rem;"></i>
+                    <small>No validation history yet</small>
+                </div>
+            `;
+            return;
+        }
+        
+        // Render history items
+        this.renderValidationHistory(history);
+        
+        // Add search functionality
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                const searchTerm = searchInput.value.trim().toLowerCase();
+                if (searchTerm === '') {
+                    // If search is cleared, show all history
+                    this.renderValidationHistory(history);
+                } else {
+                    // Filter history based on search term
+                    const filteredHistory = history.filter(item => 
+                        item.tin.toLowerCase().includes(searchTerm) || 
+                        item.idValue.toLowerCase().includes(searchTerm) ||
+                        item.idType.toLowerCase().includes(searchTerm)
+                    );
+                    this.renderValidationHistory(filteredHistory, searchTerm);
+                }
+            });
+            
+            // Clear search when modal is hidden
+            const modal = document.getElementById('tinValidationModal');
+            if (modal) {
+                modal.addEventListener('hidden.bs.modal', () => {
+                    searchInput.value = '';
+                });
+            }
+        }
+    }
+    
+    // Render validation history items
+    renderValidationHistory(history, searchTerm = '') {
+        const historyContainer = document.getElementById('validationHistory');
+        if (!historyContainer) return;
+        
+        historyContainer.innerHTML = '';
+        
+        if (history.length === 0) {
+            historyContainer.innerHTML = `
+                <div class="text-center text-muted py-2">
+                    ${searchTerm ? 
+                    `<i class="bi bi-search mb-1 d-block" style="font-size: 1.2rem;"></i>
+                    <small>No matching results found</small>` : 
+                    `<i class="bi bi-shield-check mb-1 d-block" style="font-size: 1.2rem;"></i>
+                    <small>No validation history yet</small>`}
+                </div>
+            `;
+            return;
+        }
+        
+        // Show the items (limit to most recent 10)
+        history.slice(0, 10).forEach(item => {
+            // Check if this item is on cooldown
+            const onCooldown = this.isOnCooldown(item.tin, item.idType, item.idValue);
+            
+            const historyItem = document.createElement('div');
+            historyItem.className = 'history-item' + (onCooldown ? ' on-cooldown' : '');
+            historyItem.setAttribute('data-tin', item.tin);
+            historyItem.setAttribute('data-id-type', item.idType);
+            historyItem.setAttribute('data-id-value', item.idValue);
+            historyItem.setAttribute('data-valid', item.isValid);
+            
+            // Create a tooltip with time information
+            const timestamp = new Date(item.timestamp);
+            const timeStr = timestamp.toLocaleTimeString();
+            const dateStr = timestamp.toLocaleDateString();
+            
+            historyItem.setAttribute('title', `Validated on ${dateStr} at ${timeStr}`);
+            
+            historyItem.innerHTML = `
+                <div class="tin-info">
+                    <div class="tin-number">${item.tin}</div>
+                    <div class="tin-details d-flex align-items-center">
+                        <span>${item.idType}: ${item.idValue}</span>
+                        ${onCooldown ? '<span class="cooldown-badge ms-2" title="Recently validated"><i class="bi bi-clock-history text-warning"></i></span>' : ''}
+                    </div>
+                </div>
+                <div class="validation-status ${item.isValid ? 'valid' : 'invalid'}">
+                    ${item.isValid ? 'Valid' : 'Invalid'}
+                </div>
+            `;
+            
+            // Add click functionality to reuse this validation
+            if (!onCooldown) {
+                historyItem.style.cursor = 'pointer';
+                historyItem.addEventListener('click', () => {
+                    this.fillValidationForm(item.tin, item.idType, item.idValue);
+                });
+            }
+            
+            historyContainer.appendChild(historyItem);
+        });
+        
+        // Add CSS for cooldown items if not already added
+        if (!document.getElementById('cooldown-styles')) {
+            const cooldownStyles = document.createElement('style');
+            cooldownStyles.id = 'cooldown-styles';
+            cooldownStyles.textContent = `
+                .history-item.on-cooldown {
+                    opacity: 0.7;
+                    cursor: not-allowed !important;
+                }
+                .cooldown-badge {
+                    font-size: 0.7rem;
+                }
+            `;
+            document.head.appendChild(cooldownStyles);
+        }
+    }
+    
+    // Check if a validation is on cooldown
+    isOnCooldown(tin, idType, idValue) {
+        try {
+            const recentValidations = localStorage.getItem('recent_validations');
+            if (!recentValidations) return false;
+            
+            const validations = JSON.parse(recentValidations);
+            const validationKey = `${tin}-${idType}-${idValue}`.toLowerCase();
+            
+            const now = Date.now();
+            return validations.some(v => 
+                v.key === validationKey && 
+                (now - v.timestamp) < 30000 // 30 seconds cooldown
+            );
+        } catch (e) {
+            console.error('Error checking cooldown status:', e);
+            return false;
+        }
+    }
+    
+    // Fill the validation form with data from history
+    fillValidationForm(tin, idType, idValue) {
+        const tinInput = document.getElementById('tinNumber');
+        const idTypeInput = document.getElementById('idType');
+        const idValueInput = document.getElementById('idValue');
+        
+        if (tinInput && idTypeInput && idValueInput) {
+            tinInput.value = tin;
+            idTypeInput.value = idType;
+            idValueInput.value = idValue;
+            
+            // Show toast notification
+            const toastEl = document.getElementById('validationToast');
+            if (toastEl) {
+                // Set custom message in toast body
+                const toastBody = toastEl.querySelector('.toast-body');
+                if (toastBody) {
+                    toastBody.innerHTML = `
+                        <div class="d-flex align-items-center">
+                            <div class="me-3">
+                                <i class="bi bi-check-circle-fill text-success fs-4"></i>
+                            </div>
+                            <div>
+                                <strong>TIN details copied to form</strong><br>
+                                <small class="text-muted">${tin} (${idType}: ${idValue})</small>
+                            </div>
+                        </div>
+                        <div class="mt-2 small">
+                            <i class="bi bi-info-circle me-1 text-primary"></i>
+                            Click "Validate TIN" to proceed with validation
+                        </div>
+                    `;
+                }
+                
+                // Initialize and show the toast
+                const toast = new bootstrap.Toast(toastEl, {
+                    animation: true,
+                    autohide: true,
+                    delay: 3000
+                });
+                toast.show();
+            }
+            
+            // Focus on the validate button
+            const validateButton = document.getElementById('validateSingleTin');
+            if (validateButton) {
+                validateButton.focus();
+                
+                // Scroll to the form
+                validateButton.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+    }
+    
+    // Get validation history from localStorage
+    getValidationHistory() {
+        try {
+            const history = localStorage.getItem('tin_validation_history');
+            return history ? JSON.parse(history) : [];
+        } catch (e) {
+            console.error('Error retrieving validation history:', e);
+            return [];
+        }
+    }
+    
+    // Add validation result to history
+    addToValidationHistory(tin, idType, idValue, isValid) {
+        try {
+            const history = this.getValidationHistory();
+            
+            // Add new entry at the beginning
+            history.unshift({
+                tin,
+                idType,
+                idValue,
+                isValid,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Keep only the most recent 10 entries
+            const trimmedHistory = history.slice(0, 10);
+            
+            // Save to localStorage
+            localStorage.setItem('tin_validation_history', JSON.stringify(trimmedHistory));
+            
+            // Update UI - render the updated history
+            this.renderValidationHistory(trimmedHistory);
+            
+            // If search input has a value, clear it to show the updated list
+            const searchInput = document.getElementById('historySearchInput');
+            if (searchInput && searchInput.value) {
+                searchInput.value = '';
+            }
+        } catch (e) {
+            console.error('Error saving validation history:', e);
+        }
+    }
+    
+    // Clear validation history
+    clearValidationHistory() {
+        try {
+            // Clear localStorage
+            localStorage.removeItem('tin_validation_history');
+            
+            // Clear search input if it exists
+            const searchInput = document.getElementById('historySearchInput');
+            if (searchInput) {
+                searchInput.value = '';
+            }
+            
+            // Show empty state
+            const historyContainer = document.getElementById('validationHistory');
+            if (historyContainer) {
+                historyContainer.innerHTML = `
+                    <div class="text-center text-muted py-2">
+                        <i class="bi bi-shield-check mb-1 d-block" style="font-size: 1.2rem;"></i>
+                        <small>No validation history yet</small>
+                    </div>
+                `;
+            }
+        } catch (e) {
+            console.error('Error clearing validation history:', e);
+        }
+    }
 
     initializeTableStyles() {
-
-
         // Apply Bootstrap classes to DataTables elements
         $('.dataTables_filter input').addClass('form-control form-control-sm');
         $('.dataTables_length select').addClass('form-select form-select-sm');
@@ -2318,6 +3214,50 @@ class InvoiceTableManager {
         `;
     }
 
+    // Initialize session counter for validation limits
+    initValidationSessionCounter() {
+        // Get or create the session counter
+        let sessionCount = sessionStorage.getItem('validation_session_count');
+        if (!sessionCount) {
+            sessionCount = 0;
+            sessionStorage.setItem('validation_session_count', sessionCount);
+        }
+        
+     
+    }
+    
+    // // Increment validation counter and check session limits
+    // incrementValidationCounter() {
+    //     // Get current session count
+    //     let sessionCount = parseInt(sessionStorage.getItem('validation_session_count') || '0');
+        
+    //     // Check session limit (100 validations per session)
+    //     if (sessionCount >= 100) {
+    //         this.showWarningMessage("You've reached the maximum number of validations for this session. Please refresh the page or try again later.");
+    //         return false;
+    //     }
+        
+    //     // Increment counter
+    //     sessionCount++;
+    //     sessionStorage.setItem('validation_session_count', sessionCount);
+        
+    //     // Update the counter badge
+    //     const badge = document.getElementById('validationCountBadge');
+    //     if (badge) {
+    //         badge.innerHTML = sessionCount;
+            
+    //         // Update badge color based on session count
+    //         if (sessionCount > 80) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-danger';
+    //         } else if (sessionCount > 50) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-warning text-dark';
+    //         } else {
+    //             badge.className = 'ms-2 badge rounded-pill bg-primary';
+    //         }
+    //     }
+        
+    //     return true;
+    // }
 
 }
 
@@ -3730,12 +4670,12 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                 <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
                     <span style="color: #595959; font-weight: 600;">UUID:</span>
                     <span style="color: #595959;">${uuid}</span>
-                </div>
-                <div>
+                            </div>
+                            <div>
                     <span style="color: #595959; font-weight: 600;">Submission Date:</span>
                     <span style="color: #595959;">${submissionDate}</span>
-                </div>
-            </div>
+                            </div>
+                        </div>
 
             <div style="margin-top: 12px;">
                 <label style="display: block; color: #595959; font-weight: 600; margin-bottom: 5px;">
@@ -4431,27 +5371,6 @@ async function showLHDNErrorModal(error) {
                 ${isTINMatchingError ? tinErrorGuidance : ''}
             </div>
             
-            <style>
-                @keyframes pulseError {
-                    0% { opacity: 1; }
-                    50% { opacity: 0.6; }
-                    100% { opacity: 1; }
-                }
-                .tooltip-container:hover .tooltip-content {
-                    display: block;
-                }
-                .semi-minimal-popup {
-                    max-width: 550px;
-                }
-                .semi-minimal-popup {
-                    max-width: 480px;
-                    font-size: 12px;
-                }
-                .btn-sm {
-                    padding: 0.375rem 0.75rem;
-                    font-size: 0.875rem;
-                }
-            </style>
         `,
         customClass: {
             confirmButton: 'outbound-action-btn submit',
@@ -4669,4 +5588,166 @@ class ConsolidatedSubmissionManager {
 // Initialize the consolidated submission manager when the document is ready
 document.addEventListener('DOMContentLoaded', () => {
     new ConsolidatedSubmissionManager();
+});
+
+// Handle bulk document submission
+async function handleBulkSubmission(selectedDocs) {
+    const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
+    const progressDiv = document.getElementById('submissionProgress');
+    
+    try {
+        // Initialize progress UI
+        if (!progressDiv) {
+            throw new Error('Progress container not found');
+        }
+
+        progressDiv.innerHTML = `
+            <div class="progress mb-3">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     style="width: 0%" 
+                     aria-valuenow="0" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                </div>
+            </div>
+            <div class="submission-status mb-3">Preparing documents for submission...</div>
+            <div class="documents-status"></div>
+        `;
+
+        progressModal.show();
+
+        const version = document.getElementById('lhdnVersion')?.value || '1.0';
+        const progressBar = progressDiv.querySelector('.progress-bar');
+        const statusText = progressDiv.querySelector('.submission-status');
+        const documentsStatus = progressDiv.querySelector('.documents-status');
+
+        if (!progressBar || !statusText || !documentsStatus) {
+            throw new Error('Required progress elements not found');
+        }
+
+        // Submit documents
+        const response = await fetch('/api/outbound-files/bulk-submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documents: selectedDocs, version })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error?.message || 'Failed to submit documents');
+        }
+
+        // Update progress for each document
+        result.results.forEach((docResult, index) => {
+            const progress = ((index + 1) / result.results.length) * 100;
+            progressBar.style.width = `${progress}%`;
+            progressBar.setAttribute('aria-valuenow', progress);
+
+            const statusClass = docResult.success ? 'text-success' : 'text-danger';
+            const statusIcon = docResult.success ? 'check-circle-fill' : 'x-circle-fill';
+            documentsStatus.insertAdjacentHTML('beforeend', `
+                <div class="doc-status mb-2 ${statusClass}">
+                    <i class="bi bi-${statusIcon}"></i>
+                    ${docResult.fileName}: ${docResult.success ? 'Submitted successfully' : docResult.error.message}
+                </div>
+            `);
+        });
+
+        statusText.textContent = 'Submission complete';
+        progressBar.style.width = '100%';
+        progressBar.setAttribute('aria-valuenow', 100);
+        progressBar.classList.remove('progress-bar-animated');
+
+        // Refresh table and show summary
+        await InvoiceTableManager.getInstance().refresh();
+        const successCount = result.results.filter(r => r.success).length;
+        const failureCount = result.results.filter(r => !r.success).length;
+
+        // Close consolidated modal if open
+        const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
+        if (consolidatedModal) {
+            consolidatedModal.hide();
+        }
+
+        await Swal.fire({
+            icon: successCount > 0 ? 'success' : 'warning',
+            title: 'Submission Complete',
+            html: `
+                <div class="submission-summary">
+                    <p>Successfully submitted: ${successCount} document(s)</p>
+                    <p>Failed submissions: ${failureCount} document(s)</p>
+                    ${failureCount > 0 ? '<p>Check the progress modal for details on failed submissions.</p>' : ''}
+                </div>
+            `,
+            confirmButtonText: 'OK',
+            customClass: { confirmButton: 'outbound-action-btn submit' }
+        });
+
+    } catch (error) {
+        console.error('Bulk submission error:', error);
+        if (progressDiv) {
+            progressDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Submission Failed</h6>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+        
+        await Swal.fire({
+            icon: 'error',
+            title: 'Submission Failed',
+            text: error.message || 'An error occurred during bulk submission',
+            confirmButtonText: 'OK',
+            customClass: { confirmButton: 'outbound-action-btn submit' }
+        });
+    }
+}
+
+// Add event listener for bulk submit button
+document.addEventListener('DOMContentLoaded', function() {
+    const submitConsolidatedBtn = document.getElementById('submitConsolidatedBtn');
+    if (submitConsolidatedBtn) {
+        submitConsolidatedBtn.addEventListener('click', async function() {
+            const selectedRows = Array.from(document.querySelectorAll('input.outbound-checkbox:checked'))
+                .map(checkbox => {
+                    const row = checkbox.closest('tr');
+                    return {
+                        fileName: row.getAttribute('data-file-name'),
+                        type: row.getAttribute('data-type'),
+                        company: row.getAttribute('data-company'),
+                        date: row.getAttribute('data-date')
+                    };
+                });
+
+            if (selectedRows.length === 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Documents Selected',
+                    text: 'Please select at least one document to submit.'
+                });
+                return;
+            }
+
+            const confirmResult = await Swal.fire({
+                icon: 'question',
+                title: 'Confirm Bulk Submission',
+                html: `Are you sure you want to submit ${selectedRows.length} document(s)?`,
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Submit',
+                cancelButtonText: 'Cancel',
+                customClass: {
+                    confirmButton: 'outbound-action-btn submit',
+                    cancelButton: 'outbound-action-btn cancel'
+                }
+            });
+
+            if (confirmResult.isConfirmed) {
+                const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
+                consolidatedModal.hide();
+                await handleBulkSubmission(selectedRows);
+            }
+        });
+    }
 });

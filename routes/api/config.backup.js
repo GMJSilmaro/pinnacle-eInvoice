@@ -831,40 +831,11 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
             console.log('Final subject map after all extraction attempts:', subjectMap);
 
             // Extract key usage and extended key usage
-            const keyUsage = cert.extensions.find(ext => ext.name === 'keyUsage')?.value || '';
-            const extKeyUsage = cert.extensions.find(ext => ext.name === 'extKeyUsage')?.value || '';
+            const keyUsage = cert.extensions.find(ext => ext.name === 'keyUsage')?.value.split(', ') || [];
+            const extKeyUsage = cert.extensions.find(ext => ext.name === 'extKeyUsage')?.value.split(', ') || [];
 
-            console.log('Raw Key Usage:', keyUsage);
-            console.log('Raw Extended Key Usage:', extKeyUsage);
-
-            // Parse Key Usage DER value
-            function parseKeyUsageDER(derValue) {
-                try {
-                    // Check if it's a DER encoded value
-                    if (derValue.startsWith('\x03')) {
-                        // Extract the actual bits
-                        const bits = derValue.charCodeAt(3);
-                        // Check if Non-Repudiation (bit 1) is set
-                        return (bits & 0x40) === 0x40;  // 0x40 is bit mask for Non-Repudiation
-                    }
-                    return false;
-                } catch (error) {
-                    console.error('Error parsing Key Usage DER:', error);
-                    return false;
-                }
-            }
-
-            // Parse Extended Key Usage DER value
-            function parseExtKeyUsageDER(derValue) {
-                try {
-                    // The Document Signing OID in DER format
-                    const documentSigningPattern = /\x06\n\+\x06\x01\x04\x01\x827\n\x03\f/;
-                    return documentSigningPattern.test(derValue);
-                } catch (error) {
-                    console.error('Error parsing Extended Key Usage DER:', error);
-                    return false;
-                }
-            }
+            console.log('Key Usage:', keyUsage);
+            console.log('Extended Key Usage:', extKeyUsage);
 
             // Validate LHDN requirements
             const requirements = {
@@ -874,11 +845,18 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                     value: value
                 })),
                 keyUsage: {
-                    nonRepudiation: parseKeyUsageDER(keyUsage),
+                    nonRepudiation: keyUsage.some(usage => 
+                        usage.toLowerCase().includes('non-repudiation') || 
+                        usage.toLowerCase().includes('nonrepudiation') ||
+                        usage === '40' // ASN.1 value for Non-Repudiation
+                    ),
                     required: 'Non-Repudiation (40)'
                 },
                 extKeyUsage: {
-                    documentSigning: parseExtKeyUsageDER(extKeyUsage),
+                    documentSigning: extKeyUsage.some(usage =>
+                        usage.toLowerCase().includes('document signing') ||
+                        usage === '1.3.6.1.4.1.311.10.3.12' // Microsoft Document Signing OID
+                    ),
                     required: 'Document Signing (1.3.6.1.4.1.311.10.3.12)'
                 }
             };
@@ -906,7 +884,7 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                 serialNumber: cert.serialNumber,
                 validFrom: cert.validity.notBefore,
                 validTo: cert.validity.notAfter,
-                status: 'VALID',
+                status: 'UNKNOWN', // Will be updated below
                 keyUsage,
                 extKeyUsage,
                 requirements,
@@ -918,43 +896,46 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                 rawSubjectAttributes: JSON.stringify(cert.subject.attributes)
             };
 
-            // Check validity period
+            // Check validity period and requirements
             const now = new Date();
             if (now < certInfo.validFrom) {
                 certInfo.status = 'FUTURE';
             } else if (now > certInfo.validTo) {
                 certInfo.status = 'EXPIRED';
+            } else {
+                // Check if all requirements are met
+                const missingRequirements = [];
+                
+                // Check subject fields
+                const missingFields = requirements.subject
+                    .filter(field => !field.present)
+                    .map(field => field.field);
+                
+                if (missingFields.length > 0) {
+                    missingRequirements.push(`Missing required fields: ${missingFields.join(', ')}`);
+                }
+
+                // Check key usage
+                if (!requirements.keyUsage.nonRepudiation) {
+                    missingRequirements.push(`Missing required key usage: ${requirements.keyUsage.required}`);
+                }
+
+                // Check extended key usage
+                if (!requirements.extKeyUsage.documentSigning) {
+                    missingRequirements.push(`Missing required extended key usage: ${requirements.extKeyUsage.required}`);
+                }
+
+                // Set status based on requirements
+                certInfo.status = missingRequirements.length === 0 ? 'VALID' : 'INVALID';
             }
 
             // Clean up temp file
             fs.unlinkSync(req.file.path);
 
-            // Check if all requirements are met
-            const missingRequirements = [];
-            
-            // Check subject fields
-            const missingFields = requirements.subject
-                .filter(field => !field.present)
-                .map(field => field.field);
-            
-            if (missingFields.length > 0) {
-                missingRequirements.push(`Missing required fields: ${missingFields.join(', ')}`);
-            }
-
-            // Check key usage
-            if (!requirements.keyUsage.nonRepudiation) {
-                missingRequirements.push(`Missing required key usage: ${requirements.keyUsage.required}`);
-            }
-
-            // Check extended key usage
-            if (!requirements.extKeyUsage.documentSigning) {
-                missingRequirements.push(`Missing required extended key usage: ${requirements.extKeyUsage.required}`);
-            }
-
             res.json({
                 success: true,
                 certInfo,
-                lhdnCompliant: missingRequirements.length === 0,
+                lhdnCompliant: certInfo.status === 'VALID',
                 missingRequirements
             });
 
@@ -1108,8 +1089,8 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
             }
 
             // Extract key usage and extended key usage
-            const keyUsage = cert.extensions.find(ext => ext.name === 'keyUsage')?.value || '';
-            const extKeyUsage = cert.extensions.find(ext => ext.name === 'extKeyUsage')?.value || '';
+            const keyUsage = cert.extensions.find(ext => ext.name === 'keyUsage')?.value.split(', ') || [];
+            const extKeyUsage = cert.extensions.find(ext => ext.name === 'extKeyUsage')?.value.split(', ') || [];
 
             // Save to database
             const certInfo = {

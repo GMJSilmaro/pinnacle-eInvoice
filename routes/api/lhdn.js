@@ -1968,4 +1968,195 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
     }
 });
 
+// TIN Validation route
+router.get('/taxpayer/validate/:tin', limiter, async (req, res) => {
+    const { tin } = req.params;
+    const { idType, idValue } = req.query;
+    const requestId = req.requestId || req.headers['x-request-id'] || Math.random().toString(36).substring(2, 15);
+
+    console.log(`[${requestId}] TIN Validation Request:`, {
+        tin,
+        idType,
+        idValue
+    });
+
+    try {
+        // Input validation
+        if (!tin || !idType || !idValue) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required parameters',
+                error: {
+                    code: 'BAD_ARGUMENT',
+                    details: {
+                        tin: !tin ? 'TIN is required' : null,
+                        idType: !idType ? 'ID Type is required' : null,
+                        idValue: !idValue ? 'ID Value is required' : null
+                    }
+                }
+            });
+        }
+
+        // Validate ID Type
+        const validIdTypes = ['NRIC', 'PASSPORT', 'BRN', 'ARMY'];
+        if (!validIdTypes.includes(idType.toUpperCase())) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid ID Type',
+                error: {
+                    code: 'BAD_ARGUMENT',
+                    details: {
+                        idType: `ID Type must be one of: ${validIdTypes.join(', ')}`
+                    }
+                }
+            });
+        }
+
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+
+        // Check cache first
+        const cacheKey = `tin_validation_${tin}_${idType}_${idValue}`;
+        const cachedResult = cache.get(cacheKey);
+
+        if (cachedResult) {
+            console.log(`[${requestId}] Returning cached validation result for TIN: ${tin}`);
+            return res.json({
+                success: true,
+                result: cachedResult,
+                cached: true
+            });
+        }
+
+        // Prepare standard LHDN API headers according to SDK specification
+        const headers = {
+            'Authorization': `Bearer ${req.session.accessToken}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-Request-ID': requestId,
+            'X-Date': req.headers['x-date'] || new Date().toISOString(),
+            'X-Client-ID': req.headers['x-client-id'] || 'eInvoice-WebApp',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.ip,
+            'X-User-Agent': req.headers['x-user-agent'] || req.headers['user-agent'],
+            'X-Channel': req.headers['x-channel'] || 'Web'
+        };
+
+        // Add User session related headers if available
+        if (req.session?.user) {
+            headers['X-User-ID'] = req.session.user.id;
+            headers['X-User-TIN'] = req.session.user.TIN;
+            headers['X-User-Name'] = req.session.user.username;
+        }
+
+        // Make API call to LHDN
+        console.log(`[${requestId}] Calling LHDN API for TIN validation with standard headers...`);
+        const response = await axios.get(
+            `${lhdnConfig.baseUrl}/api/v1.0/taxpayer/validate/${tin}`,
+            {
+                params: {
+                    idType: idType.toUpperCase(),
+                    idValue: idValue
+                },
+                headers: headers,
+                timeout: lhdnConfig.timeout
+            }
+        );
+
+        // Log successful validation
+        await LoggingService.log({
+            description: `TIN Validation successful for ${tin}`,
+            username: req?.session?.user?.username || 'System',
+            userId: req?.session?.user?.id,
+            ipAddress: req?.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.VALIDATE,
+            status: STATUS.SUCCESS,
+            details: { tin, idType, idValue, requestId }
+        });
+
+        // Cache the successful result
+        const validationResult = {
+            isValid: true,
+            tin: tin,
+            idType: idType,
+            idValue: idValue,
+            timestamp: new Date().toISOString(),
+            requestId: requestId
+        };
+        cache.set(cacheKey, validationResult, 300); // Cache for 5 minutes
+
+        return res.json({
+            success: true,
+            result: validationResult,
+            cached: false
+        });
+
+    } catch (error) {
+        console.error(`[${requestId}] TIN Validation Error:`, error);
+
+        // Log validation error
+        await LoggingService.log({
+            description: `TIN Validation failed for ${tin}: ${error.message}`,
+            username: req?.session?.user?.username || 'System',
+            userId: req?.session?.user?.id,
+            ipAddress: req?.ip,
+            logType: LOG_TYPES.ERROR,
+            module: MODULES.API,
+            action: ACTIONS.VALIDATE,
+            status: STATUS.FAILED,
+            details: { tin, idType, idValue, error: error.message, requestId }
+        });
+
+        // Handle specific error cases
+        if (error.response?.status === 404) {
+            return res.status(404).json({
+                success: false,
+                message: 'Invalid TIN or ID combination',
+                error: {
+                    code: 'NOT_FOUND',
+                    details: 'The provided TIN and ID combination cannot be found or is invalid',
+                    requestId: requestId
+                }
+            });
+        }
+
+        if (error.response?.status === 400) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid input parameters',
+                error: {
+                    code: 'BAD_ARGUMENT',
+                    details: error.response.data?.message || 'The provided parameters are invalid',
+                    requestId: requestId
+                }
+            });
+        }
+
+        if (error.response?.status === 429) {
+            return res.status(429).json({
+                success: false,
+                message: 'Rate limit exceeded',
+                error: {
+                    code: 'RATE_LIMIT_EXCEEDED',
+                    details: 'Too many validation requests. Please try again later.',
+                    retryAfter: error.response.headers['retry-after'] || 60,
+                    requestId: requestId
+                }
+            });
+        }
+
+        // Generic error response
+        return res.status(500).json({
+            success: false,
+            message: 'TIN validation failed',
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                details: error.message,
+                requestId: requestId
+            }
+        });
+    }
+});
+
 module.exports = router;

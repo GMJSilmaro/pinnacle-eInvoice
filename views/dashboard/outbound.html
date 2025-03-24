@@ -4,15 +4,12 @@
 
 <title>Outbound - eInvoice Portal</title>
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <link href="/assets/css/pages/inbound/card.css" rel="stylesheet">
 <link href="/assets/css/pages/inbound/notice.css" rel="stylesheet">
 
-<link href="/assets/css/pages/profile.css" rel="stylesheet">
 
 <link href="/assets/css/pages/inbound/validation-modal.css" rel="stylesheet">
 <link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
@@ -21,7 +18,172 @@
 
 <script src="/assets/js/config/validation-translations.js"></script>
 
+<script src="/assets/js/modules/validation/simple-tin-validator.js"></script>
+
 <style>
+/* TIN Validation Modal Styles */
+#tinValidationModal .modal-dialog {
+    max-width: 1000px; /* Increased from 900px */
+}
+
+#tinValidationModal .modal-content {
+    overflow: hidden;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    border-radius: 0.5rem;
+}
+
+#tinValidationModal .modal-header {
+    background-color: #0a3d8a;
+    color: white;
+    border-bottom: none;
+    padding: 1rem 1.5rem;
+}
+
+#tinValidationModal .modal-header .btn-close {
+    color: white;
+    filter: brightness(0) invert(1);
+    opacity: 0.8;
+}
+
+#tinValidationModal .modal-header .btn-close:hover {
+    opacity: 1;
+}
+
+#validationResultSection {
+    min-height: 500px;
+    position: relative;
+    background: #f8f9fa;
+}
+
+#emptyResultState {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80%;
+}
+
+.validation-status-badge .badge {
+    width: 80px;
+    height: 80px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    animation: fadeInScale 0.6s ease-out;
+}
+
+.validation-status-badge .badge i {
+    font-size: 2.5rem;
+}
+
+/* Success checkmark animation */
+.success-checkmark {
+    animation: fadeIn 0.8s ease-out 0.3s both;
+}
+
+.checkmark {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: drawCheck 1.2s ease-out forwards;
+}
+
+@keyframes drawCheck {
+    from {
+        stroke-dashoffset: 100;
+    }
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+#validationResultContent .card {
+    transition: all 0.3s ease;
+    border-radius: 0.5rem;
+    animation: slideUp 0.5s ease-out 0.2s both;
+}
+
+#validationResultContent .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08) !important;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+#validationResultContent .card-header {
+    background-color: white;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+#validationResultContent .list-group-item {
+    transition: background-color 0.2s ease;
+    padding: 0.8rem 1.25rem;
+}
+
+#validationResultContent .list-group-item:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.btn-lhdn {
+    background-color: #0a3d8a;
+    border-color: #0a3d8a;
+    color: white;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    font-weight: 500;
+    padding: 0.6rem 1.5rem;
+    border-radius: 0.375rem;
+}
+
+.btn-lhdn:hover {
+    background-color: #0f2952;
+    border-color: #0f2952;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(26, 58, 108, 0.25);
+}
+
+.btn-lhdn:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: all 0.6s ease;
+}
 
      /* Tutorial Modal Styles */
      .tutorial-content {
@@ -867,12 +1029,353 @@
         text-align: left;
     }
 }
+
+/* Progress Modal Styles */
+#submissionProgressModal .modal-content {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+#submissionProgressModal .modal-header {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    padding: 1rem 1.5rem;
+}
+
+#submissionProgressModal .modal-body {
+    padding: 1.5rem;
+}
+
+#submissionProgress .progress {
+    height: 10px;
+    border-radius: 5px;
+    background-color: #e9ecef;
+    margin-bottom: 1rem;
+}
+
+#submissionProgress .progress-bar {
+    background: linear-gradient(90deg, #0d6efd, #0a58ca);
+    border-radius: 5px;
+}
+
+#submissionProgress .submission-status {
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-bottom: 1rem;
+}
+
+#submissionProgress .documents-status {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+#submissionProgress .doc-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 4px;
+    background: #f8f9fa;
+}
+
+#submissionProgress .doc-status i {
+    font-size: 1rem;
+}
+
+/* Submission Summary Styles */
+.submission-summary {
+    text-align: left;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.submission-summary p {
+    margin-bottom: 0.5rem;
+}
+
+.submission-summary p:last-child {
+    margin-bottom: 0;
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+/* Selected Documents List Styles */
+.selected-docs-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.selected-docs-list:empty::after {
+    content: 'No documents selected';
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Validation Button Styles */
+.validate-tin-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    border-radius: 4px;
+    background-color: #e9ecef;
+    border: 1px solid #dee2e6;
+    color: #495057;
+    transition: all 0.2s ease;
+}
+
+.validate-tin-btn:hover {
+    background-color: #dee2e6;
+    border-color: #ced4da;
+}
+
+.validate-tin-btn i {
+    margin-right: 0.25rem;
+}
+
+/* Validation Result Styles */
+.validation-result {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+}
+
+.validation-result.success {
+    background-color: rgba(25, 135, 84, 0.1);
+}
+
+.validation-result.error {
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.validation-result i {
+    font-size: 1.5rem;
+}
+
+.validation-result.success i {
+    color: #198754;
+}
+
+.validation-result.error i {
+    color: #dc3545;
+}
+
+.result-details h6 {
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.result-details p {
+    margin-bottom: 0.25rem;
+    color: #6c757d;
+}
+
+.error-details {
+    color: #dc3545;
+    font-size: 0.875rem;
+}
+
+/* Summary Stats Styles */
+.summary-stats {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.stat-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 6px;
+    background-color: #f8f9fa;
+}
+
+.stat-item.success {
+    background-color: rgba(25, 135, 84, 0.1);
+    color: #198754;
+}
+
+.stat-item.error {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.validate-tin-btn {
+    background-color: #e9ecef;
+    border: 1px solid #dee2e6;
+    color: #495057;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: all 0.2s ease;
+}
+
+.validate-tin-btn:hover {
+    background-color: #dee2e6;
+    border-color: #ced4da;
+}
+
+.validate-tin-btn i {
+    font-size: 1rem;
+}
+
+.status-cell .badge {
+    font-size: 0.75rem;
+    padding: 0.25em 0.5em;
+}
+
+/* Validation Section Styles */
+.quick-validation-form {
+    background-color: #f8f9fa;
+}
+
+.quick-validation-form .form-floating > .form-control,
+.quick-validation-form .form-floating > .form-select {
+    height: calc(2.5rem + 2px);
+    line-height: 1.25;
+    padding: 0.5rem 0.75rem;
+}
+
+.quick-validation-form .form-floating > label {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+.quick-validation-form .form-control:focus,
+.quick-validation-form .form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.15);
+}
+
+.history-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #e9ecef;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.history-item .tin-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.history-item .tin-number {
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.125rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-item .tin-details {
+    font-size: 0.75rem;
+    color: #6c757d;
+    line-height: 1.2;
+}
+
+.history-item .validation-status {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.history-item .validation-status.valid {
+    background-color: rgba(25, 135, 84, 0.1);
+    color: #198754;
+}
+
+.history-item .validation-status.invalid {
+    background-color: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+#clearHistory {
+    color: #6c757d;
+    transition: color 0.2s;
+}
+
+#clearHistory:hover {
+    color: #dc3545;
+}
+
+.validation-history {
+    background: #fff;
+}
+
+.alert-info {
+    background-color: rgba(13, 110, 253, 0.05);
+    border: none;
+}
+
+.outbound-btn-lhdn:hover {
+  background-color: #0f2952;
+  border-color: #0f2952;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(26, 58, 108, 0.3);
+}
+
+.outbound-btn-lhdn:hover:before {
+  left: 100%;
+}
+
+.outbound-btn-lhdn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 5px rgba(26, 58, 108, 0.2);
+}
+
+.outbound-btn-lhdn i {
+  transition: transform 0.3s ease;
+}
+
+.outbound-btn-lhdn:hover i {
+  transform: translateX(3px);
+}
+
 </style>
 
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid px-2 px-md-2 px-lg-2">
+    <!-- Toast container for notifications -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+        <div id="validationToast" class="toast validation-toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <i class="bi bi-shield-check me-2 text-primary"></i>
+                <strong class="me-auto">TIN Validation</strong>
+                <small>Just now</small>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                TIN details reused from history.
+            </div>
+        </div>
+    </div>
+    
     <!-- Welcome Card - Full width -->
     <div class="profile-welcome-section mb-4">
         <!-- Welcome Card content -->
@@ -884,13 +1387,13 @@
                 </div>
                 <div class="welcome-content">
                     <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">Outbound</h3>
-                            <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" 
+                            <p class="mb-0 cursor-pointer" data-bs-placement="bottom" data-bs-html="true" 
                             title="">
                     Manage and track your outbound document submissions, including validation and submission status.
                 </p>
-                <button id="openTutorialBtn" class="btn btn-sm btn-outline-light mt-2">
+                <!-- <button id="openTutorialBtn" class="btn btn-sm btn-outline-light mt-2">
                     <i class="bi bi-question-circle me-1"></i> How to use this page
-                </button>
+                </button> -->
                 </div>
             </div>
             <div class="d-flex align-items-start">
@@ -1020,41 +1523,79 @@
           </div>
         </div>
         
-        <!-- Middleware Disclaimer -->
+        <!-- Validate TIN -->
         <div class="col-md-5">
-                <div class="card shadow-sm h-100">
-                    <div class="card-body middleware-disclaimer">
-                        <div class="disclaimer-icon">
-                        <i class="bi bi-arrow-left-right"></i>
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="card-title d-flex align-items-center mb-2">
+                        <i class="bi bi-shield-check me-2"></i>
+                        TIN Validation
+                        <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
+                           title="<div class='p-2'><strong>TIN Validation:</strong><br><small>Validate Tax Identification Numbers (TIN) before adding to invoice</small></div>"></i>
+                    </h6>
+
+                    <!-- Launch TIN Validation Modal Button -->
+                    <div class="text-center mb-3">
+                        <button class="btn btn-lhdn w-75" type="button" data-bs-toggle="modal" data-bs-target="#tinValidationModal">
+                            <i class="bi bi-shield-check me-2"></i>Validate New TIN
+                        </button>
+                        <div class="text-muted mt-2 small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Validate business partner TINs before adding to invoices
+                        </div>
                     </div>
-                        <div class="disclaimer-content">
-                            <h6 class="mb-1">Middleware Service</h6>
-                            <div class="info-banner mb-3 d-flex align-items-center">
-                                <span class="badge rounded-pill bg-info-subtle text-warning me-2">
-                                    <i class="bi bi-info-circle"></i>
-                                </span>
-                                <small class="text-secondary"><div class="note-badge">
-                                    <span>Important Note!</span>
-                                </div></small>
+
+                    <!-- Recent Validations Preview Card -->
+                    <div class="validation-history border rounded">
+                        <div class="d-flex align-items-center justify-content-between p-2 border-bottom bg-light">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-clock-history me-2"></i>
+                                <small class="fw-medium">Recent Validations</small>
+                                <i class="bi bi-info-circle ms-2 text-primary" style="font-size: 12px; cursor: pointer;" 
+                                   data-bs-toggle="tooltip" 
+                                   data-bs-html="true" 
+                                   title="<div class='p-2 text-start'>
+                                           <strong>Validation Limits:</strong><br>
+                                           • 30-second cooldown between identical validations<br>
+                                           • Maximum 100 validations per session<br>
+                                           • Click on a validation to reuse its data
+                                         </div>">
+                                </i>
                             </div>
-    
-                            <p class="mb-0 small">We act as a transmission channel between you and LHDN. Our role:</p>
-                            <ul class="small mb-0 ps-3 mt-1">
-                                <li><i class="bi bi-check-circle me-2"></i>Format validation & data verification before submission</li>
-                                <li><i class="bi bi-shield-lock me-2"></i>Secure transmission channel to LHDN's systems</li>
-                                <li><i class="bi bi-graph-up me-2"></i>Real-time status tracking through dashboard</li>
-                            </ul>
-                            <div class="disclaimer-note mt-2">
-                                <i class="bi bi-exclamation-circle"></i>
-                                <span>Final acceptance and validation are determined by LHDN</span>
+                            <div class="d-flex gap-2">
+                                <div class="position-relative">
+                                    <input type="text" class="form-control form-control-sm" id="historySearchInput" placeholder="Search..." style="width: 150px;">
+                                    <i class="bi bi-search position-absolute" style="right: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #6c757d;"></i>
+                                </div>
+                                <button class="btn btn-sm btn-link p-0" id="clearHistory">
+                                    <i class="bi bi-trash3"></i>
+                                </button>
                             </div>
-                            <div class="disclaimer-info mt-2">
-                                <i class="bi bi-link-45deg"></i>
-                                <span>Official LHDN SDK Documentation: <a href="https://sdk.hasil.gov.my" target="_blank" class="text-primary">sdk.hasil.gov.my</a></span>
+                        </div>
+                        <div class="history-list" id="validationHistory" style="max-height: 150px; overflow-y: auto;">
+                            <!-- History items will be added here dynamically -->
+                            <div class="text-center text-muted py-2">
+                                <i class="bi bi-shield-check mb-1 d-block" style="font-size: 1.2rem;"></i>
+                                <small>No validation history yet</small>
                             </div>
                         </div>
                     </div>
+
+                    <!-- LHDN Best Practice Note -->
+                    <div class="alert alert-info py-2 px-3 mt-2 mb-0">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-lightbulb me-2"></i>
+                            <small>
+                                <strong>LHDN Best Practice:</strong> Validate business partner TINs during onboarding.
+                            </small>
+                            <a href="https://www.newpages.net/validate-tax-payer" target="_blank" class="btn btn-link btn-sm ms-auto p-0" data-bs-toggle="tooltip" title="Alternative validation method">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+
+                        </div>
                     </div>
+                </div>
+            </div>
         </div>
 
         <!-- Processing Time Chart -->
@@ -1172,21 +1713,7 @@
                             </div>
                             
                         </div>
-                        <div class="disclaimer-note mt-2">
-                            <i class="bi bi-exclamation-circle"></i>
-                            <span>For a smooth submission process, verify all required fields are complete and accurate on your ERP System Before Submitting to LHDN. </br>
-                            <span>Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission</span>
-                            <a href="/help" class="ms-1 text-decoration-none" target="_blank">
-                                <i class="bi bi-question-circle" data-bs-toggle="tooltip" title="Click for help documentation"></i>
-                            </a>
-                        </div>
-                        <div class="disclaimer-note mt-2" style="background: rgba(220, 53, 69, 0.1); color: #842029;">
-                            <i class="bi bi-exclamation-triangle"></i>
-                            <span><strong>Important Disclaimer:</strong> <br>
-                            Our platform provides validation services, but the ultimate responsibility for data accuracy lies with the user. 
-                            <br>
-                            We are not liable for any consequences, penalties, or issues arising from submission of incomplete, inaccurate or non-compliant data to LHDN.</span>
-                        </div>
+                       
                         
                     </div>
                     <div class="table-controls">
@@ -1203,7 +1730,253 @@
                         <div class="responsive-table-container">
                             <div class="table-section">
                                 <div class="outbound-table-container">
-                    <!-- Consolidation Guidelines -->
+               
+                                    <div>
+                                        <!-- Primary Filters Row -->
+                                        <div class="row g-3 mb-3">
+                                            <!-- Global Search -->
+                                            <div class="col-md-4">
+                                                <div class="search-wrapper position-relative">
+                                                    <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                                                    <input type="text" class="form-control form-control-lg ps-5" id="globalSearch" 
+                                                        placeholder="Search documents...">
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Quick Filters -->
+                                            <div class="col-md-8">
+                                                <div class="quick-filters d-flex gap-2">
+                                                    <!-- <button class="btn outbound-action-btn submit" data-bs-toggle="modal" data-bs-target="#consolidatedSubmitModal">
+                                                        <i class="bi bi-file-earmark-arrow-up me-1"></i>Bulk Submit
+                                                    </button> -->
+                                                    <button class="btn outbound-action-btn submit active" data-filter="all">
+                                                        <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
+                                                    </button>
+                                                    <!-- <button class="btn outbound-action-btn submit" data-filter="submitted">
+                                                        <i class="bi bi-check-circle me-1 text-success"></i>Submitted
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="invalid">
+                                                        <i class="bi bi-x-circle me-1 text-danger"></i>Invalid
+                                                    </button>
+                                                    
+                                                    <button class="btn outbound-action-btn submit" data-filter="cancelled">
+                                                        <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Cancelled
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="pending">
+                                                        <i class="bi bi-clock-history me-1 text-warning"></i>Pending
+                                                    </button> -->
+                                                    <!-- <div class="ms-auto">
+                                                        <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
+                                                            <i class="bi bi-eraser me-1"></i>Clear
+                                                        </button>
+                                                        <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                                                            <i class="bi bi-sliders me-1"></i>Advanced
+                                                        </button>
+                                                    </div> -->
+                                                </div>
+                                            </div>
+                                        </div>
+                    
+                                        <!-- Advanced Filters (Collapsible) -->
+                                        <div class="collapse" id="advancedFilters">
+                                            <div class="advanced-filters-content border-top pt-3">
+                                                <div class="row g-3">
+                                                    <!-- Date Range -->
+                                                    <div class="col-md-6">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-calendar-range me-2"></i>Date Range
+                                                        </label>
+                                                        <div class="input-group">
+                                                            <input type="date" class="form-control" id="tableStartDate">
+                                                            <span class="input-group-text bg-light">to</span>
+                                                            <input type="date" class="form-control" id="tableEndDate">
+                                                        </div>
+                                                    </div>
+                    
+                                                    <!-- Amount Range -->
+                                                    <div class="col-md-6">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-currency-dollar me-2"></i>Amount Range
+                                                        </label>
+                                                        <div class="input-group">
+                                                            <input type="number" class="form-control" id="minAmount" placeholder="Min">
+                                                            <span class="input-group-text bg-light">to</span>
+                                                            <input type="number" class="form-control" id="maxAmount" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                    
+                                                    <!-- Company Filter -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-building me-2"></i>Company
+                                                        </label>
+                                                        <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
+                                                    </div>
+                    
+                                                    <!-- Document Type -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-file-text me-2"></i>Document Type
+                                                        </label>
+                                                        <select class="form-select" id="documentTypeFilter">
+                                                            <option value="">All Types</option>
+                                                            <option value="Invoice">Invoice</option>
+                                                            <option value="Credit Note">Credit Note</option>
+                                                            <option value="Debit Note">Debit Note</option>
+                                                        </select>
+                                                    </div>
+                    
+                                                    <!-- Source -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-diagram-2 me-2"></i>Source
+                                                            <i class="bi bi-info-circle ms-2" data-bs-html="true" 
+                                                            title="<div class='tooltip-content'>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-info-circle'></i>
+                                                                        <span><b>LHDN Validation:</b></span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-check-circle text-success'></i>
+                                                                        <span>Valid: Document passed validation</span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-x-circle text-danger'></i>
+                                                                        <span>Invalid: Failed validation checks</span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-clock-history text-warning'></i>
+                                                                        <span>Pending: Awaiting for Submission to LHDN for validation</span>
+                                                                    </div>
+                                                                </div>"></i>
+                                                        </label>
+                                                        <select class="form-select" id="sourceFilter">
+                                                            <option value="">LHDN</option>
+                                                            
+                                                        </select>
+                                                        <small class="text-muted mt-1 d-block">
+                                                            <i class="bi bi-info-circle-fill me-1"></i>
+                                                            LHDN responses include validation status and timestamps
+                                                        </small>
+                                                    </div>
+                                                </div>
+                    
+                                            
+                                                <!-- Filter Note -->
+                                                <div class="filter-note alert alert-info mt-3" role="alert">
+                                                    <i class="bi bi-info-circle me-2"></i>
+                                                    <small>
+                                                        Use the filters above to narrow down your results. Active filters will appear below as tags that you can easily remove. Click the 'x' on any tag to remove that filter, or use 'Clear all filters' to reset.
+                                                    </small>
+                                                </div>
+                    
+                                                <!-- Active Filters Display -->
+                                                <div class="active-filters mt-3 pt-3 border-top">
+                                                    <div class="d-flex align-items-center">
+                                                        <small class="text-muted me-2">Active Filters:</small>
+                                                        <div class="active-filter-tags" id="activeFilterTags">
+                                                            <!-- Active filter tags will be added here dynamically -->
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                      
+                                    </div>
+                                    <!-- End of new filter section -->
+                                  
+                    
+                                        <table id="invoiceTable" class="outbound-table-responsive">
+                                            <thead>
+                                                <tr>
+                                                    <th class="outbound-checkbox-column">
+                                                        <div class="outbound-checkbox-header">
+                                                            <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                                                        </div>
+                                                    </th>
+                                                    <th>#</th>
+                                                    <th>INVOICE NO.</th>
+                                                    <th>COMPANY</th>
+                                                    <th>SUPPLIER</th>
+                                                    <th>RECEIVER</th>
+                                                    <th>DATE</th>
+                                                    <th>INV. DATE INFO</th>
+                                                    <th>STATUS</th>
+                                                    <th>SOURCE</th>
+                                                    <th>TOTAL AMOUNT</th>
+                                                    <th class="outbound-action-column">ACTION</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <!-- Example row with TIN validation button -->
+                                                <tr data-tin="123456789" data-id-type="BRN" data-id-value="ABC123456">
+                                                    <td class="outbound-checkbox-column">
+                                                        <input type="checkbox" class="outbound-checkbox">
+                                                    </td>
+                                                    <td>1</td>
+                                                    <td>INV-001</td>
+                                                    <td>Company A</td>
+                                                    <td>Supplier X</td>
+                                                    <td>Receiver Y</td>
+                                                    <td>2024-03-24</td>
+                                                    <td>Regular</td>
+                                                    <td class="status-cell">
+                                                        <span class="badge bg-warning">Pending</span>
+                                                    </td>
+                                                    <td>LHDN</td>
+                                                    <td>1,000.00</td>
+                                                    <td class="outbound-action-column">
+                                                        <div class="action-buttons">
+                                                            <button class="btn btn-sm validate-tin-btn" data-validate-tin>
+                                                                <i class="bi bi-shield-check"></i>
+                                                                Validate TIN
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-primary">
+                                                                <i class="bi bi-eye"></i>
+                                                                View
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-danger">
+                                                                <i class="bi bi-trash"></i>
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Loading Overlay -->
+                        <div id="tableLoadingOverlay" class="table-loading-overlay d-none">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Fetching documents...</p>
+                        </div>
+                    </div>
+                    
+                    
+       
+                    <div class="table-footer">
+                        <div class="disclaimer-note mt-2">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span>For a smooth submission process, verify all required fields are complete and accurate on your ERP System Before Submitting to LHDN. </br>
+                            <span>Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission</span>
+                            <a href="/help" class="ms-1 text-decoration-none" target="_blank">
+                                <i class="bi bi-question-circle" data-bs-toggle="tooltip" title="Click for help documentation"></i>
+                            </a>
+                        </div>
+                        <div class="disclaimer-note mt-2" style="background: rgba(220, 53, 69, 0.1); color: #842029;">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span><strong>Important Disclaimer:</strong> <br>
+                            Our platform provides validation services, but the ultimate responsibility for data accuracy lies with the user. 
+                            <br>
+                            We are not liable for any consequences, penalties, or issues arising from submission of incomplete, inaccurate or non-compliant data to LHDN.</span>
+                        </div>
+
+                        <!-- Consolidation Guidelines -->
                         <div class="mt-3 mb-4">
                             <div class="middleware-disclaimer mb-3">
                                 <div class="disclaimer-icon">
@@ -1371,201 +2144,8 @@
                                 });
                             });
                         </script>
-                                    <div>
-                                        <!-- Primary Filters Row -->
-                                        <div class="row g-3 mb-3">
-                                            <!-- Global Search -->
-                                            <div class="col-md-4">
-                                                <div class="search-wrapper position-relative">
-                                                    <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-                                                    <input type="text" class="form-control form-control-lg ps-5" id="globalSearch" 
-                                                        placeholder="Search documents...">
-                                                </div>
-                                            </div>
-                                            
-                                            <!-- Quick Filters -->
-                                            <div class="col-md-8">
-                                                <div class="quick-filters d-flex gap-2">
-                                                    <button class="btn outbound-action-btn submit active" data-filter="all">
-                                                        <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
-                                                    </button>
-                                                    <!-- <button class="btn outbound-action-btn submit" data-filter="submitted">
-                                                        <i class="bi bi-check-circle me-1 text-success"></i>Submitted
-                                                    </button>
-                                                    <button class="btn outbound-action-btn submit" data-filter="invalid">
-                                                        <i class="bi bi-x-circle me-1 text-danger"></i>Invalid
-                                                    </button>
-                                                    
-                                                    <button class="btn outbound-action-btn submit" data-filter="cancelled">
-                                                        <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Cancelled
-                                                    </button>
-                                                    <button class="btn outbound-action-btn submit" data-filter="pending">
-                                                        <i class="bi bi-clock-history me-1 text-warning"></i>Pending
-                                                    </button> -->
-                                                    <!-- <div class="ms-auto">
-                                                        <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
-                                                            <i class="bi bi-eraser me-1"></i>Clear
-                                                        </button>
-                                                        <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
-                                                            <i class="bi bi-sliders me-1"></i>Advanced
-                                                        </button>
-                                                    </div> -->
-                                                </div>
-                                            </div>
-                                        </div>
-                    
-                                        <!-- Advanced Filters (Collapsible) -->
-                                        <div class="collapse" id="advancedFilters">
-                                            <div class="advanced-filters-content border-top pt-3">
-                                                <div class="row g-3">
-                                                    <!-- Date Range -->
-                                                    <div class="col-md-6">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-calendar-range me-2"></i>Date Range
-                                                        </label>
-                                                        <div class="input-group">
-                                                            <input type="date" class="form-control" id="tableStartDate">
-                                                            <span class="input-group-text bg-light">to</span>
-                                                            <input type="date" class="form-control" id="tableEndDate">
-                                                        </div>
-                                                    </div>
-                    
-                                                    <!-- Amount Range -->
-                                                    <div class="col-md-6">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-currency-dollar me-2"></i>Amount Range
-                                                        </label>
-                                                        <div class="input-group">
-                                                            <input type="number" class="form-control" id="minAmount" placeholder="Min">
-                                                            <span class="input-group-text bg-light">to</span>
-                                                            <input type="number" class="form-control" id="maxAmount" placeholder="Max">
-                                                        </div>
-                                                    </div>
-                    
-                                                    <!-- Company Filter -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-building me-2"></i>Company
-                                                        </label>
-                                                        <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
-                                                    </div>
-                    
-                                                    <!-- Document Type -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-file-text me-2"></i>Document Type
-                                                        </label>
-                                                        <select class="form-select" id="documentTypeFilter">
-                                                            <option value="">All Types</option>
-                                                            <option value="Invoice">Invoice</option>
-                                                            <option value="Credit Note">Credit Note</option>
-                                                            <option value="Debit Note">Debit Note</option>
-                                                        </select>
-                                                    </div>
-                    
-                                                    <!-- Source -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-diagram-2 me-2"></i>Source
-                                                            <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
-                                                            title="<div class='tooltip-content'>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-info-circle'></i>
-                                                                        <span><b>LHDN Validation:</b></span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-check-circle text-success'></i>
-                                                                        <span>Valid: Document passed validation</span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-x-circle text-danger'></i>
-                                                                        <span>Invalid: Failed validation checks</span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-clock-history text-warning'></i>
-                                                                        <span>Pending: Awaiting for Submission to LHDN for validation</span>
-                                                                    </div>
-                                                                </div>"></i>
-                                                        </label>
-                                                        <select class="form-select" id="sourceFilter">
-                                                            <option value="">LHDN</option>
-                                                            
-                                                        </select>
-                                                        <small class="text-muted mt-1 d-block">
-                                                            <i class="bi bi-info-circle-fill me-1"></i>
-                                                            LHDN responses include validation status and timestamps
-                                                        </small>
-                                                    </div>
-                                                </div>
-                    
-                                            
-                                                <!-- Filter Note -->
-                                                <div class="filter-note alert alert-info mt-3" role="alert">
-                                                    <i class="bi bi-info-circle me-2"></i>
-                                                    <small>
-                                                        Use the filters above to narrow down your results. Active filters will appear below as tags that you can easily remove. Click the 'x' on any tag to remove that filter, or use 'Clear all filters' to reset.
-                                                    </small>
-                                                </div>
-                    
-                                                <!-- Active Filters Display -->
-                                                <div class="active-filters mt-3 pt-3 border-top">
-                                                    <div class="d-flex align-items-center">
-                                                        <small class="text-muted me-2">Active Filters:</small>
-                                                        <div class="active-filter-tags" id="activeFilterTags">
-                                                            <!-- Active filter tags will be added here dynamically -->
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                      
-                                    </div>
-                                    <!-- End of new filter section -->
-                                  
-                    
-                                        <table id="invoiceTable" class="outbound-table-responsive">
-                                            <thead>
-                                                <tr>
-                                                    <th class="outbound-checkbox-column">
-                                                        <div class="outbound-checkbox-header">
-                                                            <input type="checkbox" class="outbound-checkbox" id="selectAll">
-                                                        </div>
-                                                    </th>
-                                                    <th>#</th>
-                                                    <th>INVOICE NO.</th>
-                                                    <th>COMPANY</th>
-                                                    <th>SUPPLIER</th>
-                                                    <th>RECEIVER</th>
-                                                    <th>DATE</th>
-                                                    <th>INV. DATE INFO</th>
-                                                    <th>STATUS</th>
-                                                    <th>SOURCE</th>
-                                                    <th>TOTAL AMOUNT</th>
-                                                    <th class="outbound-action-column">ACTION</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                    
-                                                </tbody>
-                                            </table>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Loading Overlay -->
-                        <div id="tableLoadingOverlay" class="table-loading-overlay d-none">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <p class="mt-2">Fetching documents...</p>
-                        </div>
-                    </div>
-                    
-                    
-       
-                    <div class="table-footer">
                         <div class="pagination-container">
-                            <!-- Pagination will be inserted by DataTables -->
+                        <!-- Pagination will be inserted by DataTables -->
                         </div>
                     </div>
                 </div>
@@ -1577,46 +2157,53 @@
 </div>
 
 <!-- Modal for Validation Results -->
-<div class="modal fade lhdn-validation-modal" id="validationResultsModal" tabindex="-1" aria-labelledby="validationResultsModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="validationResultsModalLabel">
-          <i class="bi bi-shield-check"></i>
-          Validation Results
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="lhdn-validation-content">
-          <div class="lhdn-validation-steps" id="validationResults">
-            <!-- Validation results will be populated here -->
-          </div>
+<div class="modal fade" id="validationResultsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="float-end">
+                    <a href="https://www.newpages.net/validate-tax-payer" 
+                       target="_blank" 
+                       class="btn btn-outline-secondary btn-sm" 
+                       data-bs-toggle="tooltip" 
+                       title="Alternative TIN validation via NewPages">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>
+                        Alternative Validator
+                    </a>
+                </div>
+                <h5 class="modal-title">
+                    <i class="bi bi-shield-check"></i>
+                    TIN Validation Results
+                </h5>
+                <button type="button" class="btn-lhdn d-flex align-items-center justify-content-center" data-bs-dismiss="modal"></button>
+               
+            </div>
+            <div class="modal-body">
+                <div id="validationResults">
+                    <!-- Validation results will be populated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
     </div>
-  </div>
 </div>
 
 <!-- Validation Error Modal -->
-<div class="modal fade lhdn-validation-modal" id="validationErrorModal" tabindex="-1">
+<div class="modal fade" id="validationErrorModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
-                    <i class="bi bi-shield-x"></i>
+                    <i class="bi bi-exclamation-triangle"></i>
                     Validation Error
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="lhdn-validation-content">
-                    <div class="lhdn-validation-steps" id="validationErrorList">
-                        <!-- Validation errors will be populated here -->
-                    </div>
+                <div id="validationErrorList">
+                    <!-- Error details will be populated here -->
                 </div>
             </div>
             <div class="modal-footer">
@@ -1785,49 +2372,137 @@
     </div>
 </div>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Get the advanced filters button and collapse element
+    const advancedFiltersBtn = document.querySelector('[data-bs-toggle="collapse"][data-bs-target="#advancedFilters"]');
+    const advancedFiltersCollapse = document.getElementById('advancedFilters');
+
+    if (advancedFiltersBtn && advancedFiltersCollapse) {
+        // Initialize the collapse manually
+        const bsCollapse = new bootstrap.Collapse(advancedFiltersCollapse, {
+            toggle: false
+        });
+
+        // Add click event listener to the button
+        advancedFiltersBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            bsCollapse.toggle();
+        });
+
+        // Update button icon on collapse events
+        advancedFiltersCollapse.addEventListener('show.bs.collapse', function () {
+            const icon = advancedFiltersBtn.querySelector('i.bi');
+            if (icon) {
+                icon.classList.remove('bi-sliders');
+                icon.classList.add('bi-x-lg');
+            }
+        });
+
+        advancedFiltersCollapse.addEventListener('hide.bs.collapse', function () {
+            const icon = advancedFiltersBtn.querySelector('i.bi');
+            if (icon) {
+                icon.classList.remove('bi-x-lg');
+                icon.classList.add('bi-sliders');
+            }
+        });
+    }
+});
+</script>
+
 {% endblock %} 
 {% block scripts %}
 <script src="/assets/js/modules/excel/outbound-excel.js"></script>
 <script src="/assets/js/modules/tutorial/guided-tour.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize all tooltips
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.forEach(tooltipTriggerEl => {
-        new bootstrap.Tooltip(tooltipTriggerEl, {
-            html: true,
-            container: 'body'
-        });
-    });
+<!-- TIN Validation Modal -->
+<div class="modal fade" id="tinValidationModal" tabindex="-1" aria-labelledby="tinValidationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tinValidationModalLabel">
+                    <i class="bi bi-shield-check me-2"></i>
+                    Validate Tax Identification Number (TIN)
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="row g-0">
+                    <!-- Left Column - Input Form -->
+                    <div class="col-md-5 border-end">
+                        <div class="p-4">
+                            <!-- Information Alert -->
+                            <div class="alert alert-info mb-3">
+                                <div class="d-flex">
+                                    <div class="flex-shrink-0">
+                                        <i class="bi bi-info-circle-fill"></i>
+                                    </div>
+                                    <div class="flex-grow-1 ms-2">
+                                        <p class="mb-0"><strong>LHDN Recommendation:</strong> Validate all TINs before using them in invoices.</p>
+                                        <small>Validated TINs are cached to reduce API calls and improve performance.</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- TIN Validation Form -->
+                            <form id="tinValidationForm" class="needs-validation" novalidate>
+                                <div class="mb-1">
+                                    <label for="tinNumber" class="form-label fw-medium">TIN Number <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="tinNumber" placeholder="Enter Tax Identification Number" required>
+                                    <div class="invalid-feedback">Please enter a valid TIN number.</div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="idType" class="form-label fw-medium">ID Type <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="idType" required>
+                                        <option value="" selected disabled>Select ID Type</option>
+                                        <option value="NRIC">NRIC (National Registration Identity Card)</option>
+                                        <option value="PASSPORT">Passport</option>
+                                        <option value="BRN">Business Registration Number</option>
+                                        <option value="ARMY">Army Number</option>
+                                    </select>
+                                    <div class="invalid-feedback">Please select an ID type.</div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="idValue" class="form-label fw-medium">ID Value <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="idValue" placeholder="Enter ID value" required>
+                                    <div class="invalid-feedback">Please enter the ID value.</div>
+                                    <small class="text-muted mt-1">
+                                        <i class="bi bi-info-circle-fill me-1"></i>
+                                        For BRN, use your 12-digit business registration number
+                                    </small>
+                                </div>
+                                
 
-    // Add event listener for the tutorial button
-    document.getElementById('openTutorialBtn')?.addEventListener('click', function() {
-        if (window.tourManager) {
-            window.tourManager.startTour();
-        }
-    });
-
-    // Success alert
-    window.showSuccessAlert = function(message) {
-        showAlert('success', 'Success', message);
-    };
-
-    // Error alert
-    window.showErrorAlert = function(message) {
-        showAlert('error', 'Error', message);
-    };
-
-    // Warning alert
-    window.showWarningAlert = function(message) {
-        showAlert('warning', 'Warning', message);
-    };
-
-    // Example of showing validation errors
-    window.showValidationErrorModal = function(errors) {
-        showValidationErrors(errors);
-    };
-});
-</script>
+                                <div class="d-grid mt-4">
+                                    <button type="button" class="btn btn-lhdn" id="validateSingleTin">
+                                        <i class="bi bi-shield-check me-1"></i>
+                                        Validate TIN
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Column - Validation Results -->
+                    <div class="col-md-7 bg-light" id="validationResultSection">
+                        <div class="p-4">
+                            <div class="d-flex align-items-center justify-content-center h-100">
+                                <div class="text-center text-muted" id="emptyResultState">
+                                    <i class="bi bi-shield-check display-1 mb-3 d-block opacity-50"></i>
+                                    <h5>Validation Results</h5>
+                                    <p class="mb-0">Enter TIN details and click "Validate TIN" to see validation results here.</p>
+                                </div>
+                                <div id="validationResultContent" class="w-100 d-none"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %} 

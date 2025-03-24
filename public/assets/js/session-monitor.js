@@ -1,7 +1,9 @@
 // Session monitoring and timeout alerts
 (function() {
-    const CHECK_INTERVAL = 10000; // Check every 10 seconds
+    const CHECK_INTERVAL = 30000; // Check every 30 seconds instead of 10
     let warningShown = false;
+    let consecutiveFailures = 0;
+    const MAX_FAILURES = 3; // Number of consecutive failures before forcing logout
 
     function checkSession() {
         fetch('/api/user/profile', {
@@ -17,11 +19,15 @@
             if (!response.ok) {
                 throw response;
             }
+            consecutiveFailures = 0; // Reset on successful response
             return response.json();
         })
         .then(data => {
             if (!data.success || !data.user) {
-                window.location.href = '/auth/login';
+                consecutiveFailures++;
+                if (consecutiveFailures >= MAX_FAILURES) {
+                    window.location.href = '/auth/login';
+                }
                 return;
             }
             
@@ -32,7 +38,8 @@
         })
         .catch(error => {
             console.error('Session check error:', error);
-            if (error.status === 401) {
+            consecutiveFailures++;
+            if (consecutiveFailures >= MAX_FAILURES && error.status === 401) {
                 window.location.href = '/auth/login';
             }
         });

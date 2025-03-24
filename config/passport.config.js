@@ -50,20 +50,44 @@ passport.use(new LocalStrategy({
 
 // Serialize user for the session
 passport.serializeUser((user, done) => {
-  done(null, user.ID);
+  const sessionUser = {
+    id: user.ID,
+    username: user.Username,
+    admin: user.Admin === 1,
+    IDType: user.IDType,
+    IDValue: user.IDValue,
+    TIN: user.TIN,
+    Email: user.Email,
+    lastLoginTime: new Date(),
+    isActive: true
+  };
+  done(null, sessionUser);
 });
 
 // Deserialize user from the session
-passport.deserializeUser(async (id, done) => {
+passport.deserializeUser(async (sessionUser, done) => {
   try {
+    if (!sessionUser.id) {
+      return done(null, false);
+    }
+    
     const user = await WP_USER_REGISTRATION.findOne({
       where: { 
-        ID: id,
+        ID: sessionUser.id,
         ValidStatus: '1'
       },
       attributes: authConfig.passport.sessionFields
     });
-    done(null, user);
+    
+    if (!user) {
+      return done(null, false);
+    }
+    
+    // Merge session data with fresh user data
+    done(null, {
+      ...sessionUser,
+      ...user.toJSON()
+    });
   } catch (error) {
     done(error);
   }

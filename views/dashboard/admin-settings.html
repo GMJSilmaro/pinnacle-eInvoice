@@ -86,17 +86,17 @@
           <i class="fas fa-network-wired"></i>
           E-Invoice Integration
         </h4>
-
+<!-- 
        <a href="#sap-settings" class="settings-nav-item" data-section="sap-settings">
           <div class="settings-nav-icon">
             <i class="fas fa-laptop"></i>
           </div>
           <div class="settings-nav-details">
-            <h4>SAP Configuration</h4>
-            <p>Manage SAP B1 Integration</p>
+            <h4>ERP Configuration</h4>
+            <p>Manage ERP Integration</p>
           </div>
-        </a>
-
+        </a> -->
+<!-- 
         <a href="#lhdn-settings" class="settings-nav-item" data-section="lhdn-settings">
           <div class="settings-nav-icon">
             <i class="fas fa-globe"></i>
@@ -105,9 +105,9 @@
             <h4>LHDN Configuration</h4>
             <p>Configure LHDN middleware</p>
           </div>
-        </a>
+        </a> -->
 
-        <!-- <a href="#digital-cert-settings" class="settings-nav-item" data-section="digital-cert-settings">
+        <a href="#digital-cert-settings" class="settings-nav-item" data-section="digital-cert-settings">
           <div class="settings-nav-icon">
             <i class="fas fa-certificate"></i>
           </div>
@@ -115,7 +115,7 @@
             <h4>Digital Certificate</h4>
             <p>Manage Digital Signing Certificate</p>
           </div>
-        </a> -->
+        </a>
       </div>
     </div>
 
@@ -515,21 +515,21 @@
         </h3>
         <div class="settings-form-content">
           <div class="sap-settings">
-            <h4 class="section-title">SAP B1 ERP Configuration</h4>
-            <small class="text-muted">Manage SAP ERP Integration using STES (SAP B1 Template Generation System)</small>
+            <h4 class="section-title">ERP Configuration</h4>
+            <small class="text-muted">Manage ERP Integration</small>
             <div class="alert alert-info" role="alert" style="font-size: 0.875rem; height: 40px;">
               <i class="fas fa-info-circle"></i>Having trouble configuring? Check out our comprehensive guide <a href="/help" target="_blank">Click here</a>
             </div>
             <div class="form-group mt-4">
        
-              <label>STES Template Generation System (.XLS/.XLSX) Network Path</label>
+              <label>ERP Network Path</label>
               <div class="input-group">
                 <input type="text" class="form-control" id="networkPath" placeholder="\\SERVER\Share\e-Invoice\Generated">
                 <button class="btn btn-outline-secondary" type="button" onclick="copyNetworkPath()">
                   <i class="fas fa-copy"></i>
                 </button>
               </div>
-              <small class="text-muted">Configure the path where the STES Template Generation System (STES) is located</small>
+              <small class="text-muted">Configure the path where the ERP is located</small>
             </div>
 
             <h4 class="section-title mt-4">Outgoing Files Path Configuration</h4>
@@ -758,7 +758,7 @@
                             </div>
                         </div>
 
-                        <!-- Technical Details -->
+                        <!-- Technical Details
                         <div class="cert-section mt-4">
                             <h6 class="section-title">
                                 <i class="fas fa-code"></i>
@@ -822,6 +822,7 @@
                                 </div>
                             </div>
                         </div>
+                         -->
                     </div>
                 </div>
             </div>
@@ -950,7 +951,7 @@
               </select>
             </div>
 
-            <!-- Add last modified info -->
+          
             <div class="alert alert-info mt-3" role="alert" id="lastModifiedInfo" style="display: none;">
               <small>
                 <i class="fas fa-info-circle"></i>

@@ -53,12 +53,52 @@ const SettingsUtil = {
     },
 
     /**
-     * Initialize tooltips
+     * Initialize tooltips with consistent options across the application
+     * @param {Object} options - Optional custom options to override defaults
      */
-    initializeTooltips() {
+    initializeTooltips(options = {}) {
+        // Clean up any existing tooltips first
+        const existingTooltips = document.querySelectorAll('.tooltip');
+        existingTooltips.forEach(tooltip => tooltip.remove());
+
+        // Destroy any existing tooltip instances
+        const tooltipTriggers = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        tooltipTriggers.forEach(el => {
+            const tooltipInstance = bootstrap.Tooltip.getInstance(el);
+            if (tooltipInstance) {
+                tooltipInstance.dispose();
+            }
+        });
+
+        // Default options for consistent look and feel
+        const defaultOptions = {
+            template: '<div class="tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>',
+            trigger: 'hover focus',
+            container: 'body',
+            animation: true,
+            delay: { show: 200, hide: 100 }
+        };
+
+        // Initialize tooltips with merged options
+        tooltipTriggers.forEach(tooltip => {
+            new bootstrap.Tooltip(tooltip, { ...defaultOptions, ...options });
+        });
+
+        // Add global event listeners to handle tooltip cleanup
+        document.addEventListener('scroll', this.hideAllTooltips, true);
+        window.addEventListener('resize', this.hideAllTooltips);
+    },
+
+    /**
+     * Hide all tooltips
+     */
+    hideAllTooltips() {
         const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-        tooltips.forEach(tooltip => {
-            new bootstrap.Tooltip(tooltip);
+        tooltips.forEach(element => {
+            const tooltip = bootstrap.Tooltip.getInstance(element);
+            if (tooltip) {
+                tooltip.hide();
+            }
         });
     },
 

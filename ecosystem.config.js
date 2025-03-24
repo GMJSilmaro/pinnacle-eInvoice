@@ -3,12 +3,15 @@ module.exports = {
     {
       name: 'eInvoice',
       script: './server.js',
-      instances: 1, 
+      instances: 1,
       autorestart: true,
-      watch: false,
+      watch: true,
+      ignore_watch: ["node_modules", "public", "logs", "*.log", "temp"],
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'development',
+        SECURE_COOKIE: 'false',
+        TRUST_PROXY: 'true'
       },
       env_production: {
         NODE_ENV: 'production',

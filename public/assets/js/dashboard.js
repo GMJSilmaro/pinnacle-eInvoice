@@ -14,10 +14,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       sessionStorage.setItem('initialDataFetched', 'true');
     }
 
-    initializeTooltips();
-
     // Initialize TIN search modal
     tinSearchModal = new bootstrap.Modal(document.getElementById('tinSearchModal'));
+
     
     // Add event listener for search type change
     document.getElementById('searchType')?.addEventListener('change', function(e) {
@@ -843,65 +842,12 @@ async function refreshQueue() {
 
 
 function initializeTooltips() {
-    // Clean up any existing tooltips first
-    const existingTooltips = document.querySelectorAll('.guide-tooltip');
-    existingTooltips.forEach(tooltip => tooltip.remove());
-
-    // Define tooltip content
-    const tooltipContent = {
-        'outbound-card': 'Track outbound e-invoices sent to LHDN for processing',
-        'inbound-card': 'Monitor inbound e-invoices received from your suppliers',
-        'companies-card': 'View all active companies in your network',
-        'invoice-status-card': 'Real-time status distribution of your e-invoices',
-        'system-status-card': 'Monitor LHDN system connectivity and queue status',
-        'api-status': 'Shows current connection status with LHDN API',
-        'queue-status': 'Displays number of documents waiting to be processed',
-        'last-sync': 'Indicates when data was last synchronized with LHDN',
-        'top-customers': 'View your most active customers based on transaction volume',
-        'recent-activity': 'Track recent e-invoice related activities',
-        'chart-section': 'Weekly breakdown of e-invoice processing status'
-    };
-
-    // Initialize Bootstrap tooltips with additional options
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl, {
-            template: '<div class="tooltip guide-tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>',
-            trigger: 'hover focus',
-            container: 'body',
-            animation: true,
-            delay: { show: 200, hide: 100 }
-        });
-    });
-
-    // Add global event listeners to handle tooltip cleanup
-    document.addEventListener('scroll', hideAllTooltips, true);
-    window.addEventListener('resize', hideAllTooltips);
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            hideAllTooltips();
-        }
-    });
-
-    // Hide tooltips when clicking outside
-    document.addEventListener('click', function(e) {
-        if (!e.target.hasAttribute('data-bs-toggle')) {
-            hideAllTooltips();
-        }
+    // Use the centralized tooltip initialization from SettingsUtil
+    SettingsUtil.initializeTooltips({
+        // Add any dashboard-specific options here if needed
+        template: '<div class="tooltip guide-tooltip" role="tooltip"><div class="tooltip-arrow"></div><div class="tooltip-inner"></div></div>'
     });
 }
-
-// Helper function to hide all tooltips
-function hideAllTooltips() {
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.forEach(element => {
-        const tooltip = bootstrap.Tooltip.getInstance(element);
-        if (tooltip) {
-            tooltip.hide();
-        }
-    });
-}
-
 
 async function updateOnlineUsers() {
     const onlineUsersElement = document.getElementById('onlineUsers');
@@ -938,16 +884,6 @@ async function updateOnlineUsers() {
     }
 }
 
-window.addEventListener('beforeunload', function() {
-    hideAllTooltips();
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.forEach(element => {
-        const tooltip = bootstrap.Tooltip.getInstance(element);
-        if (tooltip) {
-            tooltip.dispose();
-        }
-    });
-});
 
 // Initialize and set up auto-refresh
 document.addEventListener('DOMContentLoaded', function() {

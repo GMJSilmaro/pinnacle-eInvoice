@@ -68,7 +68,7 @@ app.options('*', cors(corsOptions));
 
 // Configure Swig
 swig.setDefaults({ 
-  cache: process.env.NODE_ENV === 'production',
+  cache: process.env.NODE_ENV === 'production' ? 'memory' : false,
   loader: swig.loaders.fs(path.join(__dirname, 'views')),
   locals: {
     basedir: path.join(__dirname, 'views')
@@ -114,14 +114,14 @@ app.use(session({
   ...serverConfig.sessionConfig,
   cookie: {
     ...serverConfig.sessionConfig.cookie,
-    secure: process.env.NODE_ENV !== 'development',
+    secure: process.env.SECURE_COOKIE === 'true',
     sameSite: 'lax',
     maxAge: authConfig.session.timeout,
-    rolling: false,
+    rolling: true,
     httpOnly: true   // Ensure cookies are HTTP only
   },
-  resave: false,
-  saveUninitialized: false
+  resave: true,
+  saveUninitialized: true
 }));
 
 // Add after session middleware and before routes

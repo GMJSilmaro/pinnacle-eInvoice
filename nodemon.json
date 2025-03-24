@@ -17,7 +17,7 @@
     "output/*"
   ],
   "env": {
-    "NODE_ENV": "development",
+    "NODE_ENV": "production",
     "EXCEL_DEBUG": "false"
   },
   "delay": "1000"

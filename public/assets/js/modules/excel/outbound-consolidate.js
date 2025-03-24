@@ -1622,20 +1622,6 @@ class InvoiceTableManager {
                 </div>`
             );
         }
-
-        // Reinitialize tooltips
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.forEach(tooltipTriggerEl => {
-            const tooltip = bootstrap.Tooltip.getInstance(tooltipTriggerEl);
-            if (tooltip) {
-                tooltip.dispose();
-            }
-            new bootstrap.Tooltip(tooltipTriggerEl, {
-                html: true,
-                container: 'body'
-            });
-        });
-
         // Update statistics charts
         this.updateStatisticsCharts(totals);
     }

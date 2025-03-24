@@ -3,13 +3,22 @@
 {% block head %}
 <!-- Set page title -->
 <title>Dashboard</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
 
 <link href="/assets/css/welcome-card.css" rel="stylesheet">
-<link href="/assets/css/components/outbound-invoice-modal.css" rel="stylesheet">
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<link href="/assets/css/pages/inbound/card.css" rel="stylesheet">
+<link href="/assets/css/pages/inbound/notice.css" rel="stylesheet">
 
 
+<link href="/assets/css/pages/inbound/validation-modal.css" rel="stylesheet">
+<link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
+<!-- Template Main CSS Files -->
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
+
+<script src="/assets/js/config/validation-translations.js"></script>
 <style>
 
   /* Skeleton Loading Animation */
@@ -1084,57 +1093,7 @@
   overflow: hidden;
 }
 
-/* LHDN Button Styling */
-.btn-lhdn {
-  background-color: #1a3a6c;
-  border-color: #1a3a6c;
-  color: white;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-weight: 200;
-  box-shadow: 0 2px 10px rgba(26, 58, 108, 0.2);
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-  z-index: 1;
-}
 
-.btn-lhdn:before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, rgba(255,255,255,0.1), rgba(255,255,255,0.2), rgba(255,255,255,0.1));
-  transition: all 0.6s ease;
-  z-index: -1;
-}
-
-.btn-lhdn:hover {
-  background-color: #0f2952;
-  border-color: #0f2952;
-  color: white;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(26, 58, 108, 0.3);
-}
-
-.btn-lhdn:hover:before {
-  left: 100%;
-}
-
-.btn-lhdn:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 5px rgba(26, 58, 108, 0.2);
-}
-
-.btn-lhdn i {
-  transition: transform 0.3s ease;
-}
-
-.btn-lhdn:hover i {
-  transform: translateX(3px);
-}
 </style>
 {% endblock %}
 
@@ -1669,10 +1628,10 @@
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="card-title-new mb-0">
               RECENT ACTIVITY LOGS
-              <i class="fas fa-info-circle info-icon" data-bs-toggle="tooltip" data-bs-placement="right" title="View recent system activities and user actions"></i>
+              <i class="fas fa-info-circle info-icon" data-bs-toggle="tooltip" data-bs-placement="right" title="View recent system activities and user actions" data-bs-html="true"></i>
             </h5>
             <div class="dropdown">
-              <button class="btn btn-sm btn-light dropdown-toggle" type="button" id="logFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+              <button class="btn btn-sm btn-light dropdown-toggle" type="button" id="logFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false" data-bs-html="true">
                 <i class="fas fa-filter me-1"></i>All
               </button>
               <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="logFilterDropdown">
@@ -1877,73 +1836,9 @@ function generateGradientFromString(str) {
 }
 </script>
 
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-  // Date filter buttons
-  const filterButtons = document.querySelectorAll('.date-filter .btn');
-  filterButtons.forEach(button => {
-    button.addEventListener('click', function() {
-      filterButtons.forEach(btn => btn.classList.remove('active'));
-      this.classList.add('active');
-      // Add your filter logic here
-      loadActivities(this.textContent.toLowerCase());
-    });
-  });
-  
-  // Function to load activities
-  function loadActivities(timeframe) {
-    const container = document.getElementById('activity-log');
-    // Add your API call or data loading logic here
-  }
-  
-  // Optional: Add smooth scroll behavior
-  const container = document.querySelector('.activity-log-container');
-  if (container) {
-    container.addEventListener('scroll', function() {
-      // Add infinite scroll logic here if needed
-    });
-  }
-});
-</script>
 
-<script>
-// Function to toggle loading state
-function toggleLoading(elementId, isLoading) {
-  const element = document.getElementById(elementId);
-  if (isLoading) {
-    element.classList.add('is-loading');
-    element.classList.remove('no-data');
-  } else {
-    element.classList.remove('is-loading');
-  }
-}
 
-// Function to show no data state
-function showNoData(elementId) {
-  const element = document.getElementById(elementId);
-  element.classList.remove('is-loading');
-  element.classList.add('no-data');
-}
 
-// Example usage in your existing code:
-document.addEventListener('DOMContentLoaded', function() {
-  // For activity log
-  toggleLoading('activity-log', true);
-  // Simulate loading
-  setTimeout(() => {
-    const hasData = false; // This should be based on your actual data check
-    if (hasData) {
-      toggleLoading('activity-log', false);
-    } else {
-      showNoData('activity-log');
-    }
-  }, 1500);
-
-  // For chart
-  toggleLoading('stackedBarChart', true);
-  // Your existing chart loading logic...
-});
-</script>
 
 
 {% endblock %}

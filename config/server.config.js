@@ -3,18 +3,19 @@ const fs = require('fs');
 const authConfig = require('./auth.config');
 
 const sessionConfig = {
-  secret: authConfig.session.secret,
-  resave: false,
-  saveUninitialized: false,
+  secret: process.env.SESSION_SECRET || authConfig.session.secret,
+  resave: true,
+  saveUninitialized: true,
   name: 'connect.sid',
-  proxy: false, // Trust the reverse proxy
+  proxy: process.env.TRUST_PROXY === 'true',
   cookie: {
-    httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    secure: process.env.SECURE_COOKIE === 'true',
     sameSite: 'lax',
-    maxAge: authConfig.session.cookie.maxAge
+    maxAge: parseInt(process.env.COOKIE_MAX_AGE) || authConfig.session.cookie.maxAge,
+    path: '/'
   },
-  rolling: false // Refresh cookie on each request
+  rolling: true
 };
 
 module.exports = {

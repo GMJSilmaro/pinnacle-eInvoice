@@ -824,10 +824,7 @@ body.swal2-shown {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.bs-tooltip-auto[data-popper-placement^=top] .tooltip-arrow::before, 
-.bs-tooltip-top .tooltip-arrow::before {
-    border-top-color: #405189;
-}
+
 
 /* Responsive adjustments */
 @media (max-width: 768px) {

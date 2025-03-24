@@ -59,4 +59,13 @@ router.get('/company-profile', auth.isAdmin, (req, res) => {
   });
 });
 
+// TIN Validator - Simple standalone page for validating TINs
+router.get('/tin-validator', auth.middleware, (req, res) => {
+  res.render('tin-validator.html', {
+    title: 'TIN Validator',
+    user: req.session.user || null,
+    layout: false // No layout - standalone page
+  });
+});
+
 module.exports = router; 
