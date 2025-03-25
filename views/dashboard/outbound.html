@@ -4,6 +4,9 @@
 
 <title>Outbound - eInvoice Portal</title>
 
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -1355,6 +1358,42 @@
   transform: translateX(3px);
 }
 
+/* Consolidation Header Styles */
+#consolidationHeader {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+#consolidationHeader:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+#consolidationDetails {
+    transition: all 0.3s ease-in-out;
+}
+
+#consolidationDetails.collapse:not(.show) {
+    display: none;
+}
+
+#consolidationDetails.collapsing {
+    height: 0;
+    overflow: hidden;
+}
+
+.toggle-icon {
+    transition: transform 0.3s ease;
+}
+
+#toggleConsolidation[aria-expanded="true"] .toggle-icon {
+    transform: rotate(180deg);
+}
+
 </style>
 
 {% endblock %}
@@ -1988,8 +2027,8 @@
                                 </div>
                             </div>
 
-                            <div class="d-flex align-items-center justify-content-between mb-3 clickable-header" 
-                                 style="cursor: pointer; transition: all 0.2s ease; background: #f8f9fa; padding: 1rem; border-radius: 8px; border: 1px solid #e9ecef;">
+                            <div class="d-flex align-items-center justify-content-between mb-3" 
+                                 id="consolidationHeader">
                                 <div class="d-flex align-items-center">
                                     <span class="badge rounded-pill bg-primary me-2" style="padding: 8px;" data-bs-toggle="tooltip" title="Consolidation allows grouping multiple invoices into a single submission">
                                         <i class="bi bi-boxes"></i>
@@ -2018,28 +2057,20 @@
                                         <i class="bi bi-file-pdf fs-5"></i>
                                         <span class="ms-1 small">LHDN Guidelines</span>
                                     </a>
-                                    <button class="btn btn-sm btn-link text-primary p-0 d-flex align-items-center toggle-btn" 
+                                    <button class="btn btn-sm btn-link text-primary p-0 d-flex align-items-center" 
                                             type="button" 
+                                            id="toggleConsolidation"
                                             data-bs-toggle="collapse" 
                                             data-bs-target="#consolidationDetails" 
                                             aria-expanded="false" 
-                                            aria-controls="consolidationDetails"
-                                            data-bs-toggle="tooltip"
-                                            data-bs-html="true"
-                                            title="<div class='p-2'>
-                                                    <strong>Consolidation Requirements:</strong><br>
-                                                    • View detailed formatting guidelines<br>
-                                                    • Check buyer information requirements<br>
-                                                    • Review receipt number formatting
-                                                  </div>">
+                                            aria-controls="consolidationDetails">
                                         <i class="bi bi-chevron-down toggle-icon fs-5"></i>
-                                        
                                     </button>
                                 </div>
                             </div>
 
                             <div class="collapse" id="consolidationDetails">
-                                <div class="consolidation-content">
+                                <div class="consolidation-content bg-white p-3 border rounded mt-2">
                                     <div class="row g-3">
                                         <!-- Buyer's Details -->
                                         <div class="col-md-6">
@@ -2103,45 +2134,64 @@
 
                         <script>
                             document.addEventListener('DOMContentLoaded', function() {
-                                const toggleBtn = document.querySelector('[data-bs-toggle="collapse"]');
-                                const clickableHeader = document.querySelector('.clickable-header');
+                                // Get the consolidation elements
+                                const toggleBtn = document.getElementById('toggleConsolidation');
+                                const consolidationHeader = document.getElementById('consolidationHeader');
+                                const consolidationDetails = document.getElementById('consolidationDetails');
                                 
-                                // Add hover effect to the entire header
-                                clickableHeader.addEventListener('mouseenter', function() {
-                                    this.style.transform = 'translateY(-2px)';
-                                    this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
-                                });
-                                
-                                clickableHeader.addEventListener('mouseleave', function() {
-                                    this.style.transform = 'translateY(0)';
-                                    this.style.boxShadow = 'none';
-                                });
+                                if (toggleBtn && consolidationDetails) {
+                                    // Initialize collapse
+                                    const bsCollapse = new bootstrap.Collapse(consolidationDetails, {
+                                        toggle: false
+                                    });
+                                    
+                                    // Add hover effects to header
+                                    consolidationHeader.addEventListener('mouseenter', function() {
+                                        this.style.transform = 'translateY(-2px)';
+                                        this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+                                        this.style.cursor = 'pointer';
+                                    });
+                                    
+                                    consolidationHeader.addEventListener('mouseleave', function() {
+                                        this.style.transform = 'translateY(0)';
+                                        this.style.boxShadow = 'none';
+                                    });
 
-                                // Make the entire header trigger the collapse
-                                clickableHeader.addEventListener('click', function(e) {
-                                    if (!e.target.closest('a')) { // Prevent triggering when clicking the PDF link
-                                        toggleBtn.click();
+                                    // Handle header click
+                                    consolidationHeader.addEventListener('click', function(e) {
+                                        // Don't trigger if clicking the PDF link or its children
+                                        if (!e.target.closest('a') && !e.target.closest('button')) {
+                                            bsCollapse.toggle();
+                                        }
+                                    });
+
+                                    // Handle toggle button click
+                                    toggleBtn.addEventListener('click', function(e) {
+                                        e.stopPropagation(); // Prevent event bubbling
+                                        bsCollapse.toggle();
+                                    });
+
+                                    // Handle collapse events
+                                    consolidationDetails.addEventListener('show.bs.collapse', function () {
+                                        const icon = toggleBtn.querySelector('.toggle-icon');
+                                        if (icon) {
+                                            icon.style.transform = 'rotate(180deg)';
+                                        }
+                                    });
+
+                                    consolidationDetails.addEventListener('hide.bs.collapse', function () {
+                                        const icon = toggleBtn.querySelector('.toggle-icon');
+                                        if (icon) {
+                                            icon.style.transform = 'rotate(0deg)';
+                                        }
+                                    });
+
+                                    // Add transition to icon
+                                    const icon = toggleBtn.querySelector('.toggle-icon');
+                                    if (icon) {
+                                        icon.style.transition = 'transform 0.3s ease';
                                     }
-                                });
-
-                                toggleBtn.addEventListener('click', function() {
-                                    const isCollapsed = this.getAttribute('aria-expanded') === 'false';
-                                    this.setAttribute('aria-expanded', isCollapsed);
-                                    const icon = this.querySelector('.toggle-icon');
-                                    icon.style.transition = 'transform 0.3s ease';
-                                    icon.style.transform = isCollapsed ? 'rotate(180deg)' : 'rotate(0)';
-                                });
-
-                                // Add hover effect for PDF link
-                                const pdfLink = document.querySelector('.hover-effect');
-                                pdfLink.addEventListener('mouseenter', function() {
-                                    this.style.transform = 'scale(1.1)';
-                                    this.style.transition = 'transform 0.2s ease';
-                                });
-                                
-                                pdfLink.addEventListener('mouseleave', function() {
-                                    this.style.transform = 'scale(1)';
-                                });
+                                }
                             });
                         </script>
                         <div class="pagination-container">
