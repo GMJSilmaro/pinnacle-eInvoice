@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', function() {
 // Global variables for user management
 let currentUserId = null;
 let usersTable = null;
+let currentPage = 1;
+let itemsPerPage = 10;
+let totalUsers = 0;
 
 function initializeEventListeners() {
     // Add user form submission
@@ -17,6 +20,11 @@ function initializeEventListeners() {
 
     // Edit user form submission
     document.getElementById('editUserForm')?.addEventListener('submit', handleEditUser);
+
+    // Initialize pagination
+    document.querySelectorAll('.pagination .page-link').forEach(link => {
+        link.addEventListener('click', handlePaginationClick);
+    });
 
     // Load company TINs when modal opens
     document.getElementById('addUserModal')?.addEventListener('show.bs.modal', async function() {
@@ -117,14 +125,46 @@ function initializeEventListeners() {
     }
 }
 
+// Handle pagination click
+function handlePaginationClick(e) {
+    e.preventDefault();
+    
+    const clickedLink = e.currentTarget;
+    const pageText = clickedLink.textContent.trim();
+    
+    // Calculate the target page
+    if (pageText === 'Previous') {
+        if (currentPage > 1) currentPage--;
+    } else if (pageText === 'Next') {
+        if ((currentPage * itemsPerPage) < totalUsers) currentPage++;
+    } else {
+        // Clicked a specific page number
+        currentPage = parseInt(pageText);
+    }
+    
+    // Reload users with the new page
+    loadUsersList();
+}
+
 // Load users list
 async function loadUsersList() {
     try {
-        const response = await fetch('/api/user/users-list');
+        // Show loading indicator
+        const tbody = document.getElementById('usersTableBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading users...</td></tr>';
+        }
+        
+        // Fetch users with pagination params
+        const response = await fetch(`/api/user/users-list?page=${currentPage}&limit=${itemsPerPage}`);
         if (!response.ok) throw new Error('Failed to fetch users');
         
-        const users = await response.json();
+        const result = await response.json();
+        const users = result.users || [];
+        totalUsers = result.totalCount || users.length;
+        
         displayUsers(users);
+        updatePagination();
     } catch (error) {
         console.error('Error loading users:', error);
         showToast('error', 'Failed to load users list');
@@ -175,77 +215,136 @@ function displayUsers(users) {
     });
 }
 
+// Update pagination UI
+function updatePagination() {
+    const paginationElement = document.querySelector('.pagination');
+    if (!paginationElement) return;
+    
+    // Calculate total pages
+    const totalPages = Math.max(1, Math.ceil(totalUsers / itemsPerPage));
+    
+    // Create pagination HTML
+    let paginationHTML = '';
+    
+    // Previous button
+    paginationHTML += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" tabindex="-1">Previous</a>
+        </li>
+    `;
+    
+    // Page numbers
+    const maxVisiblePages = 5;
+    const startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    
+    for (let i = startPage; i <= endPage; i++) {
+        paginationHTML += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#">${i}</a>
+            </li>
+        `;
+    }
+    
+    // Next button
+    paginationHTML += `
+        <li class="page-item ${currentPage >= totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#">Next</a>
+        </li>
+    `;
+    
+    paginationElement.innerHTML = paginationHTML;
+    
+    // Add event listeners to new pagination elements
+    document.querySelectorAll('.pagination .page-link').forEach(link => {
+        link.addEventListener('click', handlePaginationClick);
+    });
+}
+
 // Add new user
 async function handleAddUser(e) {
     e.preventDefault();
 
-    // Get form data
-    const formData = {
-        fullName: document.getElementById('newUserName').value.trim(),
-        email: document.getElementById('newUserEmail').value.trim(),
-        username: document.getElementById('newUserUsername').value.trim(),
-        password: generateTemporaryPassword(),
-        userType: document.getElementById('newUserRole').value,
-        // Properly handle TIN based on which input is visible
-        TIN: document.getElementById('newUserTIN').style.display !== 'none' 
-            ? document.getElementById('newUserTIN').value 
-            : document.getElementById('newUserCustomTIN').value,
-        IDType: document.getElementById('newUserIDType').value,
-        IDValue: document.getElementById('newUserIDValue').value,
-        phone: document.getElementById('newUserPhone').value.trim(),
-        admin: document.getElementById('newUserRole').value === 'admin' ? 1 : 0,
-        validStatus: '1',
-        twoFactorEnabled: document.getElementById('newUserTwoFactor').checked,
-        notificationsEnabled: document.getElementById('newUserNotifications').checked,
-        createTS: new Date().toISOString(),
-        lastLoginTime: null,
-        profilePicture: null // Default profile picture will be handled by the server
-    };
-
-    // Additional validation for TIN and ID fields
-    if (formData.TIN) {
-        formData.TIN = formData.TIN.trim().toUpperCase(); // Ensure TIN is uppercase
-    }
-
-    if (formData.IDType && !formData.IDValue) {
-        showToast('error', 'Please provide an ID Value when ID Type is selected');
-        return;
-    }
-
-    if (!formData.IDType && formData.IDValue) {
-        showToast('error', 'Please select an ID Type when providing an ID Value');
-        return;
-    }
-
-    // Validate required fields
-    const requiredFields = ['fullName', 'email', 'username'];
-    const missingFields = requiredFields.filter(field => !formData[field]);
-    
-    if (missingFields.length > 0) {
-        showToast('error', `Please fill in all required fields: ${missingFields.join(', ')}`);
-        return;
-    }
-
-    // Validate email format
-    if (!isValidEmail(formData.email)) {
-        showToast('error', 'Please enter a valid email address');
-        return;
-    }
+    // Get the button that was clicked
+    const submitButton = e.target.querySelector('button[type="submit"]') || 
+                        document.querySelector('#addUserModal .modal-footer button.btn-primary');
+    const originalText = submitButton ? submitButton.innerHTML : '<i class="fas fa-plus"></i> Create User';
 
     try {
+        if (submitButton) {
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+            submitButton.disabled = true;
+        }
+
+        // Get form data
+        const formData = {
+            fullName: document.getElementById('newUserName').value.trim(),
+            email: document.getElementById('newUserEmail').value.trim(),
+            username: document.getElementById('newUserUsername').value.trim(),
+            password: generateTemporaryPassword(), // Generate a temporary password
+            userType: document.getElementById('newUserRole').value,
+            // TIN handling - this can be null
+            TIN: document.getElementById('newUserTIN')?.value || 
+                 document.getElementById('newUserCustomTIN')?.value || null,
+            IDType: document.getElementById('newUserIDType')?.value || null,
+            IDValue: document.getElementById('newUserIDValue')?.value || null,
+            phone: document.getElementById('newUserPhone')?.value || null,
+            // Admin will be based on role selection
+            admin: document.getElementById('newUserRole').value === 'admin' ? 1 : 0,
+            validStatus: '1', // Default to active user
+            // Security settings
+            twoFactorEnabled: document.getElementById('newUserTwoFactor')?.checked || false,
+            notificationsEnabled: document.getElementById('newUserNotifications')?.checked || true,
+            // Let the server handle dates
+        };
+
+        // Additional validation for TIN and ID fields
+        if (formData.TIN) {
+            formData.TIN = formData.TIN.trim().toUpperCase(); // Ensure TIN is uppercase
+        }
+
+        if (formData.IDType && !formData.IDValue) {
+            showToast('error', 'Please provide an ID Value when ID Type is selected');
+            return;
+        }
+
+        if (!formData.IDType && formData.IDValue) {
+            showToast('error', 'Please select an ID Type when providing an ID Value');
+            return;
+        }
+
+        // Validate required fields
+        const requiredFields = ['fullName', 'email', 'username'];
+        const missingFields = requiredFields.filter(field => !formData[field]);
+        
+        if (missingFields.length > 0) {
+            showToast('error', `Please fill in all required fields: ${missingFields.join(', ')}`);
+            // Reset button state
+            if (submitButton) {
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            }
+            return;
+        }
+
+        // Validate email format
+        if (!isValidEmail(formData.email)) {
+            showToast('error', 'Please enter a valid email address');
+            // Reset button state
+            if (submitButton) {
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            }
+            return;
+        }
+
         const response = await fetch('/api/user/users-add', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            body: JSON.stringify({
-                ...formData,
-                // Ensure these fields are properly formatted for the database
-                TIN: formData.TIN || null,
-                IDType: formData.IDType || null,
-                IDValue: formData.IDValue || null
-            })
+            body: JSON.stringify(formData)
         });
 
         const data = await response.json();
@@ -256,10 +355,10 @@ async function handleAddUser(e) {
             addUserModal.hide();
 
             // Show success message
-            showToast('success', 'User added successfully');
+            showToast('success', `<strong>User "${formData.username}"</strong> added successfully!`);
 
             // Show the temporary password
-            showPasswordModal(formData.email, formData.password);
+            showPasswordModal(formData.email, formData.password, formData.username);
 
             // Reset form
             document.getElementById('addUserForm').reset();
@@ -271,7 +370,13 @@ async function handleAddUser(e) {
         }
     } catch (error) {
         console.error('Error adding user:', error);
-        showToast('error', 'Failed to add user');
+        showToast('error', 'Failed to add user: ' + (error.message || 'Unknown error'));
+    } finally {
+        // Always reset button state, regardless of success or failure
+        if (submitButton) {
+            submitButton.innerHTML = originalText;
+            submitButton.disabled = false;
+        }
     }
 }
 
@@ -279,6 +384,17 @@ async function handleAddUser(e) {
 function isValidEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+}
+
+// Format date for SQL Server
+function formatDateForSQL(date) {
+    // Format as YYYY-MM-DD HH:MM:SS
+    return date.getFullYear() + '-' + 
+           String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+           String(date.getDate()).padStart(2, '0') + ' ' + 
+           String(date.getHours()).padStart(2, '0') + ':' + 
+           String(date.getMinutes()).padStart(2, '0') + ':' + 
+           String(date.getSeconds()).padStart(2, '0');
 }
 
 // Add this function to load company TINs
@@ -327,62 +443,21 @@ async function editUser(userId) {
                             <form id="editUserForm" class="modal-form-container">
                                 <input type="hidden" id="editUserId" value="${userId}">
                                 
-                                <!-- Basic Information -->
+                                <!-- User Information -->
                                 <div class="form-group">
-                                    <label for="editUserName" class="form-label required">Full Name</label>
-                                    <input type="text" class="form-control" id="editUserName" value="${escapeHtml(userData.FullName)}" required minlength="2" maxlength="100">
+                                    <label for="editUserFullName" class="form-label required">Full Name</label>
+                                    <input type="text" class="form-control" id="editUserFullName" value="${escapeHtml(userData.FullName)}" required minlength="2" maxlength="100">
                                 </div>
 
+                                <div class="form-group">
+                                    <label for="editUserUsername" class="form-label">Username</label>
+                                    <input type="text" class="form-control" id="editUserUsername" value="${escapeHtml(userData.Username || '')}" readonly>
+                                </div>
+
+                                <!-- Editable Fields -->
                                 <div class="form-group">
                                     <label for="editUserEmail" class="form-label required">Email Address</label>
                                     <input type="email" class="form-control" id="editUserEmail" value="${escapeHtml(userData.Email)}" required pattern="[^@\\s]+@[^@\\s]+\\.[^@\\s]+" maxlength="255">
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="editUserPhone" class="form-label">Phone Number</label>
-                                    <input type="tel" class="form-control" id="editUserPhone" value="${escapeHtml(userData.Phone || '')}" pattern="[0-9+()\\-\\s]+" maxlength="20">
-                                    <small class="text-muted">Include country code (e.g., +1234567890)</small>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="editUserRole" class="form-label required">Role</label>
-                                    <select class="form-select" id="editUserRole" required>
-                                        <option value="">Select Role</option>
-                                        <option value="admin" ${userData.Admin ? 'selected' : ''}>Administrator</option>
-                                        <option value="user" ${!userData.Admin ? 'selected' : ''}>Regular User</option>
-                                    </select>
-                                </div>
-
-                                <!-- Company Information -->
-                                <div class="form-group">
-                                    <label for="editUserTIN" class="form-label">Company TIN</label>
-                                    <div class="input-group">
-                                        <select class="form-select" id="editUserTIN">
-                                            <option value="">Select Company TIN</option>
-                                            <!-- Will be populated dynamically -->
-                                        </select>
-                                        <input type="text" class="form-control" id="editUserCustomTIN" placeholder="Or enter custom TIN" style="display: none;" pattern="[A-Z0-9\\-]+" maxlength="50" value="${escapeHtml(userData.TIN || '')}">
-                                        <button class="btn btn-outline-secondary" type="button" onclick="toggleTINInput('edit')">
-                                            <i class="fas fa-exchange-alt"></i>
-                                        </button>
-                                    </div>
-                                    <small class="text-muted">Select from existing companies or enter a new one</small>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="editUserIDType" class="form-label">ID Type</label>
-                                    <select class="form-select" id="editUserIDType">
-                                        <option value="">Select ID Type</option>
-                                        <option value="BRN" ${userData.IDType === 'BRN' ? 'selected' : ''}>BRN</option>
-                                        <option value="Passport" ${userData.IDType === 'Passport' ? 'selected' : ''}>Passport</option>
-                                        <option value="National ID" ${userData.IDType === 'National ID' ? 'selected' : ''}>National ID</option>
-                                        <option value="Driver's License" ${userData.IDType === "Driver's License" ? 'selected' : ''}>Driver's License</option>
-                                    </select>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="editUserIDValue" class="form-label">ID Value</label>
-                                    <input type="text" class="form-control" id="editUserIDValue" value="${escapeHtml(userData.IDValue || '')}" pattern="[A-Z0-9\\-]+" maxlength="50">
                                 </div>
 
                                 <!-- Password Change Section -->
@@ -404,19 +479,6 @@ async function editUser(userId) {
                                         </button>
                                     </div>
                                     <small class="text-muted">Minimum 8 characters, must include uppercase, lowercase, number, and special character</small>
-                                </div>
-
-                                <!-- Security Settings -->
-                                <div class="form-group">
-                                    <label class="form-label d-block">Security Settings</label>
-                                    <div class="form-check form-switch">
-                                        <input type="checkbox" class="form-check-input" id="editUserTwoFactor" ${userData.TwoFactorEnabled ? 'checked' : ''}>
-                                        <label class="form-check-label" for="editUserTwoFactor">Enable Two-Factor Authentication</label>
-                                    </div>
-                                    <div class="form-check form-switch mt-2">
-                                        <input type="checkbox" class="form-check-input" id="editUserNotifications" ${userData.NotificationsEnabled ? 'checked' : ''}>
-                                        <label class="form-check-label" for="editUserNotifications">Enable Notifications</label>
-                                    </div>
                                 </div>
                             </form>
                         </div>
@@ -442,12 +504,6 @@ async function editUser(userId) {
         // Initialize and show the modal
         const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
         modal.show();
-
-        // If custom TIN is being used, switch to custom TIN input
-        if (userData.TIN && !document.querySelector(`#editUserTIN option[value="${userData.TIN}"]`)) {
-            toggleTINInput('edit');
-            document.getElementById('editUserCustomTIN').value = userData.TIN;
-        }
     } catch (error) {
         console.error('Error fetching user details:', error);
         showToast('error', 'Failed to load user details');
@@ -460,19 +516,14 @@ async function handleEditUser(e) {
 
     const userId = document.getElementById('editUserId').value;
     const password = document.getElementById('editUserPassword').value;
-    const tinSelect = document.getElementById('editUserTIN');
-    const customTIN = document.getElementById('editUserCustomTIN');
+    const email = document.getElementById('editUserEmail').value.trim();
+    
+    // Get the original full name for passing to backend
+    const fullName = document.getElementById('editUserFullName').value.trim();
 
     const formData = {
-        fullName: document.getElementById('editUserName').value.trim(),
-        email: document.getElementById('editUserEmail').value.trim(),
-        phone: document.getElementById('editUserPhone').value.trim(),
-        tin: tinSelect.style.display !== 'none' ? tinSelect.value : customTIN.value,
-        idType: document.getElementById('editUserIDType').value,
-        idValue: document.getElementById('editUserIDValue').value.trim(),
-        admin: document.getElementById('editUserRole').value === 'admin' ? 1 : 0,
-        twoFactorEnabled: document.getElementById('editUserTwoFactor').checked,
-        notificationsEnabled: document.getElementById('editUserNotifications').checked
+        email: email,
+        fullName: fullName // Add fullName to the form data
     };
 
     // Only include password if it was changed
@@ -480,26 +531,28 @@ async function handleEditUser(e) {
         formData.password = password;
     }
 
-    // Additional validation for TIN and ID fields
-    if (formData.idType && !formData.idValue) {
-        showToast('error', 'Please provide an ID Value when ID Type is selected');
-        return;
-    }
-
-    if (!formData.idType && formData.idValue) {
-        showToast('error', 'Please select an ID Type when providing an ID Value');
-        return;
-    }
+    // Clear any existing validation messages
+    clearValidationMessages();
 
     // Validate required fields
-    if (!formData.fullName || !formData.email) {
-        showToast('error', 'Please fill in all required fields');
+    let hasErrors = false;
+    if (!email) {
+        showValidationError('editUserEmail', 'Email address is required');
+        hasErrors = true;
+    }
+    
+    if (!fullName) {
+        showValidationError('editUserFullName', 'Full Name is required');
+        hasErrors = true;
+    }
+
+    if (hasErrors) {
         return;
     }
 
     // Validate email format
-    if (!isValidEmail(formData.email)) {
-        showToast('error', 'Please enter a valid email address');
+    if (!isValidEmail(email)) {
+        showValidationError('editUserEmail', 'Please enter a valid email address');
         return;
     }
 
@@ -510,13 +563,7 @@ async function handleEditUser(e) {
                 'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            body: JSON.stringify({
-                ...formData,
-                // Ensure these fields are properly formatted for the database
-                TIN: formData.tin || null,
-                IDType: formData.idType || null,
-                IDValue: formData.idValue || null
-            })
+            body: JSON.stringify(formData)
         });
 
         const data = await response.json();
@@ -531,17 +578,98 @@ async function handleEditUser(e) {
 
             // If password was changed, show it in a modal
             if (password) {
-                showPasswordModal(formData.email, password);
+                showPasswordModal(email, password);
             }
 
             // Reload users list
             loadUsersList();
         } else {
-            showToast('error', data.message || 'Failed to update user');
+            // Display error message in modal
+            showModalError(data.message || 'Failed to update user');
         }
     } catch (error) {
         console.error('Error updating user:', error);
-        showToast('error', 'Failed to update user');
+        showModalError('Failed to update user');
+    }
+}
+
+// Display validation error under the field
+function showValidationError(fieldId, message) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    
+    // Remove any existing error for this field
+    clearValidationError(fieldId);
+    
+    // Create error message element
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'invalid-feedback d-block';
+    errorDiv.textContent = message;
+    errorDiv.id = `${fieldId}-error`;
+    
+    // Add error class to input
+    field.classList.add('is-invalid');
+    
+    // Insert error after the field
+    field.parentNode.appendChild(errorDiv);
+}
+
+// Clear validation error for a field
+function clearValidationError(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    
+    field.classList.remove('is-invalid');
+    
+    const errorEl = document.getElementById(`${fieldId}-error`);
+    if (errorEl) {
+        errorEl.remove();
+    }
+}
+
+// Clear all validation messages in the form
+function clearValidationMessages() {
+    const form = document.getElementById('editUserForm');
+    if (!form) return;
+    
+    // Remove is-invalid class from all fields
+    form.querySelectorAll('.is-invalid').forEach(field => {
+        field.classList.remove('is-invalid');
+    });
+    
+    // Remove all error messages
+    form.querySelectorAll('.invalid-feedback').forEach(msg => {
+        msg.remove();
+    });
+    
+    // Remove any modal error alert
+    const modalError = document.getElementById('modal-error-alert');
+    if (modalError) {
+        modalError.remove();
+    }
+}
+
+// Show error message in modal
+function showModalError(message) {
+    // Clear any existing error
+    const existingError = document.getElementById('modal-error-alert');
+    if (existingError) {
+        existingError.remove();
+    }
+    
+    // Create error alert
+    const errorAlert = document.createElement('div');
+    errorAlert.className = 'alert alert-danger text-center mt-3';
+    errorAlert.id = 'modal-error-alert';
+    errorAlert.innerHTML = `<i class="fas fa-exclamation-circle me-2"></i>${message}`;
+    
+    // Add to modal body
+    const modalBody = document.querySelector('#editUserModal .modal-body');
+    if (modalBody) {
+        modalBody.appendChild(errorAlert);
+    } else {
+        // Fallback to toast if modal body not found
+        showToast('error', message);
     }
 }
 
@@ -616,18 +744,35 @@ function generateUsername(fullName) {
         .substring(0, 8) + Math.floor(Math.random() * 1000);
 }
 
+// Generate temporary password
 function generateTemporaryPassword() {
     const length = 12;
-    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-    let password = "";
-    for (let i = 0; i < length; i++) {
-        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    const uppercaseChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const lowercaseChars = "abcdefghijklmnopqrstuvwxyz";
+    const numericChars = "0123456789";
+    const specialChars = "!@#$%^&*";
+    const allChars = uppercaseChars + lowercaseChars + numericChars + specialChars;
+    
+    // Ensure at least one of each character type
+    let password = 
+        uppercaseChars.charAt(Math.floor(Math.random() * uppercaseChars.length)) +
+        lowercaseChars.charAt(Math.floor(Math.random() * lowercaseChars.length)) +
+        numericChars.charAt(Math.floor(Math.random() * numericChars.length)) +
+        specialChars.charAt(Math.floor(Math.random() * specialChars.length));
+    
+    // Fill the rest with random characters
+    for (let i = 4; i < length; i++) {
+        password += allChars.charAt(Math.floor(Math.random() * allChars.length));
     }
-    return password;
+    
+    // Shuffle the password
+    return password.split('').sort(() => 0.5 - Math.random()).join('');
 }
 
+// Helper utility to escape HTML special characters
 function escapeHtml(unsafe) {
     return unsafe
+        .toString()
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -656,9 +801,35 @@ function showToast(type, message) {
         document.body.appendChild(toastContainer);
     }
 
-    // Create toast element
+    // Generate a unique ID for this toast
+    const toastId = 'toast-' + Date.now();
+
+    // Choose appropriate styling based on type
+    let bgClass, iconClass;
+    switch (type) {
+        case 'success':
+            bgClass = 'bg-success';
+            iconClass = 'fas fa-check-circle';
+            break;
+        case 'error':
+            bgClass = 'bg-danger';
+            iconClass = 'fas fa-exclamation-circle';
+            break;
+        case 'warning':
+            bgClass = 'bg-warning';
+            iconClass = 'fas fa-exclamation-triangle';
+            break;
+        case 'info':
+        default:
+            bgClass = 'bg-info';
+            iconClass = 'fas fa-info-circle';
+            break;
+    }
+
+    // Create toast element with improved styling
     const toastEl = document.createElement('div');
-    toastEl.className = `toast align-items-center text-white bg-${type === 'success' ? 'success' : 'danger'} border-0`;
+    toastEl.id = toastId;
+    toastEl.className = `toast align-items-center text-white ${bgClass} border-0 mb-2`;
     toastEl.setAttribute('role', 'alert');
     toastEl.setAttribute('aria-live', 'assertive');
     toastEl.setAttribute('aria-atomic', 'true');
@@ -666,6 +837,7 @@ function showToast(type, message) {
     toastEl.innerHTML = `
         <div class="d-flex">
             <div class="toast-body">
+                <i class="${iconClass} me-2"></i>
                 ${message}
             </div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
@@ -679,13 +851,17 @@ function showToast(type, message) {
     const toast = new bootstrap.Toast(toastEl, {
         animation: true,
         autohide: true,
-        delay: 3000
+        delay: 4000
     });
     toast.show();
 
-    // Remove toast element after it's hidden
+    // Remove toast element after it's hidden to prevent DOM clutter
     toastEl.addEventListener('hidden.bs.toast', () => {
         toastEl.remove();
+        // If container is empty, remove it too
+        if (toastContainer.children.length === 0) {
+            toastContainer.remove();
+        }
     });
 }
 
@@ -777,68 +953,142 @@ async function viewDetails(userId) {
 }
 
 // Show temporary password modal
-function showPasswordModal(email, password) {
+function showPasswordModal(email, password, username = null) {
+    // First check if there's already a modal instance and dispose it
+    const existingModal = bootstrap.Modal.getInstance(document.getElementById('tempPasswordModal'));
+    if (existingModal) {
+        existingModal.dispose();
+    }
+    
+    // Initialize a new modal
     const modal = new bootstrap.Modal(document.getElementById('tempPasswordModal'));
     const modalBody = document.querySelector('#tempPasswordModal .modal-body');
     
+    // Extract username from email if not provided
+    const usernameDisplay = username || email.split('@')[0];
+    
     modalBody.innerHTML = `
-        <div class="alert alert-warning">
-            <strong>Important!</strong> Please save or send these credentials securely.
+        <div class="alert alert-warning mb-4">
+            <strong><i class="fas fa-exclamation-triangle me-2"></i>Important!</strong> 
+            Please save or send these credentials securely.
         </div>
-        <div class="credentials-container">
-            <div class="credential-item">
-                <label>Email:</label>
-                <span>${escapeHtml(email)}</span>
-            </div>
-            <div class="credential-item">
-                <label>Temporary Password:</label>
-                <div class="password-display">
-                    <code>${escapeHtml(password)}</code>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard('${password}')">
-                        <i class="fas fa-copy"></i>
-                    </button>
+        
+        <div class="card credential-card mb-3 shadow-sm">
+            <div class="card-body p-4">
+                <div class="mb-3">
+                    <label class="fw-bold mb-2">Username:</label>
+                    <div class="p-3 bg-light rounded border fw-bold">${escapeHtml(usernameDisplay)}</div>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="fw-bold mb-2">Email:</label>
+                    <div class="p-3 bg-light rounded border">${escapeHtml(email)}</div>
+                </div>
+                
+                <div>
+                    <label class="fw-bold  mb-2">Temporary Password:</label>
+                    <div class="d-flex align-items-center password-display p-3 bg-light rounded border">
+                        <code id="passwordText" class="flex-grow-1 fs-5">${escapeHtml(password)}</code>
+                       
+                    </div>
                 </div>
             </div>
         </div>
+        
+        <div class="text-center">
+            <p class="text-muted fst-italic">The user can change this password after logging in</p>
+        </div>
     `;
     
+    // Show the modal
     modal.show();
-}
-
-// Copy to clipboard utility
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        showToast('success', 'Copied to clipboard');
-    }).catch(() => {
-        showToast('error', 'Failed to copy to clipboard');
-    });
+    
+    // Add event listener to ensure the modal is fully removed from DOM when hidden
+    const tempPasswordModal = document.getElementById('tempPasswordModal');
+    tempPasswordModal.addEventListener('hidden.bs.modal', function() {
+        // Clean up any potential issues
+        document.body.classList.remove('modal-open');
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(backdrop => backdrop.remove());
+        
+        // Re-enable any disabled functionality
+        setTimeout(() => {
+            // Force a reflow after a short delay
+            window.dispatchEvent(new Event('resize'));
+        }, 100);
+    }, {once: true});
 }
 
 // Add this helper function
 function generateUsernameSuggestions(fullName, email) {
     const suggestions = [];
-    const nameParts = fullName.toLowerCase().split(' ');
+    
+    // Handle empty input case
+    if (!fullName.trim()) {
+        if (email && email.includes('@')) {
+            // Just use email username if name is not provided
+            const emailUsername = email.split('@')[0].toLowerCase();
+            suggestions.push(emailUsername);
+            return [...new Set(suggestions.map(s => s.replace(/[^a-z0-9_-]/g, '')))];
+        }
+        return []; // Return empty array if no valid input
+    }
+    
+    // Split and clean name parts
+    const nameParts = fullName.toLowerCase().trim().split(/\s+/).filter(part => part.length > 0);
     
     if (nameParts.length > 0) {
-        // First name + random number
-        suggestions.push(nameParts[0] + Math.floor(Math.random() * 1000));
+        // First name
+        const firstName = nameParts[0];
         
-        // First name + last name (if exists)
-        if (nameParts.length > 1) {
-            suggestions.push(nameParts[0] + nameParts[nameParts.length - 1]);
-            suggestions.push(nameParts[0][0] + nameParts[nameParts.length - 1]);
+        // Last name (if exists)
+        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+        
+        // Add various combinations
+        suggestions.push(firstName); // Just first name
+        
+        if (lastName) {
+            suggestions.push(firstName + lastName); // First + last concatenated
+            suggestions.push(firstName + '.' + lastName); // First.Last
+            suggestions.push(firstName[0] + lastName); // Initial + last
+            suggestions.push(firstName + lastName[0]); // First + last initial
+            
+            // First name + last name + random number (for uniqueness)
+            suggestions.push(firstName + lastName + Math.floor(Math.random() * 100));
+        } else {
+            // Add random number to first name if it's the only name part
+            suggestions.push(firstName + Math.floor(Math.random() * 100));
+            suggestions.push(firstName + Math.floor(Math.random() * 1000));
+        }
+        
+        // Add middle initial if available
+        if (nameParts.length > 2) {
+            const middleInitial = nameParts[1][0];
+            suggestions.push(firstName + middleInitial + lastName);
         }
     }
     
-    // From email if available
-    if (email) {
+    // Add email-based suggestion if available
+    if (email && email.includes('@')) {
         const emailUsername = email.split('@')[0].toLowerCase();
         suggestions.push(emailUsername);
+        
+        // Try email + random number if email is provided
+        if (suggestions.length < 5) {
+            suggestions.push(emailUsername + Math.floor(Math.random() * 100));
+        }
     }
     
-    // Clean up and ensure uniqueness
-    return [...new Set(suggestions.map(s => s.replace(/[^a-z0-9]/g, '')))];
+    // Clean up suggestions: remove special chars, limit length, ensure uniqueness
+    return [...new Set(suggestions.map(s => {
+        // Replace non-alphanumeric chars (except underscore and hyphen)
+        return s.replace(/[^a-z0-9_-]/g, '')
+                .substring(0, 15); // Limit length to 15 chars
+    }))].filter(s => s.length >= 3); // Ensure minimum length
 }
+
+// Make the function globally available
+window.generateUsernameSuggestions = generateUsernameSuggestions;
 
 // Update the toggleTINInput function to handle both add and edit forms
 function toggleTINInput(mode = 'add') {

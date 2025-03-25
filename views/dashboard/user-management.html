@@ -6,6 +6,44 @@
 <link href="/assets/css/pages/settings.css" rel="stylesheet">
 <link href="/assets/css/pages/admin-settings.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<style>
+  /* Custom validation styling */
+  .invalid-feedback {
+    color: #dc3545;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+  }
+  
+  .alert.alert-danger {
+    border-radius: 0.375rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  }
+  
+  #modal-error-alert {
+    margin-top: 1rem;
+    margin-bottom: 0;
+    padding: 0.75rem;
+    font-weight: 500;
+  }
+  
+  .is-invalid {
+    border-color: #dc3545 !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23dc3545' viewBox='0 0 12 12'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23dc3545' stroke='none'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right calc(0.375em + 0.1875rem) center;
+    background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+  }
+  
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+  
+  .required:after {
+    content: " *";
+    color: #dc3545;
+  }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -143,7 +181,7 @@
                   <label for="newUserUsername" class="form-label required">Username</label>
                   <div class="input-group">
                     <input type="text" class="form-control" id="newUserUsername" required minlength="3" maxlength="50" pattern="[a-zA-Z0-9_-]+">
-                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <button class="btn btn-outline-secondary " type="button" data-bs-toggle="dropdown">
                       Suggestions
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end" id="usernameSuggestions">
@@ -169,7 +207,6 @@
                   <select class="form-select" id="newUserRole" required>
                     <option value="">Select Role</option>
                     <option value="admin">Administrator</option>
-                    <option value="user">Regular User</option>
                   </select>
                 </div>
 
@@ -347,40 +384,38 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Edit User</h5>
+        <h5 class="modal-title">
+          <i class="fas fa-user-edit"></i>
+          Edit User
+        </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <form id="editUserForm" class="modal-form-container">
-          <div class="mb-3">
-            <label class="form-label">Full Name</label>
-            <input type="text" class="form-control" id="editUserName" required>
+          <input type="hidden" id="editUserId">
+          
+          <!-- User Information -->
+          <div class="form-group mb-3">
+            <label class="form-label required">Full Name</label>
+            <input type="text" class="form-control" id="editUserFullName" required>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Email Address</label>
+          
+          <div class="form-group mb-3">
+            <label class="form-label">Username</label>
+            <input type="text" class="form-control" id="editUserUsername" readonly>
+          </div>
+          
+          <!-- Editable Fields -->
+          <div class="form-group mb-3">
+            <label class="form-label required">Email Address</label>
             <input type="email" class="form-control" id="editUserEmail" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Role</label>
-            <select class="form-control" id="editUserRole" required>
-              <option value="admin">Administrator</option>
-              <option value="user">Regular User</option>
-              <option value="viewer">Viewer</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Status</label>
-            <select class="form-control" id="editUserStatus">
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
           </div>
           
           <!-- Password Change Section -->
           <div class="form-group">
             <label class="form-label d-flex justify-content-between align-items-center">
               <span>Change Password</span>
-              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generatePassword('editUserPassword')">
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generateNewPassword('editUserPassword')">
                 Generate New Password
               </button>
             </label>
@@ -396,7 +431,9 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="saveUserEdit()">Save Changes</button>
+        <button type="button" class="btn btn-primary" onclick="handleEditUser(event)">
+          <i class="fas fa-save"></i> Save Changes
+        </button>
       </div>
     </div>
   </div>
@@ -492,18 +529,23 @@
 </div>
 
 <!-- Temporary Password Modal -->
-<div class="modal fade" id="tempPasswordModal" tabindex="-1">
-  <div class="modal-dialog">
+<div class="modal fade" id="tempPasswordModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered" style="max-width: 500px;">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">New User Credentials</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      <div class="modal-header bg-navyblue text-white">
+        <h5 class="modal-title">
+          <i class="fas fa-key me-2"></i>
+          New User Credentials
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body px-4 py-4">
         <!-- Content will be dynamically populated -->
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-primary px-4" data-bs-dismiss="modal">
+          <i class="fas fa-check me-2"></i>Done
+        </button>
       </div>
     </div>
   </div>
@@ -512,4 +554,70 @@
 
 {% block scripts %}
 <script src="/assets/js/pages/user-management.js"></script>
+<script>
+  // Initialize username suggestions functionality when the page loads
+  document.addEventListener('DOMContentLoaded', function() {
+    // Handle username suggestions when typing in the name field
+    const nameInput = document.getElementById('newUserName');
+    if (nameInput) {
+      nameInput.addEventListener('input', function() {
+        const fullName = this.value.trim();
+        const email = document.getElementById('newUserEmail')?.value || '';
+        
+        // Use the globally exposed function from user-management.js
+        if (typeof generateUsernameSuggestions === 'function') {
+          const suggestions = generateUsernameSuggestions(fullName, email);
+          populateUsernameSuggestions(suggestions);
+        } else {
+          console.error('Username suggestion function not found');
+        }
+      });
+    }
+
+    // Handle email input as fallback for username suggestions
+    const emailInput = document.getElementById('newUserEmail');
+    if (emailInput) {
+      emailInput.addEventListener('input', function() {
+        const fullName = document.getElementById('newUserName')?.value || '';
+        const email = this.value.trim();
+        
+        // Only generate from email if name is empty
+        if (!fullName && email && typeof generateUsernameSuggestions === 'function') {
+          const suggestions = generateUsernameSuggestions(fullName, email);
+          populateUsernameSuggestions(suggestions);
+        }
+      });
+    }
+
+    // Function to populate the username suggestions dropdown
+    function populateUsernameSuggestions(suggestions) {
+      const dropdown = document.getElementById('usernameSuggestions');
+      if (!dropdown) return;
+      
+      // Clear existing suggestions
+      dropdown.innerHTML = '';
+      
+      // Add new suggestions
+      suggestions.forEach(suggestion => {
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.className = 'dropdown-item';
+        a.href = '#';
+        a.textContent = suggestion;
+        a.onclick = function(e) {
+          e.preventDefault();
+          document.getElementById('newUserUsername').value = suggestion;
+        };
+        li.appendChild(a);
+        dropdown.appendChild(li);
+      });
+      
+      // Set first suggestion if username field is empty
+      const usernameField = document.getElementById('newUserUsername');
+      if (usernameField && !usernameField.value.trim() && suggestions.length > 0) {
+        usernameField.value = suggestions[0];
+      }
+    }
+  });
+</script>
 {% endblock %} 

@@ -64,16 +64,32 @@ const checkAdmin = (req, res, next) => {
 // Get list of all users (admin only)
 router.get('/users-list', checkAdmin, async (req, res) => {
     try {
+        // Parse pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
+        
+        // Get total count for pagination
+        const totalCount = await WP_USER_REGISTRATION.count();
+        
+        // Fetch users with pagination
         const users = await WP_USER_REGISTRATION.findAll({
             attributes: [
                 'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
                 'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
                 'CreateTS', 'LastLoginTime', 'ProfilePicture'
             ],
-            order: [['CreateTS', 'DESC']]
+            order: [['CreateTS', 'DESC']],
+            limit: limit,
+            offset: offset
         });
 
-        res.json(users);
+        res.json({
+            users,
+            totalCount,
+            currentPage: page,
+            totalPages: Math.ceil(totalCount / limit)
+        });
     } catch (error) {
         console.error('Error fetching users:', error);
         res.status(500).json({
@@ -165,14 +181,14 @@ router.post('/users-add', checkAdmin, async (req, res) => {
             TwoFactorEnabled: twoFactorEnabled ? 1 : 0,
             NotificationsEnabled: notificationsEnabled ? 1 : 0,
             ProfilePicture: profilePicture || null,
-            CreateTS: new Date().toISOString(),
-            UpdateTS: new Date().toISOString(),
+            CreateTS: sequelize.literal('GETDATE()'),
+            UpdateTS: sequelize.literal('GETDATE()'),
         });
 
         // Log the action
         await WP_LOGS.create({
             Description: `User ${req.session.user.username} created new user: ${username}`,
-            CreateTS: new Date().toISOString(),
+            CreateTS: sequelize.literal('GETDATE()'),
             LoggedUser: req.session.user.username,
             Action: 'CREATE_USER',
             IPAddress: req.ip
@@ -205,17 +221,22 @@ router.post('/users-add', checkAdmin, async (req, res) => {
 router.put('/users-update/:id', checkAdmin, async (req, res) => {
     try {
         const id = req.params.id;
-        const {
-            fullName, email, phone, password, userType,
-            admin, validStatus = '1', twoFactorEnabled,
-            notificationsEnabled, TIN, IDType, IDValue
-        } = req.body;
+        const { email, fullName, password } = req.body;
 
         // Validate required fields
-        if (!fullName || !email) {
+        if (!email || !fullName) {
             return res.status(400).json({
                 success: false,
                 message: 'Full Name and Email are required'
+            });
+        }
+
+        // Get existing user data to preserve other fields
+        const user = await WP_USER_REGISTRATION.findByPk(id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
             });
         }
 
@@ -234,19 +255,10 @@ router.put('/users-update/:id', checkAdmin, async (req, res) => {
             });
         }
 
-        // Prepare update data
+        // Prepare update data (email, fullName and timestamp)
         const updateData = {
-            FullName: fullName,
             Email: email,
-            Phone: phone || null,
-            TIN: TIN || null,
-            IDType: IDType || null,
-            IDValue: IDValue || null,
-            Admin: admin === '1' || admin === true ? 1 : 0,
-            ValidStatus: validStatus,
-            UserType: userType || null,
-            TwoFactorEnabled: twoFactorEnabled ? 1 : 0,
-            NotificationsEnabled: notificationsEnabled ? 1 : 0,
+            FullName: fullName,
             UpdateTS: sequelize.literal('GETDATE()')
         };
 
@@ -272,8 +284,8 @@ router.put('/users-update/:id', checkAdmin, async (req, res) => {
 
         // Log the update
         await WP_LOGS.create({
-            Description: `Admin ${req.session.user.username} updated user profile id ${id}`,
-            CreateTS: new Date().toISOString(),
+            Description: `Admin ${req.session.user.username} updated user information for id ${id}`,
+            CreateTS: sequelize.literal('GETDATE()'),
             LoggedUser: req.session.user.username,
             Action: 'UPDATE_USER',
             IPAddress: req.ip,
@@ -337,7 +349,7 @@ router.delete('/users-delete/:id', checkAdmin, async (req, res) => {
         // Log the action
         await WP_LOGS.create({
             Description: `User ${req.session.user.username} deleted user: ${user.Username}`,
-            CreateTS: new Date().toISOString(),
+            CreateTS: sequelize.literal('GETDATE()'),
             LoggedUser: req.session.user.username,
             Action: 'DELETE_USER',
             IPAddress: req.ip

@@ -1846,7 +1846,7 @@
 /* rtl:end:remove */
 .text-primary {
   --bs-text-opacity: 1;
-  color: rgba(var(--bs-primary-rgb), var(--bs-text-opacity)) !important;
+  color: rgba(var(--bs-navy-blue-rgb), var(--bs-text-opacity)) !important;
 }
 
 .text-secondary {

@@ -207,7 +207,7 @@ function createChatInterface() {
             </div>
             <div class="chat-messages"></div>
             <div class="chat-input">
-                <div class="input-group">
+                <div class="input-group-chat">
                     <input type="text" id="chat-input" placeholder="Ask about Pinnacle e-Invoice Portal..." aria-label="Chat message input" />
                     <button id="send-message" disabled title="Send message"><i class="fas fa-paper-plane"></i></button>
                 </div>
