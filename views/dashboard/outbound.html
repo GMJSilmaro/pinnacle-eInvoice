@@ -1366,6 +1366,7 @@
     padding: 1rem;
     border-radius: 8px;
     border: 1px solid #e9ecef;
+    user-select: none;
 }
 
 #consolidationHeader:hover {
@@ -1375,6 +1376,7 @@
 
 #consolidationDetails {
     transition: all 0.3s ease-in-out;
+    overflow: hidden;
 }
 
 #consolidationDetails.collapse:not(.show) {
@@ -1383,11 +1385,16 @@
 
 #consolidationDetails.collapsing {
     height: 0;
-    overflow: hidden;
 }
 
-.toggle-icon {
-    transition: transform 0.3s ease;
+#toggleConsolidation {
+    padding: 0.25rem;
+    line-height: 1;
+    border-radius: 4px;
+}
+
+#toggleConsolidation:hover {
+    background-color: rgba(13, 110, 253, 0.1);
 }
 
 #toggleConsolidation[aria-expanded="true"] .toggle-icon {
@@ -2139,8 +2146,8 @@
                                 const consolidationHeader = document.getElementById('consolidationHeader');
                                 const consolidationDetails = document.getElementById('consolidationDetails');
                                 
-                                if (toggleBtn && consolidationDetails) {
-                                    // Initialize collapse
+                                if (toggleBtn && consolidationDetails && consolidationHeader) {
+                                    // Initialize collapse with Bootstrap
                                     const bsCollapse = new bootstrap.Collapse(consolidationDetails, {
                                         toggle: false
                                     });
@@ -2149,7 +2156,6 @@
                                     consolidationHeader.addEventListener('mouseenter', function() {
                                         this.style.transform = 'translateY(-2px)';
                                         this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
-                                        this.style.cursor = 'pointer';
                                     });
                                     
                                     consolidationHeader.addEventListener('mouseleave', function() {
@@ -2159,7 +2165,7 @@
 
                                     // Handle header click
                                     consolidationHeader.addEventListener('click', function(e) {
-                                        // Don't trigger if clicking the PDF link or its children
+                                        // Don't trigger if clicking the PDF link or toggle button
                                         if (!e.target.closest('a') && !e.target.closest('button')) {
                                             bsCollapse.toggle();
                                         }
@@ -2167,12 +2173,14 @@
 
                                     // Handle toggle button click
                                     toggleBtn.addEventListener('click', function(e) {
-                                        e.stopPropagation(); // Prevent event bubbling
+                                        e.preventDefault();
+                                        e.stopPropagation();
                                         bsCollapse.toggle();
                                     });
 
                                     // Handle collapse events
                                     consolidationDetails.addEventListener('show.bs.collapse', function () {
+                                        toggleBtn.setAttribute('aria-expanded', 'true');
                                         const icon = toggleBtn.querySelector('.toggle-icon');
                                         if (icon) {
                                             icon.style.transform = 'rotate(180deg)';
@@ -2180,9 +2188,10 @@
                                     });
 
                                     consolidationDetails.addEventListener('hide.bs.collapse', function () {
+                                        toggleBtn.setAttribute('aria-expanded', 'false');
                                         const icon = toggleBtn.querySelector('.toggle-icon');
                                         if (icon) {
-                                            icon.style.transform = 'rotate(0deg)';
+                                            icon.style.transform = 'rotate(0deg)'; 
                                         }
                                     });
 

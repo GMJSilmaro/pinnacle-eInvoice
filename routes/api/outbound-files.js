@@ -327,7 +327,6 @@ router.get('/list-all', async (req, res) => {
     try {
         console.log('Generating cache key');
         const cacheKey = generateCacheKey();
-        const { forceRefresh } = req.query;
         const { polling } = req.query;
         const realTime = req.query.realTime === 'true';
         
@@ -340,8 +339,8 @@ router.get('/list-all', async (req, res) => {
         });
         console.log('Latest status update:', latestStatusUpdate);
 
-        // Check cache first if not forcing refresh and not in real-time mode
-        if (!forceRefresh && !realTime) {
+        // Check cache first if not in real-time mode
+        if (!realTime) {
             console.log('Checking cache');
             const cachedData = fileCache.get(cacheKey);
             if (cachedData) {
@@ -352,12 +351,12 @@ router.get('/list-all', async (req, res) => {
 
                 try {
                     // Always check for new files when in polling mode
-                    const hasNewFiles = polling || realTime ? 
+                    const hasNewFiles = polling ? 
                         await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : 
                         (cacheAge > maxCacheAge ? await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : false);
                     
                     // Check for status updates
-                    const hasStatusUpdates = realTime || polling ? 
+                    const hasStatusUpdates = polling ? 
                         await checkForStatusUpdates(cachedData.lastStatusUpdate) :
                         (latestStatusUpdate && cachedData.lastStatusUpdate && 
                         new Date(latestStatusUpdate.updated_at) > new Date(cachedData.lastStatusUpdate));
@@ -752,18 +751,56 @@ router.post('/:filename/open', async (req, res) => {
  */
 async function processTypeDirectory(typeDir, type, files, processLog, statusMap) {
     try {
-        await ensureDirectoryExists(typeDir);
-    
-        const companies = await fsPromises.readdir(typeDir);
-        
+        // Check if directory exists
+        try {
+            await fsPromises.access(typeDir, fs.constants.R_OK);
+        } catch (accessError) {
+            console.error(`Cannot access directory ${typeDir}:`, accessError);
+            throw new Error(`Cannot access directory: ${typeDir}. Please check if the directory exists and you have proper permissions.`);
+        }
+
+        // Read directory contents
+        let companies;
+        try {
+            companies = await fsPromises.readdir(typeDir);
+        } catch (readError) {
+            console.error(`Error reading directory ${typeDir}:`, readError);
+            throw new Error(`Failed to read directory contents: ${typeDir}`);
+        }
+
+        if (!companies || companies.length === 0) {
+            console.log(`No companies found in directory: ${typeDir}`);
+            return;
+        }
+
         // Process all companies in parallel for better performance
-        await Promise.all(companies.map(company => {
+        await Promise.all(companies.map(async company => {
             const companyDir = path.join(typeDir, company);
-            return processCompanyDirectory(companyDir, company, type, files, processLog, statusMap);
+            try {
+                const stats = await fsPromises.stat(companyDir);
+                if (!stats.isDirectory()) {
+                    return; // Skip if not a directory
+                }
+                await processCompanyDirectory(companyDir, company, type, files, processLog, statusMap);
+            } catch (companyError) {
+                console.error(`Error processing company ${company}:`, companyError);
+                processLog.details.push({
+                    company,
+                    error: companyError.message,
+                    type: 'COMPANY_PROCESSING_ERROR'
+                });
+                processLog.summary.errors++;
+            }
         }));
     } catch (error) {
         console.error(`Error processing ${type} directory:`, error);
-        await logError(`Error processing ${type} directory`, error);
+        processLog.details.push({
+            directory: typeDir,
+            error: error.message,
+            type: 'DIRECTORY_PROCESSING_ERROR'
+        });
+        processLog.summary.errors++;
+        throw error; // Re-throw to be handled by the main route handler
     }
 }
 
@@ -772,18 +809,57 @@ async function processTypeDirectory(typeDir, type, files, processLog, statusMap)
  */
 async function processCompanyDirectory(companyDir, company, type, files, processLog, statusMap) {
     try {
-        await ensureDirectoryExists(companyDir);
-    
-        const dates = await fsPromises.readdir(companyDir);
-        
+        // Check if directory exists
+        try {
+            await fsPromises.access(companyDir, fs.constants.R_OK);
+        } catch (accessError) {
+            console.error(`Cannot access company directory ${companyDir}:`, accessError);
+            throw new Error(`Cannot access directory: ${companyDir}. Please check if the directory exists and you have proper permissions.`);
+        }
+
+        // Read directory contents
+        let dates;
+        try {
+            dates = await fsPromises.readdir(companyDir);
+        } catch (readError) {
+            console.error(`Error reading company directory ${companyDir}:`, readError);
+            throw new Error(`Failed to read company directory contents: ${companyDir}`);
+        }
+
+        if (!dates || dates.length === 0) {
+            console.log(`No dates found in company directory: ${companyDir}`);
+            return;
+        }
+
         // Process all dates in parallel for better performance
-        await Promise.all(dates.map(date => {
+        await Promise.all(dates.map(async date => {
             const dateDir = path.join(companyDir, date);
-            return processDateDirectory(dateDir, date, company, type, files, processLog, statusMap);
+            try {
+                const stats = await fsPromises.stat(dateDir);
+                if (!stats.isDirectory()) {
+                    return; // Skip if not a directory
+                }
+                await processDateDirectory(dateDir, date, company, type, files, processLog, statusMap);
+            } catch (dateError) {
+                console.error(`Error processing date directory ${date}:`, dateError);
+                processLog.details.push({
+                    company,
+                    date,
+                    error: dateError.message,
+                    type: 'DATE_PROCESSING_ERROR'
+                });
+                processLog.summary.errors++;
+            }
         }));
     } catch (error) {
         console.error(`Error processing company directory ${company}:`, error);
-        await logError(`Error processing company directory ${company}`, error);
+        processLog.details.push({
+            company,
+            directory: companyDir,
+            error: error.message,
+            type: 'COMPANY_PROCESSING_ERROR'
+        });
+        processLog.summary.errors++;
     }
 }
 
@@ -818,7 +894,11 @@ async function processDateDirectory(dateDir, date, company, type, files, process
         }
     } catch (error) {
         console.error(`Error processing date directory ${date}:`, error);
-        await logError(`Error processing date directory ${date}`, error);
+        processLog.details.push({
+            error: error.message,
+            type: 'DATE_PROCESSING_ERROR'
+        });
+        processLog.summary.errors++;
     }
 }
 
@@ -2117,5 +2197,525 @@ router.post('/bulk-submit', async (req, res) => {
         });
     }
 });
+
+/**
+ * List all files in a consolidated format
+ */
+router.get('/list-consolidated', async (req, res) => {
+    console.log('Starting list-consolidated endpoint');
+
+    // Check authentication
+    if (!req.session?.user) {
+        console.log('Unauthorized access attempt - no session user');
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Authentication required'
+            }
+        });
+    }
+
+    // Check if access token exists
+    if (!req.session?.accessToken) {
+        console.log('Unauthorized access attempt - no access token');
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Access token required'
+            }
+        });
+    }
+
+    const processLog = {
+        details: [],
+        summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
+    };
+
+    try {
+        // Get configuration for paths
+        const config = await WP_CONFIGURATION.findOne({
+            where: {
+                Type: 'SAP',
+                IsActive: 1
+            },
+            order: [['CreateTS', 'DESC']]
+        });
+
+        if (!config || !config.Settings) {
+            throw new Error('No active SAP configuration found');
+        }
+
+        // Parse Settings if it's a string
+        let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
+        
+        if (!settings.networkPath) {
+            throw new Error('Network path not configured in SAP settings');
+        }
+
+        // Define root directories using configuration
+        const incomingDir = path.join('SFTPRoot_Consolidation', 'Incoming', 'PXC Branch');
+
+        // Validate directory exists and is accessible
+        let directoryExists = false;
+        try {
+            await fsPromises.access(incomingDir, fs.constants.R_OK);
+            directoryExists = true;
+        } catch (accessError) {
+            console.error('Directory access error:', accessError);
+            // Instead of throwing an error, continue with an empty files array
+            // and return a success response with a warning message
+            return res.json({
+                success: true,
+                allFiles: [],
+                consolidatedData: [],
+                warning: {
+                    code: 'DIRECTORY_NOT_FOUND',
+                    message: `Directory not found: ${incomingDir}. Please check configuration and network connectivity.`,
+                    details: accessError.message
+                },
+                processLog,
+                summary: {
+                    totalCompanies: 0,
+                    totalDocuments: 0,
+                    submittedDocuments: 0,
+                    pendingDocuments: 0,
+                    failedDocuments: 0,
+                    cancelledDocuments: 0
+                }
+            });
+        }
+
+        // Get existing submission statuses with additional details
+        console.log('Fetching submission statuses');
+        const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
+            attributes: [
+                'id',
+                'UUID',
+                'submissionUid',
+                'fileName',
+                'filePath',
+                'invoice_number',
+                'status',
+                'date_submitted',
+                'date_cancelled',
+                'cancellation_reason',
+                'cancelled_by',
+                'updated_at',
+                'longId',
+                'error'
+            ],
+            order: [['updated_at', 'DESC']],
+            raw: true
+        });
+
+        // Create status lookup map with additional details
+        const statusMap = new Map();
+        submissionStatuses.forEach(status => {
+            const statusObj = {
+                UUID: status.UUID,
+                SubmissionUID: status.submissionUid,
+                SubmissionStatus: status.status,
+                DateTimeSent: status.date_submitted,
+                DateTimeUpdated: status.updated_at,
+                DateTimeCancelled: status.date_cancelled,
+                CancelledReason: status.cancellation_reason,
+                CancelledBy: status.cancelled_by,
+                FileName: status.fileName,
+                DocNum: status.invoice_number,
+                LongId: status.longId,
+                Error: status.error
+            };
+
+            if (status.fileName) statusMap.set(status.fileName, statusObj);
+            if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
+        });
+
+        const files = [];
+
+        // Process the incoming directory
+        console.log('Processing incoming directory');
+        try {
+            await processTypeDirectory(incomingDir, 'Incoming', files, processLog, statusMap);
+        } catch (dirError) {
+            console.error('Error processing incoming directory:', dirError);
+            processLog.details.push({
+                error: dirError.message,
+                type: 'DIRECTORY_PROCESSING_ERROR'
+            });
+            processLog.summary.errors++;
+            
+            // Return a valid response with error information but don't throw an error
+            if (files.length === 0) {
+                return res.json({
+                    success: true,
+                    allFiles: [],
+                    consolidatedData: [],
+                    processLog: {
+                        ...processLog,
+                        details: [
+                            ...processLog.details,
+                            {
+                                message: `Error accessing directory: ${incomingDir}`,
+                                error: dirError.message,
+                                type: 'DIRECTORY_ACCESS_ERROR'
+                            }
+                        ]
+                    },
+                    error: {
+                        message: `Could not access directory: ${dirError.message}`,
+                        code: 'DIRECTORY_ACCESS_ERROR'
+                    }
+                });
+            }
+        }
+
+        // Check if we found any files, if not return an empty response
+        if (files.length === 0) {
+            console.log('No files found');
+            return res.json({
+                success: true,
+                allFiles: [],
+                consolidatedData: [],
+                processLog,
+                summary: {
+                    totalCompanies: 0,
+                    totalDocuments: 0,
+                    submittedDocuments: 0,
+                    pendingDocuments: 0,
+                    failedDocuments: 0,
+                    cancelledDocuments: 0
+                }
+            });
+        }
+
+        // Create a map for latest documents with additional processing
+        console.log('Processing latest documents');
+        const latestDocuments = new Map();
+        const documentsByCompany = new Map();
+
+        files.forEach(file => {
+            const documentKey = file.invoiceNumber || file.fileName;
+            const existingDoc = latestDocuments.get(documentKey);
+
+            if (!existingDoc || new Date(file.modifiedTime) > new Date(existingDoc.modifiedTime)) {
+                latestDocuments.set(documentKey, file);
+
+                // Group by company
+                if (!documentsByCompany.has(file.company)) {
+                    documentsByCompany.set(file.company, []);
+                }
+                documentsByCompany.get(file.company).push(file);
+            }
+        });
+
+        // Convert map to array and merge with status
+        const mergedFiles = Array.from(latestDocuments.values()).map(file => {
+            const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
+            const fileStatus = status?.SubmissionStatus || 'Pending';
+
+            return {
+                ...file,
+                status: fileStatus,
+                statusUpdateTime: status?.DateTimeUpdated || null,
+                date_submitted: status?.DateTimeSent || null,
+                date_cancelled: status?.DateTimeCancelled || null,
+                cancellation_reason: status?.CancelledReason || null,
+                cancelled_by: status?.CancelledBy || null,
+                uuid: status?.UUID || null,
+                submissionUid: status?.SubmissionUID || null,
+                longId: status?.LongId || null,
+                error: status?.Error || null
+            };
+        });
+
+        // Sort by modified time
+        mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+
+        // Group documents by company and calculate company statistics
+        const consolidatedData = Array.from(documentsByCompany.entries()).map(([company, docs]) => {
+            const companyStats = {
+                total: docs.length,
+                submitted: docs.filter(d => d.status === 'Submitted').length,
+                pending: docs.filter(d => d.status === 'Pending').length,
+                failed: docs.filter(d => ['Failed', 'Invalid', 'Rejected'].includes(d.status)).length,
+                cancelled: docs.filter(d => d.status === 'Cancelled').length
+            };
+
+            return {
+                company,
+                statistics: companyStats,
+                documents: docs.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime))
+            };
+        });
+
+        // Sort companies by total documents
+        consolidatedData.sort((a, b) => b.statistics.total - a.statistics.total);
+
+        console.log('Sending consolidated response');
+        res.json({
+            success: true,
+            consolidatedData,
+            allFiles: mergedFiles,
+            processLog,
+            summary: {
+                totalCompanies: consolidatedData.length,
+                totalDocuments: mergedFiles.length,
+                submittedDocuments: mergedFiles.filter(f => f.status === 'Submitted').length,
+                pendingDocuments: mergedFiles.filter(f => f.status === 'Pending').length,
+                failedDocuments: mergedFiles.filter(f => ['Failed', 'Invalid', 'Rejected'].includes(f.status)).length,
+                cancelledDocuments: mergedFiles.filter(f => f.status === 'Cancelled').length
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in list-consolidated:', error);
+        await logError('Error listing consolidated files', error, {
+            action: 'LIST_CONSOLIDATED',
+            userId: req.user?.id
+        });
+
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            processLog,
+            stack: error.stack
+        });
+    }
+});
+
+/**
+ * List all files with fixed paths (optimized version using hardcoded paths)
+ */
+router.get('/list-fixed-paths', async (req, res) => {
+    console.log('Starting list-fixed-paths endpoint');
+    
+    // Check authentication
+    if (!req.session?.user) {
+        console.log('Unauthorized access attempt - no session user');
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Authentication required'
+            }
+        });
+    }
+
+    // Check if access token exists
+    if (!req.session?.accessToken) {
+        console.log('Unauthorized access attempt - no access token');
+        return res.status(401).json({
+            success: false,
+            error: {
+                code: 'AUTH_ERROR',
+                message: 'Access token required'
+            }
+        });
+    }
+
+    const processLog = {
+        details: [],
+        summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
+    };
+
+    try {
+        // Use fixed paths instead of getting from configuration
+        const incomingPath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
+        const outgoingPath = 'C:\\SFTPRoot_Consolidation\\Outgoing\\LHDN\\PXC Branch';
+
+        console.log('Using fixed paths:');
+        console.log('- Incoming:', incomingPath);
+        console.log('- Outgoing:', outgoingPath);
+
+        // Get the latest status update timestamp
+        console.log('Fetching latest status update');
+        const latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
+            attributes: ['updated_at'],
+            order: [['updated_at', 'DESC']],
+            raw: true
+        });
+        console.log('Latest status update:', latestStatusUpdate);
+
+        // Get existing submission statuses
+        console.log('Fetching submission statuses');
+        const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
+            attributes: [
+                'id',
+                'UUID',
+                'submissionUid',
+                'fileName',
+                'filePath',
+                'invoice_number',
+                'status',
+                'date_submitted',
+                'date_cancelled',
+                'cancellation_reason',
+                'cancelled_by',
+                'updated_at'
+            ],
+            order: [['updated_at', 'DESC']],
+            raw: true
+        });
+
+        // Create status lookup map
+        const statusMap = new Map();
+        submissionStatuses.forEach(status => {
+            const statusObj = {
+                UUID: status.UUID,
+                SubmissionUID: status.submissionUid,
+                SubmissionStatus: status.status,
+                DateTimeSent: status.date_submitted,
+                DateTimeUpdated: status.updated_at,
+                DateTimeCancelled: status.date_cancelled,
+                CancelledReason: status.cancellation_reason,
+                CancelledBy: status.cancelled_by,
+                FileName: status.fileName,
+                DocNum: status.invoice_number
+            };
+            
+            if (status.fileName) statusMap.set(status.fileName, statusObj);
+            if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
+        });
+
+        const files = [];
+
+        // Process incoming directory directly
+        console.log('Processing incoming directory');
+        try {
+            // For consolidated view, we don't need to process by type/company/date
+            // Since files are directly in the Incoming directory
+            await processDirectoryFlat(incomingPath, 'Incoming', files, processLog, statusMap);
+        } catch (dirError) {
+            console.error(`Error processing incoming directory:`, dirError);
+            // Continue with partial data if there's an error
+        }
+
+        // Create a map for latest documents
+        console.log('Processing latest documents');
+        const latestDocuments = new Map();
+
+        files.forEach(file => {
+            const documentKey = file.invoiceNumber || file.fileName;
+            const existingDoc = latestDocuments.get(documentKey);
+
+            if (!existingDoc || new Date(file.modifiedTime) > new Date(existingDoc.modifiedTime)) {
+                latestDocuments.set(documentKey, file);
+            }
+        });
+
+        // Convert map to array and merge with status
+        const mergedFiles = Array.from(latestDocuments.values()).map(file => {
+            const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
+            const fileStatus = status?.SubmissionStatus || 'Pending';
+            
+            return {
+                ...file,
+                status: fileStatus,
+                statusUpdateTime: status?.DateTimeUpdated || null,
+                date_submitted: status?.DateTimeSent || null,
+                date_cancelled: status?.DateTimeCancelled || null,
+                cancellation_reason: status?.CancelledReason || null,
+                cancelled_by: status?.CancelledBy || null,
+                uuid: status?.UUID || null,
+                submissionUid: status?.SubmissionUID || null
+            };
+        });
+
+        // Sort by modified time
+        mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+
+        console.log(`Found ${mergedFiles.length} files`);
+        console.log('Sending response');
+        res.json({
+            success: true,
+            files: mergedFiles,
+            processLog,
+            fromCache: false,
+            paths: {
+                incoming: incomingPath,
+                outgoing: outgoingPath
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in list-fixed-paths:', error);
+        await logError('Error listing outbound files with fixed paths', error, {
+            action: 'LIST_FIXED_PATHS',
+            userId: req.user?.id
+        });
+
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            processLog,
+            stack: error.stack // Include stack trace for debugging
+        });
+    }
+});
+
+/**
+ * Process a flat directory structure (no type/company/date hierarchy)
+ */
+async function processDirectoryFlat(directory, type, files, processLog, statusMap) {
+    try {
+        // Check if directory exists
+        try {
+            await fsPromises.access(directory, fs.constants.R_OK);
+        } catch (accessError) {
+            console.error(`Cannot access directory ${directory}:`, accessError);
+            throw new Error(`Cannot access directory: ${directory}. Please check if the directory exists and you have proper permissions.`);
+        }
+
+        // Read all files in the directory
+        let dirContents;
+        try {
+            dirContents = await fsPromises.readdir(directory);
+        } catch (readError) {
+            console.error(`Error reading directory ${directory}:`, readError);
+            throw new Error(`Failed to read directory contents: ${directory}`);
+        }
+
+        // Process each item
+        for (const item of dirContents) {
+            const itemPath = path.join(directory, item);
+            
+            try {
+                const stats = await fsPromises.stat(itemPath);
+                
+                // If it's a directory, process recursively
+                if (stats.isDirectory()) {
+                    await processDirectoryFlat(itemPath, type, files, processLog, statusMap);
+                    continue;
+                }
+                
+                // If it's a file and Excel file, process it
+                if (stats.isFile() && item.match(/\.(xls|xlsx)$/i)) {
+                    await processFile(item, directory, 'N/A', 'PXC Branch', type, files, processLog, statusMap);
+                }
+            } catch (itemError) {
+                console.error(`Error processing ${itemPath}:`, itemError);
+                processLog.details.push({
+                    file: item,
+                    path: itemPath,
+                    error: itemError.message,
+                    type: 'ITEM_PROCESSING_ERROR'
+                });
+                processLog.summary.errors++;
+            }
+        }
+
+    } catch (error) {
+        console.error(`Error processing directory ${directory}:`, error);
+        processLog.details.push({
+            directory,
+            error: error.message,
+            type: 'DIRECTORY_PROCESSING_ERROR'
+        });
+        processLog.summary.errors++;
+        throw error;
+    }
+}
 
 module.exports = router;

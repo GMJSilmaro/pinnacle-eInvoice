@@ -62,45 +62,207 @@ class InvoiceTableManager {
     }
 
     initializeTable() {
-        const tableElement = document.getElementById('invoiceTable');
-        if (!tableElement) return;
+        try {
+            // Destroy existing table if it exists
+            if ($.fn.DataTable.isDataTable('#invoiceTable')) {
+                $('#invoiceTable').DataTable().destroy();
+                $('#invoiceTable').empty();
+            }
 
-        this.table = $(tableElement).DataTable({
-            serverSide: true,
-            processing: true,
-            ajax: {
-                url: '/api/outbound/list',
-                type: 'POST',
-                data: (d) => {
-                    // Add custom filter parameters
-                    d.dateRange = {
-                        start: document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value,
-                        end: document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value
-                    };
-                    d.amountRange = {
-                        min: document.getElementById('minAmount').value,
-                        max: document.getElementById('maxAmount').value
-                    };
-                    d.company = document.querySelector('input[placeholder="Filter by company name"]').value;
-                    d.documentType = document.getElementById('documentTypeFilter').value;
-                    d.quickFilter = document.querySelector('.quick-filters .btn.active').dataset.filter;
-                    return d;
-                }
-            },
-            createdRow: function(row, data, dataIndex) {
-                // Add data attributes to the row
-                $(row).attr({
-                    'data-file-name': data.fileName,
-                    'data-type': data.type,
-                    'data-company': data.company,
-                    'data-date': data.date
-                });
-            },
-            // ... rest of your DataTable configuration ...
-        });
+            // Initialize DataTable with minimal styling configuration
+            this.table = $('#invoiceTable').DataTable({
+                processing: false,
+                serverSide: false,
+                ajax: {
+                    url: '/api/outbound-files/list-all',
+                    method: 'GET',
+                    dataSrc: (json) => {
+                        if (!json.success) {
+                            console.error('Error:', json.error);
+                            this.showEmptyState(json.error?.message || 'Failed to load data');
+                            return [];
+                        }
 
-        // Initialize filters
-        this.initializeFilters();
+                        if (!json.files || json.files.length === 0) {
+                            this.showEmptyState('No EXCEL files found');
+                            return [];
+                        }
+
+                        // Process the files data
+                        const processedData = json.files.map(file => ({
+                            ...file,
+                            DT_RowId: file.fileName,
+                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
+                            fileName: file.fileName,
+                            documentType: file.documentType || 'Invoice',
+                            company: file.company,
+                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
+                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
+                            uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
+                            issueDate: file.issueDate,
+                            issueTime: file.issueTime,
+                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
+                            date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
+                            cancelled_by: file.cancelled_by || null,
+                            cancel_reason: file.cancel_reason || null,
+                            status: file.status || 'Pending',
+                            source: file.source,
+                            uuid: file.uuid || null,
+                            totalAmount: file.totalAmount || null
+                        }));
+
+                        console.log("Current Process Data", processedData);
+
+                        // Update card totals after data is loaded
+                        setTimeout(() => this.updateCardTotals(), 0);
+
+                        return processedData;
+                    },
+                    error: (xhr, error, thrown) => {
+                        console.error('Ajax error:', error);
+                        let errorMessage = 'Error loading data. Please try again.';
+
+                        try {
+                            const response = xhr.responseJSON;
+                            if (response && response.error) {
+                                errorMessage = response.error.message || errorMessage;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing error response:', e);
+                        }
+
+                        this.showEmptyState(errorMessage);
+                    }
+                },
+               
+                columns: [
+                    {
+                        data: null,
+                        orderable: false,
+                        searchable: false,
+                        render: function (data, type, row) {
+                            // Only enable checkbox for Pending status
+                            const status = (row.status || 'Pending').toLowerCase();
+                            const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
+                            const disabledAttr = disabledStatus ? 'disabled' : '';
+                            const title = disabledStatus ? `Cannot select ${status} items` : '';
+
+                            return `<div>
+                                <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
+                            </div>`;
+                        }
+                    },
+                    {
+                        data: null,
+                        orderable: false,
+                        searchable: false,
+                        render: function (data, type, row, meta) {
+                            // Calculate the correct index based on the current page and page length
+                            const pageInfo = meta.settings._iDisplayStart;
+                            const index = pageInfo + meta.row + 1;
+                            return `<span class="row-index">${index}</span>`;
+                        }
+                    },
+                    {
+                        data: 'invoiceNumber',
+                        title: 'INV NO. / DOCUMENT',
+                        render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
+                    },
+                    {
+                        data: 'company',
+                        title: 'COMPANY',
+                        render: (data, type, row) => this.renderCompanyInfo(data, type, row)
+                    },
+                    {
+                        data: 'supplierInfo',
+                        title: 'SUPPLIER',
+                        render: (data, type, row) => this.renderSupplierInfo(data, type, row)
+                    },
+                    {
+                        data: 'buyerInfo',
+                        title: 'RECEIVER',
+                        render: (data, type, row) => this.renderBuyerInfo(data, type, row)
+                    },
+                    {
+                        data: 'uploadedDate',
+                        title: 'FILE UPLOADED',
+                        render: (data, type, row) => this.renderUploadedDate(data, type, row)
+                    },
+                    {
+                        data: null,
+                        title: 'E-INV. DATE INFO',
+                        render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row)
+                    },
+                    {
+                        data: 'status',
+                        title: 'STATUS',
+                        render: (data) => this.renderStatus(data)
+                    },
+                    {
+                        data: 'source',
+                        title: 'SOURCE',
+                        render: (data) => this.renderSource(data)
+                    },
+                    {
+                        data: 'totalAmount',
+                        title: 'AMOUNT',
+                        render: (data) => this.renderTotalAmount(data)
+                    },
+                    {
+                        data: null,
+                        title: 'ACTION',
+                        orderable: false,
+                        render: (data, type, row) => this.renderActions(row)
+                    }
+                ],
+                scrollX: true,
+                scrollCollapse: true,
+                autoWidth: false,
+                pageLength: 10,
+                dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+                language: {
+                    search: '',
+                    searchPlaceholder: 'Search...',
+                    lengthMenu: 'Show _MENU_ entries',
+                    info: 'Showing _START_ to _END_ of _TOTAL_ entries',
+                    infoEmpty: 'Showing 0 to 0 of 0 entries',
+                    infoFiltered: '(filtered from _MAX_ total entries)',
+                    paginate: {
+                        first: '<i class="bi bi-chevron-double-left"></i>',
+                        previous: '<i class="bi bi-chevron-left"></i>',
+                        next: '<i class="bi bi-chevron-right"></i>',
+                        last: '<i class="bi bi-chevron-double-right"></i>'
+                    },
+                    emptyTable: this.getEmptyStateHtml(),
+                    zeroRecords: this.getEmptyStateHtml('Searching for data...')
+                },
+                order: [6, 'desc'], 
+                drawCallback: function (settings) {
+                    // Update row indexes when table is redrawn (sorting, filtering, pagination)
+                    $(this).find('tbody tr').each(function (index) {
+                        const pageInfo = settings._iDisplayStart;
+                        $(this).find('.row-index').text(pageInfo + index + 1);
+                    });
+                },
+                createdRow: (row, data, dataIndex) => {
+                    // Add a class to the row based on status
+                    const status = (data.status || 'Pending').toLowerCase();
+                    if (['submitted', 'cancelled', 'rejected', 'invalid'].includes(status)) {
+                        $(row).addClass('non-selectable-row');
+                        // Add a tooltip to explain why the row can't be selected
+                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
+                    } else {
+                        $(row).addClass('selectable-row');
+                    }
+                },
+            });
+
+            this.initializeFeatures();
+
+        } catch (error) {
+            console.error('Error initializing DataTable:', error);
+            this.showEmptyState('Error initializing table. Please refresh the page.');
+        }
     }
 
     initializeFilters() {
@@ -422,209 +584,7 @@ class InvoiceTableManager {
         }
     }
 
-    initializeTable() {
-        try {
-            // Destroy existing table if it exists
-            if ($.fn.DataTable.isDataTable('#invoiceTable')) {
-                $('#invoiceTable').DataTable().destroy();
-                $('#invoiceTable').empty();
-            }
 
-            // Initialize DataTable with minimal styling configuration
-            this.table = $('#invoiceTable').DataTable({
-                processing: false,
-                serverSide: false,
-                ajax: {
-                    url: '/api/outbound-files/list-all',
-                    method: 'GET',
-                    dataSrc: (json) => {
-                        if (!json.success) {
-                            console.error('Error:', json.error);
-                            this.showEmptyState(json.error?.message || 'Failed to load data');
-                            return [];
-                        }
-
-                        if (!json.files || json.files.length === 0) {
-                            this.showEmptyState('No EXCEL files found');
-                            return [];
-                        }
-
-                        // Process the files data
-                        const processedData = json.files.map(file => ({
-                            ...file,
-                            DT_RowId: file.fileName,
-                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
-                            fileName: file.fileName,
-                            documentType: file.documentType || 'Invoice',
-                            company: file.company,
-                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
-                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
-                            uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
-                            issueDate: file.issueDate,
-                            issueTime: file.issueTime,
-                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
-                            date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
-                            cancelled_by: file.cancelled_by || null,
-                            cancel_reason: file.cancel_reason || null,
-                            status: file.status || 'Pending',
-                            source: file.source,
-                            uuid: file.uuid || null,
-                            totalAmount: file.totalAmount || null
-                        }));
-
-                        console.log("Current Process Data", processedData);
-
-                        // Update card totals after data is loaded
-                        setTimeout(() => this.updateCardTotals(), 0);
-
-                        return processedData;
-                    },
-                    error: (xhr, error, thrown) => {
-                        console.error('Ajax error:', error);
-                        let errorMessage = 'Error loading data. Please try again.';
-
-                        try {
-                            const response = xhr.responseJSON;
-                            if (response && response.error) {
-                                errorMessage = response.error.message || errorMessage;
-                            }
-                        } catch (e) {
-                            console.error('Error parsing error response:', e);
-                        }
-
-                        this.showEmptyState(errorMessage);
-                    }
-                },
-               
-                columns: [
-                    {
-                        data: null,
-                        orderable: false,
-                        searchable: false,
-                        render: function (data, type, row) {
-                            // Only enable checkbox for Pending status
-                            const status = (row.status || 'Pending').toLowerCase();
-                            const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
-                            const disabledAttr = disabledStatus ? 'disabled' : '';
-                            const title = disabledStatus ? `Cannot select ${status} items` : '';
-
-                            return `<div>
-                                <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
-                            </div>`;
-                        }
-                    },
-                    {
-                        data: null,
-                        orderable: false,
-                        searchable: false,
-                        render: function (data, type, row, meta) {
-                            // Calculate the correct index based on the current page and page length
-                            const pageInfo = meta.settings._iDisplayStart;
-                            const index = pageInfo + meta.row + 1;
-                            return `<span class="row-index">${index}</span>`;
-                        }
-                    },
-                    {
-                        data: 'invoiceNumber',
-                        title: 'INV NO. / DOCUMENT',
-                        render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
-                    },
-                    {
-                        data: 'company',
-                        title: 'COMPANY',
-                        render: (data, type, row) => this.renderCompanyInfo(data, type, row)
-                    },
-                    {
-                        data: 'supplierInfo',
-                        title: 'SUPPLIER',
-                        render: (data, type, row) => this.renderSupplierInfo(data, type, row)
-                    },
-                    {
-                        data: 'buyerInfo',
-                        title: 'RECEIVER',
-                        render: (data, type, row) => this.renderBuyerInfo(data, type, row)
-                    },
-                    {
-                        data: 'uploadedDate',
-                        title: 'FILE UPLOADED',
-                        render: (data, type, row) => this.renderUploadedDate(data, type, row)
-                    },
-                    {
-                        data: null,
-                        title: 'E-INV. DATE INFO',
-                        render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row)
-                    },
-                    {
-                        data: 'status',
-                        title: 'STATUS',
-                        render: (data) => this.renderStatus(data)
-                    },
-                    {
-                        data: 'source',
-                        title: 'SOURCE',
-                        render: (data) => this.renderSource(data)
-                    },
-                    {
-                        data: 'totalAmount',
-                        title: 'AMOUNT',
-                        render: (data) => this.renderTotalAmount(data)
-                    },
-                    {
-                        data: null,
-                        title: 'ACTION',
-                        orderable: false,
-                        render: (data, type, row) => this.renderActions(row)
-                    }
-                ],
-                scrollX: true,
-                scrollCollapse: true,
-                autoWidth: false,
-                pageLength: 10,
-                dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
-                language: {
-                    search: '',
-                    searchPlaceholder: 'Search...',
-                    lengthMenu: 'Show _MENU_ entries',
-                    info: 'Showing _START_ to _END_ of _TOTAL_ entries',
-                    infoEmpty: 'Showing 0 to 0 of 0 entries',
-                    infoFiltered: '(filtered from _MAX_ total entries)',
-                    paginate: {
-                        first: '<i class="bi bi-chevron-double-left"></i>',
-                        previous: '<i class="bi bi-chevron-left"></i>',
-                        next: '<i class="bi bi-chevron-right"></i>',
-                        last: '<i class="bi bi-chevron-double-right"></i>'
-                    },
-                    emptyTable: this.getEmptyStateHtml(),
-                    zeroRecords: this.getEmptyStateHtml('Searching for data...')
-                },
-                order: [6, 'desc'], 
-                drawCallback: function (settings) {
-                    // Update row indexes when table is redrawn (sorting, filtering, pagination)
-                    $(this).find('tbody tr').each(function (index) {
-                        const pageInfo = settings._iDisplayStart;
-                        $(this).find('.row-index').text(pageInfo + index + 1);
-                    });
-                },
-                createdRow: (row, data, dataIndex) => {
-                    // Add a class to the row based on status
-                    const status = (data.status || 'Pending').toLowerCase();
-                    if (['submitted', 'cancelled', 'rejected', 'invalid'].includes(status)) {
-                        $(row).addClass('non-selectable-row');
-                        // Add a tooltip to explain why the row can't be selected
-                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
-                    } else {
-                        $(row).addClass('selectable-row');
-                    }
-                },
-            });
-
-            this.initializeFeatures();
-
-        } catch (error) {
-            console.error('Error initializing DataTable:', error);
-            this.showEmptyState('Error initializing table. Please refresh the page.');
-        }
-    }
 
     // Helper method to show error message
     showErrorMessage(message) {
