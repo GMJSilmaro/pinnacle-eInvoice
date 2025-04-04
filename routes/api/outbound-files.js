@@ -59,129 +59,157 @@ function invalidateFileCache(params = {}) {
  * @param {string} lastUpdateTime - ISO timestamp of the last update check
  * @returns {Promise<boolean>} - True if there are new updates
  */
+/**
+ * Optimized function to check for status updates
+ */
 async function checkForStatusUpdates(lastUpdateTime) {
     try {
         if (!lastUpdateTime) return true;
         
-        const latestUpdate = await WP_OUTBOUND_STATUS.findOne({
-            attributes: ['updated_at'],
-            where: {
-                updated_at: {
-                    [Op.gt]: new Date(lastUpdateTime)
-                }
-            },
-            order: [['updated_at', 'DESC']],
+        // Use a direct query with limit 1 for better performance
+        const query = `
+            SELECT TOP 1 updated_at
+            FROM WP_OUTBOUND_STATUS
+            WHERE updated_at > @lastUpdate
+            ORDER BY updated_at DESC
+        `;
+        
+        const result = await sequelize.query(query, {
+            replacements: { lastUpdate: new Date(lastUpdateTime) },
+            type: sequelize.QueryTypes.SELECT,
             raw: true
         });
         
-        return !!latestUpdate;
+        return result.length > 0;
     } catch (error) {
         console.error('Error checking for status updates:', error);
         return false;
     }
 }
-
-// Add new function to check for new files
+/**
+ * Optimized function to check for new files
+ */
 async function checkForNewFiles(networkPath, lastCheck) {
     try {
         const types = ['Manual', 'Schedule'];
-        let hasNewFiles = false;
         const lastCheckDate = new Date(lastCheck);
-
-        // Fast check for recent files
+        
+        // Use checkDirectoryNewerThan for a faster check
         for (const type of types) {
             const typeDir = path.join(networkPath, type);
             
             // Skip if directory doesn't exist
             if (!fs.existsSync(typeDir)) continue;
-
-            // Get list of company directories
-            let companies;
-            try {
-                companies = await fsPromises.readdir(typeDir);
-            } catch (err) {
-                console.error(`Error reading type directory ${typeDir}:`, err);
-                continue;
-            }
-
-            // Check each company directory
-            for (const company of companies) {
-                const companyDir = path.join(typeDir, company);
-                
-                // Skip if not a directory
-                try {
-                    const stat = await fsPromises.stat(companyDir);
-                    if (!stat.isDirectory()) continue;
-                    
-                    // If the company directory itself is newer than our last check
-                    if (new Date(stat.mtime) > lastCheckDate) {
-                        return true;
-                    }
-                } catch (err) {
-                    console.error(`Error checking company directory ${companyDir}:`, err);
-                    continue;
-                }
-
-                // Get list of date directories
-                let dates;
-                try {
-                    dates = await fsPromises.readdir(companyDir);
-                } catch (err) {
-                    console.error(`Error reading company directory ${companyDir}:`, err);
-                    continue;
-                }
-
-                // Check each date directory
-                for (const date of dates) {
-                    const dateDir = path.join(companyDir, date);
-                    
-                    // Skip if not a directory
-                    try {
-                        const stat = await fsPromises.stat(dateDir);
-                        if (!stat.isDirectory()) continue;
-                        
-                        // If the date directory itself is newer than our last check
-                        if (new Date(stat.mtime) > lastCheckDate) {
-                            return true;
-                        }
-                    } catch (err) {
-                        console.error(`Error checking date directory ${dateDir}:`, err);
-                        continue;
-                    }
-
-                    // Get list of files
-                    let files;
-                    try {
-                        files = await fsPromises.readdir(dateDir);
-                    } catch (err) {
-                        console.error(`Error reading date directory ${dateDir}:`, err);
-                        continue;
-                    }
-
-                    // Check if any file is newer than our last check
-                    for (const file of files) {
-                        const filePath = path.join(dateDir, file);
-                        try {
-                            const stats = await fsPromises.stat(filePath);
-                            
-                            // If any file is newer than our last check, return true
-                            if (new Date(stats.mtime) > lastCheckDate) {
-                                return true;
-                            }
-                        } catch (err) {
-                            console.error(`Error checking file ${filePath}:`, err);
-                            continue;
-                        }
-                    }
-                }
-            }
+            
+            // Fast check for modified directories
+            const hasNewFiles = await checkDirectoryNewerThan(typeDir, lastCheckDate);
+            if (hasNewFiles) return true;
         }
         
-        return hasNewFiles;
+        return false;
     } catch (error) {
         console.error('Error checking for new files:', error);
         return false;
     }
+}
+
+/**
+ * Fast check if directory has been modified since a given date
+ */
+async function checkDirectoryNewerThan(dirPath, date) {
+    try {
+        // Check if the directory itself is newer
+        const stats = await fsPromises.stat(dirPath);
+        if (stats.mtime > date) return true;
+        
+        // Get contents
+        const contents = await fsPromises.readdir(dirPath);
+        
+        // Process items in batches to prevent excessive promises
+        const batchSize = 10;
+        for (let i = 0; i < contents.length; i += batchSize) {
+            const batch = contents.slice(i, i + batchSize);
+            
+            // Process batch in parallel
+            const results = await Promise.all(batch.map(async (item) => {
+                const itemPath = path.join(dirPath, item);
+                try {
+                    const itemStats = await fsPromises.stat(itemPath);
+                    
+                    // If item is newer than date, return true
+                    if (itemStats.mtime > date) return true;
+                    
+                    // If item is a directory and not newer, check its contents recursively
+                    if (itemStats.isDirectory()) {
+                        return checkDirectoryNewerThan(itemPath, date);
+                    }
+                    
+                    return false;
+                } catch (err) {
+                    console.error(`Error checking item ${itemPath}:`, err);
+                    return false;
+                }
+            }));
+            
+            // If any item in batch is newer, return true
+            if (results.some(result => result === true)) return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error(`Error checking directory ${dirPath}:`, error);
+        return false;
+    }
+}
+
+/**
+ * Optimized helper function to get status map
+ */
+async function getStatusMap() {
+    // Try to get from cache first
+    const statusCacheKey = 'outbound_status_map';
+    const cachedStatusMap = fileCache.get(statusCacheKey);
+    
+    if (cachedStatusMap) {
+        return cachedStatusMap;
+    }
+    
+    // If not in cache, get from database
+    const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
+        attributes: [
+            'id', 'UUID', 'submissionUid', 'fileName', 'filePath',
+            'invoice_number', 'status', 'date_submitted', 'date_cancelled',
+            'cancellation_reason', 'cancelled_by', 'updated_at'
+        ],
+        order: [['updated_at', 'DESC']],
+        raw: true
+    });
+
+    // Create status lookup map
+    const statusMap = new Map();
+    
+    submissionStatuses.forEach(status => {
+        const statusObj = {
+            UUID: status.UUID,
+            SubmissionUID: status.submissionUid,
+            SubmissionStatus: status.status,
+            DateTimeSent: status.date_submitted,
+            DateTimeUpdated: status.updated_at,
+            DateTimeCancelled: status.date_cancelled,
+            CancelledReason: status.cancellation_reason,
+            CancelledBy: status.cancelled_by,
+            FileName: status.fileName,
+            DocNum: status.invoice_number
+        };
+        
+        if (status.fileName) statusMap.set(status.fileName, statusObj);
+        if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
+    });
+    
+    // Cache the status map for 5 minutes
+    fileCache.set(statusCacheKey, statusMap, 300);
+    
+    return statusMap;
 }
 
 async function getOutgoingConfig() {
@@ -293,13 +321,12 @@ async function logError(description, error, options = {}) {
  * List all files from network directories with caching and duplicate filtering
  */
 router.get('/list-all', async (req, res) => {
-    console.log('==========================================');
-    console.log(`[DEBUG-${new Date().toISOString()}] Starting list-all endpoint`);
+    const startTime = Date.now();
+    console.log(`[${new Date().toISOString()}] Starting list-all endpoint`);
     
     // Set a response timeout to prevent hanging requests
     const TIMEOUT_MS = 30000; // 30 seconds
     const timeoutId = setTimeout(() => {
-        console.log(`[DEBUG-${new Date().toISOString()}] Request timed out after 30 seconds`);
         if (!res.headersSent) {
             return res.status(408).json({
                 success: false,
@@ -311,304 +338,118 @@ router.get('/list-all', async (req, res) => {
         }
     }, TIMEOUT_MS);
     
-    // // Check authentication
-    // if (!req.session?.user) {
-    //     clearTimeout(timeoutId);
-    //     console.log(`[DEBUG-${new Date().toISOString()}] Unauthorized access attempt - no session user`);
-    //     return res.status(401).json({
-    //         success: false,
-    //         error: {
-    //             code: 'AUTH_ERROR',
-    //             message: 'Authentication required'
-    //         }
-    //     });
-    // }
-
-    // // Check if access token exists
-    // if (!req.session?.accessToken) {
-    //     clearTimeout(timeoutId);
-    //     console.log(`[DEBUG-${new Date().toISOString()}] Unauthorized access attempt - no access token`);
-    //     return res.status(401).json({
-    //         success: false,
-    //         error: {
-    //             code: 'AUTH_ERROR',
-    //             message: 'Access token required'
-    //         }
-    //     });
-    // }
-
+    // Simplified process log
     const processLog = {
         details: [],
         summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
     };
 
     try {
-        console.log(`[DEBUG-${new Date().toISOString()}] Generating cache key`);
         const cacheKey = generateCacheKey();
         const { polling } = req.query;
-        const realTime = req.query.realTime === 'true';
-        console.log(`[DEBUG-${new Date().toISOString()}] Request parameters: polling=${polling}, realTime=${realTime}`);
+        const realTime = req.query.realTime === 'true'; // Default to using cache
         
-        // Get the latest status update timestamp - with timeout
-        console.log(`[DEBUG-${new Date().toISOString()}] Fetching latest status update`);
-        let latestStatusUpdate;
-        try {
-            const statusPromise = WP_OUTBOUND_STATUS.findOne({
-            attributes: ['updated_at'],
-            order: [['updated_at', 'DESC']],
-            raw: true
-        });
-            
-            latestStatusUpdate = await Promise.race([
-                statusPromise,
-                new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Status query timeout')), 5000)
-                )
-            ]);
-            console.log(`[DEBUG-${new Date().toISOString()}] Latest status update:`, latestStatusUpdate);
-        } catch (statusError) {
-            console.error(`[DEBUG-${new Date().toISOString()}] Error or timeout getting latest status:`, statusError);
-            latestStatusUpdate = null;
-        }
-
-        // Check cache first if not in real-time mode
+        // Check cache first, with optimized cache checking
         if (!realTime) {
-            console.log(`[DEBUG-${new Date().toISOString()}] Checking cache`);
             const cachedData = fileCache.get(cacheKey);
             if (cachedData) {
-                console.log(`[DEBUG-${new Date().toISOString()}] Found cached data from ${cachedData.timestamp}`);
                 // Use timestamp-based check for cache validity
-                const cacheAge = new Date() - new Date(cachedData.timestamp);
-                const maxCacheAge = polling ? 10 * 1000 : 60 * 1000; // 10 seconds for polling, 60 seconds otherwise (increased from 30)
-                console.log(`[DEBUG-${new Date().toISOString()}] Cache age: ${cacheAge}ms, max age: ${maxCacheAge}ms`);
-
-                let hasNewFiles = false;
-                let hasStatusUpdates = false;
+                const cacheAge = Date.now() - new Date(cachedData.timestamp);
+                const maxCacheAge = polling ? 10000 : 60000; // 10s for polling, 60s otherwise
                 
-                try {
-                    // Only check for new files if cache is older than maxCacheAge
-                    if (cacheAge > maxCacheAge) {
-                        console.log(`[DEBUG-${new Date().toISOString()}] Cache older than max age, checking for new files`);
-                        hasNewFiles = await Promise.race([
-                            checkForNewFiles(cachedData.networkPath, cachedData.timestamp),
-                            new Promise(resolve => setTimeout(() => resolve(false), 5000)) // 5s timeout
-                        ]);
-                        console.log(`[DEBUG-${new Date().toISOString()}] New files check result: ${hasNewFiles}`);
-                    }
+                let shouldUseCache = true;
+                
+                // Only perform expensive checks if cache is older than maximum age
+                if (cacheAge > maxCacheAge) {
+                    // In parallel, check for status updates and new files with timeouts
+                    const [hasStatusUpdates, hasNewFiles] = await Promise.allSettled([
+                        cachedData.lastStatusUpdate ? checkForStatusUpdates(cachedData.lastStatusUpdate) : Promise.resolve(false),
+                        checkForNewFiles(cachedData.networkPath, cachedData.timestamp)
+                    ]);
                     
-                    // Check for status updates
-                    if (latestStatusUpdate && cachedData.lastStatusUpdate) {
-                        hasStatusUpdates = new Date(latestStatusUpdate.updated_at) > new Date(cachedData.lastStatusUpdate);
-                        console.log(`[DEBUG-${new Date().toISOString()}] Status updates check result: ${hasStatusUpdates}`);
-                    }
-                    
-                    // If cache is valid, return cached data
-                    if (!hasNewFiles && !hasStatusUpdates) {
-                        clearTimeout(timeoutId);
-                        console.log(`[DEBUG-${new Date().toISOString()}] Returning cached data with ${cachedData.files?.length || 0} files`);
-                        return res.json({
-                            success: true,
-                            files: cachedData.files,
-                            processLog: cachedData.processLog,
-                            fromCache: true,
-                            cachedAt: cachedData.timestamp,
-                            lastStatusUpdate: cachedData.lastStatusUpdate,
-                            realTime: realTime
-                        });
-                    }
-                    
-                    // Log why we're not using cache
-                    if (hasNewFiles) console.log(`[DEBUG-${new Date().toISOString()}] Not using cache: New files detected`);
-                    if (hasStatusUpdates) console.log(`[DEBUG-${new Date().toISOString()}] Not using cache: Status updates detected`);
-                } catch (cacheError) {
-                    console.error(`[DEBUG-${new Date().toISOString()}] Cache validation error:`, cacheError);
-                    // Continue with fresh data if cache validation fails
+                    shouldUseCache = !(
+                        (hasStatusUpdates.status === 'fulfilled' && hasStatusUpdates.value) || 
+                        (hasNewFiles.status === 'fulfilled' && hasNewFiles.value)
+                    );
                 }
-            } else {
-                console.log(`[DEBUG-${new Date().toISOString()}] No cached data found`);
+                
+                if (shouldUseCache) {
+                    clearTimeout(timeoutId);
+                    console.log(`[${new Date().toISOString()}] Returning cached data (${Date.now() - startTime}ms)`);
+                    return res.json({
+                        success: true,
+                        files: cachedData.files,
+                        processLog: cachedData.processLog,
+                        fromCache: true,
+                        cachedAt: cachedData.timestamp,
+                        lastStatusUpdate: cachedData.lastStatusUpdate
+                    });
+                }
             }
-        } else {
-            console.log(`[DEBUG-${new Date().toISOString()}] Real-time mode, skipping cache`);
         }
 
-        // Get active SAP configuration first since we need it for the network path
-        console.log(`[DEBUG-${new Date().toISOString()}] Fetching SAP configuration`);
+        // Get active SAP configuration with timeout
         let config;
         try {
             config = await Promise.race([
-                WP_CONFIGURATION.findOne({
-            where: {
-                Type: 'SAP',
-                IsActive: 1
-            },
-            order: [['CreateTS', 'DESC']],
-            raw: true
-                }),
+                getActiveSAPConfig(), 
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Config query timeout')), 5000))
             ]);
-            console.log(`[DEBUG-${new Date().toISOString()}] SAP config retrieved:`, config ? 'success' : 'null');
         } catch (configError) {
-            console.error(`[DEBUG-${new Date().toISOString()}] Error fetching SAP config:`, configError);
             clearTimeout(timeoutId);
             throw new Error(`Failed to fetch SAP configuration: ${configError.message}`);
         }
-
-        if (!config || !config.Settings) {
+        
+        if (!config.success || !config.networkPath) {
             clearTimeout(timeoutId);
-            console.error(`[DEBUG-${new Date().toISOString()}] No active SAP configuration found`);
-            throw new Error('No active SAP configuration found');
+            throw new Error('Invalid SAP configuration');
         }
 
-        // Parse Settings if it's a string
-        let settings = config.Settings;
-        if (typeof settings === 'string') {
-            try {
-                settings = JSON.parse(settings);
-                console.log(`[DEBUG-${new Date().toISOString()}] Parsed SAP settings successfully`);
-            } catch (parseError) {
-                console.error(`[DEBUG-${new Date().toISOString()}] Error parsing SAP settings:`, parseError);
-                clearTimeout(timeoutId);
-                throw new Error('Invalid SAP configuration format');
-            }
-        }
-
-        if (!settings.networkPath) {
-            clearTimeout(timeoutId);
-            console.error(`[DEBUG-${new Date().toISOString()}] Network path not configured in SAP settings`);
-            throw new Error('Network path not configured in SAP settings');
-        }
-
-        // Validate network path accessibility with timeout
-        console.log(`[DEBUG-${new Date().toISOString()}] Validating network path: ${settings.networkPath}`);
-        let networkValid;
-        try {
-            networkValid = await Promise.race([
-                testNetworkPathAccessibility(settings.networkPath, {
-            serverName: settings.domain || '',
-            serverUsername: settings.username,
-            serverPassword: settings.password
-                }),
-                new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Network path validation timeout')), 10000)
-                )
-            ]);
-            console.log(`[DEBUG-${new Date().toISOString()}] Network validation result:`, networkValid);
-        } catch (networkError) {
-            console.error(`[DEBUG-${new Date().toISOString()}] Network validation error or timeout:`, networkError);
-            clearTimeout(timeoutId);
-            throw new Error(`Network path validation timed out: ${networkError.message}`);
-        }
+        // Get submission statuses in parallel with network path validation
+        const [networkValid, statusMapResult] = await Promise.all([
+            // Validate network path
+            testNetworkPathAccessibility(config.networkPath, {
+                serverName: config.domain || '',
+                serverUsername: config.username,
+                serverPassword: config.password
+            }).catch(err => ({ success: false, error: err.message })),
+            
+            // Get statuses (either from cache or DB)
+            getStatusMap().catch(() => new Map())
+        ]);
 
         if (!networkValid.success) {
             clearTimeout(timeoutId);
-            console.error(`[DEBUG-${new Date().toISOString()}] Network path not accessible: ${networkValid.error}`);
             throw new Error(`Network path not accessible: ${networkValid.error}`);
         }
 
-        // Use existing statuses from cache if available to speed up processing
-        let statusMap = new Map();
-        const cachedData = fileCache.get(cacheKey);
-        
-        if (cachedData && cachedData.files) {
-            console.log(`[DEBUG-${new Date().toISOString()}] Using status data from cache for ${cachedData.files.length} files`);
-            cachedData.files.forEach(file => {
-                if (file.fileName) {
-                    statusMap.set(file.fileName, {
-                        UUID: file.uuid,
-                        SubmissionUID: file.submissionUid,
-                        SubmissionStatus: file.status,
-                        DateTimeSent: file.date_submitted,
-                        DateTimeUpdated: file.statusUpdateTime,
-                        DateTimeCancelled: file.date_cancelled,
-                        CancelledReason: file.cancellation_reason,
-                        CancelledBy: file.cancelled_by,
-                        FileName: file.fileName,
-                        DocNum: file.invoiceNumber
-                    });
-                }
-            });
-        } else {
-            // Get submission statuses with timeout
-            console.log(`[DEBUG-${new Date().toISOString()}] Fetching submission statuses`);
-            try {
-                const submissionStatuses = await Promise.race([
-                    WP_OUTBOUND_STATUS.findAll({
-            attributes: [
-                            'id', 'UUID', 'submissionUid', 'fileName', 'filePath',
-                            'invoice_number', 'status', 'date_submitted', 'date_cancelled',
-                            'cancellation_reason', 'cancelled_by', 'updated_at'
-            ],
-            order: [['updated_at', 'DESC']],
-            raw: true
-                    }),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('Status fetch timeout')), 10000)
-                    )
-                ]);
-                console.log(`[DEBUG-${new Date().toISOString()}] Retrieved ${submissionStatuses.length} submission statuses`);
-
-        // Create status lookup map
-        submissionStatuses.forEach(status => {
-            const statusObj = {
-                UUID: status.UUID,
-                SubmissionUID: status.submissionUid,
-                SubmissionStatus: status.status,
-                DateTimeSent: status.date_submitted,
-                DateTimeUpdated: status.updated_at,
-                DateTimeCancelled: status.date_cancelled,
-                CancelledReason: status.cancellation_reason,
-                CancelledBy: status.cancelled_by,
-                FileName: status.fileName,
-                DocNum: status.invoice_number
-            };
-            
-            if (status.fileName) statusMap.set(status.fileName, statusObj);
-            if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
-        });
-            } catch (statusError) {
-                console.error(`[DEBUG-${new Date().toISOString()}] Error or timeout fetching statuses:`, statusError);
-                // Continue with empty status map if fetch fails
-                statusMap = new Map();
-            }
-        }
-
+        const statusMap = statusMapResult;
         const files = [];
-        const types = ['Manual', 'Schedule'];
-        console.log(`[DEBUG-${new Date().toISOString()}] Will process directories: ${types.join(', ')}`);
-
-        // Set a timeout for directory processing
-        let processingTimedOut = false;
-        const processingTimeoutId = setTimeout(() => {
-            processingTimedOut = true;
-            console.log(`[DEBUG-${new Date().toISOString()}] Directory processing timed out`);
-        }, 15000); // 15 seconds max for directory processing
-
-        // Process directories with timeout
-        console.log(`[DEBUG-${new Date().toISOString()}] Starting directory processing`);
-        for (const type of types) {
-            if (processingTimedOut) {
-                console.log(`[DEBUG-${new Date().toISOString()}] Skipping ${type} directory due to timeout`);
-                break;
-            }
-            
-            const typeDir = path.join(settings.networkPath, type);
-            console.log(`[DEBUG-${new Date().toISOString()}] Processing directory: ${typeDir}`);
-            try {
-                await processTypeDirectory(typeDir, type, files, processLog, statusMap);
-                console.log(`[DEBUG-${new Date().toISOString()}] Finished processing ${type} directory, found ${files.length} files so far`);
-            } catch (dirError) {
-                console.error(`[DEBUG-${new Date().toISOString()}] Error processing ${type} directory:`, dirError);
-                // Continue with other directories even if one fails
-            }
-        }
         
-        clearTimeout(processingTimeoutId);
-        console.log(`[DEBUG-${new Date().toISOString()}] Directory processing complete, found ${files.length} total files`);
+        // Process directories with a timeout
+        const processingTimeoutMs = 15000;
+        const types = ['Manual', 'Schedule'];
+        
+        try {
+            await Promise.race([
+                // Process directories in parallel
+                Promise.all(types.map(type => 
+                    processTypeDirectory(path.join(config.networkPath, type), type, files, processLog, statusMap)
+                )),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Directory processing timeout')), processingTimeoutMs)
+                )
+            ]);
+        } catch (processError) {
+            console.warn(`Directory processing incomplete: ${processError.message}`);
+            // Continue with partial data
+        }
 
-        // Create a map for latest documents
-        console.log(`[DEBUG-${new Date().toISOString()}] Processing latest documents`);
+        // Deduplicate and process files
+        console.log(`[${new Date().toISOString()}] Processing ${files.length} files`);
+        
+        // Group by invoice number or filename to find latest versions
         const latestDocuments = new Map();
-
         files.forEach(file => {
             const documentKey = file.invoiceNumber || file.fileName;
             const existingDoc = latestDocuments.get(documentKey);
@@ -617,16 +458,13 @@ router.get('/list-all', async (req, res) => {
                 latestDocuments.set(documentKey, file);
             }
         });
-        console.log(`[DEBUG-${new Date().toISOString()}] Unique documents after deduplication: ${latestDocuments.size}`);
-
+        
         // Convert map to array and merge with status
         const mergedFiles = Array.from(latestDocuments.values()).map(file => {
             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
-            const fileStatus = status?.SubmissionStatus || 'Pending';
-            
             return {
                 ...file,
-                status: fileStatus,
+                status: status?.SubmissionStatus || 'Pending',
                 statusUpdateTime: status?.DateTimeUpdated || null,
                 date_submitted: status?.DateTimeSent || null,
                 date_cancelled: status?.DateTimeCancelled || null,
@@ -636,44 +474,47 @@ router.get('/list-all', async (req, res) => {
                 submissionUid: status?.SubmissionUID || null
             };
         });
-        console.log(`[DEBUG-${new Date().toISOString()}] Final merged files count: ${mergedFiles.length}`);
 
-        // Sort by modified time
+        // Sort by modified time (most recent first)
         mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
 
+        // Get latest status update for cache
+        let latestStatusUpdate = null;
+        try {
+            latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
+                attributes: ['updated_at'],
+                order: [['updated_at', 'DESC']],
+                raw: true
+            });
+        } catch (statusError) {
+            console.error('Error fetching latest status update:', statusError);
+        }
+
         // Update cache
-        console.log(`[DEBUG-${new Date().toISOString()}] Updating cache`);
         const cacheData = {
             files: mergedFiles,
             processLog,
             timestamp: new Date().toISOString(),
             lastStatusUpdate: latestStatusUpdate?.updated_at,
-            networkPath: settings.networkPath
+            networkPath: config.networkPath
         };
         
-        // Set shorter TTL for real-time mode
-        if (realTime) {
-            fileCache.set(cacheKey, cacheData, 15); // 15 seconds TTL for real-time mode
-            console.log(`[DEBUG-${new Date().toISOString()}] Cache updated with 15s TTL (real-time mode)`);
-        } else {
-            fileCache.set(cacheKey, cacheData);
-            console.log(`[DEBUG-${new Date().toISOString()}] Cache updated with default TTL`);
-        }
-
+        // Set appropriate TTL for cache
+        fileCache.set(cacheKey, cacheData, realTime ? 15 : 300); // 15s for real-time mode, 5 min for normal
+        
         clearTimeout(timeoutId);
-        console.log(`[DEBUG-${new Date().toISOString()}] Sending response with ${mergedFiles.length} files`);
+        console.log(`[${new Date().toISOString()}] Returning ${mergedFiles.length} files (${Date.now() - startTime}ms)`);
         res.json({
             success: true,
             files: mergedFiles,
             processLog,
-            fromCache: false,
-            realTime: realTime
+            fromCache: false
         });
-        console.log(`[DEBUG-${new Date().toISOString()}] Response sent successfully`);
 
     } catch (error) {
         clearTimeout(timeoutId);
-        console.error(`[DEBUG-${new Date().toISOString()}] Error in list-all:`, error);
+        console.error(`[${new Date().toISOString()}] Error in list-all:`, error);
+        
         await logError('Error listing outbound files', error, {
             action: 'LIST_ALL',
             userId: req.user?.id
@@ -681,15 +522,13 @@ router.get('/list-all', async (req, res) => {
 
         res.status(500).json({
             success: false,
-            error: error.message,
-            processLog,
-            stack: error.stack // Include stack trace for debugging
+            error: {
+                message: error.message,
+                code: 'LISTING_ERROR'
+            }
         });
-        console.log(`[DEBUG-${new Date().toISOString()}] Error response sent`);
     }
-    console.log('==========================================');
 });
-
 
 /**
  * Check if a document has already been submitted
@@ -804,74 +643,75 @@ router.post('/:filename/open', async (req, res) => {
     }
 }); 
 /**
- * Process type directory
+ * Optimized processTypeDirectory with rate limiting
  */
 async function processTypeDirectory(typeDir, type, files, processLog, statusMap) {
-    console.log(`[DEBUG-${new Date().toISOString()}] processTypeDirectory starting for ${typeDir}`);
     try {
         // Check if directory exists
         try {
             await fsPromises.access(typeDir, fs.constants.R_OK);
-            console.log(`[DEBUG-${new Date().toISOString()}] Successfully accessed directory: ${typeDir}`);
         } catch (accessError) {
-            console.error(`[DEBUG-${new Date().toISOString()}] Cannot access directory ${typeDir}:`, accessError);
-            throw new Error(`Cannot access directory: ${typeDir}. Please check if the directory exists and you have proper permissions.`);
+            console.error(`Cannot access directory ${typeDir}:`, accessError);
+            return; // Skip instead of throwing error
         }
 
         // Read directory contents
         let companies;
         try {
-            console.log(`[DEBUG-${new Date().toISOString()}] Reading directory contents of: ${typeDir}`);
             companies = await fsPromises.readdir(typeDir);
-            console.log(`[DEBUG-${new Date().toISOString()}] Found ${companies.length} items in ${typeDir}`);
         } catch (readError) {
-            console.error(`[DEBUG-${new Date().toISOString()}] Error reading directory ${typeDir}:`, readError);
-            throw new Error(`Failed to read directory contents: ${typeDir}`);
+            console.error(`Error reading directory ${typeDir}:`, readError);
+            return; // Skip instead of throwing error
         }
 
         if (!companies || companies.length === 0) {
-            console.log(`[DEBUG-${new Date().toISOString()}] No companies found in directory: ${typeDir}`);
             return;
         }
 
-        // Process companies sequentially instead of in parallel to avoid overwhelming the system
-        console.log(`[DEBUG-${new Date().toISOString()}] Processing ${companies.length} companies sequentially`);
-        for (const company of companies) {
-            const companyDir = path.join(typeDir, company);
-            console.log(`[DEBUG-${new Date().toISOString()}] Processing company directory: ${companyDir}`);
-            try {
-                const stats = await fsPromises.stat(companyDir);
-                if (!stats.isDirectory()) {
-                    console.log(`[DEBUG-${new Date().toISOString()}] Skipping non-directory: ${companyDir}`);
-                    continue; // Skip if not a directory
+        // Process companies in smaller batches to avoid overwhelming the system
+        const batchSize = 5;
+        for (let i = 0; i < companies.length; i += batchSize) {
+            const batch = companies.slice(i, i + batchSize);
+            
+            // Process batch in parallel
+            await Promise.all(batch.map(async (company) => {
+                const companyDir = path.join(typeDir, company);
+                try {
+                    const stats = await fsPromises.stat(companyDir);
+                    if (!stats.isDirectory()) return; // Skip if not a directory
+                    
+                    await processCompanyDirectory(companyDir, company, type, files, processLog, statusMap);
+                } catch (companyError) {
+                    console.error(`Error processing company ${company}:`, companyError);
+                    // Log error but continue processing
+                    processLog.details.push({
+                        company,
+                        error: companyError.message,
+                        type: 'COMPANY_PROCESSING_ERROR'
+                    });
+                    processLog.summary.errors++;
                 }
-                await processCompanyDirectory(companyDir, company, type, files, processLog, statusMap);
-                console.log(`[DEBUG-${new Date().toISOString()}] Finished processing company: ${company}, files count: ${files.length}`);
-            } catch (companyError) {
-                console.error(`[DEBUG-${new Date().toISOString()}] Error processing company ${company}:`, companyError);
-                processLog.details.push({
-                    company,
-                    error: companyError.message,
-                    type: 'COMPANY_PROCESSING_ERROR'
-                });
-                processLog.summary.errors++;
+            }));
+            
+            // Brief pause between batches to reduce resource consumption
+            if (i + batchSize < companies.length) {
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
-        console.log(`[DEBUG-${new Date().toISOString()}] Completed processing type directory: ${typeDir}`);
     } catch (error) {
-        console.error(`[DEBUG-${new Date().toISOString()}] Error processing ${type} directory:`, error);
+        console.error(`Error processing ${type} directory:`, error);
         processLog.details.push({
             directory: typeDir,
             error: error.message,
             type: 'DIRECTORY_PROCESSING_ERROR'
         });
         processLog.summary.errors++;
-        throw error; // Re-throw to be handled by the main route handler
     }
 }
 
+
 /**
- * Process company directory
+ * Optimized processCompanyDirectory
  */
 async function processCompanyDirectory(companyDir, company, type, files, processLog, statusMap) {
     try {
@@ -879,8 +719,7 @@ async function processCompanyDirectory(companyDir, company, type, files, process
         try {
             await fsPromises.access(companyDir, fs.constants.R_OK);
         } catch (accessError) {
-            console.error(`Cannot access company directory ${companyDir}:`, accessError);
-            throw new Error(`Cannot access directory: ${companyDir}. Please check if the directory exists and you have proper permissions.`);
+            return; // Skip if directory doesn't exist
         }
 
         // Read directory contents
@@ -889,34 +728,49 @@ async function processCompanyDirectory(companyDir, company, type, files, process
             dates = await fsPromises.readdir(companyDir);
         } catch (readError) {
             console.error(`Error reading company directory ${companyDir}:`, readError);
-            throw new Error(`Failed to read company directory contents: ${companyDir}`);
+            return; // Skip if can't read directory
         }
 
         if (!dates || dates.length === 0) {
-            console.log(`No dates found in company directory: ${companyDir}`);
             return;
         }
 
-        // Process all dates in parallel for better performance
-        await Promise.all(dates.map(async date => {
-            const dateDir = path.join(companyDir, date);
-            try {
-                const stats = await fsPromises.stat(dateDir);
-                if (!stats.isDirectory()) {
-                    return; // Skip if not a directory
+        // Process dates in batches
+        const batchSize = 10;
+        for (let i = 0; i < dates.length; i += batchSize) {
+            const batch = dates.slice(i, i + batchSize);
+            
+            // Process batch in parallel
+            await Promise.all(batch.map(async (date) => {
+                const dateDir = path.join(companyDir, date);
+                try {
+                    const stats = await fsPromises.stat(dateDir);
+                    if (!stats.isDirectory()) return; // Skip if not a directory
+                    
+                    // Validate date format
+                    const normalizedDate = moment(date, ['YYYY-MM-DD', 'YYYY-DD-MM']).format('YYYY-MM-DD');
+                    if (normalizedDate === 'Invalid date') {
+                        processLog.summary.errors++;
+                        processLog.details.push({
+                            error: `Invalid date format in directory: ${date}. Expected format: YYYY-MM-DD`
+                        });
+                        return;
+                    }
+                    
+                    await processDateDirectory(dateDir, normalizedDate, company, type, files, processLog, statusMap);
+                } catch (dateError) {
+                    console.error(`Error processing date directory ${date}:`, dateError);
+                    // Log error but continue processing
+                    processLog.details.push({
+                        company,
+                        date,
+                        error: dateError.message,
+                        type: 'DATE_PROCESSING_ERROR'
+                    });
+                    processLog.summary.errors++;
                 }
-                await processDateDirectory(dateDir, date, company, type, files, processLog, statusMap);
-            } catch (dateError) {
-                console.error(`Error processing date directory ${date}:`, dateError);
-                processLog.details.push({
-                    company,
-                    date,
-                    error: dateError.message,
-                    type: 'DATE_PROCESSING_ERROR'
-                });
-                processLog.summary.errors++;
-            }
-        }));
+            }));
+        }
     } catch (error) {
         console.error(`Error processing company directory ${company}:`, error);
         processLog.details.push({
@@ -929,34 +783,36 @@ async function processCompanyDirectory(companyDir, company, type, files, process
     }
 }
 
+
 /**
- * Process date directory
+ * Optimized processDateDirectory using batch file processing
  */
 async function processDateDirectory(dateDir, date, company, type, files, processLog, statusMap) {
     try {
-        // Validate and normalize date format
-        const normalizedDate = moment(date, ['YYYY-MM-DD', 'YYYY-DD-MM']).format('YYYY-MM-DD');
-        if (!normalizedDate || normalizedDate === 'Invalid date') {
-            console.error(`Invalid date format in directory: ${date}`);
-            processLog.summary.errors++;
-            processLog.details.push({
-                error: `Invalid date format in directory: ${date}. Expected format: YYYY-MM-DD`
-            });
-            return;
-        }
-
         await ensureDirectoryExists(dateDir);
     
         const dirFiles = await fsPromises.readdir(dateDir);
         
-        // Process files in batches to prevent memory overload
-        const batchSize = 10;
-        for (let i = 0; i < dirFiles.length; i += batchSize) {
-            const batch = dirFiles.slice(i, i + batchSize);
-            // Process batch of files in parallel
+        // Skip if no files
+        if (!dirFiles.length) return;
+        
+        // Filter Excel files first to avoid unnecessary processing
+        const excelFiles = dirFiles.filter(file => file.match(/\.(xls|xlsx)$/i));
+        
+        // Process files in batches with reasonable size
+        const batchSize = 5;
+        for (let i = 0; i < excelFiles.length; i += batchSize) {
+            const batch = excelFiles.slice(i, i + batchSize);
+            
+            // Process batch in parallel
             await Promise.all(batch.map(file => 
-                processFile(file, dateDir, normalizedDate, company, type, files, processLog, statusMap)
+                processFile(file, dateDir, date, company, type, files, processLog, statusMap)
             ));
+            
+            // Pause briefly between batches
+            if (i + batchSize < excelFiles.length) {
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
         }
     } catch (error) {
         console.error(`Error processing date directory ${date}:`, error);
@@ -967,7 +823,6 @@ async function processDateDirectory(dateDir, date, company, type, files, process
         processLog.summary.errors++;
     }
 }
-
 /**
  * Validates file name format
  * Format: XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS
@@ -1444,7 +1299,6 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
                 // Invalidate the cache after successful submission
                 invalidateFileCache();
-
                 return res.json(response);
             }
 

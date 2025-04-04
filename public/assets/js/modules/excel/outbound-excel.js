@@ -63,179 +63,126 @@ class InvoiceTableManager {
 
     initializeTable() {
         try {
-            console.log('[DEBUG] Starting table initialization');
-            
             // Destroy existing table if it exists
             if ($.fn.DataTable.isDataTable('#invoiceTable')) {
                 $('#invoiceTable').DataTable().destroy();
                 $('#invoiceTable').empty();
             }
-
-            this.table = $('#invoiceTable').DataTable({
-                processing: true,
-                serverSide: false,
-                ajax: {
-                    url: '/api/outbound-files/list-all',
-                    method: 'GET',
-                    timeout: 45000, // 45 second timeout
-                    data: function(d) {
-                        // Add real-time flag for first load only
-                        return {
-                            ...d,
-                            realTime: 'false' // Use cached data when possible
-                        };
-                    },
-                    dataSrc: (json) => {
-                        // Hide loading modal once data is received
-                        $('#progressModal').modal('hide');
-                        
-                        if (!json.success) {
-                            console.error('Error:', json.error);
-                            this.showEmptyState(json.error?.message || 'Failed to load data');
-                            return [];
-                        }
-
-                        if (!json.files || json.files.length === 0) {
-                            this.showEmptyState('No EXCEL files found');
-                            return [];
-                        }
-
-                        // Process the files data
-                        const processedData = json.files.map(file => ({
-                            ...file,
-                            DT_RowId: file.fileName,
-                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
-                            fileName: file.fileName,
-                            documentType: file.documentType || 'Invoice',
-                            company: file.company,
-                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
-                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
-                            uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
-                            issueDate: file.issueDate,
-                            issueTime: file.issueTime,
-                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
-                            date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
-                            cancelled_by: file.cancelled_by || null,
-                            cancel_reason: file.cancel_reason || null,
-                            status: file.status || 'Pending',
-                            source: file.source,
-                            uuid: file.uuid || null,
-                            totalAmount: file.totalAmount || null
-                        }));
-
-                        // Update card totals after data is loaded
-                        setTimeout(() => this.updateCardTotals(), 0);
-
-                        return processedData;
-                    },
-                    error: (xhr, status, error) => {
-                        // Hide loading modal on error
-                        $('#progressModal').modal('hide');
-                        
-                        console.error('Ajax error:', status, error);
-                        let errorMessage = 'Error loading data. Please try again.';
-
-                        // Handle timeout specifically
-                        if (status === 'timeout') {
-                            errorMessage = 'Request timed out. The server took too long to respond.';
-                        } else if (xhr.status === 408) {
-                            errorMessage = 'Request timed out on the server. Please try again.';
-                        } else {
-                            try {
-                                const response = xhr.responseJSON;
-                                if (response && response.error) {
-                                    errorMessage = response.error.message || errorMessage;
-                                }
-                            } catch (e) {
-                                console.error('Error parsing error response:', e);
-                            }
-                        }
-
-                        this.showEmptyState(errorMessage);
+    
+            // Show loading indicator before AJAX call starts
+            const loadingIndicator = '<div class="table-loading-indicator text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading invoice data...</p></div>';
+            $('#invoiceTable').closest('.table-responsive').prepend(loadingIndicator);
+    
+            // Define column configurations once
+            const columnDefs = [
+                {
+                    targets: 0, // Checkbox column
+                    orderable: false,
+                    searchable: false,
+                    width: '30px',
+                    className: 'select-checkbox-column',
+                    render: (data, type, row) => {
+                        const status = (row.status || 'Pending').toLowerCase();
+                        const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
+                        return `<input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledStatus ? 'disabled' : ''} data-status="${status}" ${disabledStatus ? `title="Cannot select ${status} items"` : ''}>`;
                     }
                 },
-               
+                {
+                    targets: 1, // Row index column
+                    orderable: false,
+                    searchable: false,
+                    width: '40px',
+                    render: (data, type, row, meta) => `<span class="row-index">${meta.settings._iDisplayStart + meta.row + 1}</span>`
+                }
+            ];
+    
+            // Define optimized data processing function
+            const processFileData = (file) => ({
+                DT_RowId: file.fileName,
+                invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
+                fileName: file.fileName,
+                documentType: file.documentType || 'Invoice',
+                company: file.company,
+                buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
+                supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
+                uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
+                issueDate: file.issueDate,
+                issueTime: file.issueTime,
+                date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
+                date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
+                cancelled_by: file.cancelled_by || null,
+                cancel_reason: file.cancel_reason || null,
+                status: file.status || 'Pending',
+                source: file.source,
+                uuid: file.uuid || null,
+                totalAmount: file.totalAmount || null
+            });
+    
+            // Create DataTable with optimized settings
+            this.table = $('#invoiceTable').DataTable({
+                processing: false, // We'll handle our own processing indicator
+                serverSide: false,
+                deferRender: true, // Render only visible rows
+                paging: true,
+                autoWidth: false,
                 columns: [
-                    {
-                        data: null,
-                        orderable: false,
-                        searchable: false,
-                        render: function (data, type, row) {
-                            // Only enable checkbox for Pending status
-                            const status = (row.status || 'Pending').toLowerCase();
-                            const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
-                            const disabledAttr = disabledStatus ? 'disabled' : '';
-                            const title = disabledStatus ? `Cannot select ${status} items` : '';
-
-                            return `<div>
-                                <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
-                            </div>`;
-                        }
-                    },
-                    {
-                        data: null,
-                        orderable: false,
-                        searchable: false,
-                        render: function (data, type, row, meta) {
-                            // Calculate the correct index based on the current page and page length
-                            const pageInfo = meta.settings._iDisplayStart;
-                            const index = pageInfo + meta.row + 1;
-                            return `<span class="row-index">${index}</span>`;
-                        }
-                    },
+                    { data: null }, // Checkbox column (handled by columnDefs)
+                    { data: null }, // Index column (handled by columnDefs)
                     {
                         data: 'invoiceNumber',
                         title: 'INV NO. / DOCUMENT',
-                        render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
+                        render: (data, type, row) => type === 'display' ? this.renderInvoiceNumber(data, type, row) : data
                     },
                     {
                         data: 'company',
                         title: 'COMPANY',
-                        render: (data, type, row) => this.renderCompanyInfo(data, type, row)
+                        render: (data, type, row) => type === 'display' ? this.renderCompanyInfo(data, type, row) : data
                     },
                     {
                         data: 'supplierInfo',
                         title: 'SUPPLIER',
-                        render: (data, type, row) => this.renderSupplierInfo(data, type, row)
+                        render: (data, type, row) => type === 'display' ? this.renderSupplierInfo(data, type, row) : data
                     },
                     {
                         data: 'buyerInfo',
                         title: 'RECEIVER',
-                        render: (data, type, row) => this.renderBuyerInfo(data, type, row)
+                        render: (data, type, row) => type === 'display' ? this.renderBuyerInfo(data, type, row) : data
                     },
                     {
                         data: 'uploadedDate',
                         title: 'FILE UPLOADED',
-                        render: (data, type, row) => this.renderUploadedDate(data, type, row)
+                        render: (data, type, row) => type === 'display' ? this.renderUploadedDate(data, type, row) : data
                     },
                     {
                         data: null,
                         title: 'E-INV. DATE INFO',
-                        render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row)
+                        render: (data, type, row) => type === 'display' ? 
+                            this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row) : 
+                            (row.issueDate || '')
                     },
                     {
                         data: 'status',
                         title: 'STATUS',
-                        render: (data) => this.renderStatus(data)
+                        render: (data, type) => type === 'display' ? this.renderStatus(data) : data
                     },
                     {
                         data: 'source',
                         title: 'SOURCE',
-                        render: (data) => this.renderSource(data)
+                        render: (data, type) => type === 'display' ? this.renderSource(data) : data
                     },
                     {
                         data: 'totalAmount',
                         title: 'AMOUNT',
-                        render: (data) => this.renderTotalAmount(data)
+                        render: (data, type) => type === 'display' ? this.renderTotalAmount(data) : data
                     },
                     {
                         data: null,
                         title: 'ACTION',
                         orderable: false,
-                        render: (data, type, row) => this.renderActions(row)
+                        render: (data, type, row) => type === 'display' ? this.renderActions(row) : ''
                     }
                 ],
-                autoWidth: false,
+                columnDefs: columnDefs,
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 language: {
@@ -251,38 +198,105 @@ class InvoiceTableManager {
                         next: '<i class="bi bi-chevron-right"></i>',
                         last: '<i class="bi bi-chevron-double-right"></i>'
                     },
-                    processing: false,
+                    emptyTable: 'No files available',
                     zeroRecords: `<div class="d-flex justify-content-center align-items-center" style="height: 200px;">
-                                    <div class="text-primary" role="status">
-                                        <span class="visually-hidden">Loading...</span>
-                                    </div>
-                                    <span class="ms-2">Please wait, loading files... This may take a moment depending on the number of files.</span>
-                                </div>`,
-                    emptyTable: 'No files available'
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="ms-2">Please wait, loading files... This may take a moment depending on the number of files.</span>
+                </div>`
                 },
-                order: [6, 'desc'], 
-                drawCallback: function (settings) {
-                    // Update row indexes when table is redrawn (sorting, filtering, pagination)
-                    $(this).find('tbody tr').each(function (index) {
-                        const pageInfo = settings._iDisplayStart;
-                        $(this).find('.row-index').text(pageInfo + index + 1);
-                    });
-                },
-                createdRow: (row, data, dataIndex) => {
-                    // Add a class to the row based on status
-                    const status = (data.status || 'Pending').toLowerCase();
-                    if (['submitted', 'cancelled', 'rejected', 'invalid'].includes(status)) {
-                        $(row).addClass('non-selectable-row');
-                        // Add a tooltip to explain why the row can't be selected
-                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
-                    } else {
-                        $(row).addClass('selectable-row');
+                order: [6, 'asc'],
+                ajax: {
+                    url: '/api/outbound-files/list-all',
+                    method: 'GET',
+                    timeout: 60000, // 60 second timeout
+                    data: (d) => ({
+                        ...d,
+                        realTime: 'false', // Use cached data by default
+                        _ts: new Date().getTime() // Cache-busting parameter
+                    }),
+                    dataSrc: (json) => {
+                        // Remove loading indicator
+                        $('.table-loading-indicator').remove();
+                        
+                        if (!json.success) {
+                            console.error('Error:', json.error);
+                            this.showEmptyState(json.error?.message || 'Failed to load data');
+                            return [];
+                        }
+    
+                        if (!json.files || json.files.length === 0) {
+                            this.showEmptyState('No invoice files found');
+                            return [];
+                        }
+    
+                        // Process data more efficiently
+                        const processedData = json.files.map(processFileData);
+                        
+                        // Update card totals using requestAnimationFrame for better performance
+                        requestAnimationFrame(() => this.updateCardTotals());
+                        
+                        return processedData;
+                    },
+                    error: (xhr, status, error) => {
+                        // Remove loading indicator on error
+                        $('.table-loading-indicator').remove();
+                        
+                        console.error('Ajax error:', status, error);
+                        let errorMessage = 'Error loading data. Please try again.';
+    
+                        if (status === 'timeout') {
+                            errorMessage = 'Request timed out. The server took too long to respond.';
+                        } else if (xhr.status === 408) {
+                            errorMessage = 'Request timed out on the server. Please try again.';
+                        } else if (xhr.responseJSON?.error?.message) {
+                            errorMessage = xhr.responseJSON.error.message;
+                        }
+    
+                        this.showEmptyState(errorMessage);
                     }
                 },
+                // Use a more efficient approach for row creation
+                createdRow: (row, data, dataIndex) => {
+                    const status = (data.status || 'Pending').toLowerCase();
+                    const rowClass = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status) ? 
+                        'non-selectable-row' : 'selectable-row';
+                    
+                    $(row).addClass(rowClass);
+                    
+                    if (rowClass === 'non-selectable-row') {
+                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
+                    }
+                },
+                drawCallback: function(settings) {
+                    // Update row indexes efficiently in single batch
+                    const start = settings._iDisplayStart;
+                    $(this).find('tbody tr').each(function(i) {
+                        $(this).find('.row-index').text(start + i + 1);
+                    });
+                },
+                // Initialize features only after table is ready
+                initComplete: () => {
+                    // Defer non-critical feature initialization
+                    setTimeout(() => this.initializeFeatures(), 100);
+                    
+                    // Add reload button for better user experience
+                    const reloadButton = $('<button class="btn btn-sm btn-outline-primary ms-2"><i class="bi bi-arrow-repeat"></i> Refresh</button>');
+                    reloadButton.on('click', () => this.reloadTable(true));
+                    $('.outbound-controls').append(reloadButton);
+                }
             });
-
-            this.initializeFeatures();
-
+    
+            // Add method to reload table with optional force parameter
+            this.reloadTable = (force = false) => {
+                $('.table-loading-indicator').remove();
+                $('#invoiceTable').closest('.table-responsive').prepend(loadingIndicator);
+                
+                // Reload with or without cache
+                this.table.ajax.reload(null, force);
+            };
+    
         } catch (error) {
             console.error('Error initializing DataTable:', error);
             this.showEmptyState('Error initializing table. Please refresh the page.');

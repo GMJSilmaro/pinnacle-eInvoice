@@ -3,10 +3,10 @@ module.exports = {
     {
       name: 'eInvoice',
       script: './server.js',
-      instances: 1,
+      instances: 3,
       autorestart: true,
       watch: true,
-      ignore_watch: ["node_modules", "public", "logs", "*.log", "temp"],
+      ignore_watch: ["node_modules", "public", "logs", "*.log", "temp", "*.xlsx"],
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'development',
@@ -15,6 +15,8 @@ module.exports = {
       },
       env_production: {
         NODE_ENV: 'production',
+        SECURE_COOKIE: 'false',
+        TRUST_PROXY: 'true'
       },
       log_file: 'C:/inetpub/wwwroot/eInvoice/logs/combined.log',  
       out_file: 'C:/inetpub/wwwroot/eInvoice/logs/out.log',        
