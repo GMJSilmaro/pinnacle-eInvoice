@@ -63,32 +63,20 @@ class InvoiceTableManager {
 
     initializeTable() {
         try {
-            console.log('[DEBUG] Starting table initialization');
-            
             // Destroy existing table if it exists
             if ($.fn.DataTable.isDataTable('#invoiceTable')) {
                 $('#invoiceTable').DataTable().destroy();
                 $('#invoiceTable').empty();
             }
 
+            // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
-                processing: true,
+                processing: false,
                 serverSide: false,
                 ajax: {
                     url: '/api/outbound-files/list-all',
                     method: 'GET',
-                    timeout: 45000, // 45 second timeout
-                    data: function(d) {
-                        // Add real-time flag for first load only
-                        return {
-                            ...d,
-                            realTime: 'false' // Use cached data when possible
-                        };
-                    },
                     dataSrc: (json) => {
-                        // Hide loading modal once data is received
-                        $('#progressModal').modal('hide');
-                        
                         if (!json.success) {
                             console.error('Error:', json.error);
                             this.showEmptyState(json.error?.message || 'Failed to load data');
@@ -123,32 +111,24 @@ class InvoiceTableManager {
                             totalAmount: file.totalAmount || null
                         }));
 
+                        console.log("Current Process Data", processedData);
+
                         // Update card totals after data is loaded
                         setTimeout(() => this.updateCardTotals(), 0);
 
                         return processedData;
                     },
-                    error: (xhr, status, error) => {
-                        // Hide loading modal on error
-                        $('#progressModal').modal('hide');
-                        
-                        console.error('Ajax error:', status, error);
+                    error: (xhr, error, thrown) => {
+                        console.error('Ajax error:', error);
                         let errorMessage = 'Error loading data. Please try again.';
 
-                        // Handle timeout specifically
-                        if (status === 'timeout') {
-                            errorMessage = 'Request timed out. The server took too long to respond.';
-                        } else if (xhr.status === 408) {
-                            errorMessage = 'Request timed out on the server. Please try again.';
-                        } else {
-                            try {
-                                const response = xhr.responseJSON;
-                                if (response && response.error) {
-                                    errorMessage = response.error.message || errorMessage;
-                                }
-                            } catch (e) {
-                                console.error('Error parsing error response:', e);
+                        try {
+                            const response = xhr.responseJSON;
+                            if (response && response.error) {
+                                errorMessage = response.error.message || errorMessage;
                             }
+                        } catch (e) {
+                            console.error('Error parsing error response:', e);
                         }
 
                         this.showEmptyState(errorMessage);
@@ -235,6 +215,8 @@ class InvoiceTableManager {
                         render: (data, type, row) => this.renderActions(row)
                     }
                 ],
+                scrollX: true,
+                scrollCollapse: true,
                 autoWidth: false,
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
@@ -251,14 +233,8 @@ class InvoiceTableManager {
                         next: '<i class="bi bi-chevron-right"></i>',
                         last: '<i class="bi bi-chevron-double-right"></i>'
                     },
-                    processing: false,
-                    zeroRecords: `<div class="d-flex justify-content-center align-items-center" style="height: 200px;">
-                                    <div class="text-primary" role="status">
-                                        <span class="visually-hidden">Loading...</span>
-                                    </div>
-                                    <span class="ms-2">Please wait, loading files... This may take a moment depending on the number of files.</span>
-                                </div>`,
-                    emptyTable: 'No files available'
+                    emptyTable: this.getEmptyStateHtml(),
+                    zeroRecords: this.getEmptyStateHtml('Searching for data...')
                 },
                 order: [6, 'desc'], 
                 drawCallback: function (settings) {
@@ -1029,78 +1005,62 @@ class InvoiceTableManager {
     }
 
     initializeEventListeners() {
-        try {
-            // Add manual refresh button functionality
-            $('#refreshButton').on('click', (e) => {
-                e.preventDefault();
-                this.refresh();
+        // Quick Filter buttons
+        document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
+            button.addEventListener('click', (e) => {
+                // Remove active class from all buttons
+                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
+                // Add active class to clicked button
+                e.target.closest('.btn').classList.add('active');
+                
+                const filterValue = e.target.closest('.btn').dataset.filter;
+                this.applyQuickFilter(filterValue);
             });
+        });
 
-            // Quick Filter buttons
-            document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    // Remove active class from all buttons
-                    document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
-                    // Add active class to clicked button
-                    e.target.closest('.btn').classList.add('active');
-                    
-                    const filterValue = e.target.closest('.btn').dataset.filter;
-                    this.applyQuickFilter(filterValue);
-                });
+        // Global Search
+        const globalSearch = document.getElementById('globalSearch');
+        if (globalSearch) {
+            globalSearch.addEventListener('input', (e) => {
+                this.table.search(e.target.value).draw();
             });
+        }
 
-            // Global Search
-            const globalSearch = document.getElementById('globalSearch');
-            if (globalSearch) {
-                globalSearch.addEventListener('input', (e) => {
-                    this.table.search(e.target.value).draw();
-                });
-            }
-
-            // Advanced Filters
-            // Date Range
-            const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type');
-            const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type');
-            if (startDate && endDate) {
-                [startDate, endDate].forEach(input => {
-                    input.addEventListener('change', () => this.applyAdvancedFilters());
-                });
-            }
-
-            // Amount Range
-            const minAmount = document.getElementById('minAmount');
-            const maxAmount = document.getElementById('maxAmount');
-            if (minAmount && maxAmount) {
-                [minAmount, maxAmount].forEach(input => {
-                    input.addEventListener('input', () => this.applyAdvancedFilters());
-                });
-            }
-
-            // Company Filter
-            const companyFilter = document.querySelector('input[placeholder="Filter by company name"]');
-            if (companyFilter) {
-                companyFilter.addEventListener('input', () => this.applyAdvancedFilters());
-            }
-
-            // Document Type Filter
-            const documentTypeFilter = document.getElementById('documentTypeFilter');
-            if (documentTypeFilter) {
-                documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
-            }
-
-            // Clear Filters
-            const clearFiltersBtn = document.getElementById('clearFilters');
-            if (clearFiltersBtn) {
-                clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
-            }
-
-            // Export button
-            $('#exportButton').on('click', (e) => {
-                e.preventDefault();
-                this.exportSelectedRecords();
+        // Advanced Filters
+        // Date Range
+        const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type');
+        const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type');
+        if (startDate && endDate) {
+            [startDate, endDate].forEach(input => {
+                input.addEventListener('change', () => this.applyAdvancedFilters());
             });
-        } catch (error) {
-            console.error('Error initializing event listeners:', error);
+        }
+
+        // Amount Range
+        const minAmount = document.getElementById('minAmount');
+        const maxAmount = document.getElementById('maxAmount');
+        if (minAmount && maxAmount) {
+            [minAmount, maxAmount].forEach(input => {
+                input.addEventListener('input', () => this.applyAdvancedFilters());
+            });
+        }
+
+        // Company Filter
+        const companyFilter = document.querySelector('input[placeholder="Filter by company name"]');
+        if (companyFilter) {
+            companyFilter.addEventListener('input', () => this.applyAdvancedFilters());
+        }
+
+        // Document Type Filter
+        const documentTypeFilter = document.getElementById('documentTypeFilter');
+        if (documentTypeFilter) {
+            documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
+        }
+
+        // Clear Filters
+        const clearFiltersBtn = document.getElementById('clearFilters');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
         }
     }
 
@@ -2821,43 +2781,7 @@ class InvoiceTableManager {
     }
 
     refresh() {
-        try {
-            // Show loading modal
-            this.showProgressModal('Refreshing Data', 'Please wait while we refresh your data...');
-            
-            // Force reload with real-time data
-            if (this.table) {
-                // Add realTime parameter to request fresh data
-                this.table.ajax.url('/api/outbound-files/list-all?realTime=true').load(() => {
-                    // Hide loading modal when done
-                    $('#progressModal').modal('hide');
-                    
-                    // Update the cards and charts
-                    this.updateCardTotals();
-                    
-                    // Show toast notification
-                    Toastify({
-                        text: "Data refreshed successfully",
-                        duration: 3000,
-                        gravity: "top",
-                        position: "right",
-                        backgroundColor: "var(--bs-success)",
-                        stopOnFocus: true
-                    }).showToast();
-                }, error => {
-                    // Hide loading modal on error
-                    $('#progressModal').modal('hide');
-                    
-                    // Show error notification
-                    this.showErrorMessage("Error refreshing data. Please try again.");
-                    console.error("Refresh error:", error);
-                });
-            }
-        } catch (error) {
-            $('#progressModal').modal('hide');
-            console.error('Error in refresh:', error);
-            this.showErrorMessage("An unexpected error occurred while refreshing data.");
-        }
+        this.table?.ajax.reload(null, false);
     }
 
     cleanup() {
@@ -5457,4 +5381,333 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const manager = InvoiceTableManager.getInstance();
     DateTimeManager.updateDateTime();
+});
+
+class ConsolidatedSubmissionManager {
+    constructor() {
+        this.selectedDocs = new Set();
+        this.initializeEventListeners();
+    }
+
+    initializeEventListeners() {
+        // Handle consolidated submit button click
+        document.getElementById('submitConsolidatedBtn').addEventListener('click', () => {
+            this.handleConsolidatedSubmit();
+        });
+
+        // Update selected docs list when checkboxes change
+        // Only listen to enabled checkboxes (Pending status)
+        document.addEventListener('change', (e) => {
+            if (e.target.matches('.row-checkbox:not([disabled])') || e.target.id === 'selectAll') {
+                this.updateSelectedDocs();
+            }
+        });
+    }
+
+    updateSelectedDocs() {
+        // Only get rows with enabled checkboxes (Pending status)
+        const checkboxes = document.querySelectorAll('.row-checkbox:not([disabled]):checked:not(#selectAll)');
+        this.selectedDocs.clear();
+
+        checkboxes.forEach(checkbox => {
+            const row = checkbox.closest('tr');
+            const rowData = InvoiceTableManager.getInstance().table.row(row).data();
+            if (rowData) {
+                // Double-check that the status is Pending
+                if (rowData.status && rowData.status.toLowerCase() === 'pending') {
+                    this.selectedDocs.add({
+                        fileName: rowData.fileName,
+                        type: rowData.type,
+                        company: rowData.company,
+                        date: rowData.date
+                    });
+                }
+            }
+        });
+
+        this.updateSelectedDocsList();
+        this.updateSubmitButton();
+    }
+
+    updateSelectedDocsList() {
+        const listContainer = $('#selectedDocsList');
+        listContainer.empty();
+
+        if (this.selectedDocs.size === 0) {
+            return; // Empty state is handled by CSS
+        }
+
+        this.selectedDocs.forEach(doc => {
+            const docItem = $(`
+                <div class="doc-item">
+                    <i class="bi bi-file-earmark-text text-primary"></i>
+                    <span class="flex-grow-1">${doc.fileName}</span>
+                    <span class="company-badge">${doc.company || 'PXC Branch'}</span>
+            </div>
+        `);
+            listContainer.append(docItem);
+        });
+    }
+
+    updateSubmitButton() {
+        const submitBtn = document.getElementById('submitConsolidatedBtn');
+        submitBtn.disabled = this.selectedDocs.size === 0;
+    }
+
+    async handleConsolidatedSubmit() {
+        const version = document.getElementById('lhdnVersion').value;
+        const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
+        const submissionProgress = document.getElementById('submissionProgress');
+
+        try {
+            progressModal.show();
+            submissionProgress.innerHTML = '<div class="alert alert-info">Starting consolidated submission...</div>';
+
+            let successCount = 0;
+            let failureCount = 0;
+            const results = [];
+
+            for (const doc of this.selectedDocs) {
+                try {
+                    submissionProgress.innerHTML += `
+                        <div class="alert alert-info">
+                            Processing ${doc.fileName}...
+                        </div>
+                    `;
+
+                    // First validate the document
+                    const validationResult = await validateExcelFile(doc.fileName, doc.type, doc.company, doc.date);
+
+                    if (validationResult.success) {
+                        // If validation successful, submit to LHDN
+                        const submitResult = await submitToLHDN(doc.fileName, doc.type, doc.company, doc.date, version);
+
+                        if (submitResult.success) {
+                            successCount++;
+                            results.push({
+                                fileName: doc.fileName,
+                                status: 'success',
+                                message: 'Successfully submitted'
+                            });
+                        } else {
+                            failureCount++;
+                            results.push({
+                                fileName: doc.fileName,
+                                status: 'error',
+                                message: submitResult.error || 'Submission failed'
+                            });
+                        }
+                    } else {
+                        failureCount++;
+                        results.push({
+                            fileName: doc.fileName,
+                            status: 'error',
+                            message: 'Validation failed'
+                        });
+                    }
+                } catch (error) {
+                    failureCount++;
+                    results.push({
+                        fileName: doc.fileName,
+                        status: 'error',
+                        message: error.message
+                    });
+                }
+            }
+
+            // Show final results
+            submissionProgress.innerHTML = `
+                <div class="alert ${successCount === this.selectedDocs.size ? 'alert-success' : 'alert-warning'}">
+                    <h6>Submission Complete</h6>
+                    <p>Successfully submitted: ${successCount}</p>
+                    <p>Failed: ${failureCount}</p>
+                </div>
+                <div class="results-list">
+                    ${results.map(result => `
+                        <div class="alert alert-${result.status === 'success' ? 'success' : 'danger'}">
+                            <strong>${result.fileName}</strong>: ${result.message}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            // Refresh the table after submission
+            InvoiceTableManager.getInstance().refresh();
+
+        } catch (error) {
+            submissionProgress.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Submission Failed</h6>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+    }
+}
+
+// Initialize the consolidated submission manager when the document is ready
+document.addEventListener('DOMContentLoaded', () => {
+    new ConsolidatedSubmissionManager();
+});
+
+// Handle bulk document submission
+async function handleBulkSubmission(selectedDocs) {
+    const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
+    const progressDiv = document.getElementById('submissionProgress');
+    
+    try {
+        // Initialize progress UI
+        if (!progressDiv) {
+            throw new Error('Progress container not found');
+        }
+
+        progressDiv.innerHTML = `
+            <div class="progress mb-3">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     style="width: 0%" 
+                     aria-valuenow="0" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                </div>
+            </div>
+            <div class="submission-status mb-3">Preparing documents for submission...</div>
+            <div class="documents-status"></div>
+        `;
+
+        progressModal.show();
+
+        const version = document.getElementById('lhdnVersion')?.value || '1.0';
+        const progressBar = progressDiv.querySelector('.progress-bar');
+        const statusText = progressDiv.querySelector('.submission-status');
+        const documentsStatus = progressDiv.querySelector('.documents-status');
+
+        if (!progressBar || !statusText || !documentsStatus) {
+            throw new Error('Required progress elements not found');
+        }
+
+        // Submit documents
+        const response = await fetch('/api/outbound-files/bulk-submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documents: selectedDocs, version })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error?.message || 'Failed to submit documents');
+        }
+
+        // Update progress for each document
+        result.results.forEach((docResult, index) => {
+            const progress = ((index + 1) / result.results.length) * 100;
+            progressBar.style.width = `${progress}%`;
+            progressBar.setAttribute('aria-valuenow', progress);
+
+            const statusClass = docResult.success ? 'text-success' : 'text-danger';
+            const statusIcon = docResult.success ? 'check-circle-fill' : 'x-circle-fill';
+            documentsStatus.insertAdjacentHTML('beforeend', `
+                <div class="doc-status mb-2 ${statusClass}">
+                    <i class="bi bi-${statusIcon}"></i>
+                    ${docResult.fileName}: ${docResult.success ? 'Submitted successfully' : docResult.error.message}
+                </div>
+            `);
+        });
+
+        statusText.textContent = 'Submission complete';
+        progressBar.style.width = '100%';
+        progressBar.setAttribute('aria-valuenow', 100);
+        progressBar.classList.remove('progress-bar-animated');
+
+        // Refresh table and show summary
+        await InvoiceTableManager.getInstance().refresh();
+        const successCount = result.results.filter(r => r.success).length;
+        const failureCount = result.results.filter(r => !r.success).length;
+
+        // Close consolidated modal if open
+        const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
+        if (consolidatedModal) {
+            consolidatedModal.hide();
+        }
+
+        await Swal.fire({
+            icon: successCount > 0 ? 'success' : 'warning',
+            title: 'Submission Complete',
+            html: `
+                <div class="submission-summary">
+                    <p>Successfully submitted: ${successCount} document(s)</p>
+                    <p>Failed submissions: ${failureCount} document(s)</p>
+                    ${failureCount > 0 ? '<p>Check the progress modal for details on failed submissions.</p>' : ''}
+                </div>
+            `,
+            confirmButtonText: 'OK',
+            customClass: { confirmButton: 'outbound-action-btn submit' }
+        });
+
+    } catch (error) {
+        console.error('Bulk submission error:', error);
+        if (progressDiv) {
+            progressDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Submission Failed</h6>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+        
+        await Swal.fire({
+            icon: 'error',
+            title: 'Submission Failed',
+            text: error.message || 'An error occurred during bulk submission',
+            confirmButtonText: 'OK',
+            customClass: { confirmButton: 'outbound-action-btn submit' }
+        });
+    }
+}
+
+// Add event listener for bulk submit button
+document.addEventListener('DOMContentLoaded', function() {
+    const submitConsolidatedBtn = document.getElementById('submitConsolidatedBtn');
+    if (submitConsolidatedBtn) {
+        submitConsolidatedBtn.addEventListener('click', async function() {
+            const selectedRows = Array.from(document.querySelectorAll('input.outbound-checkbox:checked'))
+                .map(checkbox => {
+                    const row = checkbox.closest('tr');
+                    return {
+                        fileName: row.getAttribute('data-file-name'),
+                        type: row.getAttribute('data-type'),
+                        company: row.getAttribute('data-company'),
+                        date: row.getAttribute('data-date')
+                    };
+                });
+
+            if (selectedRows.length === 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Documents Selected',
+                    text: 'Please select at least one document to submit.'
+                });
+                return;
+            }
+
+            const confirmResult = await Swal.fire({
+                icon: 'question',
+                title: 'Confirm Bulk Submission',
+                html: `Are you sure you want to submit ${selectedRows.length} document(s)?`,
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Submit',
+                cancelButtonText: 'Cancel',
+                customClass: {
+                    confirmButton: 'outbound-action-btn submit',
+                    cancelButton: 'outbound-action-btn cancel'
+                }
+            });
+
+            if (confirmResult.isConfirmed) {
+                const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
+                consolidatedModal.hide();
+                await handleBulkSubmission(selectedRows);
+            }
+        });
+    }
 });

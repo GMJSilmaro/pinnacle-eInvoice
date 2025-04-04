@@ -81,6 +81,7 @@
     position: sticky;
     z-index: 1;
     vertical-align: middle;
+    margin-bottom: 10px;
 }
 
 .outbound-table-responsive tbody td {
@@ -89,6 +90,7 @@
     font-size: 0.735rem;
     border-bottom: 1px solid #e2e8f0;
     white-space: normal;
+    margin-bottom: 10px;
 }
 
 .outbound-table-responsive tbody tr:hover {
