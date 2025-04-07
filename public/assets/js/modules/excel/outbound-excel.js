@@ -56,9 +56,54 @@ class InvoiceTableManager {
         InvoiceTableManager.instance = this;
         this.table = null;
         this.selectedRows = new Set();
+        
+        // Add a prefilter for all AJAX requests
+        $.ajaxPrefilter((options, originalOptions, jqXHR) => {
+            if (!options.beforeSend) {
+                options.beforeSend = () => {
+                    this.showLoadingBackdrop();
+                };
+            }
+            let oldComplete = options.complete;
+            options.complete = (jqXHR, textStatus) => {
+                this.hideLoadingBackdrop();
+                if (oldComplete) {
+                    oldComplete(jqXHR, textStatus);
+                }
+            };
+        });
+
         this.initializeTable();
         this.initializeCharts();
         this.initializeEventListeners();
+    }
+
+    showLoadingBackdrop() {
+        // Remove any existing backdrop
+        $('#loadingBackdrop').remove();
+        
+        // Create and append new backdrop
+        const backdrop = `
+            <div id="loadingBackdrop" class="loading-backdrop">
+                <div class="loading-content">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <div class="loading-message">
+                        <h5>Processing Request</h5>
+                        <p>Please do not refresh the page...</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        $('body').append(backdrop);
+        $('#loadingBackdrop').fadeIn(300);
+    }
+
+    hideLoadingBackdrop() {
+        $('#loadingBackdrop').fadeOut(300, function() {
+            $(this).remove();
+        });
     }
 
     initializeTable() {
@@ -68,140 +113,115 @@ class InvoiceTableManager {
                 $('#invoiceTable').DataTable().destroy();
                 $('#invoiceTable').empty();
             }
-    
-            // Show loading indicator before AJAX call starts
-            const loadingIndicator = '<div class="table-loading-indicator text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading invoice data...</p></div>';
-            $('#invoiceTable').closest('.table-responsive').prepend(loadingIndicator);
-    
-            // Define column configurations once
-            const columnDefs = [
-                {
-                    targets: 0, // Checkbox column
-                    orderable: false,
-                    searchable: false,
-                    width: '30px',
-                    className: 'select-checkbox-column',
-                    render: (data, type, row) => {
-                        const status = (row.status || 'Pending').toLowerCase();
-                        const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
-                        return `<input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledStatus ? 'disabled' : ''} data-status="${status}" ${disabledStatus ? `title="Cannot select ${status} items"` : ''}>`;
-                    }
-                },
-                {
-                    targets: 1, // Row index column
-                    orderable: false,
-                    searchable: false,
-                    width: '40px',
-                    render: (data, type, row, meta) => `<span class="row-index">${meta.settings._iDisplayStart + meta.row + 1}</span>`
-                },
-                // Make sure all columns are searchable
-                { targets: '_all', searchable: true }
-            ];
 
-            // Add search delay to prevent excessive searching
-            $.fn.dataTable.ext.search = $.fn.dataTable.ext.search || [];
-    
-            // Define optimized data processing function
-            const processFileData = (file) => ({
-                DT_RowId: file.fileName,
-                invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
-                fileName: file.fileName,
-                documentType: file.documentType || 'Invoice',
-                company: file.company,
-                buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
-                supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
-                uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
-                issueDate: file.issueDate,
-                issueTime: file.issueTime,
-                date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
-                date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
-                cancelled_by: file.cancelled_by || null,
-                cancel_reason: file.cancel_reason || null,
-                status: file.status || 'Pending',
-                source: file.source,
-                uuid: file.uuid || null,
-                totalAmount: file.totalAmount || null
-            });
-    
-            // Create DataTable with optimized settings
+            const self = this; // Store reference to this
+            
+            // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
-                processing: false, // We'll handle our own processing indicator
-                serverSide: false,
-                deferRender: true, // Render only visible rows
-                paging: true,
-                autoWidth: false,
                 columns: [
-                    { data: null }, // Checkbox column (handled by columnDefs)
-                    { data: null }, // Index column (handled by columnDefs)
+                    {
+                        data: null,
+                        orderable: false,
+                        searchable: false,
+                        render: function (data, type, row) {
+                            // Only enable checkbox for Pending status
+                            const status = (row.status || 'Pending').toLowerCase();
+                            const disabledStatus = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status);
+                            const disabledAttr = disabledStatus ? 'disabled' : '';
+                            const title = disabledStatus ? `Cannot select ${status} items` : '';
+
+                            return `<div>
+                                <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
+                            </div>`;
+                        }
+                    },
+                    {
+                        data: null,
+                        orderable: false,
+                        searchable: false,
+                        render: function (data, type, row, meta) {
+                            // Calculate the correct index based on the current page and page length
+                            const pageInfo = meta.settings._iDisplayStart;
+                            const index = pageInfo + meta.row + 1;
+                            return `<span class="row-index">${index}</span>`;
+                        }
+                    },
                     {
                         data: 'invoiceNumber',
                         title: 'INV NO. / DOCUMENT',
-                        render: (data, type, row) => type === 'display' ? this.renderInvoiceNumber(data, type, row) : data
+                        render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
                     },
                     {
                         data: 'company',
                         title: 'COMPANY',
-                        render: (data, type, row) => type === 'display' ? this.renderCompanyInfo(data, type, row) : data
+                        render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                     },
                     {
                         data: 'supplierInfo',
                         title: 'SUPPLIER',
-                        render: (data, type, row) => type === 'display' ? this.renderSupplierInfo(data, type, row) : data
+                        render: (data, type, row) => this.renderSupplierInfo(data, type, row)
                     },
                     {
                         data: 'buyerInfo',
                         title: 'RECEIVER',
-                        render: (data, type, row) => type === 'display' ? this.renderBuyerInfo(data, type, row) : data
+                        render: (data, type, row) => this.renderBuyerInfo(data, type, row)
                     },
                     {
                         data: 'uploadedDate',
                         title: 'FILE UPLOADED',
-                        render: (data, type, row) => type === 'display' ? this.renderUploadedDate(data, type, row) : data
+                        render: (data, type, row) => this.renderUploadedDate(data, type, row)
                     },
                     {
                         data: null,
                         title: 'E-INV. DATE INFO',
-                        render: (data, type, row) => type === 'display' ? 
-                            this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row) : 
-                            (row.issueDate || '')
+                        render: (data, type, row) => this.renderDateInfo(row.issueDate, row.issueTime, row.date_submitted, row.date_cancelled, row)
                     },
                     {
                         data: 'status',
                         title: 'STATUS',
-                        name: 'status',
-                        render: (data, type) => type === 'display' ? this.renderStatus(data) : data
+                        render: (data) => this.renderStatus(data)
                     },
                     {
                         data: 'source',
                         title: 'SOURCE',
-                        render: (data, type) => type === 'display' ? this.renderSource(data) : data
+                        render: (data) => this.renderSource(data)
                     },
                     {
                         data: 'totalAmount',
                         title: 'AMOUNT',
-                        render: (data, type, row) => {
-                            if (type === 'display') {
-                                // For display, format the amount without decimals
-                                if (data && typeof data === 'string' && data.includes('.')) {
-                                    const formatted = data.split('.')[0]; // Only show part before decimal
-                                    return this.renderTotalAmount(formatted);
-                                }
-                                return this.renderTotalAmount(data);
-                            }
-                            // For sorting/filtering, use the original value
-                            return data;
-                        }
+                        render: (data) => this.renderTotalAmount(data)
                     },
                     {
                         data: null,
                         title: 'ACTION',
                         orderable: false,
-                        render: (data, type, row) => type === 'display' ? this.renderActions(row) : ''
+                        render: (data, type, row) => this.renderActions(row)
                     }
                 ],
-                columnDefs: columnDefs,
+                scrollX: true,
+                scrollCollapse: true,
+                autoWidth: false,
                 pageLength: 10,
-                dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+                dom: '<"outbound-controls"<"outbound-length-control"l>><"outbound-table-responsive"t><"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+                initComplete: function() {
+                    // Add filter button handlers to existing buttons
+                    $('.quick-filters .btn[data-filter]').on('click', function() {
+                        $('.quick-filters .btn').removeClass('active');
+                        $(this).addClass('active');
+                        
+                        const filter = $(this).data('filter');
+                        if (filter === 'all') {
+                            self.table.column(8).search('').draw();
+                        } else {
+                            self.table.column(8).search('Pending').draw();
+                        }
+                    });
+
+                    // Set initial filter to Pending
+                    self.table.column(8).search('Pending').draw();
+                    $('.quick-filters .btn[data-filter="pending"]').addClass('active');
+                    $('.quick-filters .btn[data-filter="all"]').removeClass('active');
+                },
                 language: {
                     search: '',
                     searchPlaceholder: 'Search...',
@@ -215,172 +235,99 @@ class InvoiceTableManager {
                         next: '<i class="bi bi-chevron-right"></i>',
                         last: '<i class="bi bi-chevron-double-right"></i>'
                     },
-                    emptyTable: 'No files available',
-                    zeroRecords: `<div class="d-flex justify-content-center align-items-center" style="height: 200px;">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <span class="ms-2">Please wait, loading files... This may take a moment depending on the number of files.</span>
-                </div>`
+                    emptyTable: this.getEmptyStateHtml(),
+                    
                 },
-                order: [6, 'desc'],
+                processing: true,
+                serverSide: false,
                 ajax: {
-                    url: '/api/outbound-files/list-all-simple',
+                    url: '/api/outbound-files/list-all',
                     method: 'GET',
-                    timeout: 60000, // 60 second timeout
-                    data: (d) => ({
-                        ...d,
-                        realTime: 'true', // Change to true to get real-time data
-                        includeAll: 'true', // Add parameter to include all months
-                        _ts: new Date().getTime() // Cache-busting parameter
-                    }),
                     dataSrc: (json) => {
-                        // Remove loading indicator
-                        $('.table-loading-indicator').remove();
-                        
-                        this.debug('Ajax response received', { 
-                            success: json.success, 
-                            files: json.files?.length || 0,
-                            fromCache: json.fromCache || false,
-                            timestamp: json.timestamp
-                        });
-                        
                         if (!json.success) {
-                            console.error('API Error:', json.error);
-                            this.showEmptyState(json.error?.message || 'Failed to load data');
+                            console.error('Error:', json.error);
+                            self.showEmptyState(json.error?.message || 'Failed to load data');
+                            window.location.reload();
                             return [];
                         }
-    
+
                         if (!json.files || json.files.length === 0) {
-                            this.debug('No files found in response');
-                            this.showEmptyState('No invoice files found. Please check your network connection or file permissions.');
+                            self.showEmptyState('No EXCEL files found');
+                            window.location.reload();
                             return [];
                         }
-    
-                        // Process data more efficiently
-                        const processedData = json.files.map(file => {
-                            this.debug('Processing file', { 
-                                fileName: file.fileName, 
-                                invoiceNumber: file.invoiceNumber,
-                                status: file.status
-                            });
-                            
-                            // Ensure all required fields exist with fallbacks
-                            return {
-                                invoiceNumber: file.invoiceNumber || 'N/A',
-                                fileName: file.fileName || 'Unknown',
-                                filePath: file.filePath || '',
-                                documentType: file.documentType || 'Invoice',
-                                documentTypeCode: file.documentTypeCode || '01',
-                                company: file.company || 'Unknown',
-                                date: file.date || null,
-                                buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
-                                supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
-                                uploadedDate: file.uploadedDate || new Date().toISOString(),
-                                modifiedTime: file.modifiedTime || file.uploadedDate || new Date().toISOString(),
-                                issueDate: file.issueDate || null,
-                                issueTime: file.issueTime || null,
-                                date_submitted: file.date_submitted || null,
-                                date_cancelled: file.date_cancelled || null,
-                                cancelled_by: file.cancelled_by || null,
-                                cancellation_reason: file.cancellation_reason || file.cancel_reason || null,
-                                status: file.status || 'Pending',
-                                statusUpdateTime: file.statusUpdateTime || file.date_submitted || null,
-                                source: file.source || 'Database',
-                                uuid: file.uuid || null,
-                                submissionUid: file.submissionUid || null,
-                                longId: file.longId || null,
-                                error: file.error || null,
-                                totalAmount: file.totalAmount || null
-                            };
-                        });
-                        
-                        // Update last refresh time
-                        const refreshTimeEl = document.getElementById('lastRefreshTime');
-                        if (refreshTimeEl) {
-                            refreshTimeEl.textContent = new Date().toLocaleTimeString();
-                        }
-                        
-                        this.debug('Processed data complete', { 
-                            count: processedData.length,
-                            statusCounts: {
-                                submitted: processedData.filter(d => d.status === 'Submitted').length,
-                                pending: processedData.filter(d => d.status === 'Pending').length,
-                                failed: processedData.filter(d => ['Failed', 'Invalid', 'Rejected'].includes(d.status)).length,
-                                cancelled: processedData.filter(d => d.status === 'Cancelled').length
-                            }
-                        });
-                        
-                        // Update card totals using requestAnimationFrame for better performance
-                        requestAnimationFrame(() => this.updateCardTotals());
-                        
+
+                        // Process the files data
+                        const processedData = json.files.map(file => ({
+                            ...file,
+                            DT_RowId: file.fileName,
+                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
+                            fileName: file.fileName,
+                            documentType: file.documentType || 'Invoice',
+                            company: file.company,
+                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
+                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
+                            uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
+                            issueDate: file.issueDate,
+                            issueTime: file.issueTime,
+                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
+                            date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
+                            cancelled_by: file.cancelled_by || null,
+                            cancel_reason: file.cancel_reason || null,
+                            status: file.status || 'Pending',
+                            source: file.source,
+                            uuid: file.uuid || null,
+                            totalAmount: file.totalAmount || null
+                        }));
+
+                        //console.log("Current Process Data", processedData);
+
+                        // Update card totals after data is loaded
+                        setTimeout(() => this.updateCardTotals(), 0);
+
                         return processedData;
                     },
-                    error: (xhr, status, error) => {
-                        // Remove loading indicator on error
-                        $('.table-loading-indicator').remove();
-                        
-                        console.error('Ajax error:', status, error);
-                        let errorMessage = 'Error loading data. Please try again.';
-    
-                        if (status === 'timeout') {
-                            errorMessage = 'Request timed out. The server took too long to respond.';
-                        } else if (xhr.status === 408) {
-                            errorMessage = 'Request timed out on the server. Please try again.';
-                        } else if (xhr.status === 404) {
-                            errorMessage = 'API endpoint not found. Please make sure the server is running properly.';
-                        } else if (xhr.status === 500) {
-                            errorMessage = 'Server error. Please check the server logs for more information.';
-                        } else if (xhr.responseJSON?.error?.message) {
-                            errorMessage = xhr.responseJSON.error.message;
-                        }
-    
-                        this.showEmptyState(errorMessage);
-                    }
                 },
-                // Use a more efficient approach for row creation
-                createdRow: (row, data, dataIndex) => {
-                    const status = (data.status || 'Pending').toLowerCase();
-                    const rowClass = ['submitted', 'cancelled', 'rejected', 'invalid'].includes(status) ? 
-                        'non-selectable-row' : 'selectable-row';
-                    
-                    $(row).addClass(rowClass);
-                    
-                    if (rowClass === 'non-selectable-row') {
-                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
+                order: [
+                    [8, 'desc'], // Status first (Pending at top)
+                    [6, 'desc'] // Then by upload date, newest first
+                ],
+                columnDefs: [
+                    {
+                        targets: 8, // STATUS column
+                        type: 'string'
+                    },
+                    {
+                        targets: 6, // FILE UPLOADED column
+                        type: 'date'
                     }
-                },
-                drawCallback: function(settings) {
-                    // Update row indexes efficiently in single batch
-                    const start = settings._iDisplayStart;
-                    $(this).find('tbody tr').each(function(i) {
-                        $(this).find('.row-index').text(start + i + 1);
+                ],
+                drawCallback: function (settings) {
+                    // Update row indexes when table is redrawn (sorting, filtering, pagination)
+                    $(this).find('tbody tr').each(function (index) {
+                        const pageInfo = settings._iDisplayStart;
+                        $(this).find('.row-index').text(pageInfo + index + 1);
                     });
                 },
-                // Initialize features only after table is ready
-                initComplete: () => {
-                    // Defer non-critical feature initialization
-                    setTimeout(() => this.initializeFeatures(), 100);
-                    
-                    // Add reload button for better user experience
-                    // const reloadButton = $('<button class="btn btn-sm btn-outline-primary ms-2"><i class="bi bi-arrow-repeat"></i> Refresh</button>');
-                    // reloadButton.on('click', () => this.reloadTable(true));
-                    // $('.outbound-controls').append(reloadButton);
-                }
+                createdRow: (row, data, dataIndex) => {
+                    // Add a class to the row based on status
+                    const status = (data.status || 'Pending').toLowerCase();
+                    if (['submitted', 'valid', 'cancelled', 'rejected', 'invalid'].includes(status)) {
+                        $(row).addClass('non-selectable-row');
+                        // Add a tooltip to explain why the row can't be selected
+                        $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
+                    } else {
+                        $(row).addClass('selectable-row');
+                    }
+                },
             });
-    
-            // Add method to reload table with optional force parameter
-            this.reloadTable = (force = false) => {
-                $('.table-loading-indicator').remove();
-                $('#invoiceTable').closest('.table-responsive').prepend(loadingIndicator);
-                
-                // Reload with or without cache
-                this.table.ajax.reload(null, force);
-            };
-    
+
+            this.initializeFeatures();
+
         } catch (error) {
             console.error('Error initializing DataTable:', error);
             this.showEmptyState('Error initializing table. Please refresh the page.');
+            window.location.reload();
         }
     }
 
@@ -399,15 +346,7 @@ class InvoiceTableManager {
         const globalSearch = document.getElementById('globalSearch');
         if (globalSearch) {
             globalSearch.addEventListener('input', (e) => {
-                // Clear any active quick filters when using global search
-                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
-                document.querySelector('.quick-filters .btn[data-filter="all"]').classList.add('active');
-                
-                // Apply the search
                 this.table.search(e.target.value).draw();
-                
-                // Update filter tags
-                this.updateActiveFilterTags();
             });
         }
 
@@ -551,7 +490,7 @@ class InvoiceTableManager {
                     datasets: [{
                         data: [0, 0, 0, 0],
                         backgroundColor: [
-                            '#1d9a5c',  // Submitted - Semi Light Green
+                            '#198754',  // Submitted - Success Green
                             '#dc3545',  // Invalid - Red
                             '#ff8307',  // Pending - Orange
                             '#ffc107'   // Cancelled - Yellow
@@ -566,7 +505,10 @@ class InvoiceTableManager {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 20
+                                padding: 20,
+                                font: {
+                                    size: 11
+                                }
                             }
                         },
                         tooltip: {
@@ -585,91 +527,19 @@ class InvoiceTableManager {
             });
         }
 
-        // Initialize Outbound Document Trend Chart
-        const dailyCtx = document.getElementById('dailySubmissionsChart');
-        if (dailyCtx) {
-            window.dailySubmissionsChart = new Chart(dailyCtx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Total Documents',
-                        data: [],
-                        borderColor: '#0d6efd',
-                        tension: 0.1,
-                        fill: true,
-                        backgroundColor: 'rgba(13, 110, 253, 0.1)'
-                    }, {
-                        label: 'Successfully Validated',
-                        data: [],
-                        borderColor: '#198754',
-                        tension: 0.1,
-                        fill: true,
-                        backgroundColor: 'rgba(25, 135, 84, 0.1)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    },
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'bottom'
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const label = context.dataset.label || '';
-                                    const value = context.raw || 0;
-                                    return `${label}: ${value} documents`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            },
-                            title: {
-                                display: true,
-                                text: 'Number of Documents'
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            },
-                            title: {
-                                display: true,
-                                text: 'Date'
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
         // Initialize Validation Success Rate Chart
         const processingCtx = document.getElementById('processingTimeChart');
         if (processingCtx) {
             window.processingTimeChart = new Chart(processingCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Valid', 'Invalid', 'Pending'],
+                    labels: ['Submitted', 'Invalid', 'Pending'],
                     datasets: [{
                         data: [0, 0, 0],
                         backgroundColor: [
-                            '#1d9a5c',  // Valid - Green
+                            '#198754',  // Submitted - Success Green
                             '#dc3545',  // Invalid - Red
                             '#ff8307',  // Pending - Orange
-                            '#1d9a5c',  // Submitted - Semi Light Green
-                            '#ffc107'   // Cancelled - Yellow
                         ],
                         borderWidth: 1
                     }]
@@ -681,7 +551,10 @@ class InvoiceTableManager {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 20
+                                padding: 20,
+                                font: {
+                                    size: 11
+                                }
                             }
                         },
                         tooltip: {
@@ -690,28 +563,42 @@ class InvoiceTableManager {
                                     const label = context.label || '';
                                     const value = context.raw || 0;
                                     return `${label}: ${value.toFixed(1)}%`;
-                                },
-                                afterBody: function(context) {
-                                    return [
-                                        '',
-                                        'How this is calculated:',
-                                        '• Valid: Successfully validated documents',
-                                        '• Invalid: Failed validation',
-                                        '• Pending: Awaiting validation',
-                                        '',
-                                        'Percentage = (Status Count / Total Documents) × 100'
-                                    ];
                                 }
                             }
                         }
-                    },
-                    cutout: '70%'
+                    }
                 }
             });
         }
     }
 
+    updateStatisticsCharts(totals) {
+        // Update Document Status Distribution Chart
+        if (window.documentStatusChart) {
+            window.documentStatusChart.data.datasets[0].data = [
+                totals.submitted,
+                totals.invalid,
+                totals.pending,
+                totals.cancelled
+            ];
+            window.documentStatusChart.update();
+        }
 
+        // Update Validation Success Rate Chart
+        if (window.processingTimeChart && this.table) {
+            const total = totals.submitted + totals.invalid + totals.pending;
+            const submittedPercentage = total > 0 ? (totals.submitted / total) * 100 : 0;
+            const invalidPercentage = total > 0 ? (totals.invalid / total) * 100 : 0;
+            const pendingPercentage = total > 0 ? (totals.pending / total) * 100 : 0;
+
+            window.processingTimeChart.data.datasets[0].data = [
+                Math.round(submittedPercentage * 10) / 10,
+                Math.round(invalidPercentage * 10) / 10,
+                Math.round(pendingPercentage * 10) / 10
+            ];
+            window.processingTimeChart.update();
+        }
+    }
 
     // Helper method to show error message
     showErrorMessage(message) {
@@ -736,30 +623,6 @@ class InvoiceTableManager {
     renderTotalAmount(data) {
         if (!data) return '<span class="text-muted">N/A</span>';
 
-        // Process the amount to format it with commas and MYR prefix
-        let formattedAmount = data;
-        
-        try {
-            if (typeof data === 'string') {
-                // First remove any existing currency prefix and extract just the number
-                let numberPart = data.replace(/[^\d.]/g, '');
-                
-                // Remove decimal part if present
-                if (numberPart.includes('.')) {
-                    numberPart = numberPart.split('.')[0];
-                }
-                
-                // Add commas for thousands
-                const numberWithCommas = numberPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-                
-                // Format with MYR prefix
-                formattedAmount = `MYR ${numberWithCommas}`;
-            }
-        } catch (e) {
-            console.error('Error formatting amount:', e);
-            formattedAmount = data;
-        }
-
         return `
             <div class="total-amount-wrapper" style="
                 display: flex;
@@ -778,7 +641,7 @@ class InvoiceTableManager {
                     white-space: nowrap;
                     transition: all 0.2s ease;
                 ">
-                    ${formattedAmount}
+                    ${data}
                 </span>
             </div>
         `;
@@ -893,15 +756,11 @@ class InvoiceTableManager {
 
     renderCompanyInfo(data) {
         if (!data) return '<span class="text-muted">N/A</span>';
-        
-        // Replace ARINV with the proper company name
-        const displayName = data === 'ARINV' ? 'EE-LIAN PLASTIC INDUSTRIES (M) SDN. BHD.' : data;
-        
         return `
             <div class="cell-group">
                 <div class="cell-main">
                     <i class="bi bi-building me-1"></i>
-                    <span class="supplier-text">${displayName}</span>
+                    <span class="supplier-text">${data}</span>
                 </div>
                 <div class="cell-sub">
                     <i class="bi bi-card-text me-1"></i>
@@ -1050,13 +909,7 @@ class InvoiceTableManager {
     }
 
     renderStatus(data) {
-        let status = data || 'Pending';
-        
-        // Standardize status display - first letter capitalized, rest lowercase
-        if (typeof status === 'string') {
-            status = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
-        }
-        
+        const status = data || 'Pending';
         const statusClass = status.toLowerCase();
         const icons = {
             pending: 'hourglass-split',
@@ -1066,7 +919,7 @@ class InvoiceTableManager {
             processing: 'arrow-repeat',
             failed: 'exclamation-triangle-fill',
             invalid: 'exclamation-triangle-fill',
-            valid: 'check-circle-fill'  // Add valid status icon
+            valid: 'check-circle-fill'
         };
         const statusColors = {
             pending: '#ff8307',
@@ -1076,13 +929,19 @@ class InvoiceTableManager {
             processing: '#0d6efd',
             failed: '#dc3545',
             invalid: '#dc3545',
-            valid: '#198754'  // Add valid status color (same as submitted)
+            valid: '#198754'
         };
         const icon = icons[statusClass] || 'question-circle';
         const color = statusColors[statusClass];
 
         // Add spinning animation for processing status
         const spinClass = statusClass === 'processing' ? 'spin' : '';
+
+        // Special handling for valid status
+        if (statusClass === 'valid') {
+            return `<span class="outbound-status ${statusClass}" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: ${color}15; color: ${color}; font-weight: 500; transition: all 0.2s ease;">
+                <i class="bi bi-${icon} ${spinClass}" style="font-size: 14px;"></i>Valid</span>`;
+        }
 
         return `<span class="outbound-status ${statusClass}" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: ${color}15; color: ${color}; font-weight: 500; transition: all 0.2s ease;">
             <i class="bi bi-${icon} ${spinClass}" style="font-size: 14px;"></i>${status}</span>`;
@@ -1168,113 +1027,78 @@ class InvoiceTableManager {
     }
 
     initializeEventListeners() {
-        try {
-            console.log('Initializing event listeners');
-            
-            // Add manual refresh button functionality
-            $('#refreshButton').on('click', (e) => {
-                e.preventDefault();
-                console.log('Refresh button clicked');
-                this.refresh();
+        // Quick Filter buttons
+        document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
+            button.addEventListener('click', (e) => {
+                // Remove active class from all buttons
+                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
+                // Add active class to clicked button
+                e.target.closest('.btn').classList.add('active');
+                
+                const filterValue = e.target.closest('.btn').dataset.filter;
+                this.applyQuickFilter(filterValue);
             });
+        });
 
-            // Quick Filter buttons
-            document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    console.log('Quick filter button clicked');
-                    // Remove active class from all buttons
-                    document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
-                    // Add active class to clicked button
-                    e.target.closest('.btn').classList.add('active');
-                    
-                    const filterValue = e.target.closest('.btn').dataset.filter;
-                    console.log('Filter value:', filterValue);
-                    this.applyQuickFilter(filterValue);
-                });
+        // Global Search
+        const globalSearch = document.getElementById('globalSearch');
+        if (globalSearch) {
+            globalSearch.addEventListener('input', (e) => {
+                this.table.search(e.target.value).draw();
             });
+        }
 
-            // Global Search
-            const globalSearch = document.getElementById('globalSearch');
-            if (globalSearch) {
-                console.log('Adding global search event listener');
-                globalSearch.addEventListener('input', (e) => {
-                    console.log('Global search input:', e.target.value);
-                    
-                    // Clear any active quick filters when using global search
-                    document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
-                    document.querySelector('.quick-filters .btn[data-filter="all"]').classList.add('active');
-                    
-                    // Apply the search directly without complex filtering
-                    this.table.search(e.target.value).draw();
-                    
-                    // Update filter tags
-                    this.updateActiveFilterTags();
-                });
-            }
-
-            // Advanced Filters
-            // Date Range
-            const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type');
-            const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type');
-            if (startDate && endDate) {
-                [startDate, endDate].forEach(input => {
-                    input.addEventListener('change', () => this.applyAdvancedFilters());
-                });
-            }
-
-            // Amount Range
-            const minAmount = document.getElementById('minAmount');
-            const maxAmount = document.getElementById('maxAmount');
-            if (minAmount && maxAmount) {
-                [minAmount, maxAmount].forEach(input => {
-                    input.addEventListener('input', () => this.applyAdvancedFilters());
-                });
-            }
-
-            // Company Filter
-            const companyFilter = document.querySelector('input[placeholder="Filter by company name"]');
-            if (companyFilter) {
-                companyFilter.addEventListener('input', () => this.applyAdvancedFilters());
-            }
-
-            // Document Type Filter
-            const documentTypeFilter = document.getElementById('documentTypeFilter');
-            if (documentTypeFilter) {
-                documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
-            }
-
-            // Clear Filters
-            const clearFiltersBtn = document.getElementById('clearFilters');
-            if (clearFiltersBtn) {
-                clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
-            }
-
-            // Export button
-            $('#exportButton').on('click', (e) => {
-                e.preventDefault();
-                this.exportSelectedRecords();
+        // Advanced Filters
+        // Date Range
+        const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type');
+        const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type');
+        if (startDate && endDate) {
+            [startDate, endDate].forEach(input => {
+                input.addEventListener('change', () => this.applyAdvancedFilters());
             });
-        } catch (error) {
-            console.error('Error initializing event listeners:', error);
+        }
+
+        // Amount Range
+        const minAmount = document.getElementById('minAmount');
+        const maxAmount = document.getElementById('maxAmount');
+        if (minAmount && maxAmount) {
+            [minAmount, maxAmount].forEach(input => {
+                input.addEventListener('input', () => this.applyAdvancedFilters());
+            });
+        }
+
+        // Company Filter
+        const companyFilter = document.querySelector('input[placeholder="Filter by company name"]');
+        if (companyFilter) {
+            companyFilter.addEventListener('input', () => this.applyAdvancedFilters());
+        }
+
+        // Document Type Filter
+        const documentTypeFilter = document.getElementById('documentTypeFilter');
+        if (documentTypeFilter) {
+            documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
+        }
+
+        // Clear Filters
+        const clearFiltersBtn = document.getElementById('clearFilters');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
         }
     }
 
     applyQuickFilter(filterValue) {
         if (!this.table) return;
 
-        console.log('Applying quick filter:', filterValue);
-
         // Clear the global search
         const globalSearch = document.getElementById('globalSearch');
         if (globalSearch) globalSearch.value = '';
 
-        // Apply filter based on value - directly using the table API for simplicity
-        if (filterValue === 'all') {
-            this.table.search('').columns().search('').draw();
-        } else {
-            // For other filters, use a simple search on the whole table
-            this.table.search(filterValue, false, false).draw();
-        }
+        // Apply filter based on value
+        this.table.column('status:name').search(
+            filterValue === 'all' ? '' : filterValue, 
+            false, 
+            false
+        ).draw();
 
         // Update active filter tags
         this.updateActiveFilterTags();
@@ -1283,40 +1107,28 @@ class InvoiceTableManager {
     applyAdvancedFilters() {
         if (!this.table) return;
 
-        // Remove any existing custom filter
-        while ($.fn.dataTable.ext.search.length > 0) {
-            $.fn.dataTable.ext.search.pop();
-        }
-
         // Create a custom filter function
         $.fn.dataTable.ext.search.push((settings, data, dataIndex) => {
             const row = this.table.row(dataIndex).data();
-            if (!row) return true; // Skip if row data isn't available
-
             let passFilter = true;
 
             // Date Range Filter
             const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value;
             const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value;
             if (startDate && endDate) {
-                try {
                 const rowDate = new Date(row.uploaded_date);
                 const filterStart = new Date(startDate);
                 const filterEnd = new Date(endDate);
-                    filterEnd.setHours(23, 59, 59, 999); // Include the entire end day
                 
                 if (rowDate < filterStart || rowDate > filterEnd) {
                     passFilter = false;
-                    }
-                } catch (e) {
-                    console.error('Date parsing error:', e);
                 }
             }
 
             // Amount Range Filter
             const minAmount = parseFloat(document.getElementById('minAmount').value) || 0;
             const maxAmount = parseFloat(document.getElementById('maxAmount').value) || Infinity;
-            const rowAmount = parseFloat(row.totalAmount?.replace(/[^0-9.-]+/g, '') || 0);
+            const rowAmount = parseFloat(row.total_amount?.replace(/[^0-9.-]+/g, '') || 0);
             
             if (rowAmount < minAmount || rowAmount > maxAmount) {
                 passFilter = false;
@@ -1324,13 +1136,13 @@ class InvoiceTableManager {
 
             // Company Filter
             const companyFilter = document.querySelector('input[placeholder="Filter by company name"]').value.toLowerCase();
-            if (companyFilter && !String(row.company || '').toLowerCase().includes(companyFilter)) {
+            if (companyFilter && !row.company?.toLowerCase().includes(companyFilter)) {
                 passFilter = false;
             }
 
             // Document Type Filter
             const documentType = document.getElementById('documentTypeFilter').value;
-            if (documentType && row.documentType !== documentType) {
+            if (documentType && row.document_type !== documentType) {
                 passFilter = false;
             }
 
@@ -1339,6 +1151,9 @@ class InvoiceTableManager {
 
         // Redraw the table
         this.table.draw();
+
+        // Remove the custom filter
+        $.fn.dataTable.ext.search.pop();
 
         // Update active filter tags
         this.updateActiveFilterTags();
@@ -1380,8 +1195,9 @@ class InvoiceTableManager {
                 ${label}: ${value}
                 <button class="close-btn" data-filter-type="${type}">×</button>
             `;
-            tag.querySelector('.close-btn').addEventListener('click', 
-                () => this.removeFilter(type));
+            tag.querySelector('.close-btn').addEventListener('click', () => {
+                this.removeFilter(type);
+            });
             return tag;
         };
 
@@ -1665,8 +1481,7 @@ class InvoiceTableManager {
             submitted: 0,
             invalid: 0,
             cancelled: 0,
-            pending: 0,
-            valid: 0  // Add valid status tracking
+            pending: 0
         };
 
         // Calculate totals from table data
@@ -1678,30 +1493,20 @@ class InvoiceTableManager {
                 case 'submitted':
                     totals.submitted++;
                     break;
-                case 'valid':
-                    totals.valid++;
-                    break;
                 case 'invalid':
                     totals.invalid++;
                     break;
                 case 'cancelled':
                     totals.cancelled++;
                     break;
-                case 'queue':
                 case 'pending':
                     totals.pending++;
                     break;
                 default:
-                    // Only count as pending if it's actually marked as pending or has no status
-                    if (!data.status || data.status.toLowerCase() === 'pending') {
                     totals.pending++;
-                    }
                     break;
             }
         });
-
-        // For display purposes, combine submitted and valid counts
-        const submittedTotal = totals.submitted + totals.valid;
 
         // Hide all loading spinners and show counts
         document.querySelectorAll('.loading-spinner').forEach(spinner => {
@@ -1713,25 +1518,25 @@ class InvoiceTableManager {
 
         // Update card values with animation
         this.animateNumber(document.querySelector('.total-invoice-count'), totals.total);
-        this.animateNumber(document.querySelector('.total-submitted-count'), submittedTotal);
+        this.animateNumber(document.querySelector('.total-submitted-count'), totals.submitted);
         this.animateNumber(document.querySelector('.total-invalid-count'), totals.invalid);
         this.animateNumber(document.querySelector('.total-cancelled-count'), totals.cancelled);
         this.animateNumber(document.querySelector('.total-queue-value'), totals.pending);
 
         // Calculate percentages for validation rate
-        const totalForValidation = submittedTotal + totals.invalid + totals.pending;
-        const validPercentage = totalForValidation > 0 ? (submittedTotal / totalForValidation * 100) : 0;
+        const totalForValidation = totals.submitted + totals.invalid + totals.pending;
+        const submittedPercentage = totalForValidation > 0 ? (totals.submitted / totalForValidation * 100) : 0;
         const invalidPercentage = totalForValidation > 0 ? (totals.invalid / totalForValidation * 100) : 0;
         const pendingPercentage = totalForValidation > 0 ? (totals.pending / totalForValidation * 100) : 0;
 
         // Update validation rate display
         const validationRateElement = document.querySelector('.success-rate');
         if (validationRateElement) {
-            validationRateElement.textContent = `${Math.round(validPercentage)}%`;
+            validationRateElement.textContent = `${Math.round(submittedPercentage)}%`;
             validationRateElement.setAttribute('data-bs-original-title', 
                 `<div class='p-2'>
-                    <strong>Current Success Rate:</strong> ${Math.round(validPercentage)}%<br>
-                    <small>Based on ${submittedTotal} successfully validated documents out of ${totalForValidation} total submissions</small>
+                    <strong>Current Success Rate:</strong> ${Math.round(submittedPercentage)}%<br>
+                    <small>Based on ${totals.submitted} successfully submitted documents out of ${totalForValidation} total submissions</small>
                 </div>`
             );
         }
@@ -1739,18 +1544,18 @@ class InvoiceTableManager {
         // Update main progress bar
         const mainProgressBar = document.querySelector('.validation-stats .progress-bar');
         if (mainProgressBar) {
-            mainProgressBar.style.width = `${validPercentage}%`;
-            mainProgressBar.setAttribute('aria-valuenow', validPercentage);
+            mainProgressBar.style.width = `${submittedPercentage}%`;
+            mainProgressBar.setAttribute('aria-valuenow', submittedPercentage);
         }
 
         // Update breakdown progress bars and percentages
-        // Valid
-        const validBar = document.querySelector('.breakdown-item:nth-child(1) .progress-bar');
-        const validPercentText = document.querySelector('.breakdown-item:nth-child(1) .text-success');
-        if (validBar && validPercentText) {
-            validBar.style.width = `${validPercentage}%`;
-            validBar.setAttribute('aria-valuenow', validPercentage);
-            validPercentText.textContent = `${Math.round(validPercentage)}%`;
+        // Submitted
+        const submittedBar = document.querySelector('.breakdown-item:nth-child(1) .progress-bar');
+        const submittedPercentText = document.querySelector('.breakdown-item:nth-child(1) .text-success');
+        if (submittedBar && submittedPercentText) {
+            submittedBar.style.width = `${submittedPercentage}%`;
+            submittedBar.setAttribute('aria-valuenow', submittedPercentage);
+            submittedPercentText.textContent = `${Math.round(submittedPercentage)}%`;
         }
 
         // Invalid
@@ -1771,15 +1576,15 @@ class InvoiceTableManager {
             pendingPercentText.textContent = `${Math.round(pendingPercentage)}%`;
         }
 
-        // Add detailed information to tooltips
-        const validTooltip = document.querySelector('.breakdown-item:nth-child(1) .bi-info-circle-fill');
-        if (validTooltip) {
-            validTooltip.setAttribute('data-bs-original-title',
+        // Update tooltips
+        const submittedTooltip = document.querySelector('.breakdown-item:nth-child(1) .bi-info-circle-fill');
+        if (submittedTooltip) {
+            submittedTooltip.setAttribute('data-bs-original-title',
                 `<div class='p-2'>
                     <strong>Submitted Documents:</strong><br>
-                    • ${submittedTotal} documents successfully validated<br>
-                    • ${Math.round(validPercentage)}% of total submissions<br>
-                    • Ready for LHDN processing
+                    • ${totals.submitted} documents submitted successfully<br>
+                    • ${Math.round(submittedPercentage)}% of total submissions<br>
+                    • Ready for processing
                 </div>`
             );
         }
@@ -1803,7 +1608,7 @@ class InvoiceTableManager {
                     <strong>Pending Documents:</strong><br>
                     • ${totals.pending} documents in queue<br>
                     • ${Math.round(pendingPercentage)}% of total submissions<br>
-                    • Awaiting LHDN validation
+                    • Awaiting validation
                 </div>`
             );
         }
@@ -1812,186 +1617,6 @@ class InvoiceTableManager {
         this.updateStatisticsCharts(totals);
     }
 
-    updateStatisticsCharts(totals) {
-        // Update Document Status Distribution Chart
-        if (window.documentStatusChart) {
-            window.documentStatusChart.data.datasets[0].data = [
-                totals.submitted + totals.valid, // Combine submitted and valid for chart
-                totals.invalid,
-                totals.pending,
-                totals.cancelled
-            ];
-            window.documentStatusChart.update();
-        }
-
-        // Update Outbound Document Trend Chart
-        if (window.dailySubmissionsChart && this.table) {
-            const data = Array.from(this.table.rows().data());
-            const dateGroups = {};
-            const validatedGroups = {};
-            
-            // Group documents by date
-            data.forEach(row => {
-                const date = this.formatDate(row.uploaded_date);
-                dateGroups[date] = (dateGroups[date] || 0) + 1;
-                
-                // Count validated documents separately
-                if (row.status?.toLowerCase() === 'submitted' || row.status?.toLowerCase() === 'valid') {
-                    validatedGroups[date] = (validatedGroups[date] || 0) + 1;
-                }
-            });
-
-            // Get last 7 days
-            const today = new Date();
-            const last7Days = Array.from({length: 7}, (_, i) => {
-                const d = new Date(today);
-                d.setDate(d.getDate() - i);
-                return this.formatDate(d);
-            }).reverse();
-
-            // Update chart data with status counts over time
-            window.dailySubmissionsChart.data.labels = last7Days;
-            window.dailySubmissionsChart.data.datasets = [
-                {
-                    label: 'Submitted',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            (row.status?.toLowerCase() === 'submitted' || row.status?.toLowerCase() === 'valid')
-                        ).length;
-                    }),
-                    borderColor: '#198754', // Success green
-                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                },
-                {
-                    label: 'Invalid',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            row.status === 'invalid'
-                        ).length;
-                    }),
-                    borderColor: '#dc3545', // Danger red
-                    backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                },
-                {
-                    label: 'Pending',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            row.status === 'pending'
-                        ).length;
-                    }),
-                    borderColor: '#ffc107', // Warning yellow
-                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                },
-                {
-                    label: 'Cancelled',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            row.status === 'cancelled'
-                        ).length;
-                    }),
-                    borderColor: '#6c757d', // Secondary gray
-                    backgroundColor: 'rgba(108, 117, 125, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                }
-            ];
-
-            // Update chart options for better visibility
-            window.dailySubmissionsChart.options = {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            usePointStyle: true,
-                            padding: 15,
-                            font: {
-                                size: 11
-                            }
-                        }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        titleColor: '#000',
-                        bodyColor: '#666',
-                        borderColor: '#ddd',
-                        borderWidth: 1,
-                        padding: 10,
-                        boxPadding: 3,
-                        usePointStyle: true,
-                        callbacks: {
-                            label: function(context) {
-                                return context.dataset.label + ': ' + context.parsed.y + ' documents';
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            font: {
-                                size: 11
-                            }
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            borderDash: [2, 2]
-                        },
-                        ticks: {
-                            font: {
-                                size: 11
-                            },
-                            stepSize: 1,
-                            callback: function(value) {
-                                if (Math.floor(value) === value) {
-                                    return value;
-                                }
-                            }
-                        }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            };
-            window.dailySubmissionsChart.update('none'); // Use 'none' to prevent animation flicker
-        }
-
-        // Update Validation Success Rate Chart
-        if (window.processingTimeChart && this.table) {
-            const total = totals.submitted + totals.invalid + totals.pending;
-            const validPercentage = total > 0 ? (totals.submitted / total) * 100 : 0;
-            const invalidPercentage = total > 0 ? (totals.invalid / total) * 100 : 0;
-            const pendingPercentage = total > 0 ? (totals.pending / total) * 100 : 0;
-
-            window.processingTimeChart.data.datasets[0].data = [
-                Math.round(validPercentage * 10) / 10,
-                Math.round(invalidPercentage * 10) / 10,
-                Math.round(pendingPercentage * 10) / 10
-            ];
-            window.processingTimeChart.update();
-        }
-    }
     // Helper method to animate number changes
     animateNumber(element, targetValue) {
         const startValue = parseInt(element.textContent) || 0;
@@ -2998,150 +2623,7 @@ class InvoiceTableManager {
     }
 
     refresh() {
-        this.debug('Refreshing table data');
-        
-        // Check if table exists
-        if (this.table) {
-            this.debug('Table exists, reloading via Ajax');
-
-            // Show loading indicator
-            const loadingIndicator = '<div class="table-loading-indicator text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Refreshing data...</p></div>';
-            $('.table-loading-indicator').remove();
-            $('#invoiceTable').closest('.table-responsive').prepend(loadingIndicator);
-            
-            // Update last refresh time indicator
-            const refreshTimeEl = document.getElementById('lastRefreshTime');
-            if (refreshTimeEl) {
-                refreshTimeEl.textContent = new Date().toLocaleTimeString();
-            }
-            
-            try {
-                // Reload with cache-busting parameter
-                this.table.ajax.reload(null, true);
-                this.debug('Table reload initiated');
-            } catch (error) {
-                this.debug('Error during refresh', { error });
-                
-                // Try direct API call as fallback
-                this.debug('Trying direct API call as fallback');
-                this.tryDirectApiCall();
-            }
-        } else {
-            this.debug('Table does not exist, initializing');
-            this.initializeTable();
-        }
-    }
-    
-    tryDirectApiCall() {
-        this.debug('Making direct API call to fetch data');
-        
-        // Show loading indicator
-        const loadingIndicator = '<div class="table-loading-indicator text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Trying alternative data fetch method...</p></div>';
-        $('.table-loading-indicator').remove();
-        $('#invoiceTable').closest('.table-responsive').prepend(loadingIndicator);
-        
-        // Make direct AJAX call
-        $.ajax({
-            url: '/api/outbound-files/list-all-simple',
-            method: 'GET',
-            data: {
-                realTime: 'true',
-                includeAll: 'true',
-                _ts: new Date().getTime()
-            },
-            timeout: 60000, // 60 second timeout
-            success: (json) => {
-                this.debug('Direct API call successful', { 
-                    success: json.success, 
-                    filesCount: json.files?.length || 0 
-                });
-                
-                // Remove loading indicator
-                $('.table-loading-indicator').remove();
-                
-                if (!json.success || !json.files || json.files.length === 0) {
-                    this.debug('API call succeeded but no data returned');
-                    this.showEmptyState('No invoice files found in the database. Please check connectivity or permissions.');
-                    return;
-                }
-                
-                // If table exists, reinitialize it with new data
-            if (this.table) {
-                    this.debug('Destroying existing table to rebuild with new data');
-                    this.table.destroy();
-                }
-                
-                this.debug('Reinitializing table with fetched data');
-                this.initializeTable();
-            },
-            error: (xhr, status, error) => {
-                this.debug('Direct API call failed', { status, error });
-                
-                // Remove loading indicator
-                $('.table-loading-indicator').remove();
-                
-                let errorMessage = 'Error loading data. The server may be experiencing issues.';
-                if (status === 'timeout') {
-                    errorMessage = 'Request timed out. The server is taking too long to respond.';
-                } else if (xhr.status === 404) {
-                    errorMessage = 'API endpoint not found. Please make sure the server is running properly.';
-                }
-                
-                this.showEmptyState(errorMessage);
-            }
-        });
-    }
-    
-    debug(message, data = null) {
-        const debugMode = true; // Set to false to disable debug messages
-        if (debugMode) {
-            if (data) {
-                console.log(`[OutboundExcel] ${message}`, data);
-            } else {
-                console.log(`[OutboundExcel] ${message}`);
-            }
-        }
-    }
-
-    showEmptyState(message) {
-        this.debug(`Showing empty state: ${message}`);
-        
-        // Create empty state element if it doesn't exist
-        let emptyState = document.getElementById('tableEmptyState');
-        if (!emptyState) {
-            emptyState = document.createElement('div');
-            emptyState.id = 'tableEmptyState';
-            emptyState.className = 'text-center p-5 bg-light rounded';
-        }
-        
-        // Update empty state message
-        emptyState.innerHTML = `
-            <div class="empty-state">
-                <i class="bi bi-exclamation-circle text-warning" style="font-size: 3rem;"></i>
-                <h5 class="mt-3">No Data Available</h5>
-                <p class="text-muted">${message}</p>
-                <button class="btn btn-primary mt-3" id="retryButton">
-                    <i class="bi bi-arrow-repeat"></i> Retry
-                </button>
-            </div>
-        `;
-        
-        // Hide table and show empty state
-        $('#invoiceTable').hide();
-        $('.table-loading-indicator').remove();
-        $('#invoiceTable').closest('.table-responsive').append(emptyState);
-        
-        this.debug('Table hidden, empty state shown', { message });
-        
-        // Add event listener to retry button (safely)
-        const retryButton = document.getElementById('retryButton');
-        if (retryButton) {
-            retryButton.addEventListener('click', () => {
-                this.refresh();
-            });
-        } else {
-            this.debug('Retry button not found in DOM');
-        }
+        this.table?.ajax.reload(null, false);
     }
 
     cleanup() {
@@ -3274,6 +2756,262 @@ class InvoiceTableManager {
                     </button>
                 </div>
             </div>
+        </div>
+    `;
+    }
+
+    showEmptyState(message = 'No EXCEL files found') {
+        const emptyState = `
+  <div class="empty-state">
+  <div class="empty-state-content">
+    <div class="icon-wrapper">
+      <div class="ring ring-1"></div>
+      <div class="ring ring-2"></div>
+      <div class="icon bounce">
+        <i class="fas fa-file-excel"></i>
+      </div>
+    </div>
+    
+    <div class="text-content">
+      <h3 class="title">No Documents Available</h3>
+      <p class="description">Upload an Excel file to start processing your invoices</p>
+      <p class="sub-description">Supported formats: .xlsx, .xls</p>
+    </div>
+
+    <div class="button-group">
+      <button class="btn-primary" onclick="window.location.reload()">
+        <i class="fas fa-sync-alt"></i>
+        Refresh
+      </button>
+      <button class="btn-secondary" onclick="this.dispatchEvent(new CustomEvent('show-help'))">
+        <i class="fas fa-question-circle"></i>
+        Help
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.empty-state-content {
+  text-align: center;
+}
+
+.icon-wrapper {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+}
+
+/* Animated rings */
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid #1e40af;
+  opacity: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ring-1 {
+  width: 100%;
+  height: 100%;
+  animation: ripple 2s infinite ease-out;
+}
+
+.ring-2 {
+  width: 90%;
+  height: 90%;
+  animation: ripple 2s infinite ease-out 0.5s;
+}
+
+/* Icon bounce animation */
+.icon {
+  position: relative;
+  color: #1e40af;
+  font-size: 48px;
+  animation: bounce 2s infinite;
+}
+
+.text-content {
+  margin-bottom: 24px;
+}
+
+.title {
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.description {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.sub-description {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.button-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-primary, .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #1e40af;
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #1e3a8a;
+}
+
+.btn-primary:hover i {
+  animation: spin 1s linear infinite;
+}
+
+.btn-secondary {
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+  background: #f3f4f6;
+}
+
+.btn-primary i, .btn-secondary i {
+  margin-right: 8px;
+}
+
+/* Animations */
+@keyframes ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+</style>
+        `;
+
+        const tableContainer = document.querySelector('.outbound-table-container');
+        if (tableContainer) {
+            tableContainer.innerHTML = emptyState;
+
+            const helpButton = tableContainer.querySelector('button[onclick*="show-help"]');
+            if (helpButton) {
+                helpButton.addEventListener('click', () => {
+                    Swal.fire({
+                        title: '<div class="text-xl font-semibold mb-2">Excel Files Guide</div>',
+                        html: `
+                <div class="text-left px-2">
+                    <div class="mb-4">
+                        <p class="text-gray-600 mb-3">Not seeing your Excel files? Here's a comprehensive checklist to help you:</p>
+                    </div>
+
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+                        <h3 class="font-medium text-blue-800 mb-2">File Requirements:</h3>
+                        <ul class="list-disc pl-4 text-blue-700">
+                            <li>Accepted formats: .xls, .xlsx</li>
+                            <li>Maximum file size: 10MB</li>
+                            <li>File naming format: {fileName}.xls</li>
+                </ul>
+                    </div>
+
+                    <div class="space-y-3">
+                        <h3 class="font-medium text-gray-700 mb-2">Troubleshooting Steps:</h3>
+                        <div class="flex items-start mb-2">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Verify Excel files are in the correct upload directory</p>
+                        </div>
+                        <div class="flex items-start mb-2">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Check if files follow the required naming convention</p>
+                        </div>
+                        <div class="flex items-start mb-2">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Confirm you have proper file access permissions</p>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
+                            <p>Ensure files are not corrupted or password-protected</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="font-medium text-gray-700 mb-2">Still having issues?</h3>
+                        <p class="text-gray-600">Contact your system administrator or reach out to support at 
+                            <a href="mailto:ask@pixelcareconsulting.com" class="text-blue-600 hover:text-blue-800">ask@pixelcareconsulting.com</a>
+                        </p>
+                    </div>
+                </div>
+            `,
+                        icon: 'info',
+                        confirmButtonText: 'Got it',
+                        confirmButtonColor: '#1e40af',
+                        customClass: {
+                            container: 'help-modal-container',
+                            popup: 'help-modal-popup',
+                            content: 'help-modal-content',
+                            confirmButton: 'help-modal-confirm'
+                        },
+                        showCloseButton: true,
+                        width: '600px'
+                    });
+                });
+            }
+        }
+    }
+
+    getEmptyStateHtml(message = 'No EXCEL files found') {
+        return `
+            <div class="empty-state-container text-center p-4">
+                <div class="empty-state-icon mb-3">
+                    <i class="fas fa-file-xml fa-3x text-muted"></i>
+                </div>
+                <p class="empty-state-description text-muted">${message}</p>
             </div>
         `;
     }
@@ -3289,6 +3027,39 @@ class InvoiceTableManager {
         
      
     }
+    
+    // // Increment validation counter and check session limits
+    // incrementValidationCounter() {
+    //     // Get current session count
+    //     let sessionCount = parseInt(sessionStorage.getItem('validation_session_count') || '0');
+        
+    //     // Check session limit (100 validations per session)
+    //     if (sessionCount >= 100) {
+    //         this.showWarningMessage("You've reached the maximum number of validations for this session. Please refresh the page or try again later.");
+    //         return false;
+    //     }
+        
+    //     // Increment counter
+    //     sessionCount++;
+    //     sessionStorage.setItem('validation_session_count', sessionCount);
+        
+    //     // Update the counter badge
+    //     const badge = document.getElementById('validationCountBadge');
+    //     if (badge) {
+    //         badge.innerHTML = sessionCount;
+            
+    //         // Update badge color based on session count
+    //         if (sessionCount > 80) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-danger';
+    //         } else if (sessionCount > 50) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-warning text-dark';
+    //         } else {
+    //             badge.className = 'ms-2 badge rounded-pill bg-primary';
+    //         }
+    //     }
+        
+    //     return true;
+    // }
 
 }
 
@@ -4251,200 +4022,100 @@ async function submitToLHDN(fileName, type, company, date) {
 function getStepHtml(stepNumber, title) {
     console.log(`🔨 [Step ${stepNumber}] Creating HTML for step: ${title}`);
 
+    const stepId = `step${stepNumber}`;
+    console.log(`🏷️ [Step ${stepNumber}] Step ID created: ${stepId}`);
+
+    return `
+        <style>
+            .step-badge.spinning::after {
+                content: '';
+                width: 12px;
+                height: 12px;
+                border: 2px solid var(--primary);
+                border-right-color: transparent;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+                display: block;
+            }
+            
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+        </style>
+        <div class="content-card step-card" id="${stepId}">
+            <div class="content-header">
+                <span class="content-badge step-badge">
+                    <i class="fas fa-circle"></i>
+                </span>
+                <span class="">${title}</span>
+            </div>
+            <div class="content-desc step-status">Waiting...</div>
+        </div>
+    `;
 }
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    // Check if table element exists
-    const tableElement = document.getElementById('invoiceTable');
-    if (!tableElement) {
-        console.error('Table element #invoiceTable not found');
+// Helper function to update step status with animation
+async function updateStepStatus(stepNumber, status, message) {
+    console.log(`🔄 [Step ${stepNumber}] Updating status:`, { status, message });
+
+    const step = document.getElementById(`step${stepNumber}`);
+    if (!step) {
+        console.error(`❌ [Step ${stepNumber}] Step element not found`);
         return;
     }
 
-    const manager = InvoiceTableManager.getInstance();
-    DateTimeManager.updateDateTime();
-});
+    // Remove all status classes first
+    step.classList.remove('processing', 'completed', 'error');
+    console.log(`🎨 [Step ${stepNumber}] Removed old classes`);
 
-// Add the missing cancelDocument function
-async function cancelDocument(uuid, fileName, submissionDate) {
-    if (!uuid || !fileName) {
-        Swal.fire({
-            title: 'Error',
-            text: 'Invalid document information',
-            icon: 'error',
-            confirmButtonText: 'OK'
-        });
-        return;
+    // Add the new status class
+    step.classList.add(status);
+    console.log(`🎨 [Step ${stepNumber}] Added new class:`, status);
+
+    // Update status message with fade effect
+    const statusEl = step.querySelector('.step-status');
+    if (statusEl && message) {
+        console.log(`✍️ [Step ${stepNumber}] Updating message to:`, message);
+        statusEl.style.opacity = '0';
+        await new Promise(resolve => setTimeout(resolve, 300));
+        statusEl.textContent = message;
+        statusEl.style.opacity = '1';
     }
 
-    // Calculate time remaining to ensure it's still within cancellation window
-    const submitted = new Date(submissionDate);
-    const now = new Date();
-    const deadline = new Date(submitted.getTime() + (72 * 60 * 60 * 1000));
-    const hoursLeft = Math.floor((deadline - now) / (60 * 60 * 1000));
-
-    if (now >= deadline) {
-        Swal.fire({
-            title: 'Cannot Cancel Document',
-            text: 'The 72-hour cancellation window has expired for this document.',
-            icon: 'warning',
-            confirmButtonText: 'OK'
-        });
-        return;
-    }
-
-    // Ask for confirmation
-    const result = await Swal.fire({
-        title: 'Cancel Document Submission?',
-        html: `
-            <div class="text-start">
-                <p>You are about to cancel the submitted document:</p>
-                <ul class="list-unstyled mt-3">
-                    <li><strong>Document:</strong> ${fileName}</li>
-                    <li><strong>UUID:</strong> ${uuid}</li>
-                    <li><strong>Submission Date:</strong> ${new Date(submissionDate).toLocaleString()}</li>
-                    <li><strong>Time Remaining:</strong> ${hoursLeft} hours</li>
-                </ul>
-                <div class="alert alert-warning mt-3">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    <strong>Note:</strong> This action cannot be undone. The document will be marked as cancelled.
-                </div>
-                <div class="form-group mt-3">
-                    <label for="cancellationReason" class="form-label">Cancellation Reason (Required)</label>
-                    <select class="form-select" id="cancellationReason" required>
-                        <option value="">-- Select Reason --</option>
-                        <option value="Wrong Document">Wrong Document</option>
-                        <option value="Wrong Amount">Wrong Amount</option>
-                        <option value="Wrong Date">Wrong Date</option>
-                        <option value="Duplicate Submission">Duplicate Submission</option>
-                        <option value="Other">Other (please specify)</option>
-                    </select>
-                </div>
-                <div class="form-group mt-3 d-none" id="otherReasonGroup">
-                    <label for="otherReason" class="form-label">Specify Other Reason</label>
-                    <textarea class="form-control" id="otherReason" rows="2"></textarea>
-                </div>
-            </div>
-        `,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, Cancel Document',
-        cancelButtonText: 'No, Keep Document',
-        confirmButtonColor: '#dc3545',
-        customClass: {
-            confirmButton: 'outbound-action-btn cancel',
-            cancelButton: 'outbound-action-btn submit'
-        },
-        didOpen: () => {
-            // Add event listener for reason select
-            const reasonSelect = document.getElementById('cancellationReason');
-            const otherReasonGroup = document.getElementById('otherReasonGroup');
-            reasonSelect.addEventListener('change', () => {
-                if (reasonSelect.value === 'Other') {
-                    otherReasonGroup.classList.remove('d-none');
-                } else {
-                    otherReasonGroup.classList.add('d-none');
-                }
-            });
+    // Update spinner visibility and icon
+    const badge = step.querySelector('.step-badge');
+    if (badge) {
+        const icon = badge.querySelector('.fas');
+        if (icon) {
+            switch (status) {
+                case 'processing':
+                    icon.style.display = 'none';
+                    badge.classList.add('spinning');
+                    break;
+                case 'completed':
+                    icon.style.display = 'block';
+                    badge.classList.remove('spinning');
+                    icon.className = 'fas fa-check';
+                    break;
+                case 'error':
+                    icon.style.display = 'block';
+                    badge.classList.remove('spinning');
+                    icon.className = 'fas fa-times';
+                    break;
+                default:
+                    icon.style.display = 'block';
+                    badge.classList.remove('spinning');
+                    icon.className = 'fas fa-circle';
+            }
         }
-    });
-
-    if (!result.isConfirmed) return;
-
-    // Get reason
-    const reasonSelect = document.getElementById('cancellationReason');
-    let reason = reasonSelect.value;
-    
-    if (!reason) {
-        Swal.fire({
-            title: 'Error',
-            text: 'Please select a cancellation reason',
-            icon: 'error',
-            confirmButtonText: 'OK'
-        });
-        return;
     }
 
-    if (reason === 'Other') {
-        const otherReason = document.getElementById('otherReason').value.trim();
-        if (!otherReason) {
-            Swal.fire({
-                title: 'Error',
-                text: 'Please specify the other reason',
-                icon: 'error',
-                confirmButtonText: 'OK'
-            });
-            return;
-        }
-        reason = `Other: ${otherReason}`;
-    }
-
-    // Show loading
-    Swal.fire({
-        title: 'Cancelling Submission',
-        html: `<div class="d-flex flex-column align-items-center">
-            <div class="spinner-border text-primary mb-3" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p>Please wait while we process your cancellation request...</p>
-        </div>`,
-        showConfirmButton: false,
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
-
-    try {
-        // Send cancellation request
-        const response = await fetch(`/api/lhdn/cancel/${uuid}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                uuid,
-                reason
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error?.message || 'Failed to cancel document');
-        }
-
-        // Show success message
-        Swal.fire({
-            title: 'Document Cancelled',
-            text: 'The document has been successfully cancelled.',
-            icon: 'success',
-            confirmButtonText: 'OK'
-        }).then(() => {
-            // Reload the page to refresh the data
-            window.location.reload();
-        });
-    } catch (error) {
-        console.error('Error cancelling document:', error);
-        
-        Swal.fire({
-            title: 'Error',
-            text: error.message || 'Failed to cancel document',
-            icon: 'error',
-            confirmButtonText: 'OK'
-        });
-    }
+    // Add delay for visual feedback
+    await new Promise(resolve => setTimeout(resolve, 500));
+    console.log(`✅ [Step ${stepNumber}] Status update completed`);
 }
 
-// Fix the DataTable amount column to use our improved rendering 
-// and ensure it uses the updated formatter
-$(document).ready(function() {
-    // Make cancelDocument globally available
-    window.cancelDocument = cancelDocument;
-});
-
-// Add the missing showSubmissionStatus function
 async function showSubmissionStatus(fileName, type, company, date, version) {
     console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
     window.currentFileName = fileName;
@@ -4684,64 +4355,6 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
     }
 }
 
-// Helper function for the submission status steps
-function getStepHtml(stepNumber, title) {
-    return `
-        <div id="step${stepNumber}" class="step-card">
-            <div id="step${stepNumber}Badge" class="step-badge">
-                ${stepNumber}
-            </div>
-            <div class="step-content">
-                <div id="step${stepNumber}Title" class="step-title">${title}</div>
-                <div id="step${stepNumber}Status" class="step-status">Waiting...</div>
-            </div>
-        </div>
-    `;
-}
-
-// Helper function to update step status
-async function updateStepStatus(stepNumber, status, message) {
-    console.log(`🔄 Updating step ${stepNumber} to ${status}: ${message}`);
-    
-    const step = document.getElementById(`step${stepNumber}`);
-    const stepBadge = document.getElementById(`step${stepNumber}Badge`);
-    const stepStatus = document.getElementById(`step${stepNumber}Status`);
-
-    if (!step || !stepBadge || !stepStatus) {
-        console.error(`❌ Step ${stepNumber} elements not found`);
-        console.log({
-            step: !!step,
-            stepBadge: !!stepBadge,
-            stepStatus: !!stepStatus
-        });
-        return;
-    }
-
-    // Remove existing status classes
-    step.classList.remove('processing', 'completed', 'error');
-    stepBadge.classList.remove('spinning');
-
-    // Update with new status
-    step.classList.add(status);
-    stepStatus.innerText = message;
-
-    // Update badge based on status
-    if (status === 'processing') {
-        stepBadge.innerHTML = '';
-        stepBadge.classList.add('spinning');
-    } else if (status === 'completed') {
-        stepBadge.innerHTML = '<i class="fas fa-check"></i>';
-    } else if (status === 'error') {
-        stepBadge.innerHTML = '<i class="fas fa-times"></i>';
-    } else {
-        stepBadge.innerText = stepNumber;
-    }
-
-    // Add a small delay for visual feedback
-    await new Promise(resolve => setTimeout(resolve, 300));
-}
-
-// Step functions needed for the submission process
 async function performStep2(data, version) {
     try {
         console.log('🚀 [Step 2] Starting LHDN submission with data:', data);
@@ -4750,93 +4363,287 @@ async function performStep2(data, version) {
         console.log('📤 [Step 2] Initiating submission to LHDN');
 
         // Extract the required parameters from the data
-        const { fileName, type, company, date } = data;
+        const {
+            fileName,
+            type,
+            company,  // Make sure we extract company
+            date
+        } = data;
 
-        // Make the API call to submit the document
-        const response = await fetch('/api/lhdn/submit', {
+        // Make the API call with all required parameters
+        const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                fileName,
                 type,
-                company,
+                company,  // Include company in the request body
                 date,
                 version
             })
         });
 
-        // Check if the response is OK
+        const result = await response.json();
+
         if (!response.ok) {
-            const errorData = await response.json();
-            console.error('❌ [Step 2] API error:', errorData);
-            throw new Error(errorData.error?.message || 'Failed to submit document to LHDN');
+            console.error('❌ [Step 2] API error response:', result);
+            await updateStepStatus(2, 'error', 'Submission failed');
+            showLHDNErrorModal(result.error);
+            throw new Error('LHDN submission failed');
         }
 
-        // Parse the response
-        const responseData = await response.json();
-        console.log('✅ [Step 2] Submission successful:', responseData);
-        return responseData;
+        console.log('✅ [Step 2] Submission successful:', result);
+        await updateStepStatus(2, 'completed', 'Submission completed');
+        return result;
+
     } catch (error) {
-        console.error('❌ [Step 2] Submission failed:', error);
+        console.error('❌ [Step 2] LHDN submission failed:', error);
+        await updateStepStatus(2, 'error', 'Submission failed');
         throw error;
     }
 }
 
 async function performStep3(response) {
+    console.log('🚀 [Step 3] Starting response processing');
+
     try {
-        console.log('🚀 [Step 3] Processing response:', response);
+        // Start processing
+        console.log('📝 [Step 3] Processing LHDN response');
         await updateStepStatus(3, 'processing', 'Processing response...');
 
-        // If we got a successful response and have a SubmissionUID, we're good
-        if (response && response.success && (response.submissionUid || response.UUID)) {
-            console.log('✅ [Step 3] Processing successful');
-            return response;
-        } else {
-            console.error('❌ [Step 3] Invalid response format:', response);
-            throw new Error('Invalid response format from LHDN');
+        // Process response
+        if (!response || !response.success) {
+            console.error('❌ [Step 3] Invalid response data');
         }
+
+        console.log('📝 [Step 3] Response data:', response ? 'Data present' : 'No data');
+        if (!response) {
+            console.error('❌ [Step 3] No response data to process');
+            console.log('Updating step status to error...');
+            await updateStepStatus(3, 'error', 'Processing failed');
+            throw new Error('No response data to process');
+        }
+
+        // Simulate processing time (if needed)
+        console.log('⏳ [Step 3] Processing response data...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Complete successfully
+        console.log('✅ [Step 3] Response processing completed');
+        console.log('Updating step status to completed...');
+        await updateStepStatus(3, 'completed', 'Processing completed');
+
+        return true;
     } catch (error) {
-        console.error('❌ [Step 3] Processing failed:', error);
+        console.error('❌ [Step 3] Response processing failed:', error);
+        console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
+        console.log('Updating step status to error...');
+        await updateStepStatus(3, 'error', 'Processing failed');
         throw error;
     }
 }
 
-// Error handling functions
-function showExcelValidationError(error) {
-    return Swal.fire({
-        title: 'Excel Validation Failed',
-        html: `
-            <div class="text-start">
-                <p>${error.message}</p>
-                <div class="alert alert-danger mt-3">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    Please correct the errors and try again.
+async function cancelDocument(uuid, fileName, submissionDate) {
+    console.log('Cancelling document:', { uuid, fileName });
+    try {
+        const content = `
+        <div class="content-card swal2-content">
+            <div style="margin-bottom: 15px; text-align: center;">
+                <div class="warning-icon" style="color: #f8bb86; font-size: 24px; margin-bottom: 10%; animation: pulseWarning 1.5s infinite;">
+                    <i class="fas fa-exclamation-triangle"></i>
                 </div>
-                ${error.fileName ? `<p class="mt-3"><strong>File:</strong> ${error.fileName}</p>` : ''}
+                <h3 style="color: #595959; font-size: 1.125rem; margin-bottom: 5px;">Document Details</h3>
+                <div style="background: #fff3e0; border-left: 4px solid #f8bb86; padding: 8px; margin: 8px 0; border-radius: 4px; text-align: left;">
+                    <i class="fas fa-info-circle" style="color: #f8bb86; margin-right: 5px;"></i>
+                    This action cannot be undone
+                </div>
             </div>
-        `,
-        icon: 'error',
-        confirmButtonText: 'OK'
-    });
-}
 
-function showLHDNErrorModal(error) {
-    return Swal.fire({
-        title: 'LHDN Submission Error',
-        html: `
-            <div class="text-start">
-                <p>${error.message || 'An error occurred during submission to LHDN.'}</p>
-                <div class="alert alert-warning mt-3">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    Please try again later or contact support if the problem persists.
+            <div style="text-align: left; margin-bottom: 12px; padding: 8px; border-radius: 8px; background: rgba(248, 187, 134, 0.1);">
+                <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
+                    <span style="color: #595959; font-weight: 600;">File Name:</span>
+                    <span style="color: #595959;">${fileName}</span>
                 </div>
+                <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
+                    <span style="color: #595959; font-weight: 600;">UUID:</span>
+                    <span style="color: #595959;">${uuid}</span>
+                            </div>
+                            <div>
+                    <span style="color: #595959; font-weight: 600;">Submission Date:</span>
+                    <span style="color: #595959;">${submissionDate}</span>
+                            </div>
+                        </div>
+
+            <div style="margin-top: 12px;">
+                <label style="display: block; color: #595959; font-weight: 600; margin-bottom: 5px;">
+                    <i class="fas fa-exclamation-circle" style="color: #f8bb86; margin-right: 5px;"></i>
+                    Cancellation Reason <span style="color: #dc3545;">*</span>
+                </label>
+                <textarea 
+                    id="cancellationReason"
+                    class="swal2-textarea"
+                    style="width: 80%; height: 30%; min-height: 70px; resize: none; border: 1px solid #d9d9d9; border-radius: 4px; padding: 8px; margin-top: 5px; transition: all 0.3s ease; font-size: 1rem;"
+                    placeholder="Please provide a reason for cancellation"
+                    onkeyup="this.style.borderColor = this.value.trim() ? '#28a745' : '#dc3545'"
+                ></textarea>
             </div>
-        `,
-        icon: 'error',
-        confirmButtonText: 'OK'
-    });
+        </div>
+
+        <style>
+            @keyframes pulseWarning {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.15); }
+                100% { transform: scale(1); }
+            }
+
+            .warning-icon {
+                animation: pulseWarning 1.5s infinite;
+            }
+        </style>
+    `;
+
+        // Initial confirmation dialog using createSemiMinimalDialog
+        const result = await Swal.fire({
+            title: 'Cancel Document',
+            text: 'Are you sure you want to cancel this document?',
+            html: content,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, cancel it',
+            cancelButtonText: 'No, keep it',
+            width: 480,
+            padding: '1.5rem',
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                cancelButton: 'outbound-action-btn cancel',
+                popup: 'semi-minimal-popup'
+            },
+            preConfirm: () => {
+                const reason = document.getElementById('cancellationReason').value;
+                if (!reason.trim()) {
+                    Swal.showValidationMessage('Please provide a cancellation reason');
+                    return false;
+                }
+                return reason;
+            }
+        });
+
+        if (!result.isConfirmed) {
+            console.log('Cancellation cancelled by user');
+            return;
+        }
+
+        const cancellationReason = result.value;
+        console.log('Cancellation reason:', cancellationReason);
+
+        // Show loading state
+        Swal.fire({
+            title: 'Cancelling Document...',
+            text: 'Please wait while we process your request',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        console.log('Making API request to cancel document...');
+        const response = await fetch(`/api/outbound-files/${uuid}/cancel`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reason: cancellationReason })
+        });
+
+        console.log('API Response status:', response.status);
+        const data = await response.json();
+        console.log('API Response data:', data);
+
+        if (!response.ok) {
+            throw new Error(data.error?.message || data.message || 'Failed to cancel document');
+        }
+        await Swal.fire({
+            title: 'Cancelled Successfully',
+            html: `
+                <div class="content-card swal2-content" style="animation: slideIn 0.3s ease-out; max-height: 280px;">
+                    <div style="text-align: center; margin-bottom: 18px;">
+                        <div class="success-icon" style="color: #28a745; font-size: 28px; animation: pulseSuccess 1.5s infinite;">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div style="background: #d4edda; border-left: 4px solid #28a745; padding: 6px; margin: 8px 0; border-radius: 4px; text-align: left;">
+                            <i class="fas fa-info-circle" style="color: #28a745; margin-right: 5px;"></i>
+                            Invoice cancelled successfully
+                        </div>
+                    </div>
+        
+                    <div style="text-align: left; padding: 8px; border-radius: 8px; background: rgba(40, 167, 69, 0.05);">
+                        <div style="color: #595959; font-weight: 500; margin-bottom: 8px;">Document Details:</div>
+                        <div style="margin-bottom: 4px;">
+                            <span style="color: #595959; font-weight: 500;">File Name:</span>
+                            <span style="color: #595959; font-size: 0.9em;">${fileName}</span>
+                        </div>
+                        <div style="margin-bottom: 4px;">
+                            <span style="color: #595959; font-weight: 500;">UUID:</span>
+                            <span style="color: #595959; font-size: 0.9em;">${uuid}</span>
+                        </div>
+                        <div>
+                            <span style="color: #595959; font-weight: 500;">Time:</span>
+                            <span style="color: #595959; font-size: 0.9em;">${new Date().toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+        
+                <style>
+                    @keyframes pulseSuccess {
+                        0% { transform: scale(1); }
+                        50% { transform: scale(1.15); }
+                        100% { transform: scale(1); }
+                    }
+        
+                    @keyframes slideIn {
+                        from { transform: translateY(-10px); opacity: 0; }
+                        to { transform: translateY(0); opacity: 1; }
+                    }
+        
+                    .success-icon {
+                        animation: pulseSuccess 1.5s infinite;
+                    }
+                </style>
+            `,
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                popup: 'semi-minimal-popup'
+            }
+        });
+        console.log('Document cancelled successfully');
+        // Refresh the table
+        window.location.reload();
+
+    } catch (error) {
+        console.error('Error in cancellation process:', error);
+
+        // Show error message using createSemiMinimalDialog
+        await Swal.fire({
+            title: 'Error',
+            html: `
+                <div class="text-left">
+                    <p class="text-danger">${error.message}</p>
+                    <div class="mt-2 text-gray-600">
+                        <strong>Technical Details:</strong><br>
+                        File Name: ${fileName}<br>
+                        UUID: ${uuid}
+                    </div>
+                </div>
+            `,
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                cancelButton: 'outbound-action-btn cancel',
+                popup: 'semi-minimal-popup'
+            }
+        });
+    }
 }
 
 async function deleteDocument(fileName, type, company, date) {
@@ -4967,6 +4774,7 @@ async function deleteDocument(fileName, type, company, date) {
     }
 }
 
+
 // Error Modals
 
 function getNextSteps(errorCode) {
@@ -5040,3 +4848,708 @@ function getErrorTypeIcon(type) {
     };
     return icons[type] || 'fa-exclamation-circle';
 }
+
+// Helper function to format error type for display
+function formatErrorType(type) {
+    const typeMap = {
+        'DS302': 'Duplicate Document',
+        'CF321': 'Date Validation',
+        'CF364': 'Classification',
+        'CF401': 'Tax Calculation',
+        'CF402': 'Currency',
+        'CF403': 'Tax Code',
+        'CF404': 'Identification',
+        'CF405': 'Party Information',
+        'AUTH001': 'Authentication',
+        'DUPLICATE_SUBMISSION': 'Duplicate Submission',
+        'VALIDATION_ERROR': 'Validation Error',
+        'DB_ERROR': 'Database Error',
+        'SUBMISSION_ERROR': 'Submission Error'
+    };
+    return typeMap[type] || type.replace(/_/g, ' ');
+}
+
+async function showErrorModal(title, message, fileName, uuid) {
+    await Swal.fire({
+        icon: 'error',
+        title: title,
+        html: `
+            <div class="text-left">
+                <p class="text-danger">${message}</p>
+                <div class="small text-muted mt-2">
+                    <strong>Technical Details:</strong><br>
+                    File Name: ${fileName}<br>
+                    UUID: ${uuid}
+                </div>
+            </div>
+        `,
+        confirmButtonText: 'OK',
+        customClass: {
+            confirmButton: 'outbound-action-btn submit',
+            cancelButton: 'outbound-action-btn cancel',
+            popup: 'semi-minimal-popup'
+        },
+    });
+}
+
+async function showExcelValidationError(error) {
+    console.log('Showing validation error for file:', error.fileName, 'Error:', error);
+
+    // Add delay before showing the validation error modal
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Format validation errors for display
+    let errorContent = '';
+    if (error.validationErrors && error.validationErrors.length > 0) {
+        const groupedErrors = error.validationErrors.reduce((acc, err) => {
+            const errors = Array.isArray(err.errors) ? err.errors : [err.errors];
+            acc[err.row] = acc[err.row] || [];
+            acc[err.row].push(...errors);
+            return acc;
+        }, {});
+
+        errorContent = Object.entries(groupedErrors).map(([row, errors]) => `
+            <div class="content-card">
+                <div class="content-header">
+                    <span class="content-badge error">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </span>
+                    <span class="content-title" style="text-align: center;">${row}</span>
+                </div>
+                ${errors.map(e => `
+                    <div class="content-desc">
+                        ${typeof e === 'object' ? e.message : e}
+                    </div>
+                `).join('')}
+            </div>
+        `).join('');
+    } else {
+        errorContent = `
+            <div class="content-card">
+                <div class="content-header">
+                    <span class="content-badge error">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </span>
+                    <span class="content-title" style="text-align: center;">Validation Error</span>
+                </div>
+                <div class="content-desc">
+                    ${error.message || 'Unknown validation error'}
+                </div>
+            </div>
+        `;
+    }
+
+    // Add user guidance
+    const guidance = `
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-title" style="text-align: center;">Next Steps</span>
+            </div>
+            <div class="content-desc">
+                <ul>
+                    <li>Review the errors listed above carefully.</li>
+                    <li>Ensure all mandatory fields are filled out correctly.</li>
+                    <li>Check the format of the data (e.g., dates, numbers).</li>
+                    <li>Try submitting the document again after corrections.</li>
+                </ul>
+            </div>
+        </div>
+    `;
+
+    return Swal.fire({
+        html: createSemiMinimalDialog({
+            title: 'Excel Validation Failed',
+            subtitle: 'Correct the issues listed and proceed with creating a new document using the EXCEL Template',
+            content: errorContent + guidance
+        }),
+        icon: 'error',
+        showCancelButton: false,
+        confirmButtonText: 'I Understand',
+        confirmButtonColor: '#405189',
+        width: 480,
+        padding: '1.5rem',
+        customClass: {
+            confirmButton: 'semi-minimal-confirm',
+            popup: 'semi-minimal-popup'
+        }
+    }).then((result) => {
+        if (result.isConfirmed && error.fileName) {
+            //openExcelFile(error.fileName);
+        }
+    });
+}
+
+async function showSystemErrorModal(error) {
+    console.log('System Error:', error);
+
+    // Function to get user-friendly error message
+    function getErrorMessage(error) {
+        const statusMessages = {
+            '401': 'Authentication failed. Please try logging in again.',
+            '403': 'You do not have permission to perform this action.',
+            '404': 'The requested resource was not found.',
+            '500': 'An internal server error occurred.',
+            'default': 'An unexpected error occurred while processing your request.'
+        };
+
+        if (error.message && error.message.includes('status code')) {
+            const statusCode = error.message.match(/\d+/)[0];
+            return statusMessages[statusCode] || statusMessages.default;
+        }
+
+        return error.message || statusMessages.default;
+    }
+    const content = `
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-badge error">
+                    <i class="fas fa-exclamation-circle"></i>
+                </span>
+                <span class="content-title">System Error</span>
+            </div>
+            <div class="content-desc">
+                ${getErrorMessage(error)}
+                ${error.invoice_number ? `
+                    <div style="margin-top: 0.5rem;">
+                        <i class="fas fa-file-invoice"></i>
+                        Invoice Number: ${error.invoice_number}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+
+    return Swal.fire({
+        html: createSemiMinimalDialog({
+            title: error.type || 'System Error',
+            subtitle: 'Please review the following issue:',
+            content: content
+        }),
+        confirmButtonText: 'I Understand',
+        confirmButtonColor: '#405189',
+        width: 480,
+        padding: '1.5rem',
+        showClass: {
+            popup: 'animate__animated animate__fadeIn'
+        },
+        hideClass: {
+            popup: 'animate__animated animate__fadeOut'
+        },
+        customClass: {
+            confirmButton: 'semi-minimal-confirm',
+            popup: 'semi-minimal-popup'
+        }
+    });
+}
+
+async function showLHDNErrorModal(error) {
+    console.log('LHDN Error:', error);
+
+    // Parse error message if it's a string
+    let errorDetails = error;
+    try {
+        if (typeof error === 'string') {
+            errorDetails = JSON.parse(error);
+        }
+    } catch (e) {
+        console.warn('Error parsing error message:', e);
+    }
+
+    // Extract error details from the new error format
+    const errorData = Array.isArray(errorDetails) ? errorDetails[0] : errorDetails;
+    const mainError = {
+        code: errorData.code || 'VALIDATION_ERROR',
+        message: errorData.message || 'An unknown error occurred',
+        target: errorData.target || '',
+        details: errorData.details || {}
+    };
+
+    // Format the validation error details
+    const validationDetails = mainError.details?.error?.details || [];
+
+    // Check if this is a TIN matching error and provide specific guidance
+    const isTINMatchingError = mainError.message.includes("authenticated TIN and documents TIN is not matching");
+
+    // Create tooltip help content for TIN matching errors
+    const tinErrorGuidance = `
+        <div class="tin-matching-guidance" style="margin-top: 15px; padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #17a2b8;">
+            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                <i class="fas fa-info-circle" style="color: #17a2b8; margin-right: 8px;"></i>
+                <span style="color: #17a2b8; font-size: 14px; font-weight: 600;">How to resolve TIN matching errors:</span>
+            </div>
+            <div style="padding-left: 6px; margin-bottom: 0; text-align: left; color: #495057; font-size: 13px;">
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>Verify that the supplier's TIN in your document matches exactly with the one registered with LHDN</span>
+                </div>
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>When using Login as Taxpayer API: The issuer TIN in the document must match with the TIN associated with your Client ID and Client Secret</span>
+                </div>
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>When using Login as Intermediary System API: The issuer TIN must match with the TIN of the taxpayer you're representing</span>
+                </div>
+                <div style="display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>For sole proprietors: You can validate TINs starting with "IG" along with your BRN if you have the "Business Owner" role in MyTax</span>
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #6c757d; text-align: right;">
+                <a href="https://sdk.myinvois.hasil.gov.my/faq/" target="_blank" style="color: #17a2b8; text-decoration: none; display: inline-flex; align-items: center;">
+                    <span>View LHDN FAQ for more details</span>
+                    <i class="fas fa-external-link-alt" style="margin-left: 4px; font-size: 10px;"></i>
+                </a>
+            </div>
+        </div>
+    `;
+
+    Swal.fire({
+        title: 'LHDN Submission Error',
+        html: `
+            <div class="content-card swal2-content">
+                <div style="margin-bottom: 15px; text-align: center;">
+                    <div class="error-icon" style="color: #dc3545; font-size: 36px; margin-bottom: 15px;">
+                        <i class="fas fa-exclamation-circle" style="animation: pulseError 1.5s infinite;"></i>
+                    </div>
+                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 10px; margin: 8px 0; border-radius: 4px; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="display: flex; align-items: flex-start;">
+                            <i class="fas fa-exclamation-triangle" style="color: #dc3545; margin-right: 8px; margin-top: 2px; font-size: 13px;"></i>
+                            <span style="font-weight: 500; font-size: 13px;">${mainError.message}</span>
+                        </div>
+                    </div>
+                </div>
+    
+                <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Code:</span>
+                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.code}</span>
+                    </div>
+
+                    ${mainError.target ? `
+                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Target:</span>
+                        <span style="color: #495057; background: rgba(0,0,0,0.03); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.target}</span>
+                    </div>
+                    ` : ''}
+                    
+                    ${validationDetails.length > 0 ? `
+                        <div>
+                            <div style="color: #495057; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center;">
+                                <span style="font-size: 12px;">Validation Errors:</span>
+                                <span class="tooltip-container" style="margin-left: 6px; cursor: help; position: relative;">
+                                    <i class="fas fa-question-circle" style="color: #6c757d; font-size: 11px;"></i>
+                                    <div class="tooltip-content" style="position: absolute; width: 220px; background: #fff; border-radius: 4px; padding: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; display: none; top: -5px; left: 20px; font-weight: normal; font-size: 11px; color: #495057; text-align: left;">
+                                        These validation errors indicate specific issues with your submission data. Each error includes the path to the problematic field and details about what needs to be fixed.
+                                    </div>
+                                </span>
+                            </div>
+                            <div style="margin-top: 6px; max-height: 150px; overflow-y: auto; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
+                                ${validationDetails.map(detail => `
+                                    <div style="background: #fff; padding: 8px; border-radius: 0; margin-bottom: 1px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 12px;">
+                                        <div style="margin-bottom: 4px; display: flex;">
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Path:</strong> 
+                                            <span style="color: #0d6efd; font-family: monospace; background: rgba(13, 110, 253, 0.05); padding: 0 3px; border-radius: 2px; font-size: 11px;">
+                                                ${detail.propertyPath || detail.target || 'Unknown'}
+                                            </span>
+                                        </div>
+                                        <div style="display: flex;">
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Error:</strong> 
+                                            <span style="font-size: 11px;">${formatValidationMessage(detail.message)}</span>
+                                        </div>
+                                        ${detail.code ? `
+                                            <div style="margin-top: 4px; color: #6c757d; display: flex;">
+                                                <strong style="min-width: 60px; color: #6c757d; font-size: 11px;">Code:</strong>
+                                                <span style="font-size: 11px;">${detail.code}</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                ${isTINMatchingError ? tinErrorGuidance : ''}
+            </div>
+            
+        `,
+        customClass: {
+            confirmButton: 'outbound-action-btn submit',
+            popup: 'semi-minimal-popup'
+        },
+        confirmButtonText: 'I Understand',
+        customClass: {
+            confirmButton: 'outbound-action-btn submit btn-sm',
+        },
+        showCloseButton: true,
+        didOpen: () => {
+            // Add event listeners for tooltips if needed
+            const tooltipContainers = document.querySelectorAll('.tooltip-container');
+            tooltipContainers.forEach(container => {
+                container.addEventListener('mouseenter', () => {
+                    container.querySelector('.tooltip-content').style.display = 'block';
+                });
+                container.addEventListener('mouseleave', () => {
+                    container.querySelector('.tooltip-content').style.display = 'none';
+                });
+            });
+        }
+    });
+}
+
+// Helper function to format validation messages
+function formatValidationMessage(message) {
+    if (!message) return 'Unknown validation error';
+
+    // Enhance common LHDN error messages with more helpful information
+    if (message.includes('authenticated TIN and documents TIN is not matching')) {
+        return `The TIN (Tax Identification Number) in your document doesn't match with the authenticated TIN. 
+                Please ensure the supplier's TIN matches exactly with the one registered with LHDN.`;
+    }
+
+    return message;
+}
+
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if table element exists
+    const tableElement = document.getElementById('invoiceTable');
+    if (!tableElement) {
+        console.error('Table element #invoiceTable not found');
+        return;
+    }
+
+    const manager = InvoiceTableManager.getInstance();
+    DateTimeManager.updateDateTime();
+});
+
+class ConsolidatedSubmissionManager {
+    constructor() {
+        this.selectedDocs = new Set();
+        this.initializeEventListeners();
+    }
+
+    initializeEventListeners() {
+        // Handle consolidated submit button click
+        document.getElementById('submitConsolidatedBtn').addEventListener('click', () => {
+            this.handleConsolidatedSubmit();
+        });
+
+        // Update selected docs list when checkboxes change
+        // Only listen to enabled checkboxes (Pending status)
+        document.addEventListener('change', (e) => {
+            if (e.target.matches('.row-checkbox:not([disabled])') || e.target.id === 'selectAll') {
+                this.updateSelectedDocs();
+            }
+        });
+    }
+
+    updateSelectedDocs() {
+        // Only get rows with enabled checkboxes (Pending status)
+        const checkboxes = document.querySelectorAll('.row-checkbox:not([disabled]):checked:not(#selectAll)');
+        this.selectedDocs.clear();
+
+        checkboxes.forEach(checkbox => {
+            const row = checkbox.closest('tr');
+            const rowData = InvoiceTableManager.getInstance().table.row(row).data();
+            if (rowData) {
+                // Double-check that the status is Pending
+                if (rowData.status && rowData.status.toLowerCase() === 'pending') {
+                    this.selectedDocs.add({
+                        fileName: rowData.fileName,
+                        type: rowData.type,
+                        company: rowData.company,
+                        date: rowData.date
+                    });
+                }
+            }
+        });
+
+        this.updateSelectedDocsList();
+        this.updateSubmitButton();
+    }
+
+    updateSelectedDocsList() {
+        const listContainer = $('#selectedDocsList');
+        listContainer.empty();
+
+        if (this.selectedDocs.size === 0) {
+            return; // Empty state is handled by CSS
+        }
+
+        this.selectedDocs.forEach(doc => {
+            const docItem = $(`
+                <div class="doc-item">
+                    <i class="bi bi-file-earmark-text text-primary"></i>
+                    <span class="flex-grow-1">${doc.fileName}</span>
+                    <span class="company-badge">${doc.company || 'PXC Branch'}</span>
+            </div>
+        `);
+            listContainer.append(docItem);
+        });
+    }
+
+    updateSubmitButton() {
+        const submitBtn = document.getElementById('submitConsolidatedBtn');
+        submitBtn.disabled = this.selectedDocs.size === 0;
+    }
+
+    async handleConsolidatedSubmit() {
+        const version = document.getElementById('lhdnVersion').value;
+        const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
+        const submissionProgress = document.getElementById('submissionProgress');
+
+        try {
+            progressModal.show();
+            submissionProgress.innerHTML = '<div class="alert alert-info">Starting consolidated submission...</div>';
+
+            let successCount = 0;
+            let failureCount = 0;
+            const results = [];
+
+            for (const doc of this.selectedDocs) {
+                try {
+                    submissionProgress.innerHTML += `
+                        <div class="alert alert-info">
+                            Processing ${doc.fileName}...
+                        </div>
+                    `;
+
+                    // First validate the document
+                    const validationResult = await validateExcelFile(doc.fileName, doc.type, doc.company, doc.date);
+
+                    if (validationResult.success) {
+                        // If validation successful, submit to LHDN
+                        const submitResult = await submitToLHDN(doc.fileName, doc.type, doc.company, doc.date, version);
+
+                        if (submitResult.success) {
+                            successCount++;
+                            results.push({
+                                fileName: doc.fileName,
+                                status: 'success',
+                                message: 'Successfully submitted'
+                            });
+                        } else {
+                            failureCount++;
+                            results.push({
+                                fileName: doc.fileName,
+                                status: 'error',
+                                message: submitResult.error || 'Submission failed'
+                            });
+                        }
+                    } else {
+                        failureCount++;
+                        results.push({
+                            fileName: doc.fileName,
+                            status: 'error',
+                            message: 'Validation failed'
+                        });
+                    }
+                } catch (error) {
+                    failureCount++;
+                    results.push({
+                        fileName: doc.fileName,
+                        status: 'error',
+                        message: error.message
+                    });
+                }
+            }
+
+            // Show final results
+            submissionProgress.innerHTML = `
+                <div class="alert ${successCount === this.selectedDocs.size ? 'alert-success' : 'alert-warning'}">
+                    <h6>Submission Complete</h6>
+                    <p>Successfully submitted: ${successCount}</p>
+                    <p>Failed: ${failureCount}</p>
+                </div>
+                <div class="results-list">
+                    ${results.map(result => `
+                        <div class="alert alert-${result.status === 'success' ? 'success' : 'danger'}">
+                            <strong>${result.fileName}</strong>: ${result.message}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            // Refresh the table after submission
+            InvoiceTableManager.getInstance().refresh();
+
+        } catch (error) {
+            submissionProgress.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Submission Failed</h6>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+    }
+}
+
+// Initialize the consolidated submission manager when the document is ready
+document.addEventListener('DOMContentLoaded', () => {
+    new ConsolidatedSubmissionManager();
+});
+
+// Handle bulk document submission
+async function handleBulkSubmission(selectedDocs) {
+    const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
+    const progressDiv = document.getElementById('submissionProgress');
+    
+    try {
+        // Initialize progress UI
+        if (!progressDiv) {
+            throw new Error('Progress container not found');
+        }
+
+        progressDiv.innerHTML = `
+            <div class="progress mb-3">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     style="width: 0%" 
+                     aria-valuenow="0" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                </div>
+            </div>
+            <div class="submission-status mb-3">Preparing documents for submission...</div>
+            <div class="documents-status"></div>
+        `;
+
+        progressModal.show();
+
+        const version = document.getElementById('lhdnVersion')?.value || '1.0';
+        const progressBar = progressDiv.querySelector('.progress-bar');
+        const statusText = progressDiv.querySelector('.submission-status');
+        const documentsStatus = progressDiv.querySelector('.documents-status');
+
+        if (!progressBar || !statusText || !documentsStatus) {
+            throw new Error('Required progress elements not found');
+        }
+
+        // Submit documents
+        const response = await fetch('/api/outbound-files/bulk-submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ documents: selectedDocs, version })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error?.message || 'Failed to submit documents');
+        }
+
+        // Update progress for each document
+        result.results.forEach((docResult, index) => {
+            const progress = ((index + 1) / result.results.length) * 100;
+            progressBar.style.width = `${progress}%`;
+            progressBar.setAttribute('aria-valuenow', progress);
+
+            const statusClass = docResult.success ? 'text-success' : 'text-danger';
+            const statusIcon = docResult.success ? 'check-circle-fill' : 'x-circle-fill';
+            documentsStatus.insertAdjacentHTML('beforeend', `
+                <div class="doc-status mb-2 ${statusClass}">
+                    <i class="bi bi-${statusIcon}"></i>
+                    ${docResult.fileName}: ${docResult.success ? 'Submitted successfully' : docResult.error.message}
+                </div>
+            `);
+        });
+
+        statusText.textContent = 'Submission complete';
+        progressBar.style.width = '100%';
+        progressBar.setAttribute('aria-valuenow', 100);
+        progressBar.classList.remove('progress-bar-animated');
+
+        // Refresh table and show summary
+        await InvoiceTableManager.getInstance().refresh();
+        const successCount = result.results.filter(r => r.success).length;
+        const failureCount = result.results.filter(r => !r.success).length;
+
+        // Close consolidated modal if open
+        const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
+        if (consolidatedModal) {
+            consolidatedModal.hide();
+        }
+
+        await Swal.fire({
+            icon: successCount > 0 ? 'success' : 'warning',
+            title: 'Submission Complete',
+            html: `
+                <div class="submission-summary">
+                    <p>Successfully submitted: ${successCount} document(s)</p>
+                    <p>Failed submissions: ${failureCount} document(s)</p>
+                    ${failureCount > 0 ? '<p>Check the progress modal for details on failed submissions.</p>' : ''}
+                </div>
+            `,
+            confirmButtonText: 'OK',
+            customClass: { confirmButton: 'outbound-action-btn submit' }
+        });
+
+    } catch (error) {
+        console.error('Bulk submission error:', error);
+        if (progressDiv) {
+            progressDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Submission Failed</h6>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+        
+        await Swal.fire({
+            icon: 'error',
+            title: 'Submission Failed',
+            text: error.message || 'An error occurred during bulk submission',
+            confirmButtonText: 'OK',
+            customClass: { confirmButton: 'outbound-action-btn submit' }
+        });
+    }
+}
+
+// Add event listener for bulk submit button
+document.addEventListener('DOMContentLoaded', function() {
+    const submitConsolidatedBtn = document.getElementById('submitConsolidatedBtn');
+    if (submitConsolidatedBtn) {
+        submitConsolidatedBtn.addEventListener('click', async function() {
+            const selectedRows = Array.from(document.querySelectorAll('input.outbound-checkbox:checked'))
+                .map(checkbox => {
+                    const row = checkbox.closest('tr');
+                    return {
+                        fileName: row.getAttribute('data-file-name'),
+                        type: row.getAttribute('data-type'),
+                        company: row.getAttribute('data-company'),
+                        date: row.getAttribute('data-date')
+                    };
+                });
+
+            if (selectedRows.length === 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Documents Selected',
+                    text: 'Please select at least one document to submit.'
+                });
+                return;
+            }
+
+            const confirmResult = await Swal.fire({
+                icon: 'question',
+                title: 'Confirm Bulk Submission',
+                html: `Are you sure you want to submit ${selectedRows.length} document(s)?`,
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Submit',
+                cancelButtonText: 'Cancel',
+                customClass: {
+                    confirmButton: 'outbound-action-btn submit',
+                    cancelButton: 'outbound-action-btn cancel'
+                }
+            });
+
+            if (confirmResult.isConfirmed) {
+                const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
+                consolidatedModal.hide();
+                await handleBulkSubmission(selectedRows);
+            }
+        });
+    }
+});

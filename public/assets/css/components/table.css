@@ -24,7 +24,7 @@
 .table {
     width: 100% !important;
     margin: 0 !important;
-    //font-size: 0.875rem;
+    font-size: 0.875rem !important;
     color: #475569;
     background: #fff;
     table-layout: fixed;
@@ -408,4 +408,56 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Loading Backdrop Styles */
+.loading-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    backdrop-filter: blur(5px);
+}
+
+.loading-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.loading-message {
+    margin-top: 1rem;
+    color: #1e293b;
+}
+
+.loading-message h5 {
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.loading-message p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #64748b;
+}
+
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+    color: #2563eb !important;
+}
+
+/* Prevent interaction while loading */
+.loading-backdrop[style*="display: block"] ~ * {
+    pointer-events: none;
 }
