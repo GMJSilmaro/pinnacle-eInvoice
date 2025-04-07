@@ -5019,8 +5019,15 @@ async function cancelDocument(uuid, fileName, submissionDate) {
             }
         });
         console.log('Document cancelled successfully');
-        // Refresh the table dynamically instead of reloading the page
-        InvoiceTableManager.getInstance().refresh();
+        
+        // Update just this document's status instead of refreshing the entire table
+        try {
+            console.log('Updating document status in table for:', fileName);
+            await updateSingleDocumentStatus(fileName);
+        } catch (updateError) {
+            console.warn('Error updating single document status, falling back to full refresh:', updateError);
+            InvoiceTableManager.getInstance().refresh();
+        }
 
     } catch (error) {
         console.error('Error in cancellation process:', error);
@@ -5049,80 +5056,54 @@ async function cancelDocument(uuid, fileName, submissionDate) {
 
 async function deleteDocument(fileName, type, company, date) {
     try {
-        // Show confirmation dialog
+        console.log('Deleting document:', fileName);
+        
+        // First, confirm the deletion
         const result = await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Delete Document',
-                subtitle: 'Are you sure you want to delete this document?',
-                content: `
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-badge error">
-                                <i class="fas fa-exclamation-triangle"></i>
-                            </span>
-                            <span class="content-title">Warning</span>
-                        </div>
-                        <div class="content-desc">
-                            This action cannot be undone. The file will be permanently deleted.
-                        </div>
-                    </div>
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-title">Document Details</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">File Name:</span>
-                            <span class="field-value">${fileName}</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">Type:</span>
-                            <span class="field-value">${type}</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">Company:</span>
-                            <span class="field-value">${company}</span>
-                        </div>
-                    </div>
-                `
-            }),
+            title: 'Delete Document',
+            text: `Are you sure you want to delete this document? (${fileName})`,
+            icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: 'Yes, delete it',
-            cancelButtonText: 'Cancel',
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                cancelButton: 'outbound-action-btn cancel',
-                popup: 'semi-minimal-popup'
-            }
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
         });
 
         if (!result.isConfirmed) {
             return;
         }
 
-        // Show loading state
+        // Show loading
         Swal.fire({
-            title: 'Deleting Document...',
-            text: 'Please wait while we process your request',
+            title: 'Deleting...',
+            text: 'Please wait while we delete this document.',
             allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
         });
 
-        // Make API call to delete the file
+        // Make the API call to delete the document
         const response = await fetch(`/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
-
-        const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.error?.message || 'Failed to delete document');
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Failed to delete document');
         }
+
+        const data = await response.json();
 
         // Show success message
         await Swal.fire({
             html: createSemiMinimalDialog({
                 title: 'Document Deleted',
-                subtitle: 'The document has been successfully deleted',
+                subtitle: `${fileName} has been deleted successfully`,
                 content: `
                     <div class="content-card">
                         <div class="content-header">
@@ -5143,8 +5124,25 @@ async function deleteDocument(fileName, type, company, date) {
             }
         });
 
-        // Refresh the table dynamically instead of reloading the page
-        InvoiceTableManager.getInstance().refresh();
+        // Remove the row from the table directly instead of refreshing the entire table
+        const tableManager = InvoiceTableManager.getInstance();
+        if (tableManager.table) {
+            // Find the row with the matching fileName and remove it
+            const row = tableManager.table.row(`[id="${fileName}"]`);
+            if (row.length) {
+                row.remove().draw(false);
+                console.log('Row removed from table:', fileName);
+                
+                // Update card totals after removing the row
+                tableManager.updateCardTotals();
+            } else {
+                console.warn('Row not found in table, performing full refresh:', fileName);
+                InvoiceTableManager.getInstance().refresh();
+            }
+        } else {
+            console.warn('Table not initialized, performing full refresh');
+            InvoiceTableManager.getInstance().refresh();
+        }
 
     } catch (error) {
         console.error('Error deleting document:', error);
@@ -5168,7 +5166,7 @@ async function deleteDocument(fileName, type, company, date) {
                 `
             }),
             customClass: {
-                confirmButton: 'outbound-action-btn submit',
+                confirmButton: 'outbound-action-btn cancel',
                 popup: 'semi-minimal-popup'
             }
         });

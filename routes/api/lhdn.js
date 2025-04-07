@@ -959,59 +959,94 @@ router.get('/documents/recent', async (req, res) => {
         }
 
         console.log('User from session:', req.session.user);
-        console.log('Force refresh:', req.query.forceRefresh);
         
         try {
-            const data = await getCachedDocuments(req);
-            console.log('Got documents, count:', data.result.length, 'cached:', data.cached, 'fallback:', data.fallback || false);
+            // Directly query the database instead of using API
+            console.log('Querying database directly for recent documents');
+            const dbDocuments = await WP_INBOUND_STATUS.findAll({
+                order: [['dateTimeReceived', 'DESC']],
+                limit: 1000
+            });
             
-            const documents = data.result.map(doc => ({
-                uuid: doc.uuid,
-                submissionUid: doc.submissionUid,
-                longId: doc.longId,
-                internalId: doc.internalId,
-                dateTimeIssued: doc.dateTimeIssued,
-                dateTimeReceived: doc.dateTimeReceived,
-                dateTimeValidated: doc.dateTimeValidated,
-                status: doc.status,
-                totalSales: doc.totalSales || doc.total || doc.netAmount || 0,
-                totalExcludingTax: doc.totalExcludingTax || 0,
-                totalDiscount: doc.totalDiscount || 0,
-                totalNetAmount: doc.totalNetAmount || 0,
-                totalPayableAmount: doc.totalPayableAmount || 0,
-                issuerTin: doc.issuerTin,
-                issuerTourismTaxNo: doc.issuerTourismTaxNo,
-                issuerAddress: doc.issuerAddress,
-                issuerContact: doc.issuerContact,
-                issuerEmail: doc.issuerEmail,
-                issuerMsicCode: doc.issuerMsicCode,
-                issuerBusinessActivity: doc.issuerBusinessActivity,
-                issuerID: doc.issuerID,
-                issuerTaxRegNo: doc.issuerTaxRegNo,
-                receiverId: doc.receiverId,
-                receiverMsicCode: doc.receiverMsicCode,
-                receiverAddress: doc.receiverAddress,
-                receiverContact: doc.receiverContact,
-                receiverEmail: doc.receiverEmail,
-                receiverTaxRegNo: doc.receiverTaxRegNo,
-                receiverAttention: doc.receiverAttention,
-                projectTitle: doc.projectTitle,
-                taxExemptionDetails: doc.taxExemptionDetails,
-                taxExemptionAmount: doc.taxExemptionAmount,
-                taxType: doc.taxType,
-                taxRate: doc.taxRate,
-                exchangeRate: doc.exchangeRate,
-                originalInvoiceRefNo: doc.originalInvoiceRefNo,
-                supplierName: doc.supplierName || doc.issuerName,
-                receiverName: doc.receiverName || doc.buyerName,
-                supplierTIN: doc.supplierTIN || doc.issuerTIN,
-                receiverTIN: doc.receiverTIN || doc.buyerTIN,
-                documentCurrency: doc.documentCurrency || 'MYR',
-                typeName: doc.typeName,
-                typeVersionName: doc.typeVersionName,
-                submissionChannel: doc.submissionChannel,
-                documentStatusReason: doc.documentStatusReason
-            }));
+            console.log('Got documents from database, count:', dbDocuments.length);
+            
+            // Helper function to format dates for display
+            const formatDateForDisplay = (dateString) => {
+                if (!dateString) return null;
+                try {
+                    const date = new Date(dateString);
+                    if (isNaN(date.getTime())) return dateString; // Return original if invalid
+                    return date.toISOString();
+                } catch (err) {
+                    console.log('Error formatting date:', dateString, err);
+                    return dateString;
+                }
+            };
+            
+            // Helper function to format dates for UI display
+            const formatDateForUI = (dateString) => {
+                if (!dateString) return null;
+                try {
+                    const date = new Date(dateString);
+                    if (isNaN(date.getTime())) return null;
+                    
+                    // Format as "Apr 07, 2025, 01:14 PM"
+                    return date.toLocaleString('en-US', {
+                        month: 'short',
+                        day: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                } catch (err) {
+                    console.log('Error formatting date for UI:', dateString, err);
+                    return null;
+                }
+            };
+            
+            const documents = dbDocuments.map(doc => {
+                // Get submission and validation dates
+                const receivedDate = doc.dateTimeReceived || doc.created_at;
+                const validatedDate = doc.dateTimeValidated;
+                
+                return {
+                    uuid: doc.uuid,
+                    submissionUid: doc.submissionUid,
+                    longId: doc.longId,
+                    internalId: doc.internalId,
+                    dateTimeIssued: formatDateForDisplay(doc.dateTimeIssued),
+                    dateTimeReceived: formatDateForDisplay(receivedDate),
+                    dateTimeValidated: formatDateForDisplay(validatedDate),
+                    submissionDate: formatDateForDisplay(receivedDate),
+                    validationDate: formatDateForDisplay(validatedDate),
+                    
+                    // UI display formatted dates
+                    receivedDateFormatted: formatDateForUI(receivedDate),
+                    validatedDateFormatted: formatDateForUI(validatedDate),
+                    dateInfo: {
+                        date: formatDateForUI(validatedDate || receivedDate),
+                        type: validatedDate ? 'Validated' : 'Submitted',
+                        tooltip: validatedDate ? 'LHDN Validation Date' : 'LHDN Submission Date'
+                    },
+                    
+                    status: doc.status,
+                    totalSales: doc.totalSales || 0,
+                    totalExcludingTax: doc.totalExcludingTax || 0,
+                    totalDiscount: doc.totalDiscount || 0,
+                    totalNetAmount: doc.totalNetAmount || 0,
+                    totalPayableAmount: doc.totalPayableAmount || 0,
+                    issuerTin: doc.issuerTin,
+                    issuerName: doc.issuerName,
+                    receiverId: doc.receiverId,
+                    receiverName: doc.receiverName,
+                    supplierName: doc.issuerName,
+                    typeName: doc.typeName,
+                    typeVersionName: doc.typeVersionName,
+                    documentStatusReason: doc.documentStatusReason,
+                    documentCurrency: 'MYR'
+                };
+            });
 
             console.log('Sending response with documents:', documents.length);
 
@@ -1020,46 +1055,24 @@ router.get('/documents/recent', async (req, res) => {
                 result: documents,
                 metadata: {
                     total: documents.length,
-                    cached: data.cached,
-                    fallback: data.fallback || false,
-                    timestamp: new Date().toISOString(),
-                    error: data.error || null
+                    cached: true,
+                    directDb: true,
+                    timestamp: new Date().toISOString()
                 }
             });
         } catch (error) {
-            // Check if it's an authentication error
-            if (error.message === 'Authentication failed. Please log in again.' || 
-                error.response?.status === 401 || 
-                error.response?.status === 403) {
-                return handleAuthError(req, res);
-            }
-
-            // Handle rate limiting specifically
-            if (error.response?.status === 429) {
-                const resetTime = error.response.headers["x-rate-limit-reset"];
-                return res.status(429).json({
-                    success: false,
-                    error: {
-                        code: 'RATE_LIMIT_EXCEEDED',
-                        message: 'Rate limit exceeded. Please try again later.',
-                        resetTime: resetTime
-                    }
-                });
-            }
-
-            // Handle timeout errors specifically
-            if (error.code === 'ECONNABORTED') {
-                return res.status(504).json({
-                    success: false,
-                    error: {
-                        code: 'TIMEOUT',
-                        message: 'Request timed out. Please try again.',
-                        details: error.message
-                    }
-                });
-            }
-
-            throw error;
+            console.error('Error querying database:', error);
+            
+            const statusCode = error.response?.status || 500;
+            res.status(statusCode).json({ 
+                success: false, 
+                error: {
+                    code: error.code || 'DATABASE_ERROR',
+                    message: error.message || 'An error occurred while querying the database',
+                    details: error.original?.message || null,
+                    timestamp: new Date().toISOString()
+                }
+            });
         }
     } catch (error) {
         console.error('Error in route handler:', error);
@@ -1069,57 +1082,6 @@ router.get('/documents/recent', async (req, res) => {
             error.response?.status === 401 || 
             error.response?.status === 403) {
             return handleAuthError(req, res);
-        }
-
-        // Final fallback - try to get data directly from database
-        try {
-            console.log('Final route fallback - querying database directly');
-            const fallbackDocuments = await WP_INBOUND_STATUS.findAll({
-                order: [['dateTimeReceived', 'DESC']],
-                limit: 1000
-            });
-            
-            if (fallbackDocuments && fallbackDocuments.length > 0) {
-                console.log(`Emergency fallback successful. Retrieved ${fallbackDocuments.length} documents from database.`);
-                
-                const documents = fallbackDocuments.map(doc => ({
-                    uuid: doc.uuid,
-                    submissionUid: doc.submissionUid,
-                    longId: doc.longId,
-                    internalId: doc.internalId,
-                    dateTimeIssued: doc.dateTimeIssued,
-                    dateTimeReceived: doc.dateTimeReceived,
-                    dateTimeValidated: doc.dateTimeValidated,
-                    status: doc.status,
-                    totalSales: doc.totalSales || 0,
-                    totalExcludingTax: doc.totalExcludingTax || 0,
-                    totalDiscount: doc.totalDiscount || 0,
-                    totalNetAmount: doc.totalNetAmount || 0,
-                    totalPayableAmount: doc.totalPayableAmount || 0,
-                    issuerTin: doc.issuerTin,
-                    receiverId: doc.receiverId,
-                    supplierName: doc.issuerName,
-                    receiverName: doc.receiverName,
-                    typeName: doc.typeName,
-                    typeVersionName: doc.typeVersionName,
-                    documentStatusReason: doc.documentStatusReason
-                }));
-                
-                return res.json({
-                    success: true,
-                    result: documents,
-                    metadata: {
-                        total: documents.length,
-                        cached: true,
-                        fallback: true,
-                        emergency: true,
-                        timestamp: new Date().toISOString(),
-                        error: error.message
-                    }
-                });
-            }
-        } catch (dbError) {
-            console.error('Emergency database fallback also failed:', dbError.message);
         }
 
         const statusCode = error.response?.status || 500;
@@ -1137,8 +1099,7 @@ router.get('/documents/recent', async (req, res) => {
 
 router.get('/documents/recent-total', async (req, res) => {
     try {
-        const data = await getCachedDocuments(req);
-        const totalCount = data.result.length;
+        const totalCount = await WP_INBOUND_STATUS.count();
         res.json({ totalCount, success: true });
     } catch (error) {
         console.error('Error getting total count:', error);

@@ -299,7 +299,7 @@ class InvoiceTableManager {
                     data: null,
                     className: 'text-nowrap',
                     title: 'DATE INFO',
-                    render: (data, type, row) => this.renderDateInfo(row.dateTimeIssued, row.dateTimeValidated, row)
+                    render: (data, type, row) => this.renderDateInfo(row.dateTimeValidated, row)
                 },
                 {
                     data: 'status',
@@ -689,40 +689,13 @@ class InvoiceTableManager {
     }
 
     
-    renderDateInfo(issueDate, validatedDate, row) {
+    renderDateInfo(validatedDate, row) {
         console.log(validatedDate);
-        const issueFormatted = issueDate ? this.formatDate(issueDate) : null;
         const validatedFormatted = validatedDate ? this.formatDate(validatedDate) : null;
      
         return `
             <div class="date-info" style="position: relative;">
-                ${issueFormatted ? `
-                    <div class="date-row issued" 
-                         data-bs-toggle="tooltip"
-                         data-bs-placement="top"
-                         title="Document was issued on ${issueFormatted}"
-                         style="position: relative; padding-left: 28px;">
-                        <i class="bi bi-send text-primary" 
-                           style="position: absolute; left: 0; top: 3px; font-size: 1.1rem;"></i>
-                        <div class="date-content">
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="date-value text-dark fw-medium">
-                                    ${issueFormatted}
-                                </span>
-                                <span class="badge bg-primary bg-opacity-10 text-primary py-1 px-2" 
-                                      style="font-size: 0.55rem; border: 1px solid rgba(13, 110, 253, 0.15);">
-                                    Issued
-                                </span>
-                            </div>
-                            <div class="date-label text-muted" style="font-size: 0.65rem;">
-                                Document Issue Date
-                            </div>
-                        </div>
-                    </div>
-                ` : ''}
-
                 ${validatedFormatted ? `
-                    <div class="date-separator" style="height: 1px; background: rgba(0,0,0,0.08); margin: 5px 0;"></div>
                     <div class="date-row validated" 
                          data-bs-toggle="tooltip"
                          data-bs-placement="top"

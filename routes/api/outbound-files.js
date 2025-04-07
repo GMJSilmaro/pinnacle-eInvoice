@@ -2698,4 +2698,157 @@ router.get('/status/:fileName', async (req, res) => {
     }
 });
 
+/**
+ * Get the status of a single document
+ */
+router.get('/status/:fileName', async (req, res) => {
+    try {
+        const { fileName } = req.params;
+        console.log('Fetching status for document:', fileName);
+
+        // Check authentication
+        if (!req.session?.user) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'AUTH_ERROR',
+                    message: 'Authentication required'
+                }
+            });
+        }
+
+        // Find the document status
+        const status = await WP_OUTBOUND_STATUS.findOne({
+            where: {
+                [Op.or]: [
+                    { fileName: fileName },
+                    { fileName: { [Op.like]: `%${fileName}%` } },
+                    { invoice_number: fileName }
+                ]
+            },
+            attributes: [
+                'id', 'UUID', 'submissionUid', 'fileName', 
+                'invoice_number', 'status', 'date_submitted', 
+                'date_cancelled', 'cancellation_reason',
+                'cancelled_by', 'updated_at'
+            ],
+            raw: true
+        });
+
+        if (status) {
+            console.log('Document status found:', status.status);
+            return res.json({
+                success: true,
+                exists: true,
+                document: {
+                    fileName: status.fileName,
+                    invoice_number: status.invoice_number,
+                    status: status.status,
+                    uuid: status.UUID,
+                    submissionUid: status.submissionUid,
+                    date_submitted: status.date_submitted,
+                    date_cancelled: status.date_cancelled,
+                    cancellation_reason: status.cancellation_reason,
+                    cancelled_by: status.cancelled_by,
+                    statusUpdateTime: status.updated_at
+                }
+            });
+        }
+
+        console.log('Document status not found for:', fileName);
+        return res.json({
+            success: true,
+            exists: false
+        });
+
+    } catch (error) {
+        console.error('Error fetching document status:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'FETCH_ERROR',
+                message: 'Failed to fetch document status',
+                details: error.message
+            }
+        });
+    }
+});
+
+// Get a document's status by fileName
+router.get('/status/:fileName', async (req, res) => {
+    try {
+        // Check if user is authenticated
+        if (!req.session.user) {
+            return res.status(401).json({
+                success: false,
+                error: 'User not authenticated'
+            });
+        }
+
+        const { fileName } = req.params;
+        
+        if (!fileName) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameter: fileName'
+            });
+        }
+        
+        // Log the request
+        console.log(`Fetching status for document: ${fileName}`);
+        
+        // Query the database for this document's status
+        const document = await models.WP_OUTBOUND_STATUS.findOne({
+            where: {
+                file_name: fileName
+            },
+            attributes: [
+                'id', 
+                'file_name', 
+                'status', 
+                'uuid', 
+                'date_submitted', 
+                'date_cancelled', 
+                'cancelled_by', 
+                'cancel_reason',
+                'created_at', 
+                'updated_at'
+            ]
+        });
+        
+        if (!document) {
+            return res.status(404).json({
+                success: false,
+                error: `Document with fileName '${fileName}' not found`
+            });
+        }
+        
+        // Format the response
+        const formattedDocument = {
+            id: document.id,
+            fileName: document.file_name,
+            status: document.status,
+            uuid: document.uuid,
+            submissionDate: document.date_submitted,
+            date_cancelled: document.date_cancelled,
+            cancelled_by: document.cancelled_by,
+            cancel_reason: document.cancel_reason,
+            createdAt: document.created_at,
+            updatedAt: document.updated_at
+        };
+        
+        return res.json({
+            success: true,
+            document: formattedDocument
+        });
+        
+    } catch (error) {
+        console.error(`Error fetching document status: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            error: `Failed to fetch document status: ${error.message}`
+        });
+    }
+});
+
 module.exports = router;
