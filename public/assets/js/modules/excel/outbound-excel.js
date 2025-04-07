@@ -106,26 +106,236 @@ class InvoiceTableManager {
         // Remove any existing backdrop
         $('#loadingBackdrop').remove();
         
-        // Create and append new backdrop
+        // Create and append new backdrop with enhanced UI
         const backdrop = `
-            <div id="loadingBackdrop" class="loading-backdrop">
-                <div class="loading-content">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
+            <div id="loadingBackdrop" class="excel-loading-backdrop">
+                <div class="excel-loading-content">
+                    <div class="excel-modal-header">
+                        <div class="excel-processing-icon">
+                            <div class="excel-document-stack">
+                                <div class="excel-document excel-doc1"></div>
+                                <div class="excel-document excel-doc2"></div>
+                                <div class="excel-document excel-doc3"></div>
+                            </div>
+                            <div class="excel-processing-circle"></div>
+                        </div>
+                        <div class="excel-processing-title">
+                            <h5>${message}</h5>
+                            <p>Please wait while we process your documents</p>
+                        </div>
                     </div>
-                    <div class="loading-message">
-                        <h5>${message}</h5>
-                        <div class="text-muted small mt-2">Processing may take longer for batches with 50+ files</div>
-                        <p>Please do not refresh the page...</p>
+                    
+                    <div class="excel-processing-container">
+                        <div class="excel-invoice-animation">
+                            <div class="excel-invoice-paper">
+                                <div class="excel-invoice-header">
+                                    <div class="excel-invoice-line"></div>
+                                </div>
+                                <div class="excel-invoice-details">
+                                    <div class="excel-invoice-details-left">
+                                        <div class="excel-invoice-details-line"></div>
+                                        <div class="excel-invoice-details-line"></div>
+                                    </div>
+                                    <div class="excel-invoice-details-right">
+                                        <div class="excel-invoice-details-line"></div>
+                                        <div class="excel-invoice-details-line"></div>
+                                    </div>
+                                </div>
+                                <div class="excel-invoice-table">
+                                    <div class="excel-invoice-table-row">
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                    </div>
+                                    <div class="excel-invoice-table-row">
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                    </div>
+                                </div>
+                                <div class="excel-invoice-stamp"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="excel-processing-steps">
+                            <div class="excel-step-item excel-active" id="excelLoadingStep1">
+                                <i class="bi bi-file-text"></i>
+                                <span>Fetching Files</span>
+                            </div>
+                            <div class="excel-step-arrow">→</div>
+                            <div class="excel-step-item" id="excelLoadingStep2">
+                                <i class="bi bi-check2-circle"></i>
+                                <span>Validating</span>
+                            </div>
+                            <div class="excel-step-arrow">→</div>
+                            <div class="excel-step-item" id="excelLoadingStep3">
+                                <i class="bi bi-cloud-upload"></i>
+                                <span>Processing</span>
+                            </div>
+                        </div>
+
+                        <div id="excelLoadingStatusMessage" class="excel-processing-status">
+                            <div class="excel-status-icon">
+                                <i class="bi bi-arrow-repeat excel-spin"></i>
+                            </div>
+                            <span class="excel-status-text">Initializing document processing...</span>
+                        </div>
+                    </div>
+
+                    <div class="excel-progress-section">
+                        <div class="excel-progress-header">
+                            <div class="excel-progress-info">
+                                <span class="excel-progress-label">Processing Progress</span>
+                                <span class="excel-progress-percentage" id="excelLoadingProgressPercentage">0%</span>
+                            </div>
+                            <div class="excel-document-count">
+                                <i class="bi bi-files"></i>
+                                <span id="excelLoadingProcessedCount">0/0</span> documents
+                            </div>
+                        </div>
+                        <div class="excel-progress">
+                            <div id="excelLoadingProgressBar" 
+                                class="excel-progress-bar progress-bar-striped progress-bar-animated" 
+                                role="progressbar" 
+                                style="width: 0%" 
+                                aria-valuenow="0" 
+                                aria-valuemin="0" 
+                                aria-valuemax="100">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="excel-processing-info">
+                        <div id="excelLoadingFact" class="excel-info-box">
+                            <div class="excel-info-icon">
+                                <i class="bi bi-lightbulb"></i>
+                            </div>
+                            <div class="excel-info-content">
+                                <span class="excel-info-label">Processing Tip</span>
+                                <p class="excel-info-message">Automating invoicing can reduce errors by up to 80%.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
+        
         $('body').append(backdrop);
         $('#loadingBackdrop').fadeIn(300);
+        
+        // Start animation sequence
+        this.startLoadingAnimation();
+    }
+
+    startLoadingAnimation() {
+        // Array of loading messages with progress percentages
+        const loadingStates = [
+            { message: 'Initializing document processing...', progress: 10 },
+            { message: 'Checking file formats...', progress: 20 },
+            { message: 'Validating document structure...', progress: 35 },
+            { message: 'Processing invoice data...', progress: 45 },
+            { message: 'Analyzing document content...', progress: 60 },
+            { message: 'Preparing document summary...', progress: 70 },
+            { message: 'Formatting data...', progress: 80 },
+            { message: 'Verifying tax information...', progress: 85 },
+            { message: 'Applying validation rules...', progress: 90 },
+            { message: 'Almost done...', progress: 95 }
+        ];
+
+        // Array of fun facts
+        const funFacts = [
+            'Automating invoicing can reduce errors by up to 80%.',
+            'E-invoicing can save up to 80% in processing costs.',
+            'Digital invoices are processed 5x faster than paper.',
+            'E-invoicing reduces carbon footprint by 36%.',
+            'Companies save 60-80% switching to e-invoicing.',
+            'Digital invoices cut processing time by 50%.',
+            'E-invoicing improves cash flow by 25%.',
+            'Malaysia aims for 80% e-invoice adoption by 2025.',
+            'E-invoicing reduces payment delays by 61%.',
+            'Digital transformation saves 150+ hours annually.'
+        ];
+
+        let currentStateIndex = 0;
+        let factIndex = 0;
+        
+        // Update progress bar and message
+        const updateLoadingState = () => {
+            if (!$('#loadingBackdrop').length) return;
+            
+            if (currentStateIndex < loadingStates.length) {
+                const currentState = loadingStates[currentStateIndex];
+                
+                // Update message
+                $('#excelLoadingStatusMessage').html(`
+                    <div class="excel-status-icon">
+                        <i class="bi bi-arrow-repeat excel-spin"></i>
+                    </div>
+                    <span class="excel-status-text">${currentState.message}</span>`);
+                
+                // Update progress
+                $('#excelLoadingProgressBar').css('width', `${currentState.progress}%`);
+                $('#excelLoadingProgressBar').attr('aria-valuenow', currentState.progress);
+                $('#excelLoadingProgressPercentage').text(`${currentState.progress}%`);
+                
+                // Update document count - simulate progress
+                const total = 10; // Example total
+                const processed = Math.floor(currentState.progress / 100 * total);
+                $('#excelLoadingProcessedCount').text(`${processed}/${total}`);
+                
+                // Update active step
+                $('.excel-step-item').removeClass('excel-active');
+                if (currentState.progress < 33) {
+                    $('#excelLoadingStep1').addClass('excel-active');
+                } else if (currentState.progress < 66) {
+                    $('#excelLoadingStep2').addClass('excel-active');
+                } else {
+                    $('#excelLoadingStep3').addClass('excel-active');
+                }
+                
+                currentStateIndex++;
+            }
+        };
+        
+        // Update fun facts
+        const updateFunFact = () => {
+            if (!$('#loadingBackdrop').length) return;
+            
+            const fact = funFacts[factIndex % funFacts.length];
+            $('#excelLoadingFact').html(`
+                <div class="excel-info-icon">
+                    <i class="bi bi-lightbulb"></i>
+                </div>
+                <div class="excel-info-content">
+                    <span class="excel-info-label">Processing Tip</span>
+                    <p class="excel-info-message">${fact}</p>
+                </div>`);
+            
+            factIndex++;
+        };
+        
+        // Start sequences
+        let interval = 800; 
+        const scheduleNextUpdate = () => {
+            if (currentStateIndex < loadingStates.length && $('#loadingBackdrop').length) {
+                updateLoadingState();
+                interval += 200;
+                setTimeout(scheduleNextUpdate, interval);
+            }
+        };
+        
+        scheduleNextUpdate();
+        
+        // Update fun facts every 5 seconds
+        this.factInterval = setInterval(updateFunFact, 5000);
     }
 
     hideLoadingBackdrop() {
+        // Clear any intervals
+        if (this.factInterval) {
+            clearInterval(this.factInterval);
+        }
+        
         $('#loadingBackdrop').fadeOut(300, function() {
             $(this).remove();
         });
