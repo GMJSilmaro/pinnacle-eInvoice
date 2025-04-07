@@ -17,9 +17,13 @@ const LHDNSubmitter = require('../../services/lhdn/lhdnSubmitter');
 const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../services/lhdn/lhdnService');
 const { getActiveSAPConfig } = require('../../config/paths');
 const NodeCache = require('node-cache');
-const fileCache = new NodeCache({ stdTTL: 60 }); // 1 minute cache instead of 5 minutes
+const fileCache = new NodeCache({ stdTTL: 900 }); // 15 minutes cache instead of 1 minute
 // Add cache helper functions at the top after fileCache declaration
 const CACHE_KEY_PREFIX = 'outbound_files';
+
+// Add a lastModified timestamp to track when files were last modified
+let lastFilesModifiedTime = null;
+let lastStatusUpdateTime = null;
 
 /**
  * Generate a cache key with optional parameters for more granular caching`
@@ -34,6 +38,89 @@ function generateCacheKey(params = {}) {
         return `${baseKey}_${paramsStr}`;
     }
     return baseKey;
+}
+
+/**
+ * Check if there are new or updated files since last check
+ * @param {string} networkPath - Path to check for new files
+ * @param {Date} lastCheckTime - Timestamp of last check
+ * @returns {Promise<boolean>} - Whether there are new files
+ */
+async function checkForNewOrUpdatedFiles(networkPath, lastCheckTime) {
+    try {
+        if (!lastCheckTime) return true;
+        
+        const lastCheck = new Date(lastCheckTime);
+        const checkResult = await checkForNewFiles(networkPath, lastCheck);
+        return checkResult;
+    } catch (error) {
+        console.error('Error checking for new files:', error);
+        // If there's an error, assume there might be changes to be safe
+        return true;
+    }
+}
+
+/**
+ * Check if any status updates have occurred since the last check
+ * @param {string} timestamp - ISO date string of last status update check
+ * @returns {Promise<boolean>} - True if there are updates
+ */
+async function checkForStatusUpdates(timestamp) {
+    try {
+        if (!timestamp) return true;
+        
+        const latestUpdate = await WP_OUTBOUND_STATUS.findOne({
+            attributes: ['updated_at'],
+            where: {
+                updated_at: {
+                    [Op.gt]: new Date(timestamp)
+                }
+            },
+            order: [['updated_at', 'DESC']],
+            raw: true
+        });
+        
+        // Store global last update time if we found one
+        if (latestUpdate && latestUpdate.updated_at) {
+            lastStatusUpdateTime = latestUpdate.updated_at;
+        }
+        
+        return !!latestUpdate;
+    } catch (error) {
+        console.error('Error checking for status updates:', error);
+        return true; // Assume there are updates if there's an error
+    }
+}
+
+/**
+ * Get only updated document status since last check
+ * @param {Date} since - Timestamp to check updates since
+ * @returns {Promise<Array>} - Array of updated statuses
+ */
+async function getUpdatedStatuses(since) {
+    try {
+        if (!since) return [];
+        
+        const updatedStatuses = await WP_OUTBOUND_STATUS.findAll({
+            where: {
+                updated_at: {
+                    [Op.gt]: new Date(since)
+                }
+            },
+            attributes: [
+                'id', 'UUID', 'submissionUid', 'fileName', 'invoice_number', 
+                'status', 'date_submitted', 'date_cancelled', 'cancellation_reason',
+                'cancelled_by', 'updated_at'
+            ],
+            order: [['updated_at', 'DESC']],
+            raw: true
+        });
+        
+        return updatedStatuses;
+    } catch (error) {
+        console.error('Error getting updated statuses:', error);
+        return [];
+    }
 }
 
 /**
@@ -327,7 +414,8 @@ router.get('/list-all', async (req, res) => {
     try {
         console.log('Generating cache key');
         const cacheKey = generateCacheKey();
-        const { polling } = req.query;
+        const { polling, initialLoad } = req.query;
+        const forceRefresh = req.query.forceRefresh === 'true';
         const realTime = req.query.realTime === 'true';
         
         // Get the latest status update timestamp
@@ -339,48 +427,116 @@ router.get('/list-all', async (req, res) => {
         });
         console.log('Latest status update:', latestStatusUpdate);
 
+        // If initialLoad=true is provided, force cache refresh
+        // If forceRefresh=true is provided, force cache refresh
+        if (initialLoad === 'true' || forceRefresh) {
+            console.log('Force refresh requested, bypassing cache');
+            fileCache.del(cacheKey);
+        }
         // Check cache first if not in real-time mode
-        if (!realTime) {
+        else if (!realTime) {
             console.log('Checking cache');
             const cachedData = fileCache.get(cacheKey);
             if (cachedData) {
-                console.log('Found cached data');
-                // Use timestamp-based check for cache validity
-                const cacheAge = new Date() - new Date(cachedData.timestamp);
-                const maxCacheAge = polling ? 10 * 1000 : 30 * 1000; // 10 seconds for polling, 30 seconds otherwise
+                console.log('Found cached data from:', cachedData.timestamp);
+                
+                // For better performance: if we have cached data, check if there are any status changes
+                const hasStatusUpdates = await checkForStatusUpdates(cachedData.lastStatusUpdate);
+                let updatedFiles = [];
 
-                try {
-                    // Always check for new files when in polling mode
-                    const hasNewFiles = polling ? 
-                        await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : 
-                        (cacheAge > maxCacheAge ? await checkForNewFiles(cachedData.networkPath, cachedData.timestamp) : false);
+                if (hasStatusUpdates) {
+                    console.log('Status updates detected, fetching only updated statuses');
+                    // Get only the updated statuses
+                    const updatedStatuses = await getUpdatedStatuses(cachedData.lastStatusUpdate);
                     
-                    // Check for status updates
-                    const hasStatusUpdates = polling ? 
-                        await checkForStatusUpdates(cachedData.lastStatusUpdate) :
-                        (latestStatusUpdate && cachedData.lastStatusUpdate && 
-                        new Date(latestStatusUpdate.updated_at) > new Date(cachedData.lastStatusUpdate));
-                    
-                    // If cache is valid, return cached data
-                    if (!hasNewFiles && !hasStatusUpdates) {
-                        console.log('Returning cached data');
+                    if (updatedStatuses.length > 0) {
+                        console.log(`Found ${updatedStatuses.length} status updates`);
+                        
+                        // Create a map for easy lookup
+                        const statusMap = new Map();
+                        updatedStatuses.forEach(status => {
+                            if (status.fileName) statusMap.set(status.fileName, status);
+                            if (status.invoice_number) statusMap.set(status.invoice_number, status);
+                        });
+                        
+                        // Create a map for easy lookup of existing files
+                        const existingFilesMap = new Map();
+                        cachedData.files.forEach(file => {
+                            existingFilesMap.set(file.fileName, file);
+                        });
+                        
+                        // Update the cached files with new status information
+                        updatedFiles = cachedData.files.map(file => {
+                            const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
+                            if (status) {
+                                // Update this file with new status
+                                return {
+                                    ...file,
+                                    status: status.status || file.status,
+                                    statusUpdateTime: status.updated_at || file.statusUpdateTime,
+                                    date_submitted: status.date_submitted || file.date_submitted,
+                                    date_cancelled: status.date_cancelled || file.date_cancelled,
+                                    cancellation_reason: status.cancellation_reason || file.cancellation_reason,
+                                    cancelled_by: status.cancelled_by || file.cancelled_by,
+                                    uuid: status.UUID || file.uuid,
+                                    submissionUid: status.submissionUid || file.submissionUid
+                                };
+                            }
+                            return file;
+                        });
+                        
+                        // Update the cache with the new data
+                        const updatedCache = {
+                            ...cachedData,
+                            files: updatedFiles,
+                            timestamp: new Date().toISOString(),
+                            lastStatusUpdate: latestStatusUpdate?.updated_at,
+                            cacheUpdatedFromServer: true
+                        };
+                        fileCache.set(cacheKey, updatedCache);
+                        
+                        // Return the incrementally updated data
                         return res.json({
                             success: true,
-                            files: cachedData.files,
+                            files: updatedFiles,
                             processLog: cachedData.processLog,
                             fromCache: true,
-                            cachedAt: cachedData.timestamp,
-                            lastStatusUpdate: cachedData.lastStatusUpdate,
-                            realTime: realTime
+                            incrementalUpdate: true,
+                            updatedCount: updatedStatuses.length,
+                            timestamp: new Date().toISOString(),
+                            cachedAt: cachedData.timestamp
                         });
                     }
-                    
-                    // Log why we're not using cache
-                    if (hasNewFiles) console.log('Not using cache: New files detected');
-                    if (hasStatusUpdates) console.log('Not using cache: Status updates detected');
-                } catch (cacheError) {
-                    console.error('Cache validation error:', cacheError);
-                    // Continue with fresh data if cache validation fails
+                }
+                
+                // Check if we need to check for new files (less frequently)
+                const cacheAge = new Date() - new Date(cachedData.timestamp);
+                const CHECK_FILES_INTERVAL = 60 * 1000; // 1 minute
+                let hasNewFiles = false;
+                
+                if (cacheAge > CHECK_FILES_INTERVAL) {
+                    // Only check if required - this is an expensive operation
+                    hasNewFiles = await checkForNewOrUpdatedFiles(cachedData.networkPath, cachedData.timestamp);
+                }
+                
+                // If no changes needed, return cached data
+                if (!hasNewFiles && !hasStatusUpdates) {
+                    console.log('Returning cached data - no changes detected');
+                    return res.json({
+                        success: true,
+                        files: cachedData.files,
+                        processLog: cachedData.processLog,
+                        fromCache: true,
+                        cachedAt: cachedData.timestamp,
+                        lastStatusUpdate: cachedData.lastStatusUpdate,
+                        realTime: realTime
+                    });
+                }
+                
+                // If only new files and no status changes
+                if (hasNewFiles && !hasStatusUpdates && updatedFiles.length === 0) {
+                    console.log('New files detected, proceeding with full refresh');
+                    // We'll continue with a full refresh below
                 }
             }
         }
@@ -2239,292 +2395,6 @@ router.post('/bulk-submit', async (req, res) => {
     }
 });
 
-/**
- * List all files in a consolidated format
- */
-router.get('/list-consolidated', async (req, res) => {
-    console.log('Starting list-consolidated endpoint');
-
-    // Check authentication
-    if (!req.session?.user) {
-        console.log('Unauthorized access attempt - no session user');
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_ERROR',
-                message: 'Authentication required'
-            }
-        });
-    }
-
-    // Check if access token exists
-    if (!req.session?.accessToken) {
-        console.log('Unauthorized access attempt - no access token');
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_ERROR',
-                message: 'Access token required'
-            }
-        });
-    }
-
-    const processLog = {
-        details: [],
-        summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
-    };
-
-    try {
-        // Get configuration for paths
-        const config = await WP_CONFIGURATION.findOne({
-            where: {
-                Type: 'SAP',
-                IsActive: 1
-            },
-            order: [['CreateTS', 'DESC']]
-        });
-
-        if (!config || !config.Settings) {
-            throw new Error('No active SAP configuration found');
-        }
-
-        // Parse Settings if it's a string
-        let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
-        
-        if (!settings.networkPath) {
-            throw new Error('Network path not configured in SAP settings');
-        }
-
-        // Define root directories using configuration
-        const incomingDir = path.join('SFTPRoot_Consolidation', 'Incoming', 'PXC Branch');
-
-        // Validate directory exists and is accessible
-        let directoryExists = false;
-        try {
-            await fsPromises.access(incomingDir, fs.constants.R_OK);
-            directoryExists = true;
-        } catch (accessError) {
-            console.error('Directory access error:', accessError);
-            // Instead of throwing an error, continue with an empty files array
-            // and return a success response with a warning message
-            return res.json({
-                success: true,
-                allFiles: [],
-                consolidatedData: [],
-                warning: {
-                    code: 'DIRECTORY_NOT_FOUND',
-                    message: `Directory not found: ${incomingDir}. Please check configuration and network connectivity.`,
-                    details: accessError.message
-                },
-                processLog,
-                summary: {
-                    totalCompanies: 0,
-                    totalDocuments: 0,
-                    submittedDocuments: 0,
-                    pendingDocuments: 0,
-                    failedDocuments: 0,
-                    cancelledDocuments: 0
-                }
-            });
-        }
-
-        // Get existing submission statuses with additional details
-        console.log('Fetching submission statuses');
-        const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
-            attributes: [
-                'id',
-                'UUID',
-                'submissionUid',
-                'fileName',
-                'filePath',
-                'invoice_number',
-                'status',
-                'date_submitted',
-                'date_cancelled',
-                'cancellation_reason',
-                'cancelled_by',
-                'updated_at',
-                'longId',
-                'error'
-            ],
-            order: [['updated_at', 'DESC']],
-            raw: true
-        });
-
-        // Create status lookup map with additional details
-        const statusMap = new Map();
-        submissionStatuses.forEach(status => {
-            const statusObj = {
-                UUID: status.UUID,
-                SubmissionUID: status.submissionUid,
-                SubmissionStatus: status.status,
-                DateTimeSent: status.date_submitted,
-                DateTimeUpdated: status.updated_at,
-                DateTimeCancelled: status.date_cancelled,
-                CancelledReason: status.cancellation_reason,
-                CancelledBy: status.cancelled_by,
-                FileName: status.fileName,
-                DocNum: status.invoice_number,
-                LongId: status.longId,
-                Error: status.error
-            };
-
-            if (status.fileName) statusMap.set(status.fileName, statusObj);
-            if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
-        });
-
-        const files = [];
-
-        // Process the incoming directory
-        console.log('Processing incoming directory');
-        try {
-            await processTypeDirectory(incomingDir, 'Incoming', files, processLog, statusMap);
-        } catch (dirError) {
-            console.error('Error processing incoming directory:', dirError);
-            processLog.details.push({
-                error: dirError.message,
-                type: 'DIRECTORY_PROCESSING_ERROR'
-            });
-            processLog.summary.errors++;
-            
-            // Return a valid response with error information but don't throw an error
-            if (files.length === 0) {
-                return res.json({
-                    success: true,
-                    allFiles: [],
-                    consolidatedData: [],
-                    processLog: {
-                        ...processLog,
-                        details: [
-                            ...processLog.details,
-                            {
-                                message: `Error accessing directory: ${incomingDir}`,
-                                error: dirError.message,
-                                type: 'DIRECTORY_ACCESS_ERROR'
-                            }
-                        ]
-                    },
-                    error: {
-                        message: `Could not access directory: ${dirError.message}`,
-                        code: 'DIRECTORY_ACCESS_ERROR'
-                    }
-                });
-            }
-        }
-
-        // Check if we found any files, if not return an empty response
-        if (files.length === 0) {
-            console.log('No files found');
-            return res.json({
-                success: true,
-                allFiles: [],
-                consolidatedData: [],
-                processLog,
-                summary: {
-                    totalCompanies: 0,
-                    totalDocuments: 0,
-                    submittedDocuments: 0,
-                    pendingDocuments: 0,
-                    failedDocuments: 0,
-                    cancelledDocuments: 0
-                }
-            });
-        }
-
-        // Create a map for latest documents with additional processing
-        console.log('Processing latest documents');
-        const latestDocuments = new Map();
-        const documentsByCompany = new Map();
-
-        files.forEach(file => {
-            const documentKey = file.invoiceNumber || file.fileName;
-            const existingDoc = latestDocuments.get(documentKey);
-
-            if (!existingDoc || new Date(file.modifiedTime) > new Date(existingDoc.modifiedTime)) {
-                latestDocuments.set(documentKey, file);
-
-                // Group by company
-                if (!documentsByCompany.has(file.company)) {
-                    documentsByCompany.set(file.company, []);
-                }
-                documentsByCompany.get(file.company).push(file);
-            }
-        });
-
-        // Convert map to array and merge with status
-        const mergedFiles = Array.from(latestDocuments.values()).map(file => {
-            const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
-            const fileStatus = status?.SubmissionStatus || 'Pending';
-
-            return {
-                ...file,
-                status: fileStatus,
-                statusUpdateTime: status?.DateTimeUpdated || null,
-                date_submitted: status?.DateTimeSent || null,
-                date_cancelled: status?.DateTimeCancelled || null,
-                cancellation_reason: status?.CancelledReason || null,
-                cancelled_by: status?.CancelledBy || null,
-                uuid: status?.UUID || null,
-                submissionUid: status?.SubmissionUID || null,
-                longId: status?.LongId || null,
-                error: status?.Error || null
-            };
-        });
-
-        // Sort by modified time
-        mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-
-        // Group documents by company and calculate company statistics
-        const consolidatedData = Array.from(documentsByCompany.entries()).map(([company, docs]) => {
-            const companyStats = {
-                total: docs.length,
-                submitted: docs.filter(d => d.status === 'Submitted').length,
-                pending: docs.filter(d => d.status === 'Pending').length,
-                failed: docs.filter(d => ['Failed', 'Invalid', 'Rejected'].includes(d.status)).length,
-                cancelled: docs.filter(d => d.status === 'Cancelled').length
-            };
-
-            return {
-                company,
-                statistics: companyStats,
-                documents: docs.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime))
-            };
-        });
-
-        // Sort companies by total documents
-        consolidatedData.sort((a, b) => b.statistics.total - a.statistics.total);
-
-        console.log('Sending consolidated response');
-        res.json({
-            success: true,
-            consolidatedData,
-            allFiles: mergedFiles,
-            processLog,
-            summary: {
-                totalCompanies: consolidatedData.length,
-                totalDocuments: mergedFiles.length,
-                submittedDocuments: mergedFiles.filter(f => f.status === 'Submitted').length,
-                pendingDocuments: mergedFiles.filter(f => f.status === 'Pending').length,
-                failedDocuments: mergedFiles.filter(f => ['Failed', 'Invalid', 'Rejected'].includes(f.status)).length,
-                cancelledDocuments: mergedFiles.filter(f => f.status === 'Cancelled').length
-            }
-        });
-
-    } catch (error) {
-        console.error('Error in list-consolidated:', error);
-        await logError('Error listing consolidated files', error, {
-            action: 'LIST_CONSOLIDATED',
-            userId: req.user?.id
-        });
-
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            processLog,
-            stack: error.stack
-        });
-    }
-});
 
 /**
  * List all files with fixed paths (optimized version using hardcoded paths)
@@ -2758,5 +2628,74 @@ async function processDirectoryFlat(directory, type, files, processLog, statusMa
         throw error;
     }
 }
+
+/**
+ * Get document status by fileName - lightweight endpoint for refreshing single document status
+ */
+router.get('/status/:fileName', async (req, res) => {
+    try {
+        const { fileName } = req.params;
+        
+        // Basic auth check
+        if (!req.session?.accessToken) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'AUTH_ERROR',
+                    message: 'Not authenticated'
+                }
+            });
+        }
+
+        const status = await WP_OUTBOUND_STATUS.findOne({
+            where: {
+                [Op.or]: [
+                    { fileName: fileName },
+                    { fileName: { [Op.like]: `%${fileName}%` } }
+                ]
+            },
+            attributes: [
+                'id', 'UUID', 'submissionUid', 'fileName', 'invoice_number', 
+                'status', 'date_submitted', 'date_cancelled', 'updated_at'
+            ],
+            raw: true
+        });
+
+        if (!status) {
+            return res.json({
+                success: true,
+                exists: false,
+                status: 'Pending',
+                fileName
+            });
+        }
+
+        return res.json({
+            success: true,
+            exists: true,
+            document: {
+                fileName: status.fileName,
+                status: status.status,
+                uuid: status.UUID,
+                submissionUid: status.submissionUid,
+                date_submitted: status.date_submitted,
+                date_cancelled: status.date_cancelled,
+                invoice_number: status.invoice_number,
+                statusUpdateTime: status.updated_at
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting document status:', error);
+        return res.status(500).json({
+            success: false,
+            error: {
+                code: 'STATUS_FETCH_ERROR',
+                message: 'Failed to get document status',
+                details: error.message
+            }
+        });
+    }
+});
 
 module.exports = router;

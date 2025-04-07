@@ -4231,6 +4231,76 @@ async function updateStepStatus(stepNumber, status, message) {
     console.log(`✅ [Step ${stepNumber}] Status update completed`);
 }
 
+/**
+ * Update a single document's status without refreshing the entire table
+ * @param {string} fileName - The file name to update
+ */
+async function updateSingleDocumentStatus(fileName) {
+    try {
+        console.log('🔄 Updating status for document:', fileName);
+        const tableManager = InvoiceTableManager.getInstance();
+        
+        // Fetch the status of this specific document
+        const response = await fetch(`/api/outbound-files/status/${fileName}`);
+        if (!response.ok) {
+            console.error('❌ Error fetching document status');
+            return;
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            console.error('❌ Error in status response:', result.error);
+            return;
+        }
+        
+        if (result.exists) {
+            // Update the specific row in the table
+            const documentData = result.document;
+            
+            // Get current table data
+            const currentData = tableManager.table.data().toArray();
+            
+            // Find and update the row for this document
+            const updatedData = currentData.map(row => {
+                if (row.fileName === fileName) {
+                    return {
+                        ...row,
+                        status: documentData.status,
+                        uuid: documentData.uuid,
+                        submissionUid: documentData.submissionUid,
+                        date_submitted: documentData.date_submitted,
+                        date_cancelled: documentData.date_cancelled,
+                        statusUpdateTime: documentData.statusUpdateTime
+                    };
+                }
+                return row;
+            });
+            
+            // Update the cache with the new data
+            if (window.dataCache && typeof window.dataCache.updateCache === 'function') {
+                window.dataCache.updateCache(updatedData);
+            }
+            
+            // Update table without AJAX
+            tableManager.table.clear();
+            tableManager.table.rows.add(updatedData);
+            tableManager.table.draw(false); // false to keep current paging
+            
+            // Update card totals
+            tableManager.updateCardTotals();
+            
+            console.log('✅ Document status updated successfully');
+        } else {
+            console.warn('⚠️ Document not found in database, will perform full refresh');
+            tableManager.refresh();
+        }
+    } catch (error) {
+        console.error('❌ Error updating document status:', error);
+        // Fallback to full refresh if the targeted update fails
+        InvoiceTableManager.getInstance().refresh();
+    }
+}
+
 async function showSubmissionStatus(fileName, type, company, date, version) {
     console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
     window.currentFileName = fileName;
@@ -4419,8 +4489,8 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     }
 
                     await showSuccessMessage(fileName, version);
-                    // Refresh the table dynamically instead of reloading the page
-                    InvoiceTableManager.getInstance().refresh();
+                    // Use the new function to update just this document instead of refreshing the whole table
+                    await updateSingleDocumentStatus(fileName);
                 } catch (error) {
                     console.error('❌ Step execution failed:', error);
 
@@ -5184,6 +5254,9 @@ async function showLHDNErrorModal(error) {
 
     // Check if this is a TIN matching error and provide specific guidance
     const isTINMatchingError = mainError.message.includes("authenticated TIN and documents TIN is not matching");
+    
+    // Check if this is a duplicate submission error
+    const isDuplicateSubmission = mainError.code === 'DUPLICATE_SUBMISSION' || mainError.code === 'DS302';
 
     // Create tooltip help content for TIN matching errors
     const tinErrorGuidance = `
@@ -5288,29 +5361,54 @@ async function showLHDNErrorModal(error) {
                 ${isTINMatchingError ? tinErrorGuidance : ''}
             </div>
             
+            <div class="next-steps-card" style="margin-top: 25px; padding: 15px; border-radius: 8px; background: rgba(255, 193, 7, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                    <i class="fas fa-lightbulb" style="color: #ffc107; margin-right: 8px; font-size: 16px;"></i>
+                    <span style="font-weight: 600; color: #495057; font-size: 13px;">Next Steps</span>
+                </div>
+                <ul style="margin: 0; padding-left: 25px; font-size: 12px; color: #495057;">
+                    ${getNextSteps(mainError.code)}
+                </ul>
+            </div>
+            
+            <style>
+                @keyframes pulseError {
+                    0% { transform: scale(1); }
+                    50% { transform: scale(1.1); }
+                    100% { transform: scale(1); }
+                }
+                .tooltip-container:hover .tooltip-content {
+                    display: block;
+                }
+            </style>
         `,
-        customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            popup: 'semi-minimal-popup'
-        },
         confirmButtonText: 'I Understand',
+        confirmButtonColor: '#3085d6',
+        width: 600,
         customClass: {
-            confirmButton: 'outbound-action-btn submit btn-sm',
-        },
-        showCloseButton: true,
-        didOpen: () => {
-            // Add event listeners for tooltips if needed
-            const tooltipContainers = document.querySelectorAll('.tooltip-container');
-            tooltipContainers.forEach(container => {
-                container.addEventListener('mouseenter', () => {
-                    container.querySelector('.tooltip-content').style.display = 'block';
-                });
-                container.addEventListener('mouseleave', () => {
-                    container.querySelector('.tooltip-content').style.display = 'none';
-                });
-            });
+            confirmButton: 'btn btn-primary'
         }
     });
+    
+    // Refresh the table if this is a duplicate submission error
+    // This ensures the table is updated even when a document is already submitted
+    if (isDuplicateSubmission) {
+        console.log('Updating table after duplicate submission error');
+        // Extract the filename from the error if possible
+        let fileName = window.currentFileName;
+        if (mainError.target && typeof mainError.target === 'string') {
+            // If target contains the document number, use that to help identify the file
+            fileName = mainError.target;
+        }
+        
+        // Use the more efficient single document update instead of full refresh
+        if (fileName) {
+            await updateSingleDocumentStatus(fileName);
+        } else {
+            // Fallback to full refresh if filename not available
+            InvoiceTableManager.getInstance().refresh();
+        }
+    }
 }
 
 // Helper function to format validation messages
