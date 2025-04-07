@@ -1400,6 +1400,48 @@
     transform: rotate(180deg);
 }
 
+/* Loading backdrop styles */
+.loading-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.loading-content {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+    text-align: center;
+    max-width: 400px;
+}
+
+.loading-content .spinner-border {
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 1rem;
+}
+
+.loading-message h5 {
+    margin-bottom: 0.5rem;
+}
+
+.loading-message p {
+    color: #6c757d;
+    margin-bottom: 0;
+}
+
+.validation-result.success {
+    background-color: rgba(25, 135, 84, 0.1);
+}
+
 </style>
 
 {% endblock %}
@@ -2421,6 +2463,19 @@ document.addEventListener('DOMContentLoaded', function() {
 <script src="/assets/js/modules/excel/outbound-excel.js"></script>
 <script src="/assets/js/modules/tutorial/guided-tour.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+<!-- Loading Backdrop Modal -->
+<div id="loadingBackdrop" class="loading-backdrop" style="display: none;">
+    <div class="loading-content">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <div class="loading-message">
+            <h5>Loading and Preparing Your Documents</h5>
+            <p>Please do not refresh the page...</p>
+        </div>
+    </div>
+</div>
 
 <!-- TIN Validation Modal -->
 <div class="modal fade" id="tinValidationModal" tabindex="-1" aria-labelledby="tinValidationModalLabel" aria-hidden="true">

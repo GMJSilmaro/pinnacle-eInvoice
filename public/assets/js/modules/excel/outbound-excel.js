@@ -5396,8 +5396,12 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleBulkSubmission(selectedDocs) {
     const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
     const progressDiv = document.getElementById('submissionProgress');
+    const tableManager = InvoiceTableManager.getInstance();
     
     try {
+        // Show loading backdrop
+        tableManager.showLoadingBackdrop();
+        
         // Initialize progress UI
         if (!progressDiv) {
             throw new Error('Progress container not found');
@@ -5472,6 +5476,9 @@ async function handleBulkSubmission(selectedDocs) {
             consolidatedModal.hide();
         }
 
+        // Hide loading backdrop
+        tableManager.hideLoadingBackdrop();
+
         await Swal.fire({
             icon: successCount > 0 ? 'success' : 'warning',
             title: 'Submission Complete',
@@ -5488,6 +5495,10 @@ async function handleBulkSubmission(selectedDocs) {
 
     } catch (error) {
         console.error('Bulk submission error:', error);
+        
+        // Hide loading backdrop
+        tableManager.hideLoadingBackdrop();
+        
         if (progressDiv) {
             progressDiv.innerHTML = `
                 <div class="alert alert-danger">
@@ -5512,6 +5523,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const submitConsolidatedBtn = document.getElementById('submitConsolidatedBtn');
     if (submitConsolidatedBtn) {
         submitConsolidatedBtn.addEventListener('click', async function() {
+            const tableManager = InvoiceTableManager.getInstance();
+            
+            // Show loading backdrop during validation
+            tableManager.showLoadingBackdrop();
+            
             const selectedRows = Array.from(document.querySelectorAll('input.outbound-checkbox:checked'))
                 .map(checkbox => {
                     const row = checkbox.closest('tr');
@@ -5524,6 +5540,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
             if (selectedRows.length === 0) {
+                tableManager.hideLoadingBackdrop();
                 Swal.fire({
                     icon: 'warning',
                     title: 'No Documents Selected',
@@ -5549,6 +5566,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
                 consolidatedModal.hide();
                 await handleBulkSubmission(selectedRows);
+            } else {
+                // Hide loading backdrop if cancelled
+                tableManager.hideLoadingBackdrop();
             }
         });
     }
