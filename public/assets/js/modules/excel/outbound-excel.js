@@ -121,7 +121,9 @@ class InvoiceTableManager {
                         </div>
                         <div class="excel-processing-title">
                             <h5>${message}</h5>
-                            <p>Please wait while we process your documents</p>
+                            <p>Processing documents. Please wait... ⏳</p>
+                            <p class="excel-loading-time-estimate">Estimated time: 1-2 minutes (large batches)</p>
+                            <p class="excel-loading-important">⚠️ Do not close or refresh this page. ⚠️</p>
                         </div>
                     </div>
                     
@@ -160,12 +162,12 @@ class InvoiceTableManager {
                         <div class="excel-processing-steps">
                             <div class="excel-step-item excel-active" id="excelLoadingStep1">
                                 <i class="bi bi-file-text"></i>
-                                <span>Fetching Files</span>
+                                <span>Fetching Document Files</span>
                             </div>
                             <div class="excel-step-arrow">→</div>
                             <div class="excel-step-item" id="excelLoadingStep2">
                                 <i class="bi bi-check2-circle"></i>
-                                <span>Validating</span>
+                                <span>Validating & Transforming to LHDN Format</span>
                             </div>
                             <div class="excel-step-arrow">→</div>
                             <div class="excel-step-item" id="excelLoadingStep3">
@@ -471,7 +473,11 @@ class InvoiceTableManager {
                         last: '<i class="bi bi-chevron-double-right"></i>'
                     },
                     emptyTable: this.getEmptyStateHtml(),
-                    
+                    zeroRecords: `<div class="text-center">
+                    <i class="bi bi-exclamation-triangle" style="font-size: 2em; color: var(--bs-warning);"></i>
+                    <p>No records found. Please try <a href="#" onclick="window.location.reload();">reloading the page</a> to refresh the data.</p>
+                    <p>Try <a href="#" onclick="window.location.reload();">reloading the page</a>. If the issue persists, please contact support.</p>
+                </div>`,
                 },
                 processing: true,
                 serverSide: false,
