@@ -1169,30 +1169,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         const documentData = response.data;
         console.log('Raw document data:', JSON.stringify(documentData, null, 2));
 
-        // Check if document field exists and can be parsed
-        if (documentData.document) {
-            try {
-                const parsedDocument = JSON.parse(documentData.document);
-                console.log('Parsed UBL structure:', JSON.stringify(parsedDocument, null, 2));
-            } catch (parseError) {
-                console.log('Failed to parse document field:', parseError);
-            }
-        } else {
-            console.log('No document field present, using top-level fields');
-            console.log('Available top-level fields:', Object.keys(documentData));
-        }
-
-        // Check if user is receiver and document status is Invalid or Submitted
-        const isReceiver = req.session.user.TIN === documentData.receiverTin;
-        if (isReceiver && (documentData.status === 'Invalid' || documentData.status === 'Submitted')) {
-            return res.status(403).json({
-                success: false,
-                message: `Document details cannot be viewed when status is ${documentData.status}. Please wait for the document to be validated.`
-            });
-        }
-
-        // Get document details directly from LHDN API using raw endpoint
-        console.log('Fetching raw document from LHDN API...');
+        // Get document details from LHDN API
         const detailsResponse = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/details`, {
             headers: {
                 'Authorization': `Bearer ${req.session.accessToken}`,
@@ -1203,8 +1180,55 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         const detailsData = detailsResponse.data;
         console.log('Raw document details:', JSON.stringify(detailsData, null, 2));
 
+        // Helper function to get ID information
+        function getPartyIdentification(partyIdentification) {
+            const idTypes = ['TIN', 'BRN', 'NRIC', 'Passport', 'Army', 'SST'];
+            const result = {
+                tin: null,
+                registrationNo: null,
+                taxRegNo: null,
+                idType: 'NA',
+                idNumber: 'NA'
+            };
 
-        // Process validation results if document is invalid
+            if (!partyIdentification) return result;
+
+            // Get TIN
+            const tinInfo = partyIdentification.find(id => id.ID[0].schemeID === 'TIN');
+            if (tinInfo) {
+                result.tin = tinInfo.ID[0]._;
+            }
+
+            // Get Registration Number (try BRN first, then other types)
+            const brnInfo = partyIdentification.find(id => id.ID[0].schemeID === 'BRN');
+            if (brnInfo) {
+                result.registrationNo = brnInfo.ID[0]._;
+                result.idType = 'BRN';
+                result.idNumber = brnInfo.ID[0]._;
+            } else {
+                // Try other ID types in order
+                for (const idType of idTypes) {
+                    if (idType === 'TIN' || idType === 'SST') continue;
+                    const idInfo = partyIdentification.find(id => id.ID[0].schemeID === idType);
+                    if (idInfo) {
+                        result.registrationNo = idInfo.ID[0]._;
+                        result.idType = idType;
+                        result.idNumber = idInfo.ID[0]._;
+                        break;
+                    }
+                }
+            }
+
+            // Get Tax Registration Number (SST)
+            const sstInfo = partyIdentification.find(id => id.ID[0].schemeID === 'SST');
+            if (sstInfo) {
+                result.taxRegNo = sstInfo.ID[0]._;
+            }
+
+            return result;
+        }
+
+        // Process validation results
         let processedValidationResults = null;
         if (detailsData.validationResults) {
             processedValidationResults = {
@@ -1254,8 +1278,21 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
             };
         }
 
-        // Return basic document info if document field is not present
+        // Check if document field exists and can be parsed
         if (!documentData.document) {
+            // Handle case when document field is not present
+            const supplierIdentification = getPartyIdentification([
+                { ID: [{ schemeID: 'TIN', _: documentData.supplierTin }] },
+                { ID: [{ schemeID: 'BRN', _: documentData.supplierRegistrationNo }] },
+                { ID: [{ schemeID: 'SST', _: documentData.supplierSstNo }] }
+            ]);
+
+            const customerIdentification = getPartyIdentification([
+                { ID: [{ schemeID: 'TIN', _: documentData.receiverTin }] },
+                { ID: [{ schemeID: 'BRN', _: documentData.receiverRegistrationNo }] },
+                { ID: [{ schemeID: 'SST', _: documentData.receiverSstNo }] }
+            ]);
+
             return res.json({
                 success: true,
                 documentInfo: {
@@ -1266,26 +1303,34 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     status: documentData.status,
                     validationResults: detailsData.validationResults,
                     supplierName: documentData.supplierName,
-                    supplierSstNo: documentData.supplierSstNo,
+                    supplierTIN: supplierIdentification.tin,
+                    supplierRegistrationNo: supplierIdentification.registrationNo,
+                    supplierSstNo: supplierIdentification.taxRegNo,
                     supplierMsicCode: documentData.supplierMsicCode,
                     supplierAddress: documentData.supplierAddress,
-                    receiverSstNo: documentData.receiverSstNo,
-                    receiverRegistrationNo: documentData.receiverRegistrationNo,
+                    receiverName: documentData.receiverName,
+                    receiverTIN: customerIdentification.tin,
+                    receiverRegistrationNo: customerIdentification.registrationNo,
+                    receiverSstNo: customerIdentification.taxRegNo,
                     receiverAddress: documentData.receiverAddress
                 },
                 supplierInfo: {
                     company: documentData.supplierName,
-                    tin: documentData.supplierTin,
-                    registrationNo: documentData.supplierRegistrationNo,
-                    taxRegNo: documentData.supplierSstNo,
+                    tin: supplierIdentification.tin,
+                    registrationNo: supplierIdentification.registrationNo,
+                    taxRegNo: supplierIdentification.taxRegNo,
+                    idType: supplierIdentification.idType,
+                    idNumber: supplierIdentification.idNumber,
                     msicCode: documentData.supplierMsicCode,
                     address: documentData.supplierAddress
                 },
                 customerInfo: {
                     company: documentData.receiverName,
-                    tin: documentData.receiverTin,
-                    registrationNo: documentData.receiverRegistrationNo,
-                    taxRegNo: documentData.receiverSstNo,
+                    tin: customerIdentification.tin,
+                    registrationNo: customerIdentification.registrationNo,
+                    taxRegNo: customerIdentification.taxRegNo,
+                    idType: customerIdentification.idType,
+                    idNumber: customerIdentification.idNumber,
                     address: documentData.receiverAddress
                 },
                 paymentInfo: {
@@ -1306,6 +1351,10 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
             const supplierParty = invoice.AccountingSupplierParty[0].Party[0];
             const customerParty = invoice.AccountingCustomerParty[0].Party[0];
 
+            // Get identification info for both parties
+            const supplierIdentification = getPartyIdentification(supplierParty.PartyIdentification);
+            const customerIdentification = getPartyIdentification(customerParty.PartyIdentification);
+
             return res.json({
                 success: true,
                 documentInfo: {
@@ -1317,17 +1366,18 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     status: documentData.status,
                     validationResults: validationResults,
                     supplierName: documentData.issuerName,
-                    supplierTIN: documentData.issuerTin,
-                    supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    supplierTIN: supplierIdentification.tin,
+                    supplierRegistrationNo: supplierIdentification.registrationNo,
+                    supplierSstNo: supplierIdentification.taxRegNo,
                     supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
                     supplierAddress: supplierParty.PostalAddress[0].AddressLine
                         .map(line => line.Line[0]._)
                         .filter(Boolean)
                         .join(', ') || documentData.supplierAddress,
                     receiverName: documentData.receiverName,
-                    receiverId: documentData.receiverTin,
-                    receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
-                    receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
+                    receiverTIN: customerIdentification.tin,
+                    receiverRegistrationNo: customerIdentification.registrationNo,
+                    receiverSstNo: customerIdentification.taxRegNo,
                     receiverAddress: customerParty.PostalAddress[0].AddressLine
                         .map(line => line.Line[0]._)
                         .filter(Boolean)
@@ -1335,9 +1385,11 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                 },
                 supplierInfo: {
                     company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
-                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
-                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
-                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
+                    tin: supplierIdentification.tin,
+                    registrationNo: supplierIdentification.registrationNo,
+                    taxRegNo: supplierIdentification.taxRegNo,
+                    idType: supplierIdentification.idType,
+                    idNumber: supplierIdentification.idNumber,
                     msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
                     address: supplierParty.PostalAddress[0].AddressLine
                         .map(line => line.Line[0]._)
@@ -1346,9 +1398,11 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                 },
                 customerInfo: {
                     company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
-                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
-                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
-                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
+                    tin: customerIdentification.tin,
+                    registrationNo: customerIdentification.registrationNo,
+                    taxRegNo: customerIdentification.taxRegNo,
+                    idType: customerIdentification.idType,
+                    idNumber: customerIdentification.idNumber,
                     address: customerParty.PostalAddress[0].AddressLine
                         .map(line => line.Line[0]._)
                         .filter(Boolean)
@@ -1364,58 +1418,13 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
             });
         } catch (parseError) {
             console.error('Error parsing document:', parseError);
-            // Return basic document info if parsing fails
-            return res.json({
-                success: true,
-                documentInfo: {
-                    uuid: documentData.uuid,
-                    submissionUid: documentData.submissionUid,
-                    longId: documentData.longId,
-                    irbmlongId: documentData.longId,
-                    internalId: documentData.internalId,
-                    status: documentData.status,
-                    validationResults: validationResults,
-                    supplierName: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
-                    supplierSstNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
-                    supplierMsicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
-                    supplierAddress: supplierParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.supplierAddress,
-                    receiverSstNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
-                    receiverRegistrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
-                    receiverAddress: customerParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.receiverAddress
-                },
-                supplierInfo: {
-                    company: supplierParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.supplierName,
-                    tin: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.supplierTin,
-                    registrationNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.supplierRegistrationNo,
-                    taxRegNo: supplierParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.supplierSstNo,
-                    msicCode: supplierParty.IndustryClassificationCode?.[0]._ || documentData.supplierMsicCode,
-                    address: supplierParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.supplierAddress
-                },
-                customerInfo: {
-                    company: customerParty.PartyLegalEntity[0].RegistrationName[0]._ || documentData.receiverName,
-                    tin: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'TIN')?.ID[0]._ || documentData.receiverTin,
-                    registrationNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'BRN')?.ID[0]._ || documentData.receiverRegistrationNo,
-                    taxRegNo: customerParty.PartyIdentification?.find(id => id.ID[0].schemeID === 'SST')?.ID[0]._ || documentData.receiverSstNo,
-                    address: customerParty.PostalAddress[0].AddressLine
-                        .map(line => line.Line[0]._)
-                        .filter(Boolean)
-                        .join(', ') || documentData.receiverAddress
-                },
-                paymentInfo: {
-                    totalIncludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || documentData.totalSales,
-                    totalExcludingTax: invoice.LegalMonetaryTotal?.[0]?.TaxExclusiveAmount?.[0]._ || documentData.totalExcludingTax,
-                    taxAmount: invoice.TaxTotal?.[0]?.TaxAmount?.[0]._ || (documentData.totalSales - (documentData.totalExcludingTax || 0)),
-                    irbmUniqueNo: documentData.uuid,
-                    irbmlongId: documentData.longId
+            // Handle parse error by returning basic info
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to parse document data',
+                error: {
+                    name: parseError.name,
+                    details: parseError.message
                 }
             });
         }
@@ -1432,6 +1441,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         });
     }
 });
+
 
 
 // Helper function to get template data

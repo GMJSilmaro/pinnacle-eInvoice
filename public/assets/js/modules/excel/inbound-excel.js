@@ -1712,7 +1712,7 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
     // Prepare supplier info using rowData and supplierInfo
     const supplierInfo = {
         company: rowData.issuerName || rowData.supplierName || documentInfo.supplierName,
-        tin: rowData.supplierTIN || rowData.issuerTin,
+        tin: documentInfo.supplierTIN || rowData.issuerTIN || rowData.supplierTIN || documentInfo.supplierTin,
         registrationNo: rowData.issuerID || documentInfo.supplierRegistrationNo || 'N/A',
         taxRegNo: documentInfo.supplierSstNo || rowData.issuerTaxRegNo || 'N/A',
         msicCode: documentInfo.supplierMsicCode || rowData.issuerMsicCode || 'N/A',
@@ -1722,11 +1722,12 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
     // Prepare buyer info using rowData and documentInfo
     const customerInfo = {
         company: rowData.receiverName || rowData.buyerName || rowData.customerName,
-        tin: rowData.receiverTIN || rowData.buyerTIN || rowData.customerTIN,
-        registrationNo: rowData.receiverId || documentInfo.receiverRegistrationNo ||  rowData.customerTIN || 'N/A',
+        tin: documentInfo.receiverTIN || rowData.receiverTIN || rowData.buyerTIN || rowData.receivedTin,
+        registrationNo: documentInfo.receiverRegistrationNo || rowData.receiverId || documentInfo.receiverRegistrationNo || 'N/A',
         taxRegNo: documentInfo.receiverSstNo || rowData.receiverTaxRegNo || rowData.receiverId || 'N/A',
         address: documentInfo.receiverAddress || rowData.receiverAddress || 'N/A'
     };
+
 
     // Prepare payment info using rowData and result
     const paymentInfo = {
@@ -1749,6 +1750,7 @@ async function populateViewDetailsModal(modalElement, rowData, result) {
     buyerContentDiv.innerHTML = createBuyerContent(customerInfo);
     paymentContentDiv.innerHTML = createPaymentContent(paymentInfo);
 }
+
 
 // Helper functions to create content sections
 function createSupplierContent(supplierInfo) {
