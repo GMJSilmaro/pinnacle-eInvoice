@@ -2120,4 +2120,128 @@ router.get('/taxpayer/validate/:tin', limiter, async (req, res) => {
     }
 });
 
+// Refresh endpoint
+router.post('/documents/refresh', async (req, res) => {
+    console.log('LHDN documents refresh endpoint hit');
+    try {
+        if (!req.session?.user) {
+            console.log('No user session found');
+            return handleAuthError(req, res);
+        }
+
+        console.log('User from session:', req.session.user);
+        
+        try {
+            // Get LHDN configuration
+            const lhdnConfig = await getLHDNConfig();
+            
+            // Make API call to LHDN
+            console.log('Fetching fresh data from LHDN API...');
+            const response = await axios.get(
+                `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
+                {
+                    params: {
+                        pageNo: 1,
+                        pageSize: 100,
+                        sortBy: 'dateTimeValidated',
+                        sortOrder: 'desc'
+                    },
+                    headers: {
+                        'Authorization': `Bearer ${req.session.accessToken}`,
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: lhdnConfig.timeout
+                }
+            );
+
+            const documents = response.data.result || [];
+            console.log(`Fetched ${documents.length} documents from LHDN`);
+
+            // Save to database
+            await saveInboundStatus({ result: documents });
+
+            // Log successful refresh
+            await LoggingService.log({
+                description: `Successfully refreshed ${documents.length} documents from LHDN`,
+                username: req.session.user.username,
+                userId: req.session.user.id,
+                ipAddress: req.ip,
+                logType: LOG_TYPES.INFO,
+                module: MODULES.API,
+                action: ACTIONS.READ,
+                status: STATUS.SUCCESS,
+                details: { count: documents.length }
+            });
+
+            // Return success response
+            res.json({
+                success: true,
+                message: 'Successfully refreshed data from LHDN',
+                count: documents.length,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error('Error refreshing LHDN data:', error);
+            
+            // Log error
+            await LoggingService.log({
+                description: `Error refreshing LHDN data: ${error.message}`,
+                username: req.session.user.username,
+                userId: req.session.user.id,
+                ipAddress: req.ip,
+                logType: LOG_TYPES.ERROR,
+                module: MODULES.API,
+                action: ACTIONS.READ,
+                status: STATUS.FAILED,
+                details: { error: error.message }
+            });
+
+            // Handle specific error cases
+            if (error.response?.status === 429) {
+                return res.status(429).json({
+                    success: false,
+                    error: {
+                        code: 'RATE_LIMIT_EXCEEDED',
+                        message: 'Rate limit exceeded. Please try again later.',
+                        retryAfter: error.response.headers['retry-after'] || 30
+                    }
+                });
+            }
+
+            if (error.code === 'ECONNABORTED') {
+                return res.status(504).json({
+                    success: false,
+                    error: {
+                        code: 'TIMEOUT',
+                        message: 'Request timed out. Please try again.',
+                        details: error.message
+                    }
+                });
+            }
+
+            const statusCode = error.response?.status || 500;
+            res.status(statusCode).json({
+                success: false,
+                error: {
+                    code: error.code || 'REFRESH_ERROR',
+                    message: error.message || 'Failed to refresh LHDN data',
+                    details: error.response?.data?.error || error.message
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error in refresh endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'An unexpected error occurred',
+                details: error.message
+            }
+        });
+    }
+});
+
 module.exports = router;

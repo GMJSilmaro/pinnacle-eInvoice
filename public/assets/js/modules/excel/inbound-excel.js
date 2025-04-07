@@ -146,21 +146,32 @@ class InvoiceTableManager {
                 url: '/api/lhdn/documents/recent',
                 method: 'GET',
                 data: function (d) {
-                    d.forceRefresh = window.forceRefreshLHDN || !self.checkDataFreshness();
+                    // Always include forceRefresh parameter
+                    d.forceRefresh = window.forceRefreshLHDN || false;
                     return d;
                 },
-                dataSrc: (json) => {
+                dataSrc: function(json) {
                     const result = json && json.result ? json.result : [];
-                    localStorage.setItem('lastDataUpdate', new Date().getTime());
+                    
+                    // Only update timestamp if this wasn't a forced refresh
+                    if (!window.forceRefreshLHDN) {
+                        localStorage.setItem('lastDataUpdate', new Date().getTime());
+                    }
+                    
+                    // Reset the force refresh flag
                     window.forceRefreshLHDN = false;
                     
                     // Update totals and charts after data load
                     setTimeout(() => {
                         self.updateCardTotals();
-                        updateCharts(); // Update charts with new data
+                        updateCharts();
                     }, 100);
                     
                     return result;
+                },
+                error: function(xhr, error, thrown) {
+                    console.error('Ajax error:', error);
+                    ToastManager.show('Error fetching data from server', 'error');
                 }
             },
             columns: [
@@ -510,7 +521,29 @@ class InvoiceTableManager {
                 progressBar.style.width = '10%';
                 statusText.textContent = 'Connecting to LHDN server...';
 
+                // Call the new refresh endpoint
+                const response = await fetch('/api/lhdn/documents/refresh', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error?.message || 'Failed to refresh data');
+                }
+
+                progressBar.style.width = '50%';
+                statusText.textContent = 'Refreshing data...';
+
+                // Force a fresh fetch from the API
                 window.forceRefreshLHDN = true;
+                
+                // Clear the cache timestamp to force a fresh fetch
+                localStorage.removeItem('lastDataUpdate');
+                
+                // Reload the table data
                 await this.table.ajax.reload(null, false);
 
                 progressBar.style.width = '100%';
@@ -529,7 +562,7 @@ class InvoiceTableManager {
 
             } catch (error) {
                 console.error('Error refreshing LHDN data:', error);
-                ToastManager.show('Unable to fetch fresh data from LHDN. Please try again.', 'error');
+                ToastManager.show(error.message || 'Unable to fetch fresh data from LHDN. Please try again.', 'error');
             } finally {
                 $('#refreshLHDNData').prop('disabled', false);
             }
@@ -828,7 +861,17 @@ class InvoiceTableManager {
         `;
     }
     renderCompanyInfo(data) {
-        if (!data) return '<span class="text-muted">N/A</span>';
+        if (!data) return `
+        <div class="cell-group">
+            <div class="cell-main">
+                <i class="bi bi-building me-1"></i>
+                <span class="supplier-text">N/A</span>
+            </div>
+            <div class="cell-sub">
+                <i class="bi bi-card-text me-1"></i>
+                <span class="reg-text">Company Name</span>
+            </div>
+        </div>`;
         return `
             <div class="cell-group">
                 <div class="cell-main">
