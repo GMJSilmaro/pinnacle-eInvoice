@@ -75,9 +75,16 @@ function renderActivityLogs(logs, container) {
     // Determine log type and styling
     const logStyle = getLogStyle(log);
     
-    // Format timestamp
-    const timestamp = new Date(log.CreateTS);
-    const timeString = formatTimestamp(timestamp);
+    // Parse and format timestamp
+    let timeString = 'N/A';
+    try {
+      const timestamp = parseSqlDateTime(log.CreateTS);
+      if (timestamp && !isNaN(timestamp.getTime())) {
+        timeString = formatTimestamp(timestamp);
+      }
+    } catch (error) {
+      console.error('Error handling timestamp:', error, log.CreateTS);
+    }
     
     // Create log item element
     const logItem = document.createElement('div');
@@ -91,7 +98,7 @@ function renderActivityLogs(logs, container) {
       </div>
       <div class="flex-grow-1">
         <div class="activity-time">${timeString}</div>
-        <div class="activity-message">${log.Description}</div>
+        <div class="activity-message">${log.Description || 'No description available'}</div>
         <div class="activity-user">
           <span>${log.LoggedUser || 'System'}</span> · ${log.Module || 'General'} · ${log.Action || 'Action'}
         </div>
@@ -149,27 +156,63 @@ function getLogStyle(log) {
  * @returns {string} Formatted timestamp string
  */
 function formatTimestamp(timestamp) {
-  const now = new Date();
-  const diffMs = now - timestamp;
-  const diffMins = Math.round(diffMs / 60000);
-  const diffHours = Math.round(diffMs / 3600000);
-  const diffDays = Math.round(diffMs / 86400000);
+  if (!timestamp) return 'N/A';
   
-  if (diffMins < 1) {
-    return 'Just now';
-  } else if (diffMins < 60) {
-    return `${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'} ago`;
-  } else if (diffHours < 24) {
-    return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
-  } else if (diffDays < 7) {
-    return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
-  } else {
-    // Format as date
-    return timestamp.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+  // SQL Server date format: Apr 7 2025 4:45PM
+  const options = {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  };
+  
+  try {
+    return timestamp.toLocaleString('en-US', options);
+  } catch (error) {
+    console.error('Error formatting timestamp:', error);
+    return 'N/A';
+  }
+}
+
+/**
+ * Parse SQL Server datetime string
+ * @param {string} sqlDateTime - SQL Server datetime string (e.g., "Apr 7 2025 4:45PM")
+ * @returns {Date} JavaScript Date object
+ */
+function parseSqlDateTime(sqlDateTime) {
+  if (!sqlDateTime) return null;
+  
+  try {
+    // Handle SQL Server datetime format
+    if (typeof sqlDateTime === 'string') {
+      // Try direct parsing first
+      let date = new Date(sqlDateTime);
+      
+      // If invalid, try manual parsing
+      if (isNaN(date.getTime())) {
+        // Extract components from SQL Server format
+        const match = sqlDateTime.match(/(\w+)\s+(\d+)\s+(\d{4})\s+(\d+):(\d+)([AP]M)/);
+        if (match) {
+          const [_, month, day, year, hours, minutes, ampm] = match;
+          const monthIndex = new Date(`${month} 1, 2000`).getMonth();
+          let hour = parseInt(hours);
+          
+          // Convert to 24-hour format
+          if (ampm === 'PM' && hour < 12) hour += 12;
+          if (ampm === 'AM' && hour === 12) hour = 0;
+          
+          date = new Date(year, monthIndex, day, hour, parseInt(minutes));
+        }
+      }
+      
+      return date;
+    }
+    return new Date(sqlDateTime);
+  } catch (error) {
+    console.error('Error parsing SQL datetime:', error, sqlDateTime);
+    return null;
   }
 }
 

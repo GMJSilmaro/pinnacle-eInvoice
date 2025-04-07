@@ -4,6 +4,7 @@ const { WP_USER_REGISTRATION, WP_LOGS, sequelize } = require('../models');
 const bcrypt = require('bcryptjs');
 const { getTokenAsTaxPayer } = require('../services/token.service');
 const authConfig = require('./auth.config');
+const { LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../services/logging.service');
 
 // Passport Configuration
 passport.use(new LocalStrategy({
@@ -42,7 +43,7 @@ passport.use(new LocalStrategy({
       
       // Update last login time
       await WP_USER_REGISTRATION.update(
-        { LastLoginTime: sequelize.literal('GETDATE()') },
+        { LastLoginTime: sequelize.literal("CONVERT(datetime, GETDATE(), 120)") },
         { where: { ID: user.ID } }
       );
       
@@ -50,10 +51,14 @@ passport.use(new LocalStrategy({
       try {
         await WP_LOGS.create({
           Description: `User login: ${user.Username}`,
-          CreateTS: sequelize.literal('GETDATE()'),
+          CreateTS: sequelize.literal("CONVERT(datetime, GETDATE(), 120)"),
           LoggedUser: user.Username,
-          Action: 'LOGIN',
-          IPAddress: req.ip || 'unknown'
+          IPAddress: req.ip || 'unknown',
+          LogType: LOG_TYPES.INFO,
+          Module: MODULES.SYSTEM,
+          Action: ACTIONS.LOGIN,
+          Status: STATUS.SUCCESS,
+          UserID: user.ID
         });
       } catch (logError) {
         console.error('Error logging login:', logError);

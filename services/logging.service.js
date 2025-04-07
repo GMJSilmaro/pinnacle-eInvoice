@@ -62,7 +62,7 @@ class LoggingService {
     try {
       const logEntry = await WP_LOGS.create({
         Description: description,
-        CreateTS: new Date().toISOString(),
+        CreateTS: sequelize.literal("CONVERT(datetime, GETDATE(), 120)"),
         LoggedUser: username,
         IPAddress: ipAddress,
         LogType: logType,

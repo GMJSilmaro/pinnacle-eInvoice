@@ -79,7 +79,7 @@ const handleSessionExpiry = (req, res, reason) => {
 // Login attempt tracking functions
 const trackLoginAttempt = async (username, ip, success) => {
   const key = `${username}:${ip}`;
-  const now = Date.now();
+  const now = new Date();
   const attempts = loginAttempts.get(key) || { count: 0, lastAttempt: 0, cooldownUntil: 0 };
 
   if (success) {
@@ -87,17 +87,25 @@ const trackLoginAttempt = async (username, ip, success) => {
     attempts.cooldownUntil = 0;
   } else {
     attempts.count++;
-    attempts.lastAttempt = now;
+    attempts.lastAttempt = now.getTime();
     
     if (attempts.count >= authConfig.login.maxAttempts) {
-      attempts.cooldownUntil = now + authConfig.login.lockoutDuration;
+      attempts.cooldownUntil = now.getTime() + authConfig.login.lockoutDuration;
     }
   }
 
   loginAttempts.set(key, attempts);
 
+  // Format the timestamp in SQL Server format
+  const timestamp = now.toISOString()
+    .replace('T', ' ')
+    .replace('Z', '')
+    .split('.')[0]; // Remove milliseconds
+
   await LoggingService.log({
-    description: `Login attempt for user ${username} - ${success ? 'Success' : 'Failed'} (Attempt ${attempts.count})${attempts.cooldownUntil > now ? ' - In Cooldown' : ''}`,
+    description: success ? 
+      `User login: ${username}` : 
+      `Login attempt for user ${username} - Failed (Attempt ${attempts.count})${attempts.cooldownUntil > now.getTime() ? ' - Account locked' : ''}`,
     username,
     ipAddress: ip,
     logType: success ? LOG_TYPES.INFO : LOG_TYPES.WARNING,
@@ -106,8 +114,9 @@ const trackLoginAttempt = async (username, ip, success) => {
     status: success ? STATUS.SUCCESS : STATUS.FAILED,
     details: {
       attempts: attempts.count,
-      inCooldown: attempts.cooldownUntil > now,
-      cooldownRemaining: Math.max(0, Math.ceil((attempts.cooldownUntil - now) / 1000))
+      inCooldown: attempts.cooldownUntil > now.getTime(),
+      cooldownRemaining: Math.max(0, Math.ceil((attempts.cooldownUntil - now.getTime()) / 1000)),
+      timestamp: timestamp
     }
   });
 
@@ -231,6 +240,13 @@ const handleLogout = async (req, res) => {
             // Remove from active sessions
             removeActiveSession(req.session.user.username);
             
+            // Format timestamp consistently
+            const now = new Date();
+            const timestamp = now.toISOString()
+                .replace('T', ' ')
+                .replace('Z', '')
+                .split('.')[0];
+            
             // Log the logout
             await LoggingService.log({
                 description: 'User logged out',
@@ -240,7 +256,10 @@ const handleLogout = async (req, res) => {
                 logType: LOG_TYPES.INFO,
                 module: MODULES.AUTH,
                 action: ACTIONS.LOGOUT,
-                status: STATUS.SUCCESS
+                status: STATUS.SUCCESS,
+                details: {
+                    timestamp: timestamp
+                }
             });
         }
 
