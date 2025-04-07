@@ -1,3 +1,27 @@
+// Add these lines at the top of the file, after class declarations
+// Cache mechanism to reduce unnecessary fetches
+const dataCache = {
+    tableData: null,
+    lastFetchTime: null,
+    cacheExpiry: 2 * 60 * 1000, // 2 minutes in milliseconds
+    
+    isCacheValid() {
+        return this.tableData && 
+               this.lastFetchTime && 
+               (Date.now() - this.lastFetchTime < this.cacheExpiry);
+    },
+    
+    updateCache(data) {
+        this.tableData = data;
+        this.lastFetchTime = Date.now();
+    },
+    
+    invalidateCache() {
+        this.tableData = null;
+        this.lastFetchTime = null;
+    }
+};
+
 class ValidationError extends Error {
     constructor(message, validationErrors = [], fileName = null) {
         super(message);
@@ -78,7 +102,7 @@ class InvoiceTableManager {
         this.initializeEventListeners();
     }
 
-    showLoadingBackdrop() {
+    showLoadingBackdrop(message = 'Loading and Preparing Your Excel Files') {
         // Remove any existing backdrop
         $('#loadingBackdrop').remove();
         
@@ -90,7 +114,8 @@ class InvoiceTableManager {
                         <span class="visually-hidden">Loading...</span>
                     </div>
                     <div class="loading-message">
-                        <h5>Processing Request</h5>
+                        <h5>${message}</h5>
+                        <div class="text-muted small mt-2">Processing may take longer for batches with 50+ files</div>
                         <p>Please do not refresh the page...</p>
                     </div>
                 </div>
@@ -243,17 +268,32 @@ class InvoiceTableManager {
                 ajax: {
                     url: '/api/outbound-files/list-all',
                     method: 'GET',
+                    data: function(d) {
+                        // Add a cache control parameter
+                        d.forceRefresh = sessionStorage.getItem('forceRefreshOutboundTable') === 'true';
+                        // Clear the flag after using it
+                        if (d.forceRefresh) {
+                            sessionStorage.removeItem('forceRefreshOutboundTable');
+                            dataCache.invalidateCache();
+                        }
+                        return d;
+                    },
                     dataSrc: (json) => {
+                        // If we're using the cache, bypass processing
+                        if (json.fromCache && json.cachedData) {
+                            return json.cachedData;
+                        }
+                        
                         if (!json.success) {
                             console.error('Error:', json.error);
                             self.showEmptyState(json.error?.message || 'Failed to load data');
-                            window.location.reload();
+                            // Don't refresh the page
                             return [];
                         }
 
                         if (!json.files || json.files.length === 0) {
                             self.showEmptyState('No EXCEL files found');
-                            window.location.reload();
+                            // Don't refresh the page
                             return [];
                         }
 
@@ -280,6 +320,9 @@ class InvoiceTableManager {
                             totalAmount: file.totalAmount || null
                         }));
 
+                        // Update the cache with the processed data
+                        dataCache.updateCache(processedData);
+
                         //console.log("Current Process Data", processedData);
 
                         // Update card totals after data is loaded
@@ -287,6 +330,16 @@ class InvoiceTableManager {
 
                         return processedData;
                     },
+                    beforeSend: function() {
+                        // Only show loading for the initial load or forced refreshes
+                        if (!dataCache.isCacheValid() || sessionStorage.getItem('forceRefreshOutboundTable') === 'true') {
+                            self.showLoadingBackdrop('Loading and Preparing Your Excel Files');
+                        }
+                    },
+                    complete: function() {
+                        // Hide loading backdrop
+                        self.hideLoadingBackdrop();
+                    }
                 },
                 order: [
                     [8, 'desc'], // Status first (Pending at top)
@@ -326,8 +379,8 @@ class InvoiceTableManager {
 
         } catch (error) {
             console.error('Error initializing DataTable:', error);
-            this.showEmptyState('Error initializing table. Please refresh the page.');
-            window.location.reload();
+            this.showEmptyState('Error initializing table. Please try refreshing the page if this persists.');
+            // Remove the page reload to prevent refresh
         }
     }
 
@@ -1195,10 +1248,9 @@ class InvoiceTableManager {
                 ${label}: ${value}
                 <button class="close-btn" data-filter-type="${type}">×</button>
             `;
-            tag.querySelector('.close-btn').addEventListener('click', () => {
-                this.removeFilter(type);
-            });
-            return tag;
+            tag.querySelector('.close-btn').addEventListener('click', 
+                () => this.removeFilter(type));
+            container.appendChild(tag);
         };
 
         // Add tags for active filters
@@ -2622,8 +2674,71 @@ class InvoiceTableManager {
         $('.dataTables_length select').addClass('form-select form-select-sm');
     }
 
-    refresh() {
-        this.table?.ajax.reload(null, false);
+    refresh(forceRefresh = false) {
+        if (forceRefresh) {
+            // Force a refresh from the server
+            sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+            this.table?.ajax.reload(null, false);
+        } else if (dataCache.isCacheValid()) {
+            // Use cached data if it's valid
+            console.log('Using cached data for table refresh');
+            if (this.table) {
+                const currentData = this.table.data().toArray();
+                // Only update if there's a difference in the data (like status changes)
+                if (JSON.stringify(currentData) !== JSON.stringify(dataCache.tableData)) {
+                    this.table.clear();
+                    this.table.rows.add(dataCache.tableData);
+                    this.table.draw(false); // false to keep current paging
+                }
+                // Update card totals regardless
+                this.updateCardTotals();
+            }
+        } else {
+            // No valid cache, get from server
+            this.table?.ajax.reload(null, false);
+        }
+    }
+    
+    /**
+     * Update the table data after submission without making AJAX calls
+     * @param {Array} results - Array of submission results from the API
+     */
+    updateTableAfterSubmission(results) {
+        if (!this.table) return;
+        
+        // Get current table data
+        const currentData = this.table.data().toArray();
+        
+        // Create a map of filenames to results for quick lookup
+        const resultsMap = new Map();
+        results.forEach(result => {
+            resultsMap.set(result.fileName, result);
+        });
+        
+        // Update data in-place
+        const updatedData = currentData.map(row => {
+            const result = resultsMap.get(row.fileName);
+            if (result) {
+                return {
+                    ...row,
+                    status: result.success ? 'Submitted' : row.status,
+                    date_submitted: result.success ? new Date().toISOString() : row.date_submitted,
+                    uuid: result.uuid || row.uuid
+                };
+            }
+            return row;
+        });
+        
+        // Update the cache with the new data
+        dataCache.updateCache(updatedData);
+        
+        // Update table without AJAX
+        this.table.clear();
+        this.table.rows.add(updatedData);
+        this.table.draw(false); // false to keep current paging
+        
+        // Update card totals
+        this.updateCardTotals();
     }
 
     cleanup() {
@@ -4304,8 +4419,8 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     }
 
                     await showSuccessMessage(fileName, version);
-                    // Refresh the table
-                    window.location.reload();
+                    // Refresh the table dynamically instead of reloading the page
+                    InvoiceTableManager.getInstance().refresh();
                 } catch (error) {
                     console.error('❌ Step execution failed:', error);
 
@@ -4618,8 +4733,8 @@ async function cancelDocument(uuid, fileName, submissionDate) {
             }
         });
         console.log('Document cancelled successfully');
-        // Refresh the table
-        window.location.reload();
+        // Refresh the table dynamically instead of reloading the page
+        InvoiceTableManager.getInstance().refresh();
 
     } catch (error) {
         console.error('Error in cancellation process:', error);
@@ -4742,8 +4857,8 @@ async function deleteDocument(fileName, type, company, date) {
             }
         });
 
-        // Refresh the table
-        window.location.reload();
+        // Refresh the table dynamically instead of reloading the page
+        InvoiceTableManager.getInstance().refresh();
 
     } catch (error) {
         console.error('Error deleting document:', error);
@@ -5399,8 +5514,8 @@ async function handleBulkSubmission(selectedDocs) {
     const tableManager = InvoiceTableManager.getInstance();
     
     try {
-        // Show loading backdrop
-        tableManager.showLoadingBackdrop();
+        // Show loading backdrop with specific message
+        tableManager.showLoadingBackdrop('Submitting Documents to LHDN');
         
         // Initialize progress UI
         if (!progressDiv) {
@@ -5435,7 +5550,10 @@ async function handleBulkSubmission(selectedDocs) {
         // Submit documents
         const response = await fetch('/api/outbound-files/bulk-submit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest' // Add AJAX header to prevent full page reload
+            },
             body: JSON.stringify({ documents: selectedDocs, version })
         });
 
@@ -5465,8 +5583,12 @@ async function handleBulkSubmission(selectedDocs) {
         progressBar.setAttribute('aria-valuenow', 100);
         progressBar.classList.remove('progress-bar-animated');
 
-        // Refresh table and show summary
-        await InvoiceTableManager.getInstance().refresh();
+        // Hide loading backdrop before updating the table
+        tableManager.hideLoadingBackdrop();
+        
+        // Update table data in-place without AJAX refresh
+        tableManager.updateTableAfterSubmission(result.results);
+        
         const successCount = result.results.filter(r => r.success).length;
         const failureCount = result.results.filter(r => !r.success).length;
 
@@ -5475,9 +5597,6 @@ async function handleBulkSubmission(selectedDocs) {
         if (consolidatedModal) {
             consolidatedModal.hide();
         }
-
-        // Hide loading backdrop
-        tableManager.hideLoadingBackdrop();
 
         await Swal.fire({
             icon: successCount > 0 ? 'success' : 'warning',

@@ -1075,19 +1075,60 @@ function extractBuyerInfo(data) {
  */
 function extractDates(data) {
     try {
-        // Look for date and time in specific Excel columns
+        // Look for date in the header row (usually row 3)
         let issueDate = null;
         let issueTime = null;
         
-        if (data && data.length > 2) {
-            // Get date and time from third row
-            issueDate = data[2]?.__EMPTY_3 || null;
-            issueTime = data[2]?.__EMPTY_4 || null;
+        if (data && data.length > 0) {
+            // Try to find the date in the data array
+            for (const row of data) {
+                if (row && (row.IssueDate || row.Issue_Date || row.issueDate)) {
+                    issueDate = row.IssueDate || row.Issue_Date || row.issueDate;
+                    break;
+                }
+            }
+
+            // If no date found in standard fields, try to find it in the raw data
+            if (!issueDate && data[2] && typeof data[2] === 'object') {
+                // Look for date in specific columns that might contain the date
+                const possibleDateFields = Object.entries(data[2]);
+                for (const [key, value] of possibleDateFields) {
+                    if (value && typeof value === 'string' || typeof value === 'number') {
+                        // Try to parse as date
+                        const parsed = moment(value);
+                        if (parsed.isValid()) {
+                            issueDate = parsed.format('YYYY-MM-DD');
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // If still no date found, try to extract from filename
+        if (!issueDate) {
+            const fileName = data.fileName || '';
+            const match = fileName.match(/_(\d{8})/);
+            if (match && match[1]) {
+                const dateStr = match[1];
+                const parsed = moment(dateStr, 'YYYYMMDD');
+                if (parsed.isValid()) {
+                    issueDate = parsed.format('YYYY-MM-DD');
+                }
+            }
+        }
+
+        // If still no date, use the directory date
+        if (!issueDate && data.date) {
+            const dirDate = moment(data.date);
+            if (dirDate.isValid()) {
+                issueDate = dirDate.format('YYYY-MM-DD');
+            }
         }
 
         return {
             issueDate,
-            issueTime
+            issueTime: issueTime || '00:00:00'
         };
     } catch (error) {
         console.error('Error extracting dates:', error);
