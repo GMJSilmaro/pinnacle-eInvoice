@@ -1,3 +1,4 @@
+// Add these lines at the top of the file, after class declarations
 // Cache mechanism to reduce unnecessary fetches
 const dataCache = {
     tableData: null,
@@ -3729,272 +3730,170 @@ async function validateExcelFile(fileName, type, company, date) {
 }
 
 async function showVersionDialog() {
-    const content = `
-        <div class="excel-loading-content" style="max-width: 550px;">
-            <div class="excel-modal-header">
-                <div class="excel-processing-icon">
-                    <div class="excel-document-stack">
-                        <div class="excel-document excel-doc1"></div>
-                        <div class="excel-document excel-doc2"></div>
-                        <div class="excel-document excel-doc3"></div>
-                    </div>
-                    <div class="excel-processing-circle">
-                        <i class="fas fa-layer-group" style="color: white; font-size: 10px;"></i>
-                    </div>
-                </div>
-                <div class="excel-processing-title">
-                    <h5>Select Document Version</h5>
-                    <p>Choose your preferred format for submission</p>
-                </div>
-            </div>
-
-            <div class="excel-versions-container">
-                <div class="excel-version-card selected" data-version="1.0">
-                    <div class="excel-version-header">
-                        <div class="excel-version-badge">1.0</div>
-                        <div class="excel-version-title">Standard Version</div>
-                        <div class="excel-version-status excel-status-available">Available Now</div>
-                    </div>
-                    <div class="excel-version-desc">
-                        This is the standard e-invoice version designed for submitting invoices to LHDN without the need for a digital signature.
-                    </div>
-                </div>
-                
-                <div class="excel-version-card disabled" data-version="1.1">
-                    <div class="excel-version-header">
-                        <div class="excel-version-badge">1.1</div>
-                        <div class="excel-version-title">Secure Version</div>
-                        <div class="excel-version-status excel-status-coming">Coming Soon</div>
-                    </div>
-                    <div class="excel-version-desc">
-                        Enhanced encrypted format with digital signature capabilities, tailored for LHDN's advanced security requirements.
-                    </div>
-                </div>
-            </div>
-       
-            <div class="excel-processing-info">
-                <div class="excel-info-box">
-                    <div class="excel-info-icon">
-                        <i class="fas fa-info-circle"></i>
-                    </div>
-                    <div class="excel-info-content">
-                        <span class="excel-info-label">Version Information</span>
-                        <p class="excel-info-message">Select the appropriate LHDN e-Invoice version for your document
-                            submission.<br>
-                            The standard version is recommended for most users.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-      
-        <style>
-        .excel-loading-content {
-            background: #fff;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        }
-        .excel-modal-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        .excel-processing-icon {
-            position: relative;
-            width: 50px;
-            height: 50px;
-            margin-right: 15px;
-        }
-        .excel-document-stack {
-            position: absolute;
-            width: 40px;
-            height: 40px;
-        }
-        .excel-document {
-            position: absolute;
-            width: 32px;
-            height: 40px;
-            background: #e1e8f0;
-            border-radius: 3px;
-            transition: all 0.3s ease;
-        }
-        .excel-doc1 { transform: rotate(-5deg); z-index: 1; }
-        .excel-doc2 { transform: rotate(0deg); z-index: 2; background: #d1dff0; }
-        .excel-doc3 { transform: rotate(5deg); z-index: 3; background: #c1d6f0; }
-        .excel-processing-circle {
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            background: #4a89dc;
-            border-radius: 50%;
-            right: 0;
-            bottom: 0;
-            z-index: 4;
-            border: 2px solid white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 6px rgba(74, 137, 220, 0.2);
-        }
-        .excel-processing-title h5 {
-            margin: 0;
-            font-size: 18px;
-            font-weight: 600;
-            color: #2c3e50;
-            text-align: center;
-        }
-        .excel-processing-title p {
-            margin: 4px 0 0;
-            font-size: 14px;
-            color: #7f8c8d;
-            text-align: center;
-        }
-        .excel-versions-container {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-        .excel-version-card {
-            background: white;
-            border-radius: 8px;
-            border: 1.5px solid #e9ecef;
-            padding: 15px;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-        }
-        .excel-version-card:hover:not(.disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.06);
-            border-color: #4a89dc;
-        }
-        .excel-version-card.selected {
-            border-color: #4a89dc;
-            background: rgba(74, 137, 220, 0.03);
-            box-shadow: 0 4px 12px rgba(74, 137, 220, 0.08);
-        }
-        .excel-version-card.disabled {
-            opacity: 0.65;
-            cursor: not-allowed;
-            background: #f8f9fa;
-        }
-        .excel-version-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 12px;
-            position: relative;
-        }
-        .excel-version-badge {
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
-            background: linear-gradient(135deg, #4a89dc, #357abd);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            font-size: 15px;
-            margin-right: 14px;
-            box-shadow: 0 2px 6px rgba(74, 137, 220, 0.15);
-        }
-        .excel-version-title {
-            font-weight: 600;
-            font-size: 16px;
-            color: #2c3e50;
-        }
-        .excel-version-desc {
-            font-size: 14px;
-            color: #7f8c8d;
-            line-height: 1.6;
-            padding-left: 48px;
-        }
-        .excel-version-status {
-            position: absolute;
-            right: 0;
-            top: 4px;
-            font-size: 12.5px;
-            font-weight: 500;
-            padding: 4px 10px;
-            border-radius: 6px;
-        }
-        .excel-status-available {
-            background: rgba(46, 204, 113, 0.08);
-            color: #27ae60;
-        }
-        .excel-status-coming {
-            background: rgba(243, 156, 18, 0.08);
-            color: #f39c12;
-        }
-        .excel-processing-info {
-            margin-top: 15px;
-        }
-        .excel-info-box {
-            display: flex;
-            padding: 12px;
-            background: #f0f7ff;
-            border-radius: 6px;
-            border-left: 4px solid #4a89dc;
-        }
-        .excel-info-icon {
-            margin-right: 12px;
-            color: #4a89dc;
-            font-size: 20px;
-            display: flex;
-            align-items: flex-start;
-            padding-top: 2px;
-        }
-        .excel-info-content {
-            flex: 1;
-        }
-        .excel-info-label {
-            display: block;
-            font-weight: 500;
-            font-size: 14px;
-            color: #2c3e50;
-            margin-bottom: 4px;
-        }
-        .excel-info-message {
-            margin: 0;
-            font-size: 13px;
-            color: #7f8c8d;
-            line-height: 1.4;
-        }
-        .swal2-actions {
-            margin-top: 15px !important;
-        }
-        </style>`;
     return Swal.fire({
-        html: content,
+        html: `
+            <div class="semi-minimal-dialog">
+                <style>
+                    .semi-minimal-dialog {
+                        --primary: hsl(220 76% 55%);
+                        --primary-light: hsl(220 76% 97%);
+                        --text-main: hsl(220 39% 11%);
+                        --text-muted: hsl(215 16% 47%);
+                        font-family: system-ui, -apple-system, sans-serif;
+                    }
+                    
+                    .dialog-heading {
+                        text-align: center;
+                        margin-bottom: 1.5rem;
+                    }
+                    
+                    .dialog-title {
+                        font-size: 1.125rem;
+                        font-weight: 600;
+                        color: var(--text-main);
+                        margin-bottom: 0.25rem;
+                    }
+                    
+                    .dialog-subtitle {
+                        font-size: 0.875rem;
+                        color: var(--text-muted);
+                        line-height: 1.4;
+                    }
+                    
+                    .version-card {
+                        padding: 1rem;
+                        border-radius: 8px;
+                        border: 1px solid hsl(214 32% 91%);
+                        margin-bottom: 0.75rem;
+                        transition: all 0.2s ease;
+                        cursor: pointer;
+                        position: relative;
+                        background: white;
+                    }
+                    
+                    .version-card:hover:not(.disabled) {
+                        transform: translateY(-2px);
+                        box-shadow: 0 3px 6px rgba(0,0,0,0.05);
+                    }
+                    
+                    .version-card.selected {
+                        border-color: var(--primary);
+                        background: var(--primary-light);
+                    }
+                    
+                    .version-card.disabled {
+                        background: hsl(220 33% 98%);
+                        cursor: not-allowed;
+                    }
+                    
+                    .version-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        margin-bottom: 0.5rem;
+                    }
+                    
+                    .version-badge {
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 6px;
+                        background: var(--primary-light);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: var(--primary);
+                        font-size: 0.75rem;
+                        font-weight: 600;
+                    }
+                    
+                    .version-title {
+                        font-size: 0.9375rem;
+                        font-weight: 500;
+                        color: var(--text-main);
+                    }
+                    
+                    .version-desc {
+                        font-size: 0.8125rem;
+                        color: var(--text-muted);
+                        line-height: 1.4;
+                        margin-left: 0.5rem;
+                    }
+                    
+                    .status-indicator {
+                        position: absolute;
+                        top: 12px;
+                        right: 12px;
+                        font-size: 0.75rem;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                    }
+                    
+                    .status-available {
+                        background: hsl(142 71% 95%);
+                        color: hsl(142 76% 24%);
+                    }
+                    
+                    .status-coming {
+                        background: hsl(33 100% 96%);
+                        color: hsl(27 90% 45%);
+                    }
+                </style>
+
+                <div class="dialog-heading">
+                    <h3 class="dialog-title">Select Document Version</h3>
+                    <p class="dialog-subtitle">Choose your preferred format for submission</p>
+                </div>
+
+                <div class="version-card selected">
+                    <div class="version-header">
+                        <span class="version-badge">1.0</span>
+                        <span class="version-title">Standard Version</span>
+                    </div>
+                    <p class="version-desc">
+                        This is the standard e-invoice version designed for submitting invoices to LHDN without the need for a digital signature.
+                    </p>
+                    <span class="status-indicator status-available">Available Now</span>
+                </div>
+
+                <div class="version-card disabled">
+                    <div class="version-header">
+                        <span class="version-badge">1.1</span>
+                        <span class="version-title">Secure Version</span>
+                    </div>
+                     <p class="version-desc">
+                        Enhanced encrypted format with digital signature capabilities, 
+                        tailored for LHDN's advanced security requirements.
+                    </p>
+                    <span class="status-indicator status-coming">Coming Soon</span>
+                </div>
+            </div>
+        `,
         showCancelButton: true,
         confirmButtonText: 'Continue',
         cancelButtonText: 'Cancel',
-        width: 550,
+        width: 480,
         padding: '1.5rem',
         focusConfirm: false,
         customClass: {
             confirmButton: 'outbound-action-btn submit',
             cancelButton: 'outbound-action-btn cancel',
-            popup: 'excel-version-popup'
+            popup: 'semi-minimal-popup'
         },
         didOpen: () => {
-            document.querySelectorAll('.excel-version-card:not(.disabled)').forEach(card => {
+            document.querySelectorAll('.version-card:not(.disabled)').forEach(card => {
                 card.addEventListener('click', () => {
-                    document.querySelector('.excel-version-card.selected')?.classList.remove('selected');
+                    document.querySelector('.version-card.selected')?.classList.remove('selected');
                     card.classList.add('selected');
                 });
             });
         }
     }).then((result) => {
         if (result.isConfirmed) {
-            const selectedCard = document.querySelector('.excel-version-card.selected');
-            return selectedCard ? selectedCard.getAttribute('data-version') : '1.0';
+            return '1.0';
         }
         return null;
     });
 }
-
 // Base template for semi-minimal dialog
 function createSemiMinimalDialog(options) {
     const {
@@ -4280,302 +4179,52 @@ function createSemiMinimalDialog(options) {
 // Update showConfirmationDialog to use the new template
 async function showConfirmationDialog(fileName, type, company, date, version) {
     const content = `
-        <div class="excel-loading-content" style="max-width: 550px;">
-            <div class="excel-modal-header">
-                <div class="excel-processing-icon">
-                    <div class="excel-document-stack">
-                        <div class="excel-document excel-doc1"></div>
-                        <div class="excel-document excel-doc2"></div>
-                        <div class="excel-document excel-doc3"></div>
-                    </div>
-                    <div class="excel-processing-circle"></div>
-                </div>
-                <div class="excel-processing-title">
-                    <h5>Confirm Submission</h5>
-                    <p>Please review the document details before submitting to LHDN</p>
-                </div>
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-badge">
+                    <i class="fas fa-file-invoice"></i>
+                </span>
+                <span class="content-title">Document Details</span>
             </div>
-
-            <div class="excel-processing-container">
-                <div class="excel-invoice-animation" style="margin-right: 20px;">
-                    <div class="excel-invoice-paper">
-                        <div class="excel-invoice-header">
-                            <div class="excel-invoice-line"></div>
-                        </div>
-                        <div class="excel-invoice-details">
-                            <div class="excel-invoice-details-left">
-                                <div class="excel-invoice-details-line"></div>
-                                <div class="excel-invoice-details-line"></div>
-                            </div>
-                            <div class="excel-invoice-details-right">
-                                <div class="excel-invoice-details-line"></div>
-                                <div class="excel-invoice-details-line"></div>
-                            </div>
-                        </div>
-                        <div class="excel-invoice-table">
-                            <div class="excel-invoice-table-row">
-                                <div class="excel-invoice-table-cell"></div>
-                                <div class="excel-invoice-table-cell"></div>
-                                <div class="excel-invoice-table-cell"></div>
-                            </div>
-                            <div class="excel-invoice-table-row">
-                                <div class="excel-invoice-table-cell"></div>
-                                <div class="excel-invoice-table-cell"></div>
-                                <div class="excel-invoice-table-cell"></div>
-                            </div>
-                        </div>
-                        <div class="excel-invoice-stamp"></div>
-                    </div>
-                </div>
-
-                <div class="excel-document-details">
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">File Name:</span>
-                        <span class="excel-detail-value">${fileName}</span>
-                    </div>
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">Source:</span>
-                        <span class="excel-detail-value">${type}</span>
-                    </div>
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">Company:</span>
-                        <span class="excel-detail-value">${company}</span>
-                    </div>
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">Upload Date:</span>
-                        <span class="excel-detail-value">${new Date(date).toLocaleString()}</span>
-                    </div>
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">Version:</span>
-                        <span class="excel-detail-value">${version}</span>
-                    </div>
-                </div>
+            <div class="field-row">
+                <span class="field-label">File Name:</span>
+                <span class="field-value">${fileName}</span>
             </div>
-
-            <div class="excel-processing-info">
-                <div class="excel-info-box">
-                    <div class="excel-info-icon">
-                        <i class="bi bi-info-circle"></i>
-                    </div>
-                    <div class="excel-info-content">
-                        <span class="excel-info-label">Important Note</span>
-                        <p class="excel-info-message">After submission, this document will be sent to LHDN for processing.</p>
-                    </div>
-                </div>
+            <div class="field-row">
+                <span class="field-label">Source:</span>
+                <span class="field-value">${type}</span>
+            </div>
+            <div class="field-row">
+                <span class="field-label">Company:</span>
+                <span class="field-value">${company}</span>
+            </div>
+            <div class="field-row">
+                <span class="field-label">Upload Date:</span>
+                <span class="field-value">${new Date(date).toLocaleString()}</span>
+            </div>
+            <div class="field-row">
+                <span class="field-label">Version:</span>
+                <span class="field-value">${version}</span>
             </div>
         </div>
-        <style>
-            .excel-loading-content {
-                background: #fff;
-                border-radius: 8px;
-                padding: 20px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            }
-            .excel-modal-header {
-                display: flex;
-                align-items: center;
-                margin-bottom: 20px;
-            }
-            .excel-processing-icon {
-                position: relative;
-                width: 50px;
-                height: 50px;
-                margin-right: 15px;
-            }
-            .excel-document-stack {
-                position: absolute;
-                width: 40px;
-                height: 40px;
-            }
-            .excel-document {
-                position: absolute;
-                width: 32px;
-                height: 40px;
-                background: #e1e8f0;
-                border-radius: 3px;
-            }
-            .excel-doc1 { transform: rotate(-5deg); z-index: 1; }
-            .excel-doc2 { transform: rotate(0deg); z-index: 2; background: #d1dff0; }
-            .excel-doc3 { transform: rotate(5deg); z-index: 3; background: #c1d6f0; }
-            .excel-processing-circle {
-                position: absolute;
-                width: 20px;
-                height: 20px;
-                background: #4a89dc;
-                border-radius: 50%;
-                right: 0;
-                bottom: 0;
-                z-index: 4;
-                border: 2px solid white;
-            }
-            .excel-processing-title h5 {
-                margin: 0;
-                font-size: 18px;
-                font-weight: 600;
-                color: #2c3e50;
-            }
-            .excel-processing-title p {
-                margin: 4px 0 0;
-                font-size: 14px;
-                color: #7f8c8d;
-            }
-            .excel-processing-container {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 20px;
-                padding: 15px;
-                background: #f8f9fa;
-                border-radius: 8px;
-            }
-            .excel-invoice-animation {
-                width: 120px;
-                height: 150px;
-                position: relative;
-            }
-            .excel-invoice-paper {
-                width: 100%;
-                height: 100%;
-                background: white;
-                border-radius: 4px;
-                box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-                padding: 10px;
-                display: flex;
-                flex-direction: column;
-            }
-            .excel-invoice-header {
-                height: 15%;
-                margin-bottom: 10px;
-            }
-            .excel-invoice-line {
-                height: 8px;
-                background: #eaecef;
-                width: 80%;
-                border-radius: 4px;
-                margin: 5px 0;
-            }
-            .excel-invoice-details {
-                display: flex;
-                justify-content: space-between;
-                height: 30%;
-                margin-bottom: 10px;
-            }
-            .excel-invoice-details-left, .excel-invoice-details-right {
-                width: 45%;
-            }
-            .excel-invoice-details-line {
-                height: 6px;
-                background: #eaecef;
-                width: 100%;
-                border-radius: 4px;
-                margin: 5px 0;
-            }
-            .excel-invoice-table {
-                height: 40%;
-                display: flex;
-                flex-direction: column;
-                justify-content: space-around;
-            }
-            .excel-invoice-table-row {
-                display: flex;
-                justify-content: space-between;
-                width: 100%;
-            }
-            .excel-invoice-table-cell {
-                height: 6px;
-                background: #eaecef;
-                width: 30%;
-                border-radius: 4px;
-            }
-            .excel-invoice-stamp {
-                position: absolute;
-                width: 40px;
-                height: 40px;
-                border: 2px solid rgba(46, 204, 113, 0.6);
-                border-radius: 50%;
-                right: 10px;
-                bottom: 20px;
-                transform: rotate(-15deg);
-            }
-            .excel-invoice-stamp:after {
-                content: '';
-                position: absolute;
-                width: 32px;
-                height: 8px;
-                background: rgba(46, 204, 113, 0.2);
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                border-radius: 4px;
-            }
-            .excel-document-details {
-                flex: 1;
-            }
-            .excel-detail-item {
-                display: flex;
-                margin-bottom: 10px;
-                align-items: baseline;
-            }
-            .excel-detail-label {
-                width: 100px;
-                font-size: 14px;
-                color: #7f8c8d;
-            }
-            .excel-detail-value {
-                font-size: 14px;
-                font-weight: 500;
-                color: #2c3e50;
-            }
-            .excel-processing-info {
-                margin-top: 15px;
-            }
-            .excel-info-box {
-                display: flex;
-                padding: 12px;
-                background: #f0f7ff;
-                border-radius: 6px;
-                border-left: 4px solid #4a89dc;
-            }
-            .excel-info-icon {
-                margin-right: 12px;
-                color: #4a89dc;
-                font-size: 20px;
-                display: flex;
-                align-items: center;
-            }
-            .excel-info-content {
-                flex: 1;
-            }
-            .excel-info-label {
-                display: block;
-                font-weight: 500;
-                font-size: 14px;
-                color: #2c3e50;
-                margin-bottom: 4px;
-            }
-            .excel-info-message {
-                margin: 0;
-                font-size: 13px;
-                color: #7f8c8d;
-                line-height: 1.4;
-            }
-            .swal2-actions {
-                margin-top: 15px !important;
-            }
-        </style>
     `;
 
     return Swal.fire({
-        html: content,
+        html: createSemiMinimalDialog({
+            title: 'Confirm Submission',
+            subtitle: 'Please review the document details before submitting to LHDN',
+            content: content
+        }),
         showCancelButton: true,
         confirmButtonText: 'Yes, Submit',
         cancelButtonText: 'Cancel',
-        width: 600,
+        width: 480,
         padding: '1.5rem',
         focusConfirm: false,
         customClass: {
             confirmButton: 'outbound-action-btn submit',
             cancelButton: 'outbound-action-btn cancel',
-            popup: 'excel-confirmation-popup'
+            popup: 'semi-minimal-popup'
         }
     }).then((result) => result.isConfirmed);
 }
@@ -4615,197 +4264,51 @@ async function performStep1(fileName, type, company, date) {
 
 async function showSuccessMessage(fileName, version) {
     const content = `
-        <div class="excel-loading-content" style="max-width: 550px;">
-            <div class="excel-modal-header">
-                <div class="excel-processing-icon">
-                    <div class="excel-document-stack">
-                        <div class="excel-document excel-doc1"></div>
-                        <div class="excel-document excel-doc2"></div>
-                        <div class="excel-document excel-doc3"></div>
-                    </div>
-                    <div class="excel-processing-circle" style="background: #2ecc71;">
-                        <i class="fas fa-check" style="color: white; font-size: 12px;"></i>
-                    </div>
-                </div>
-                <div class="excel-processing-title">
-                    <h5>Document Submitted Successfully</h5>
-                    <p>Your document has been successfully submitted to LHDN</p>
-                </div>
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-badge success" style="margin-bottom: 10px;">
+                    <i class="fas fa-check-circle"></i>
+                </span>
+                <span class="content-title">Submission Details</span>
             </div>
-
-            <div class="excel-processing-container">
-                <div class="excel-document-details" style="width: 100%;">
-                    <div class="excel-section-title">
-                        <i class="fas fa-info-circle" style="color: #4a89dc; margin-right: 8px;"></i>
-                        Submission Details
-                    </div>
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">File Name:</span>
-                        <span class="excel-detail-value">${fileName}</span>
-                    </div>
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">Version:</span>
-                        <span class="excel-detail-value">${version}</span>
-                    </div>
-                    <div class="excel-detail-item">
-                        <span class="excel-detail-label">Submitted At:</span>
-                        <span class="excel-detail-value">${new Date().toLocaleString()}</span>
-                    </div>
-                </div>
+            <div class="field-row">
+                <span class="field-label">File Name:</span>
+                <span class="field-value">${fileName}</span>
             </div>
-
-            <div class="excel-processing-info">
-                <div class="excel-info-box">
-                    <div class="excel-info-icon">
-                        <i class="fas fa-lightbulb"></i>
-                    </div>
-                    <div class="excel-info-content">
-                        <span class="excel-info-label">Next Steps</span>
-                        <p class="excel-info-message">You can track the status of your submission in the table below. The document will be processed by LHDN within 72 hours.</p>
-                    </div>
-                </div>
+            <div class="field-row">
+                <span class="field-label">Version:</span>
+                <span class="field-value">${version}</span>
+            </div>
+            <div class="field-row">
+                <span class="field-label">Submitted At:</span>
+                <span class="field-value">${new Date().toLocaleString()}</span>
             </div>
         </div>
-        <style>
-            .excel-loading-content {
-                background: #fff;
-                border-radius: 8px;
-                padding: 20px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            }
-            .excel-modal-header {
-                display: flex;
-                align-items: center;
-                margin-bottom: 20px;
-            }
-            .excel-processing-icon {
-                position: relative;
-                width: 50px;
-                height: 50px;
-                margin-right: 15px;
-            }
-            .excel-document-stack {
-                position: absolute;
-                width: 40px;
-                height: 40px;
-            }
-            .excel-document {
-                position: absolute;
-                width: 32px;
-                height: 40px;
-                background: #e1e8f0;
-                border-radius: 3px;
-            }
-            .excel-doc1 { transform: rotate(-5deg); z-index: 1; }
-            .excel-doc2 { transform: rotate(0deg); z-index: 2; background: #d1dff0; }
-            .excel-doc3 { transform: rotate(5deg); z-index: 3; background: #c1d6f0; }
-            .excel-processing-circle {
-                position: absolute;
-                width: 20px;
-                height: 20px;
-                background: #4a89dc;
-                border-radius: 50%;
-                right: 0;
-                bottom: 0;
-                z-index: 4;
-                border: 2px solid white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .excel-processing-title h5 {
-                margin: 0;
-                font-size: 18px;
-                font-weight: 600;
-                color: #2c3e50;
-            }
-            .excel-processing-title p {
-                margin: 4px 0 0;
-                font-size: 14px;
-                color: #7f8c8d;
-            }
-            .excel-processing-container {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 20px;
-                padding: 15px;
-                background: #f8f9fa;
-                border-radius: 8px;
-            }
-            .excel-section-title {
-                font-size: 16px;
-                font-weight: 500;
-                color: #2c3e50;
-                margin-bottom: 15px;
-                display: flex;
-                align-items: center;
-            }
-            .excel-document-details {
-                flex: 1;
-            }
-            .excel-detail-item {
-                display: flex;
-                margin-bottom: 10px;
-                align-items: baseline;
-            }
-            .excel-detail-label {
-                width: 100px;
-                font-size: 14px;
-                color: #7f8c8d;
-            }
-            .excel-detail-value {
-                font-size: 14px;
-                font-weight: 500;
-                color: #2c3e50;
-            }
-            .excel-processing-info {
-                margin-top: 15px;
-            }
-            .excel-info-box {
-                display: flex;
-                padding: 12px;
-                background: #f0f7ff;
-                border-radius: 6px;
-                border-left: 4px solid #4a89dc;
-            }
-            .excel-info-icon {
-                margin-right: 12px;
-                color: #4a89dc;
-                font-size: 20px;
-                display: flex;
-                align-items: center;
-            }
-            .excel-info-content {
-                flex: 1;
-            }
-            .excel-info-label {
-                display: block;
-                font-weight: 500;
-                font-size: 14px;
-                color: #2c3e50;
-                margin-bottom: 4px;
-            }
-            .excel-info-message {
-                margin: 0;
-                font-size: 13px;
-                color: #7f8c8d;
-                line-height: 1.4;
-            }
-            .swal2-actions {
-                margin-top: 15px !important;
-            }
-        </style>
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-badge info">
+                    <i class="fas fa-info-circle"></i>
+                </span>
+                <span class="content-title">Next Steps</span>
+            </div>
+            <div class="content-desc">
+                You can track the status of your submission in the table below. The document will be processed by LHDN within 72 hours.
+            </div>
+        </div>
     `;
 
     return Swal.fire({
-        html: content,
+        html: createSemiMinimalDialog({
+            title: 'Document Submitted Successfully',
+            subtitle: 'Your document has been successfully submitted to LHDN',
+            content: content
+        }),
         confirmButtonText: 'Close',
-        width: 550,
+        width: 480,
         padding: '1.5rem',
-        focusConfirm: false,
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            popup: 'excel-confirmation-popup'
+            confirmButton: 'semi-minimal-confirm',
+            popup: 'semi-minimal-popup'
         }
     });
 }
@@ -5022,640 +4525,152 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
 
     let modal = null;
     try {
+        // Create steps HTML
+        console.log('📋 Creating steps container');
         const stepsHtml = `
-        <div class="excel-loading-content" style="max-width: 580px;">
-            <div class="excel-modal-header">
-                <div class="excel-processing-icon">
-                    <div class="excel-document-stack">
-                        <div class="excel-document excel-doc1"></div>
-                        <div class="excel-document excel-doc2"></div>
-                        <div class="excel-document excel-doc3"></div>
-                    </div>
-                    <div class="excel-processing-circle">
-                        <div class="excel-spinner"></div>
-                    </div>
-                </div>
-                <div class="excel-processing-title">
-                    <h5>Submitting Document to LHDN</h5>
-                    <p>Please wait while we process your request</p>
-                </div>
-            </div>
-
-            <div class="excel-progress-bar-container">
-                <div class="excel-progress-bar">
-                    <div class="excel-progress-fill" style="width: 0%;"></div>
-                </div>
-            </div>
-
-            <div class="excel-processing-container">
-                <div class="excel-steps-wrapper">
-                    <div class="excel-step-item" id="step1">
-                        <div class="excel-step-indicator">
-                            <div class="excel-step-icon">
-                                <i class="fas fa-file-check"></i>
-                            </div>
-                            <div class="excel-pulse-ring"></div>
-                        </div>
-                        <div class="excel-step-content">
-                            <div class="excel-step-title">Validating Document</div>
-                            <div class="excel-step-status">Waiting...</div>
-                        </div>
-                    </div>
-                    
-                    <div class="excel-step-connector">
-                        <div class="excel-connector-progress"></div>
-                    </div>
-                    
-                    <div class="excel-step-item" id="step2">
-                        <div class="excel-step-indicator">
-                            <div class="excel-step-icon">
-                                <i class="fas fa-upload"></i>
-                            </div>
-                            <div class="excel-pulse-ring"></div>
-                        </div>
-                        <div class="excel-step-content">
-                            <div class="excel-step-title">Submit to LHDN</div>
-                            <div class="excel-step-status">Waiting...</div>
-                        </div>
-                    </div>
-                    
-                    <div class="excel-step-connector">
-                        <div class="excel-connector-progress"></div>
-                    </div>
-                    
-                    <div class="excel-step-item" id="step3">
-                        <div class="excel-step-indicator">
-                            <div class="excel-step-icon">
-                                <i class="fas fa-cogs"></i>
-                            </div>
-                            <div class="excel-pulse-ring"></div>
-                        </div>
-                        <div class="excel-step-content">
-                            <div class="excel-step-title">Processing</div>
-                            <div class="excel-step-status">Waiting...</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="excel-file-details">
-                <div class="excel-file-icon"><i class="fas fa-file-excel"></i></div>
-                <div class="excel-file-info">
-                    <div class="excel-file-name">${fileName}</div>
-                    <div class="excel-file-meta">${company} • ${type}</div>
-                </div>
-            </div>
-
-            <div class="excel-processing-info">
-                <div class="excel-info-box">
-                    <div class="excel-info-icon">
-                        <i class="fas fa-info-circle"></i>
-                    </div>
-                    <div class="excel-info-content">
-                        <span class="excel-info-label">Important Note</span>
-                        <p class="excel-info-message">Do not close this window during processing. This may take up to 1-2 minutes.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <style>
-            .excel-loading-content {
-                background: #fff;
-                border-radius: 12px;
-                box-shadow: 0 15px 35px rgba(0,0,0,0.15);
-                overflow: hidden;
-                animation: modal-entrance 0.4s ease-out;
-                max-width: 520px;
-                margin: 0 auto;
-            }
-            @keyframes modal-entrance {
-                from { 
-                    opacity: 0;
+           <style>
+                .step-card {
                     transform: translateY(10px);
+                    opacity: 0.6;
+                    transition: all 0.3s ease;
+                    margin-bottom: 1rem;
+                    padding: 1rem;
+                    border-radius: 8px;
+                    border: 1px solid #e9ecef;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                    flex-direction: column;
                 }
-                to { 
-                    opacity: 1;
+                
+                .step-card.processing {
                     transform: translateY(0);
+                    opacity: 1;
+                    border-color: var(--primary);
+                    background: var(--primary-light);
                 }
-            }
-            .excel-modal-header {
-                display: flex;
-                align-items: center;
-                padding: 20px 24px;
-                border-bottom: 1px solid #eaedf3;
-                background: linear-gradient(135deg, #f8faff 0%, #f4f7fd 100%);
-            }
-            .excel-processing-icon {
-                position: relative;
-                width: 48px;
-                height: 48px;
-                margin-right: 18px;
-                flex-shrink: 0;
-            }
-            .excel-document-stack {
-                position: absolute;
-                width: 40px;
-                height: 40px;
-                animation: slight-float 3s ease-in-out infinite;
-            }
-            @keyframes slight-float {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-3px); }
-            }
-            .excel-document {
-                position: absolute;
-                width: 32px;
-                height: 40px;
-                background: #e1e8f0;
-                border-radius: 3px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-                transition: all 0.5s ease;
-            }
-            .excel-doc1 { 
-                transform: rotate(-5deg); 
-                z-index: 1; 
-                left: 0;
-                animation: doc1-move 6s ease-in-out infinite;
-            }
-            .excel-doc2 { 
-                transform: rotate(0deg); 
-                z-index: 2; 
-                background: #d1dff0; 
-                left: 4px;
-                animation: doc2-move 6s ease-in-out infinite;
-            }
-            .excel-doc3 { 
-                transform: rotate(5deg); 
-                z-index: 3; 
-                background: #c1d6f0; 
-                left: 8px;
-                animation: doc3-move 6s ease-in-out infinite;
-            }
-            @keyframes doc1-move {
-                0%, 100% { transform: rotate(-5deg); }
-                50% { transform: rotate(-6deg); }
-            }
-            @keyframes doc2-move {
-                0%, 100% { transform: rotate(0deg); }
-                50% { transform: rotate(-1deg); }
-            }
-            @keyframes doc3-move {
-                0%, 100% { transform: rotate(5deg); }
-                50% { transform: rotate(6deg); }
-            }
-            .excel-processing-circle {
-                position: absolute;
-                width: 24px; /* Slightly larger */
-                height: 24px;
-                background: #fff; /* White background */
-                border-radius: 50%;
-                right: -8px; /* Adjust position */
-                bottom: -4px;
-                z-index: 4;
-                border: 2px solid #4a89dc; /* Primary color border */
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 4px 12px rgba(74, 137, 220, 0.4); /* Stronger shadow */
-                animation: pulse 1.5s infinite cubic-bezier(0.66, 0, 0.34, 1); /* Add pulse animation */
-            }
-
-            @keyframes pulse {
-                0% {
-                    transform: scale(1);
+                
+                .step-card.completed {
+                    opacity: 1;
+                    border-color: var(--success);
+                    background: var(--success-light);
                 }
-                50% {
-                    transform: scale(1.1);
+                
+                .step-card.error {
+                    opacity: 1;
+                    border-color: var(--error);
+                    background: var(--error-light);
                 }
-                100% {
-                    transform: scale(1);
+                
+                .step-badge {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 0.5rem;
                 }
-            }
-            .excel-spinner {
-                width: 12px;
-                height: 12px;
-                border: 2px solid rgba(255,255,255,0.5);
-                border-top-color: white;
-                border-radius: 50%;
-                animation: excel-spin 0.7s linear infinite;
-            }
-            @keyframes excel-spin {
-                to { transform: rotate(360deg); }
-            }
-            .excel-processing-title {
-                flex: 1;
-                overflow: hidden;
-            }
-            .excel-processing-title h5 {
-                margin: 0;
-                font-size: 18px;
-                font-weight: 600;
-                color: #2c3e50;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .excel-processing-title p {
-                margin: 4px 0 0;
-                font-size: 14px;
-                color: #7f8c8d;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            
-            /* Progress bar */
-            .excel-progress-bar-container {
-                padding: 0 24px;
-                margin-top: 20px;
-            }
-            .excel-progress-bar {
-                height: 6px;
-                background: #eaedf3;
-                border-radius: 10px;
-                overflow: hidden;
-                margin-bottom: 15px;
-            }
-            .excel-progress-fill {
-                height: 100%;
-                background: linear-gradient(90deg, #4a89dc, #5c9de5);
-                border-radius: 10px;
-                width: 0%;
-                transition: width 0.6s ease;
-                box-shadow: 0 0 10px rgba(74, 137, 220, 0.3);
-            }
-            
-            .excel-processing-container {
-                display: flex;
-                flex-direction: column;
-                margin: 10px 24px 20px;
-                padding: 5px 0;
-            }
-            .excel-steps-wrapper {
-                display: flex;
-                flex-direction: column;
-                width: 100%;
-            }
-            .excel-step-item {
-                display: flex;
-                align-items: center; /* Align items vertically */
-                margin-bottom: 16px;
-                padding: 12px 20px; /* Reduced vertical padding, increased horizontal */
-                border-radius: 8px; /* Slightly less rounded */
-                border: 1px solid #ced4da; /* More subtle border */
-                background: #f8f9fa; /* Light gray background */
-                transition: all 0.3s ease-in-out; /* Smoother transition */
-                opacity: 0.8; /* Slightly increased opacity */
-                transform: translateX(0);
-                box-shadow: 0 1px 3px rgba(0,0,0,0.05); /* More subtle shadow */
-                position: relative;
-                z-index: 1;
-            }
-
-            .excel-step-item:hover {
-                box-shadow: 0 3px 7px rgba(0,0,0,0.1); /* Increased shadow on hover */
-                opacity: 1;
-            }
-
-            .excel-step-item.processing {
-                border-color: #5482ff; /* More vibrant processing color */
-                background: #e9ecef; /* Lighter background for processing */
-                opacity: 1;
-                transform: translateX(4px); /* Reduced translation */
-                box-shadow: 0 2px 7px rgba(84, 130, 255, 0.2); /* More defined shadow for processing */
-                z-index: 2;
-            }
-            .excel-step-item.completed {
-                border-color: #2ecc71;
-                background: rgba(46, 204, 113, 0.05);
-                opacity: 1;
-                box-shadow: 0 4px 15px rgba(46, 204, 113, 0.1);
-            }
-            .excel-step-item.error {
-                border-color: #e74c3c;
-                background: rgba(231, 76, 60, 0.05);
-                opacity: 1;
-                box-shadow: 0 4px 15px rgba(231, 76, 60, 0.1);
-            }
-            .excel-step-indicator {
-                margin-right: 15px;
-                position: relative;
-                flex-shrink: 0;
-            }
-            .excel-pulse-ring {
-                position: absolute;
-                width: 30px;
-                height: 30px;
-                border-radius: 50%;
-                background: transparent;
-                top: 0;
-                left: 0;
-                z-index: 0;
-                display: none;
-            }
-            .excel-step-item.processing .excel-pulse-ring {
-                display: block;
-                animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-            }
-            @keyframes pulse-ring {
-                0% {
-                    transform: scale(0.95);
-                    box-shadow: 0 0 0 0 rgba(74, 137, 220, 0.5);
+                
+                .step-card.processing .step-badge {
+                    background: var(--primary-light);
+                    color: var(--primary);
                 }
-                70% {
-                    transform: scale(1);
-                    box-shadow: 0 0 0 10px rgba(74, 137, 220, 0);
+                
+                .step-card.completed .step-badge {
+                    background: var(--success-light);
+                    color: var(--success);
                 }
-                100% {
-                    transform: scale(0.95);
-                    box-shadow: 0 0 0 0 rgba(74, 137, 220, 0);
+                
+                .step-card.error .step-badge {
+                    background: var(--error-light);
+                    color: var(--error);
                 }
-            }
-            .excel-step-icon {
-                width: 30px;
-                height: 30px;
-                border-radius: 50%;
-                background: #e1e8f0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: #7f8c8d;
-                font-size: 14px;
-                transition: all 0.3s ease;
-                position: relative;
-                z-index: 1;
-            }
-            .excel-step-item.processing .excel-step-icon {
-                background: #4a89dc;
-                color: white;
-                transform: scale(1.05);
-            }
-            .excel-step-item.completed .excel-step-icon {
-                background: #2ecc71;
-                color: white;
-                transform: scale(1.05);
-            }
-            .excel-step-item.error .excel-step-icon {
-                background: #e74c3c;
-                color: white;
-                transform: scale(1.05);
-            }
-            .excel-spinner-icon {
-                width: 14px;
-                height: 14px;
-                border: 2px solid rgba(255,255,255,0.5);
-                border-top-color: white;
-                border-radius: 50%;
-                animation: excel-spin 0.6s linear infinite;
-            }
-            .excel-step-content {
-                flex: 1;
-                min-width: 0;
-            }
-            .excel-step-title {
-                font-weight: 500;
-                font-size: 15px;
-                color: #2c3e50;
-                margin-bottom: 5px;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .excel-step-status {
-                font-size: 13px;
-                color: #7f8c8d;
-                transition: opacity 0.2s ease;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            
-            /* Connector improvements */
-            .excel-step-connector {
-                width: 4px; /* Thicker connector */
-                height: 36px; /* Slightly taller */
-                margin-bottom: 8px; /* Adjust spacing */
-                background: #d1d9e6; /* Softer background color */
-                margin-left: 21px; /* Adjust alignment */
-                position: relative;
-                overflow: hidden;
-                z-index: 0;
-                border-radius: 2px; /* Rounded corners for a softer look */
-            }
-            .excel-connector-progress {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 0%;
-                background: #4a89dc;
-                transition: height 0.5s ease;
-            }
-            
-            /* File details section */
-            .excel-file-details {
-                margin: 0 24px 20px;
-                display: flex;
-                align-items: center;
-                padding: 12px 16px;
-                background: #f8faff;
-                border-radius: 8px;
-                border: 1px dashed #d1dff0;
-            }
-            .excel-file-icon {
-                color: #4a89dc;
-                font-size: 22px;
-                margin-right: 12px;
-                flex-shrink: 0;
-            }
-            .excel-file-info {
-                flex: 1;
-                min-width: 0;
-            }
-            .excel-file-name {
-                font-weight: 500;
-                font-size: 14px;
-                color: #2c3e50;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .excel-file-meta {
-                font-size: 12px;
-                color: #7f8c8d;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            
-            .excel-processing-info {
-                margin: 0 24px 20px;
-            }
-            .excel-info-box {
-                display: flex;
-                padding: 14px;
-                background: #f0f7ff;
-                border-radius: 8px;
-                border-left: 4px solid #4a89dc;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            }
-            .excel-info-icon {
-                margin-right: 12px;
-                color: #4a89dc;
-                font-size: 20px;
-                display: flex;
-                align-items: center;
-                flex-shrink: 0;
-            }
-            .excel-info-content {
-                flex: 1;
-                min-width: 0;
-            }
-            .excel-info-label {
-                display: block;
-                font-weight: 500;
-                font-size: 14px;
-                color: #2c3e50;
-                margin-bottom: 4px;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .excel-info-message {
-                margin: 0;
-                font-size: 13px;
-                color: #7f8c8d;
-                line-height: 1.4;
-            }
-            
-            /* For success animation */
-            @keyframes scale-in {
-                0% { transform: scale(0); opacity: 0; }
-                60% { transform: scale(1.1); }
-                100% { transform: scale(1); opacity: 1; }
-            }
-            @keyframes fade-in {
-                from { opacity: 0; }
-                to { opacity: 1; }
-            }
-            .excel-success-checkmark {
-                animation: scale-in 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-            }
-        </style>
+                
+                .step-badge.spinning::after {
+                    content: '';
+                    width: 20px;
+                    height: 20px;
+                    border: 2px solid var(--primary);
+                    border-right-color: transparent;
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                    display: block;
+                }
+                
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                
+                .step-content {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 0.25rem;
+                }
+                
+                .step-title {
+                    font-weight: 500;
+                    font-size: 1rem;
+                    color: var(--text-main);
+                }
+                
+                .step-status {
+                    font-size: 0.875rem;
+                    color: var(--text-muted);
+                }
+            </style>
+            <div class="steps-container">
+                ${getStepHtml(1, 'Validating Document')}
+                ${getStepHtml(2, 'Submit to LHDN')}
+                ${getStepHtml(3, 'Processing')}
+            </div>
         `;
 
         // Create and show modal
         console.log('📦 Creating submission modal');
         modal = await Swal.fire({
-            html: stepsHtml,
+            html: createSemiMinimalDialog({
+                title: 'Submitting Document to LHDN',
+                subtitle: 'Please wait while we process your request',
+                content: stepsHtml
+            }),
             showConfirmButton: false,
             allowOutsideClick: false,
             allowEscapeKey: false,
-            width: 600,
-            padding: '1rem',
-            background: '#fff',
+            width: 480,
+            padding: '1.5rem',
             customClass: {
-                popup: 'excel-submission-popup'
+                popup: 'semi-minimal-popup'
             },
-         
             didOpen: async () => {
                 try {
-                    // Update progress bar function
-                    const updateProgressBar = (percentage) => {
-                        const progressBar = document.querySelector('.excel-progress-fill');
-                        if (progressBar) {
-                            progressBar.style.width = `${percentage}%`;
+                    // Verify steps were created
+                    console.log('🔍 Verifying step elements:');
+                    for (let i = 1; i <= 3; i++) {
+                        const step = document.getElementById(`step${i}`);
+                        if (step) {
+                            console.log(`✅ Step ${i} element found`);
+                        } else {
+                            console.error(`❌ Step ${i} element not found`);
                         }
-                    };
-                    
-                    // Update connector progress
-                    const updateConnectorProgress = (stepNumber, progress) => {
-                        if (stepNumber < 3) {
-                            const connector = document.querySelectorAll('.excel-connector-progress')[stepNumber - 1];
-                            if (connector) {
-                                connector.style.height = `${progress}%`;
-                            }
-                        }
-                    };
-
-                    // Helper function to update step status with the new UI
-                    const updateStepUI = async (stepNumber, status, message) => {
-                        console.log(`🔄 [Step ${stepNumber}] Updating UI status:`, { status, message });
-                        
-                        const step = document.getElementById(`step${stepNumber}`);
-                        if (!step) {
-                            console.error(`❌ [Step ${stepNumber}] Step element not found`);
-                            return;
-                        }
-                        
-                        // Remove all status classes first
-                        step.classList.remove('processing', 'completed', 'error');
-                        
-                        // Add the new status class
-                        step.classList.add(status);
-                        
-                        // Update status message with fade effect
-                        const statusEl = step.querySelector('.excel-step-status');
-                        if (statusEl && message) {
-                            statusEl.style.opacity = '0';
-                            await new Promise(resolve => setTimeout(resolve, 200));
-                            statusEl.textContent = message;
-                            statusEl.style.opacity = '1';
-                        }
-                        
-                        // Update progress bar based on step and status
-                        if (status === 'processing') {
-                            updateProgressBar(stepNumber * 20);
-                        } else if (status === 'completed') {
-                            updateProgressBar(stepNumber * 33);
-                            updateConnectorProgress(stepNumber, 100);
-                        }
-                        
-                        // Update icon based on status
-                        const iconEl = step.querySelector('.excel-step-icon');
-                        if (iconEl) {
-                            iconEl.innerHTML = '';
-                            
-                            switch (status) {
-                                case 'processing':
-                                    iconEl.innerHTML = '<div class="excel-spinner-icon"></div>';
-                                    break;
-                                case 'completed':
-                                    iconEl.innerHTML = '<i class="fas fa-check excel-success-checkmark"></i>';
-                                    break;
-                                case 'error':
-                                    iconEl.innerHTML = '<i class="fas fa-times"></i>';
-                                    break;
-                                default:
-                                    if (stepNumber === 1) {
-                                        iconEl.innerHTML = '<i class="fas fa-file-check"></i>';
-                                    } else if (stepNumber === 2) {
-                                        iconEl.innerHTML = '<i class="fas fa-upload"></i>';
-                                    } else {
-                                        iconEl.innerHTML = '<i class="fas fa-cogs"></i>';
-                                    }
-                            }
-                        }
-                        
-                        // Animation delay for visual feedback
-                        await new Promise(resolve => setTimeout(resolve, 300));
-                    };
+                    }
 
                     // Step 1: Internal Validation
                     console.log('🔍 Starting Step 1: Document Validation');
-                    updateProgressBar(5); // Start with minimal progress
-                    await updateStepUI(1, 'processing', 'Validating document...');
+                    await updateStepStatus(1, 'processing', 'Validating document...');
                     const validatedData = await performStep1(fileName, type, company, date);
 
                     if (!validatedData) {
                         throw new ValidationError('No data available for validation', [], fileName);
                     }
-                    await updateStepUI(1, 'completed', 'Validation completed');
-                    updateConnectorProgress(1, 100);
+                    await updateStepStatus(1, 'completed', 'Validation completed');
 
                     // Step 2: Submit to LHDN
                     console.log('📤 Starting Step 2: LHDN Submission');
-                    await updateStepUI(2, 'processing', 'Submitting to LHDN...');
+                    await updateStepStatus(2, 'processing', 'Submitting to LHDN...');
 
                     // Add the original parameters to the validated data
                     const submissionData = {
@@ -5672,39 +4687,20 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     if (!submitted) {
                         throw new Error('LHDN submission failed');
                     }
-                    await updateStepUI(2, 'completed', 'Submission completed');
-                    updateConnectorProgress(2, 100);
+                    await updateStepStatus(2, 'completed', 'Submission completed');
 
                     // Step 3: Process Response
                     console.log('⚙️ Starting Step 3: Processing');
-                    await updateStepUI(3, 'processing', 'Processing response...');
+                    await updateStepStatus(3, 'processing', 'Processing response...');
                     const processed = await performStep3(submitted);
 
                     if (!processed) {
                         throw new Error('Response processing failed');
                     }
-                    await updateStepUI(3, 'completed', 'Processing completed');
-                    updateProgressBar(100);
+                    await updateStepStatus(3, 'completed', 'Processing completed');
 
                     console.log('🎉 All steps completed successfully');
-                    
-                    // Success animation
-                    const successAnimation = () => {
-                        const processingTitle = document.querySelector('.excel-processing-title');
-                        if (processingTitle) {
-                            processingTitle.innerHTML = `
-                                <h5 style="color: #2ecc71; opacity: 0; animation: fade-in 0.5s 0.3s forwards;">
-                                    <i class="fas fa-check-circle" style="margin-right: 8px;"></i>Submission Successful
-                                </h5>
-                                <p style="opacity: 0; animation: fade-in 0.5s 0.6s forwards;">Document has been successfully submitted to LHDN</p>
-                            `;
-                        }
-                    };
-                    
-                    // Run success animation
-                    successAnimation();
-                    
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
 
                     if (modal) {
                         modal.close();
@@ -5715,42 +4711,50 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     await updateSingleDocumentStatus(fileName);
                 } catch (error) {
                     console.error('❌ Step execution failed:', error);
-                    
-                    // Update progress bar to show error state
-                    const progressBar = document.querySelector('.excel-progress-fill');
-                    if (progressBar) {
-                        progressBar.style.width = '100%';
-                        progressBar.style.background = 'linear-gradient(90deg, #e74c3c, #c0392b)';
+
+                    // Find the current processing step and update its status to error
+                    const currentStep = document.querySelector('.step-card.processing');
+                    if (currentStep) {
+                        const stepNumber = parseInt(currentStep.id.replace('step', ''));
+                        console.log(`⚠️ Updating step ${stepNumber} to error state`);
+                        await updateStepStatus(stepNumber, 'error', 'Error occurred');
                     }
-                    
-                    // If there is a validation error, show it with the error view
+
+                    // Add delay for visual feedback
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    // Close the current modal
+                    if (modal) {
+                        modal.close();
+                    }
+
+                    // Show appropriate error modal based on error type
                     if (error instanceof ValidationError) {
-                        console.log('⚠️ Validation errors detected:', error.validationErrors);
-                        if (modal) {
-                            modal.close();
-                        }
-                        
-                        // Show validation error modal
+                        console.log('📋 Showing Excel validation error modal');
                         await showExcelValidationError(error);
                     } else {
-                        console.log('❌ General error:', error.message);
-                        if (modal) {
-                            modal.close();
-                        }
-                        
-                        // Show system error modal
-                        await showSystemErrorModal(error);
+                        console.log('🔴 Showing LHDN error modal');
+                        await showLHDNErrorModal(error);
                     }
-                    
-                    // Still update the table to reflect the error state
-                    await updateSingleDocumentStatus(fileName);
+                    throw error; // Re-throw to be caught by outer catch
                 }
             }
         });
 
+        return true;
+
     } catch (error) {
-        console.error('❌ Error showing submission status:', error);
-        InvoiceTableManager.getInstance().showErrorMessage('Failed to start submission process. Please try again later.');
+        console.error('❌ Submission process failed:', error);
+
+        // Show appropriate error modal based on error type
+        if (error instanceof ValidationError) {
+            console.log('📋 Showing Excel validation error modal');
+            await showExcelValidationError(error);
+        } else {
+            console.log('🔴 Showing LHDN error modal');
+            await showLHDNErrorModal(error);
+        }
+        return false;
     }
 }
 
@@ -6366,8 +5370,7 @@ async function showExcelValidationError(error) {
         width: 480,
         padding: '1.5rem',
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
+            confirmButton: 'semi-minimal-confirm',
             popup: 'semi-minimal-popup'
         }
     }).then((result) => {
@@ -6471,73 +5474,135 @@ async function showLHDNErrorModal(error) {
     // Check if this is a duplicate submission error
     const isDuplicateSubmission = mainError.code === 'DUPLICATE_SUBMISSION' || mainError.code === 'DS302';
 
+    // Create tooltip help content for TIN matching errors
+    const tinErrorGuidance = `
+        <div class="tin-matching-guidance" style="margin-top: 15px; padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #17a2b8;">
+            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                <i class="fas fa-info-circle" style="color: #17a2b8; margin-right: 8px;"></i>
+                <span style="color: #17a2b8; font-size: 14px; font-weight: 600;">How to resolve TIN matching errors:</span>
+            </div>
+            <div style="padding-left: 6px; margin-bottom: 0; text-align: left; color: #495057; font-size: 13px;">
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>Verify that the supplier's TIN in your document matches exactly with the one registered with LHDN</span>
+                </div>
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>When using Login as Taxpayer API: The issuer TIN in the document must match with the TIN associated with your Client ID and Client Secret</span>
+                </div>
+                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>When using Login as Intermediary System API: The issuer TIN must match with the TIN of the taxpayer you're representing</span>
+                </div>
+                <div style="display: flex; align-items: flex-start;">
+                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
+                    <span>For sole proprietors: You can validate TINs starting with "IG" along with your BRN if you have the "Business Owner" role in MyTax</span>
+                </div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #6c757d; text-align: right;">
+                <a href="https://sdk.myinvois.hasil.gov.my/faq/" target="_blank" style="color: #17a2b8; text-decoration: none; display: inline-flex; align-items: center;">
+                    <span>View LHDN FAQ for more details</span>
+                    <i class="fas fa-external-link-alt" style="margin-left: 4px; font-size: 10px;"></i>
+                </a>
+            </div>
+        </div>
+    `;
+
     Swal.fire({
         title: 'LHDN Submission Error',
         html: `
-            <div style="text-align: center; margin-bottom: 25px;">
-                <div style="display: inline-block; margin-bottom: 10px;">
-                    <div style="background-color: #f0f7ff; border-radius: 50%; width: 45px; height: 45px; display: flex; align-items: center; justify-content: center;">
-                        <i class="fas fa-exclamation-circle" style="color: #dc3545; font-size: 22px;"></i>
+            <div class="content-card swal2-content">
+                <div style="margin-bottom: 15px; text-align: center;">
+                    <div class="error-icon" style="color: #dc3545; font-size: 36px; margin-bottom: 15px;">
+                        <i class="fas fa-exclamation-circle" style="animation: pulseError 1.5s infinite;"></i>
                     </div>
-                </div>
-                <div style="font-size: 14px; color: #6c757d;">
-                    Please review the error details below
-                </div>
-            </div>
-            
-            <div style="display: flex; margin-bottom: 15px;">
-                <div style="flex: 0 0 25%; text-align: center; padding-right: 15px;">
-                    <div style="border: 1px solid #e9ecef; border-radius: 4px; padding: 20px; height: 120px; display: flex; flex-direction: column; justify-content: space-between; margin-top: 5px;">
-                        <div style="background: #e9ecef; height: 12px; width: 70%; margin: 0 auto 5px;"></div>
-                        <div style="background: #e9ecef; height: 12px; width: 90%; margin: 0 auto 5px;"></div>
-                        <div style="background: #e9ecef; height: 12px; width: 80%; margin: 0 auto 5px;"></div>
-                        <div style="background: #e9ecef; height: 12px; width: 60%; margin: 0 auto 5px;"></div>
-                        <div style="border: 1px solid #dc3545; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; margin: 5px auto 0;">
-                            <i class="fas fa-times" style="color: #dc3545; font-size: 12px;"></i>
+                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 10px; margin: 8px 0; border-radius: 4px; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="display: flex; align-items: flex-start;">
+                            <i class="fas fa-exclamation-triangle" style="color: #dc3545; margin-right: 8px; margin-top: 2px; font-size: 13px;"></i>
+                            <span style="font-weight: 500; font-size: 13px;">${mainError.message}</span>
                         </div>
                     </div>
                 </div>
-                <div style="flex: 0 0 75%;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
-                        <span style="color: #495057; font-size: 14px; font-weight: 500;">Error Code:</span>
-                        <span style="color: #dc3545; font-family: monospace; font-size: 14px;">${mainError.code}</span>
+    
+                <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Code:</span>
+                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.code}</span>
                     </div>
+
+                    ${mainError.target ? `
+                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Target:</span>
+                        <span style="color: #495057; background: rgba(0,0,0,0.03); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.target}</span>
+                    </div>
+                    ` : ''}
                     
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
-                        <span style="color: #495057; font-size: 14px; font-weight: 500;">Source:</span>
-                        <span style="color: #495057; font-size: 14px;">Incoming</span>
-                    </div>
-                    
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
-                        <span style="color: #495057; font-size: 14px; font-weight: 500;">Message:</span>
-                        <span style="color: #495057; font-size: 14px; text-align: right; max-width: 250px;">${mainError.message}</span>
-                    </div>
+                    ${validationDetails.length > 0 ? `
+                        <div>
+                            <div style="color: #495057; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center;">
+                                <span style="font-size: 12px;">Validation Errors:</span>
+                                <span class="tooltip-container" style="margin-left: 6px; cursor: help; position: relative;">
+                                    <i class="fas fa-question-circle" style="color: #6c757d; font-size: 11px;"></i>
+                                    <div class="tooltip-content" style="position: absolute; width: 220px; background: #fff; border-radius: 4px; padding: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; display: none; top: -5px; left: 20px; font-weight: normal; font-size: 11px; color: #495057; text-align: left;">
+                                        These validation errors indicate specific issues with your submission data. Each error includes the path to the problematic field and details about what needs to be fixed.
+                                    </div>
+                                </span>
+                            </div>
+                            <div style="margin-top: 6px; max-height: 150px; overflow-y: auto; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
+                                ${validationDetails.map(detail => `
+                                    <div style="background: #fff; padding: 8px; border-radius: 0; margin-bottom: 1px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 12px;">
+                                        <div style="margin-bottom: 4px; display: flex;">
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Path:</strong> 
+                                            <span style="color: #0d6efd; font-family: monospace; background: rgba(13, 110, 253, 0.05); padding: 0 3px; border-radius: 2px; font-size: 11px;">
+                                                ${detail.propertyPath || detail.target || 'Unknown'}
+                                            </span>
+                                        </div>
+                                        <div style="display: flex;">
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Error:</strong> 
+                                            <span style="font-size: 11px;">${formatValidationMessage(detail.message)}</span>
+                                        </div>
+                                        ${detail.code ? `
+                                            <div style="margin-top: 4px; color: #6c757d; display: flex;">
+                                                <strong style="min-width: 60px; color: #6c757d; font-size: 11px;">Code:</strong>
+                                                <span style="font-size: 11px;">${detail.code}</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
+                
+                ${isTINMatchingError ? tinErrorGuidance : ''}
             </div>
             
-            <div style="background: #edf5ff; border-radius: 4px; padding: 15px; display: flex; margin-bottom: 20px; border-left: 4px solid #405189;">
-                <i class="fas fa-info-circle" style="color: #405189; margin-right: 10px; font-size: 16px;"></i>
-                <div>
-                    <div style="font-weight: 500; color: #495057; font-size: 14px; margin-bottom: 5px;">
-                        Important Note
-                    </div>
-                    <div style="color: #495057; font-size: 13px;">
-                        Check the document status in the system. Wait for the current submission to complete. Contact support if you need to resubmit.
-                    </div>
+            <div class="next-steps-card" style="margin-top: 25px; padding: 15px; border-radius: 8px; background: rgba(255, 193, 7, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                    <i class="fas fa-lightbulb" style="color: #ffc107; margin-right: 8px; font-size: 16px;"></i>
+                    <span style="font-weight: 600; color: #495057; font-size: 13px;">Next Steps</span>
                 </div>
+                <ul style="margin: 0; padding-left: 25px; font-size: 12px; color: #495057;">
+                    ${getNextSteps(mainError.code)}
+                </ul>
             </div>
+            
+            <style>
+                @keyframes pulseError {
+                    0% { transform: scale(1); }
+                    50% { transform: scale(1.1); }
+                    100% { transform: scale(1); }
+                }
+                .tooltip-container:hover .tooltip-content {
+                    display: block;
+                }
+            </style>
         `,
-        showCancelButton: true,
         confirmButtonText: 'I Understand',
-        cancelButtonText: 'Cancel',
-        confirmButtonColor: '#405189',
-        cancelButtonColor: '#f46a6a',
-        width: 550,
-        padding: '1.5rem',
+        confirmButtonColor: '#3085d6',
+        width: 600,
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
-            actions: 'd-flex justify-content-center gap-2'
+            confirmButton: 'btn btn-primary'
         }
     });
     
