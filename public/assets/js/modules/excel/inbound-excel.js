@@ -476,9 +476,12 @@ class InvoiceTableManager {
 
         // Add refresh button
         const refreshButton = $(`
-            <button id="refreshLHDNData" class="outbound-action-btn submit btn-sm ms-2">
-                <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
-                <small class="text-muted ms-1 refresh-timer" style="display: none;"></small>
+            <button id="refreshLHDNData" class="outbound-action-btn submit btn-sm ms-2" style="position: relative; min-width: 160px;">
+                <div class="d-flex align-items-center justify-content-center">
+                    <i class="bi bi-arrow-clockwise me-2"></i>
+                    <span class="button-text">Refresh LHDN Data</span>
+                </div>
+                <small class="text-muted refresh-timer position-absolute start-50 translate-middle-x" style="bottom: -20px; white-space: nowrap; font-size: 0.7rem; opacity: 0.8;"></small>
             </button>
         `);
 
@@ -488,6 +491,8 @@ class InvoiceTableManager {
         $('#refreshLHDNData').on('click', async () => {
             try {
                 const button = $('#refreshLHDNData');
+                const buttonIcon = button.find('.bi-arrow-clockwise');
+                const buttonText = button.find('.button-text');
                 const loadingModal = document.getElementById('loadingModal');
                 const progressBar = document.querySelector('#loadingModal .progress-bar');
                 const statusText = document.getElementById('loadingStatus');
@@ -496,13 +501,33 @@ class InvoiceTableManager {
                 if (this.checkDataFreshness() && !window.forceRefreshLHDN) {
                     const result = await Swal.fire({
                         title: 'Data is up to date',
-                        text: 'The data was updated less than 15 minutes ago. Do you still want to refresh?',
-                        icon: 'info',
+                        html: `
+                            <div class="d-flex align-items-start">
+                                <div style="background-color: #f0f7ff; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; margin-right: 15px;">
+                                    <i class="fas fa-info-circle" style="color: #405189; font-size: 24px;"></i>
+                                </div>
+                                <div>
+                                    <div style="font-size: 16px; font-weight: 500; color: #495057; margin-bottom: 10px;">LHDN Data Update Confirmation</div>
+                                    
+                                    <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                                        <div style="color: #495057; font-size: 14px; line-height: 1.5;">
+                                            The data was updated less than 15 minutes ago. Do you still want to refresh?
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `,
                         showCancelButton: true,
                         confirmButtonText: 'Yes, refresh anyway',
                         cancelButtonText: 'No, keep current data',
-                        confirmButtonColor: '#1e40af',
-                        cancelButtonColor: '#dc3545'
+                        confirmButtonColor: '#405189',
+                        cancelButtonColor: '#dc3545',
+                        width: 500,
+                        padding: '1.5rem',
+                        customClass: {
+                            confirmButton: 'btn btn-primary px-4',
+                            cancelButton: 'btn btn-danger px-4'
+                        }
                     });
 
                     if (!result.isConfirmed) {
@@ -510,7 +535,12 @@ class InvoiceTableManager {
                     }
                 }
 
+                // Update button state
                 button.prop('disabled', true);
+                buttonIcon.addClass('spin');
+                buttonText.text('Refreshing...');
+
+                // Show loading modal
                 loadingModal.classList.add('show');
                 loadingModal.style.display = 'block';
                 document.body.classList.add('modal-open');
@@ -519,10 +549,12 @@ class InvoiceTableManager {
                 backdrop.className = 'modal-backdrop fade show';
                 document.body.appendChild(backdrop);
 
+                // Initial progress
                 progressBar.style.width = '10%';
+                progressBar.style.transition = 'width 0.5s ease';
                 statusText.textContent = 'Connecting to LHDN server...';
 
-                // Call the new refresh endpoint
+                // Call the refresh endpoint
                 const response = await fetch('/api/lhdn/documents/refresh', {
                     method: 'POST',
                     headers: {
@@ -535,21 +567,24 @@ class InvoiceTableManager {
                     throw new Error(error.error?.message || 'Failed to refresh data');
                 }
 
+                // Update progress
                 progressBar.style.width = '50%';
                 statusText.textContent = 'Refreshing data...';
+                detailsText.textContent = 'Fetching latest documents from LHDN...';
 
-                // Force a fresh fetch from the API
+                // Force a fresh fetch
                 window.forceRefreshLHDN = true;
-                
-                // Clear the cache timestamp to force a fresh fetch
                 localStorage.removeItem('lastDataUpdate');
                 
-                // Reload the table data
+                // Reload table data
                 await this.table.ajax.reload(null, false);
 
+                // Complete progress
                 progressBar.style.width = '100%';
                 statusText.textContent = 'Success! Your data is now up to date.';
+                detailsText.textContent = 'All documents have been refreshed successfully.';
 
+                // Reset UI after delay
                 setTimeout(() => {
                     loadingModal.classList.remove('show');
                     loadingModal.style.display = 'none';
@@ -557,6 +592,12 @@ class InvoiceTableManager {
                     backdrop.remove();
                     progressBar.style.width = '0%';
                     detailsText.textContent = '';
+                    
+                    // Reset button state with success feedback
+                    button.prop('disabled', false);
+                    buttonIcon.removeClass('spin');
+                    buttonText.text('Refresh LHDN Data');
+                    
                     ToastManager.show('Successfully fetched fresh data from LHDN', 'success');
                     this.startRefreshTimer();
                 }, 1000);
@@ -564,8 +605,12 @@ class InvoiceTableManager {
             } catch (error) {
                 console.error('Error refreshing LHDN data:', error);
                 ToastManager.show(error.message || 'Unable to fetch fresh data from LHDN. Please try again.', 'error');
-            } finally {
-                $('#refreshLHDNData').prop('disabled', false);
+                
+                // Reset button state on error
+                const button = $('#refreshLHDNData');
+                button.prop('disabled', false);
+                button.find('.bi-arrow-clockwise').removeClass('spin');
+                button.find('.button-text').text('Refresh LHDN Data');
             }
         });
 
@@ -1317,17 +1362,31 @@ class InvoiceTableManager {
             const now = new Date().getTime();
             const timeSinceUpdate = now - parseInt(lastUpdate);
             const minutesAgo = Math.floor(timeSinceUpdate / 60000);
+            const secondsAgo = Math.floor((timeSinceUpdate % 60000) / 1000);
 
             if (minutesAgo < 15) {
-                timerElement.show().text(`(${15 - minutesAgo}m until next refresh)`);
+                const remainingMinutes = 14 - minutesAgo;
+                const remainingSeconds = 59 - secondsAgo;
+                timerElement.show().html(`
+                    <span class="text-muted">
+                        Next refresh in ${remainingMinutes}:${remainingSeconds.toString().padStart(2, '0')}
+                    </span>
+                `);
             } else {
-                timerElement.hide();
+                timerElement.html(`
+                    <span class="text-primary">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Ready to refresh
+                    </span>
+                `);
             }
         };
 
-        // Update timer immediately and every minute
+        // Update timer immediately and every second
         updateTimer();
-        this.refreshTimerInterval = setInterval(updateTimer, 60000);
+        if (this.refreshTimerInterval) {
+            clearInterval(this.refreshTimerInterval);
+        }
+        this.refreshTimerInterval = setInterval(updateTimer, 1000);
     }
 
     
@@ -2353,9 +2412,29 @@ async function openValidationResultsModal(uuid) {
     } catch (error) {
         console.error('Error opening validation results:', error);
         Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: `Failed to load validation results: ${error.message}`
+            html: `
+                <div class="d-flex align-items-start">
+                    <div style="background-color: #f0f7ff; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; margin-right: 15px;">
+                        <i class="fas fa-exclamation-circle" style="color: #dc3545; font-size: 24px;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 16px; font-weight: 500; color: #495057; margin-bottom: 10px;">Error</div>
+                        
+                        <div style="background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                            <div style="color: #495057; font-size: 14px; line-height: 1.5;">
+                                Failed to load validation results: ${error.message}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#405189',
+            width: 500,
+            padding: '1.5rem',
+            customClass: {
+                confirmButton: 'btn btn-primary px-4'
+            }
         });
     }
 }
