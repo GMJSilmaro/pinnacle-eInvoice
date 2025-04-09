@@ -405,6 +405,7 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'uploadedDate',
+                        orderable: true,
                         title: 'FILE UPLOADED',
                         render: (data, type, row) => this.renderUploadedDate(data, type, row)
                     },
@@ -535,6 +536,8 @@ class InvoiceTableManager {
                             uuid: file.uuid || null,
                             totalAmount: file.totalAmount || null
                         }));
+
+                        console.log('Current Processed Data: ', processedData);
 
                         // Update the cache with the processed data
                         dataCache.updateCache(processedData);
@@ -1347,7 +1350,6 @@ class InvoiceTableManager {
         if (documentTypeFilter) {
             documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
         }
-
         // Clear Filters
         const clearFiltersBtn = document.getElementById('clearFilters');
         if (clearFiltersBtn) {
@@ -1385,7 +1387,7 @@ class InvoiceTableManager {
             const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value;
             const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value;
             if (startDate && endDate) {
-                const rowDate = new Date(row.uploaded_date);
+                const rowDate = new Date(data.uploadedDate);
                 const filterStart = new Date(startDate);
                 const filterEnd = new Date(endDate);
                 

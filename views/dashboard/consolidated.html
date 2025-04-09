@@ -1961,8 +1961,12 @@
                                                     <!-- <button class="btn outbound-action-btn submit" data-bs-toggle="modal" data-bs-target="#consolidatedSubmitModal">
                                                         <i class="bi bi-file-earmark-arrow-up me-1"></i>Bulk Submit
                                                     </button> -->
-                                                    <button class="btn outbound-action-btn submit active" data-filter="all">
+                                                    <button class="btn outbound-action-btn submit" data-filter="all">
                                                         <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
+                                                    </button>
+                                          
+                                                    <button class="btn outbound-action-btn submit active" data-filter="pending">
+                                                        <i class="bi bi-clock-history me-1"></i>Pending
                                                     </button>
                                                     <button class="btn outbound-action-btn submit" id="openFlatFileModalBtn" data-bs-toggle="modal" data-bs-target="#flatFileUploadModal" title="If you don't have custom integration, you can upload your own flat file">
                                                         <i class="bi bi-file-earmark-text me-1"></i>Upload File
@@ -2400,7 +2404,19 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                    
+                                                     <!-- Upload Area -->
+                                                     <div class="upload-dropzone border-2 border-dashed rounded-3 text-center py-4 mb-3" id="uploadArea">
+                                                        <div>Drag & Drop your file here</div>
+                                                        <div class="text-muted my-2 small">or</div>
+                                                        <div class="text-center mb-2">
+                                                            <a href="#" class="text-primary fw-bold" id="browseFilesLink">Browse Files</a>
+                                                            <input type="file" id="flatFileUpload" class="d-none" accept=".csv,.txt">
+                                                        </div>
+                                                        <div class="text-muted mt-2 small d-flex align-items-center justify-content-center">
+                                                            <i class="bi bi-info-circle me-1"></i>
+                                                            Maximum file size: 5MB
+                                                        </div>
+                                                    </div>
                                                     <!-- File Details -->
                                                     <div id="fileDetails" class="d-none mt-3">
                                                         <div class="selected-file p-2 bg-light rounded">
@@ -2417,6 +2433,55 @@
                                                         </div>
                                                     </div>
           
+                                                  
+
+                                                    <!-- Example File Section -->
+                                                    <div class="mb-3 mt-2">
+                                                        <h6 class="small text-muted d-flex align-items-center mb-0 fw-normal">
+                                                            Example CSV Format
+                                                            <i class="bi bi-info-circle ms-2" 
+                                                               data-bs-toggle="tooltip" 
+                                                               data-bs-html="true"
+                                                               data-bs-placement="right"
+                                                               title="• Text fields: Use double quotes<br>• Dates: YYYY-MM-DD<br>• Amounts: 2 decimal places<br>• Exchange Rate: 4 decimal places<br>• MSIC: 5-digit code"></i>
+                                                        </h6>
+                                                        <div class="example-content">
+                                                            <div class="text-muted small mb-0 fw-normal">Header Row:</div>
+                                                            <pre class="bg-light border rounded p-2 small mb-0 fw-normal" style="overflow-x: auto;">SupplierName,SupplierTIN,SupplierSSM,SupplierSST,SupplierMSIC,BuyerName,BuyerTIN,BuyerSSM,BuyerSST,InvoiceNo,InvoiceDate,CurrencyCode,ExchangeRate,ItemDescription,Classification,TaxType,TaxRate,TaxAmount,TotalExclTax,TotalInclTax</pre>
+                                                            
+                                                            <div class="text-muted small mt-2 mb-0 fw-normal">Example Data:</div>
+                                                            <pre class="bg-light border rounded p-2 small mb-0 fw-normal" style="overflow-x: auto;">"ABC Company Sdn Bhd","T1234567","SSM123456","SST98765","46421","XYZ Trading","B7654321","BSSM654321","BSST12345","INV-2024-001","2024-03-26","MYR","1.0000","Office Supplies","G4","SST","6","60.00","1000.00","1060.00"</pre>
+                                                        </div>
+                                                    </div>
+
+                                                    <script>
+                                                        // Initialize tooltips
+                                                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                                                        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                                                            return new bootstrap.Tooltip(tooltipTriggerEl);
+                                                        });
+                                                    </script>
+
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Right Column - Requirements & Information -->
+                                            <div class="col-md-7 bg-light">
+                                                <div class="p-3">
+                                                    <div class="text-center mb-2">
+                                                        <i class="bi bi-file-earmark-text h1 mb-1 d-block opacity-50"></i>
+                                                        <h6 class="mb-1">Consolidated e-Invoice Upload</h6>
+                                                    </div>
+                                          
+                                                     
+                                                    <div class="d-flex align-items-center mb-2">
+                                                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>
+                                                        <h6 class="mb-0">LHDN Submission Requirements<span style="color: red; animation: blinker 1s linear infinite;">*</span></h6>
+                                                    </div>
+
+                                                    
+                                                    <!-- Scrollable Additional Details Container -->
+                                                    <div class="additional-details-container" style="max-height: 380px; overflow-y: auto;">
                                                     <!-- Fixed PXC Requirements Section -->
                                                     <div class="requirements-section mb-1">
                                                         <div class="accordion accordion-flush" id="requirementsAccordion">
@@ -2549,66 +2614,7 @@
                                                             </div>
                                                         </div>
                                                     </div>
-
-                                                    <!-- Example File Section -->
-                                                    <div class="mb-3">
-                                                        <h6 class="small text-muted d-flex align-items-center mb-0 fw-normal">
-                                                            Example CSV Format
-                                                            <i class="bi bi-info-circle ms-2" 
-                                                               data-bs-toggle="tooltip" 
-                                                               data-bs-html="true"
-                                                               data-bs-placement="right"
-                                                               title="• Text fields: Use double quotes<br>• Dates: YYYY-MM-DD<br>• Amounts: 2 decimal places<br>• Exchange Rate: 4 decimal places<br>• MSIC: 5-digit code"></i>
-                                                        </h6>
-                                                        <div class="example-content">
-                                                            <div class="text-muted small mb-0 fw-normal">Header Row:</div>
-                                                            <pre class="bg-light border rounded p-2 small mb-0 fw-normal" style="overflow-x: auto;">SupplierName,SupplierTIN,SupplierSSM,SupplierSST,SupplierMSIC,BuyerName,BuyerTIN,BuyerSSM,BuyerSST,InvoiceNo,InvoiceDate,CurrencyCode,ExchangeRate,ItemDescription,Classification,TaxType,TaxRate,TaxAmount,TotalExclTax,TotalInclTax</pre>
-                                                            
-                                                            <div class="text-muted small mt-2 mb-0 fw-normal">Example Data:</div>
-                                                            <pre class="bg-light border rounded p-2 small mb-0 fw-normal" style="overflow-x: auto;">"ABC Company Sdn Bhd","T1234567","SSM123456","SST98765","46421","XYZ Trading","B7654321","BSSM654321","BSST12345","INV-2024-001","2024-03-26","MYR","1.0000","Office Supplies","G4","SST","6","60.00","1000.00","1060.00"</pre>
-                                                        </div>
-                                                    </div>
-
-                                                    <script>
-                                                        // Initialize tooltips
-                                                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-                                                        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                                                            return new bootstrap.Tooltip(tooltipTriggerEl);
-                                                        });
-                                                    </script>
-
-                                                </div>
-                                            </div>
-                                            
-                                            <!-- Right Column - Requirements & Information -->
-                                            <div class="col-md-7 bg-light">
-                                                <div class="p-3">
-                                                    <div class="text-center mb-2">
-                                                        <i class="bi bi-file-earmark-text h1 mb-1 d-block opacity-50"></i>
-                                                        <h6 class="mb-1">Consolidated e-Invoice Upload</h6>
-                                                    </div>
-                                          
-                                                      <!-- Upload Area -->
-                                                      <div class="upload-dropzone border-2 border-dashed rounded-3 text-center py-4 mb-3" id="uploadArea">
-                                                        <div>Drag & Drop your file here</div>
-                                                        <div class="text-muted my-2 small">or</div>
-                                                        <div class="text-center mb-2">
-                                                            <a href="#" class="text-primary fw-bold" id="browseFilesLink">Browse Files</a>
-                                                            <input type="file" id="flatFileUpload" class="d-none" accept=".csv,.txt">
-                                                        </div>
-                                                        <div class="text-muted mt-2 small d-flex align-items-center justify-content-center">
-                                                            <i class="bi bi-info-circle me-1"></i>
-                                                            Maximum file size: 5MB
-                                                        </div>
-                                                    </div>
-                                                    <div class="d-flex align-items-center mb-2">
-                                                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>
-                                                        <h6 class="mb-0">LHDN Submission Requirements<span style="color: red; animation: blinker 1s linear infinite;">*</span></h6>
-                                                    </div>
-                                                    <!-- Scrollable Additional Details Container -->
-                                                    <div class="additional-details-container" style="max-height: 300px; overflow-y: auto;">
-
-                                                        <!-- Section Container Template (DRY) -->
+                                                                                                            <!-- Section Container Template (DRY) -->
                                                         <!-- Use this template to create consistent section containers -->
 
                                                         <!-- Buyer Details Section -->

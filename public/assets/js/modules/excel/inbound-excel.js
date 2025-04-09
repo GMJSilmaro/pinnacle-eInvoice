@@ -158,6 +158,7 @@ class InvoiceTableManager {
                         localStorage.setItem('lastDataUpdate', new Date().getTime());
                     }
                     
+                    console.log("Current Inbound Results: ", result);
                     // Reset the force refresh flag
                     window.forceRefreshLHDN = false;
                     

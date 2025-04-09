@@ -1836,13 +1836,22 @@
                                             <!-- Quick Filters -->
                                             <div class="col-md-8">
                                                 <div class="quick-filters d-flex gap-2">
-                                                    <button class="btn outbound-action-btn submit active" data-filter="all">
+                                                    <button class="btn outbound-action-btn submit" data-filter="all">
                                                         <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
                                                     </button>
                                                     <button class="btn outbound-action-btn submit active" data-filter="pending">
                                                         <i class="bi bi-clock-history me-1"></i>Pending
                                                     </button>
+                                                    <!-- <div class="ms-auto">
+                                                        <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
+                                                            <i class="bi bi-eraser me-1"></i>Clear
+                                                        </button>
+                                                        <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                                                            <i class="bi bi-sliders me-1"></i>Advanced
+                                                        </button>
+                                                    </div> -->
                                                 </div>
+                                                
                                             </div>
                                         </div>
                     
@@ -1856,77 +1865,17 @@
                                                             <i class="bi bi-calendar-range me-2"></i>Date Range
                                                         </label>
                                                         <div class="input-group">
-                                                            <input type="date" class="form-control" id="tableStartDate">
+                                                            <input type="date" class="form-control" id="startDate" placeholder="Start date">
                                                             <span class="input-group-text bg-light">to</span>
-                                                            <input type="date" class="form-control" id="tableEndDate">
+                                                            <input type="date" class="form-control" id="endDate" placeholder="End date">
                                                         </div>
-                                                    </div>
-                    
-                                                    <!-- Amount Range -->
-                                                    <div class="col-md-6">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-currency-dollar me-2"></i>Amount Range
-                                                        </label>
-                                                        <div class="input-group">
-                                                            <input type="number" class="form-control" id="minAmount" placeholder="Min">
-                                                            <span class="input-group-text bg-light">to</span>
-                                                            <input type="number" class="form-control" id="maxAmount" placeholder="Max">
-                                                        </div>
-                                                    </div>
-                    
-                                                    <!-- Company Filter -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-building me-2"></i>Company
-                                                        </label>
-                                                        <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
-                                                    </div>
-                    
-                                                    <!-- Document Type -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-file-text me-2"></i>Document Type
-                                                        </label>
-                                                        <select class="form-select" id="documentTypeFilter">
-                                                            <option value="">All Types</option>
-                                                            <option value="Invoice">Invoice</option>
-                                                            <option value="Credit Note">Credit Note</option>
-                                                            <option value="Debit Note">Debit Note</option>
-                                                        </select>
-                                                    </div>
-                    
-                                                    <!-- Source -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-diagram-2 me-2"></i>Source
-                                                            <i class="bi bi-info-circle ms-2" data-bs-html="true" 
-                                                            title="<div class='tooltip-content'>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-info-circle'></i>
-                                                                        <span><b>LHDN Validation:</b></span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-check-circle text-success'></i>
-                                                                        <span>Valid: Document passed validation</span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-x-circle text-danger'></i>
-                                                                        <span>Invalid: Failed validation checks</span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-clock-history text-warning'></i>
-                                                                        <span>Pending: Awaiting for Submission to LHDN for validation</span>
-                                                                    </div>
-                                                                </div>"></i>
-                                                        </label>
-                                                        <select class="form-select" id="sourceFilter">
-                                                            <option value="">LHDN</option>
-                                                            
-                                                        </select>
-                                                        <small class="text-muted mt-1 d-block">
-                                                            <i class="bi bi-info-circle-fill me-1"></i>
-                                                            LHDN responses include validation status and timestamps
+                                                        <small class="text-muted mt-1">
+                                                            <i class="bi bi-info-circle me-1"></i>
+                                                            Filter documents by their upload date
                                                         </small>
+                                                    </div>
+                    
+                                                        
                                                     </div>
                                                 </div>
                     

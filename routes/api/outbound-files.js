@@ -319,6 +319,8 @@ async function readExcelWithLogging(filePath) {
         const dataAsObjects = XLSX.utils.sheet_to_json(worksheet);
         const dataWithHeaders = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
+        console.log(dataWithHeaders);
+
         return {
             dataWithHeaders,
             dataAsObjects,
@@ -1201,9 +1203,11 @@ function extractTotalAmount(data) {
  * Helper function to extract buyer information
  */
 function extractSupplierInfo(data) {
+    console.log('Data structure:', data);
+    console.log('Data structure:', data[3]);
     try {
         return {
-            registrationName: data[3]?.[25] || null,
+            registrationName: data[3]?.[29] || null,
         };
     } catch (error) {
         console.error('Error extracting buyer info:', error);
@@ -1813,6 +1817,177 @@ router.post('/:uuid/cancel', async (req, res) => {
     }
 });
 
+router.post('/:fileName/content-consolidated', async (req, res) => {
+    try {
+        const { fileName } = req.params;
+        const { type, company, date, uuid, submissionUid, filePath: requestFilePath } = req.body;
+
+        // 1. Get and validate SAP configuration
+        const config = await getActiveSAPConfig();
+  
+        if (!config.success || !config.networkPath) {
+            throw new Error('Invalid SAP configuration: ' + (config.error || 'No network path configured'));
+        }
+
+        // 2. Validate network path
+        const networkValid = await testNetworkPathAccessibility(config.networkPath, {
+            serverName: config.domain || '',
+            serverUsername: config.username,
+            serverPassword: config.password
+        });
+        // console.log('\nNetwork Path Validation:', networkValid);
+
+        if (!networkValid.success) {
+            throw new Error(`Network path not accessible: ${networkValid.error}`);
+        }
+
+        // 3. Construct and validate file path
+        const formattedDate = moment(date).format('YYYY-MM-DD');
+        
+        // Use the provided filePath if it exists, otherwise construct it using the standard pattern
+        let filePath;
+        if (requestFilePath) {
+            // If a specific file path is provided (for consolidated files)
+            if (requestFilePath.startsWith('Incoming/')) {
+                // For consolidated files from SFTPRoot_Consolidation
+                filePath = path.join('C:\\SFTPRoot_Consolidation', requestFilePath);
+            } else {
+                // For regular files
+                filePath = path.join(config.networkPath, requestFilePath);
+            }
+        } else {
+            // Standard path construction
+            filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
+        }
+
+        // Check if file exists
+        const fileExists = fs.existsSync(filePath);
+
+        if (!fileExists) {
+            console.error('\nFile Not Found:', {
+                fileName,
+                path: filePath,
+                type,
+                company,
+                date: formattedDate
+            });
+            
+            // Try alternate path for consolidated files if standard path failed
+            if (!requestFilePath) {
+                const consolidatedPath = path.join('C:\\SFTPRoot_Consolidation', 'Incoming', company, formattedDate, fileName);
+                if (fs.existsSync(consolidatedPath)) {
+                    filePath = consolidatedPath;
+                } else {
+                    return res.status(404).json({
+                        success: false,
+                        error: {
+                            code: 'FILE_NOT_FOUND',
+                            message: `File not found: ${fileName}`,
+                            details: {
+                                path: filePath,
+                                alternatePathTried: consolidatedPath,
+                                type,
+                                company,
+                                date: formattedDate
+                            }
+                        }
+                    });
+                }
+            } else {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'FILE_NOT_FOUND',
+                        message: `File not found: ${fileName}`,
+                        details: {
+                            path: filePath,
+                            requestedPath: requestFilePath,
+                            type,
+                            company,
+                            date: formattedDate
+                        }
+                    }
+                });
+            }
+        }
+
+        // 6. Read Excel file
+        // console.log('\nReading Excel file...');
+        let workbook;
+        try {
+            workbook = XLSX.readFile(filePath);
+            console.log('Excel file read successfully');
+        } catch (readError) {
+            console.error('Error reading Excel file:', readError);
+            throw new Error(`Failed to read Excel file: ${readError.message}`);
+        }
+
+        // 7. Process Excel data
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(worksheet, {
+            raw: true,
+            defval: null,
+            blankrows: false
+        });
+
+        // 8. Process the data
+        const processedData = processExcelData(data);
+       // console.log('\nExcel data processed successfully');
+
+        // 9. Create outgoing directory structure
+        const outgoingConfig = await getOutgoingConfig();
+        const outgoingPath = 'C:\\SFTPRoot_Consolidation\\Outgoing';
+        const outgoingBasePath = path.join(outgoingPath, 'LHDN', company, formattedDate);
+        await ensureDirectoryExists(outgoingBasePath);
+
+        // 10. Copy the original Excel file to the outgoing directory
+        const outgoingFilePath = path.join(outgoingBasePath, fileName);
+        await fsPromises.copyFile(filePath, outgoingFilePath);
+
+        // 11. Update the copied Excel file with UUID and submissionUid
+        const outgoingWorkbook = XLSX.readFile(outgoingFilePath);
+        const outgoingWorksheet = outgoingWorkbook.Sheets[outgoingWorkbook.SheetNames[0]];
+
+        const range = XLSX.utils.decode_range(outgoingWorksheet['!ref']);
+        for (let R = 0; R <= range.e.r; ++R) {
+            // Update UUID field (_1)
+            const uuidCell = XLSX.utils.encode_cell({r: R, c: 1}); // Column _1
+            if (outgoingWorksheet[uuidCell]) {
+                outgoingWorksheet[uuidCell].v = uuid;
+                outgoingWorksheet[uuidCell].w = uuid;
+            }
+
+            // Update Internal Reference field (_2)
+            const refCell = XLSX.utils.encode_cell({r: R, c: 2}); // Column _2
+            if (outgoingWorksheet[refCell]) {
+                outgoingWorksheet[refCell].v = submissionUid;
+                outgoingWorksheet[refCell].w = submissionUid;
+            }
+        }
+
+        // Save the updated workbook
+        XLSX.writeFile(outgoingWorkbook, outgoingFilePath);
+
+        res.json({
+            success: true,
+            content: processedData,
+            outgoingPath: outgoingFilePath
+        });
+
+    } catch (error) {
+        console.error('\nError in file content endpoint:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'READ_ERROR',
+                message: 'Failed to read file content',
+                details: error.message,
+                stack: error.stack
+            }
+        });
+    }
+});
+
 router.post('/:fileName/content', async (req, res) => {
     try {
         const { fileName } = req.params;
@@ -1955,6 +2130,266 @@ router.post('/:fileName/content', async (req, res) => {
                 stack: error.stack
             }
         });
+    }
+});
+
+/**
+ * Submit document to LHDN
+ */
+router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
+    try {
+
+        const { fileName } = req.params;
+        const { type, company, date, version } = req.body;
+
+        // Basic auth check
+        if (!req.session?.accessToken) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'AUTH_ERROR',
+                    message: 'Not authenticated'
+                }
+            });
+        }
+
+        // Validate all required parameters with more context
+        const paramValidation = [
+            { name: 'fileName', value: fileName, description: 'Excel file name' },
+            { name: 'type', value: type, description: 'Document type (e.g., Manual)' },
+            { name: 'company', value: company, description: 'Company identifier' },
+            { name: 'date', value: date, description: 'Document date' },
+            { name: 'version', value: version, description: 'LHDN version (e.g., 1.0, 1.1)' }
+        ];
+
+        const missingParams = paramValidation
+            .filter(param => !param.value)
+            .map(param => ({
+                name: param.name,
+                description: param.description
+            }));
+
+        if (missingParams.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: `Missing required parameters: ${missingParams.map(p => p.name).join(', ')}`,
+                    details: missingParams,
+                    help: 'Please ensure all required parameters are provided in the request body'
+                }
+            });
+        }
+
+        // Initialize LHDNSubmitter
+        const submitter = new LHDNSubmitter(req);
+
+        // Check for existing submission
+        const existingCheck = await submitter.checkExistingSubmission(fileName);
+        if (existingCheck.blocked) {
+            return res.status(409).json(existingCheck.response);
+        }
+
+        try {
+            // Get and process document data
+            const processedData = await submitter.getProcessedDataConsolidated(fileName, type, company, date);
+            
+            // Ensure processedData is valid before mapping
+            if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'PROCESSING_ERROR',
+                        message: 'Failed to process Excel data - no valid documents found'
+                    }
+                });
+            }
+
+            // Map to LHDN format only once
+            const lhdnJson = mapToLHDNFormat(processedData, version);
+            if (!lhdnJson) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'MAPPING_ERROR',
+                        message: 'Failed to map data to LHDN format'
+                    }
+                });
+            }
+
+            // Prepare document for submission
+            const { payload, invoice_number } = await submitter.prepareDocumentForSubmission(lhdnJson, version);
+            if (!payload) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'PREPARATION_ERROR',
+                        message: 'Failed to prepare document for submission'
+                    }
+                });
+            }
+
+            // Submit to LHDN using the session token
+            const result = await submitter.submitToLHDNDocument(payload.documents);
+            
+            // Process result and update status
+            if (result.status === 'failed') {
+                // Handle validation errors from LHDN
+                if (result.error?.error?.details) {
+                    const errorDetails = result.error.error.details;
+                    await submitter.updateSubmissionStatus({
+                        invoice_number,
+                        uuid: 'NA',
+                        submissionUid: 'NA',
+                        fileName,
+                        filePath: processedData.filePath || fileName,
+                        status: 'Failed',
+                        error: JSON.stringify(errorDetails)
+                    });
+
+                    return res.status(400).json({
+                        success: false,
+                        error: errorDetails,
+                        docNum: invoice_number
+                    });
+                }
+            }
+            if (result.data?.acceptedDocuments?.length > 0) {
+                const acceptedDoc = result.data.acceptedDocuments[0];
+                // First update the submission status in database
+                await submitter.updateSubmissionStatus({
+                    invoice_number,
+                    uuid: acceptedDoc.uuid,
+                    submissionUid: result.data.submissionUid,
+                    fileName,
+                    filePath: processedData.filePath || fileName,
+                    status: 'Submitted',
+                });
+            
+                // Then update the Excel file
+                const excelUpdateResult = await submitter.updateExcelWithResponseConsolidated(
+                    fileName,
+                    type,
+                    company,
+                    date,
+                    acceptedDoc.uuid,
+                    acceptedDoc.invoiceCodeNumber,
+                    invoice_number
+                );
+                
+                if (!excelUpdateResult.success) {
+                    console.error('Failed to update Excel file:', excelUpdateResult.error);
+                    return res.status(500).json({
+                        success: false,
+                        error: {
+                            code: 'EXCEL_UPDATE_ERROR',
+                            message: 'Failed to update Excel file',
+                            details: excelUpdateResult.error
+                        }
+                    });
+                }
+            
+                const response = {
+                    success: true,
+                    submissionUID: result.data.submissionUid,
+                    acceptedDocuments: result.data.acceptedDocuments,
+                    docNum: invoice_number,
+                    fileUpdates: {
+                        success: excelUpdateResult.success,
+                        ...(excelUpdateResult.success ? 
+                            { 
+                                excelPath: excelUpdateResult.outgoingPath,
+                            } : 
+                            { error: excelUpdateResult.error }
+                        )
+                    }
+                };
+
+                // Invalidate the cache after successful submission
+                invalidateFileCache();
+
+                return res.json(response);
+            }
+
+            // Handle rejected documents
+            if (result.data?.rejectedDocuments?.length > 0) {
+                //('Rejected Documents:', JSON.stringify(result.data.rejectedDocuments, null, 2));
+                
+                const rejectedDoc = result.data.rejectedDocuments[0];
+                await submitter.updateSubmissionStatus({
+                    invoice_number,
+                    uuid: rejectedDoc.uuid || 'NA',
+                    submissionUid: 'NA',
+                    fileName,
+                    filePath: processedData.filePath || fileName,
+                    status: 'Rejected',
+                    error: JSON.stringify(rejectedDoc.error || rejectedDoc)
+                });
+
+                return res.status(400).json({
+                    success: false,
+                    error: rejectedDoc.error || rejectedDoc,
+                    docNum: invoice_number,
+                    rejectedDocuments: result.data.rejectedDocuments
+                });
+            }
+
+            // Update the error handling section
+            if (!result.data?.acceptedDocuments?.length && !result.data?.rejectedDocuments?.length) {
+                //console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
+                throw new Error(`No documents were accepted or rejected by LHDN. Response: ${JSON.stringify(result.data)}`);
+            }
+
+        } catch (processingError) {
+            console.error('Error processing document data:', processingError);
+            // Handle specific errors as needed
+            throw processingError; // Re-throw other errors to be caught by outer catch block
+        }
+
+    } catch (error) {
+        console.error('=== Submit to LHDN Error ===', {
+            error: error.message,
+            stack: error.stack
+        });
+
+        // Update status if possible
+        if (error.invoice_number) {
+            try {
+                await submitter.updateSubmissionStatus({
+                    invoice_number: error.invoice_number,
+                    fileName,
+                    filePath: error.filePath || fileName,
+                    status: 'Failed',
+                    error: error.message
+                });
+            } catch (statusError) {
+                console.error('Failed to update status:', statusError);
+            }
+        }
+
+        // Determine appropriate error response
+        const errorResponse = {
+            success: false,
+            error: {
+                code: 'SUBMISSION_ERROR',
+                message: error.message || 'An unexpected error occurred during submission',
+                details: error.stack
+            }
+        };
+
+        // Set appropriate status code based on error type
+        if (error.response?.status === 401) {
+            errorResponse.error.code = 'AUTH_ERROR';
+            return res.status(401).json(errorResponse);
+        }
+
+        if (error.message.includes('getActiveSAPConfig')) {
+            errorResponse.error.code = 'CONFIG_ERROR';
+            errorResponse.error.message = 'SAP configuration error: Unable to get active configuration';
+            return res.status(500).json(errorResponse);
+        }
+
+        res.status(500).json(errorResponse);
     }
 });
 
@@ -2194,207 +2629,6 @@ router.get('/real-time-updates', async (req, res) => {
         });
     }
 });
-
-/**
- * Submit multiple documents to LHDN in bulk
- */
-router.post('/bulk-submit', async (req, res) => {
-    try {
-        const { documents, version } = req.body;
-
-        if (!Array.isArray(documents) || documents.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No documents provided for bulk submission'
-                }
-            });
-        }
-
-        // Initialize LHDNSubmitter
-        const submitter = new LHDNSubmitter(req);
-        const results = [];
-
-        for (const doc of documents) {
-            const { fileName, type, company, date } = doc;
-            
-            try {
-                // Check for existing submission
-                const existingCheck = await submitter.checkExistingSubmission(fileName);
-                if (existingCheck.blocked) {
-                    results.push({
-                        fileName,
-                        success: false,
-                        error: existingCheck.response.error
-                    });
-                    continue;
-                }
-
-                // Get and process document data
-                const processedData = await submitter.getProcessedData(fileName, type, company, date);
-                
-                if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
-                    results.push({
-                        fileName,
-                        success: false,
-                        error: {
-                            code: 'PROCESSING_ERROR',
-                            message: 'Failed to process Excel data - no valid documents found'
-                        }
-                    });
-                    continue;
-                }
-
-                // Map to LHDN format
-                const lhdnJson = mapToLHDNFormat(processedData, version);
-                if (!lhdnJson) {
-                    results.push({
-                        fileName,
-                        success: false,
-                        error: {
-                            code: 'MAPPING_ERROR',
-                            message: 'Failed to map data to LHDN format'
-                        }
-                    });
-                    continue;
-                }
-
-                // Prepare document for submission
-                const { payload, invoice_number } = await submitter.prepareDocumentForSubmission(lhdnJson, version);
-                if (!payload) {
-                    results.push({
-                        fileName,
-                        success: false,
-                        error: {
-                            code: 'PREPARATION_ERROR',
-                            message: 'Failed to prepare document for submission'
-                        }
-                    });
-                    continue;
-                }
-
-                // Submit to LHDN
-                const result = await submitter.submitToLHDNDocument(payload.documents);
-
-                if (result.status === 'failed') {
-                    if (result.error?.error?.details) {
-                        await submitter.updateSubmissionStatus({
-                            invoice_number,
-                            uuid: 'NA',
-                            submissionUid: 'NA',
-                            fileName,
-                            filePath: processedData.filePath || fileName,
-                            status: 'Failed',
-                            error: JSON.stringify(result.error.error.details)
-                        });
-
-                        results.push({
-                            fileName,
-                            success: false,
-                            error: result.error.error.details,
-                            docNum: invoice_number
-                        });
-                        continue;
-                    }
-                }
-
-                if (result.data?.acceptedDocuments?.length > 0) {
-                    const acceptedDoc = result.data.acceptedDocuments[0];
-                    
-                    // Update submission status
-                    await submitter.updateSubmissionStatus({
-                        invoice_number,
-                        uuid: acceptedDoc.uuid,
-                        submissionUid: result.data.submissionUid,
-                        fileName,
-                        filePath: processedData.filePath || fileName,
-                        status: 'Submitted',
-                    });
-
-                    // Update Excel file
-                    const excelUpdateResult = await submitter.updateExcelWithResponse(
-                        fileName,
-                        type,
-                        company,
-                        date,
-                        acceptedDoc.uuid,
-                        invoice_number
-                    );
-
-                    results.push({
-                        fileName,
-                        success: true,
-                        submissionUID: result.data.submissionUid,
-                        acceptedDocuments: result.data.acceptedDocuments,
-                        docNum: invoice_number,
-                        fileUpdates: {
-                            success: excelUpdateResult.success,
-                            ...(excelUpdateResult.success ? 
-                                { excelPath: excelUpdateResult.outgoingPath } : 
-                                { error: excelUpdateResult.error }
-                            )
-                        }
-                    });
-                } else if (result.data?.rejectedDocuments?.length > 0) {
-                    const rejectedDoc = result.data.rejectedDocuments[0];
-                    await submitter.updateSubmissionStatus({
-                        invoice_number,
-                        uuid: rejectedDoc.uuid || 'NA',
-                        submissionUid: 'NA',
-                        fileName,
-                        filePath: processedData.filePath || fileName,
-                        status: 'Rejected',
-                        error: JSON.stringify(rejectedDoc.error || rejectedDoc)
-                    });
-
-                    results.push({
-                        fileName,
-                        success: false,
-                        error: rejectedDoc.error || rejectedDoc,
-                        docNum: invoice_number,
-                        rejectedDocuments: result.data.rejectedDocuments
-                    });
-                }
-
-            } catch (docError) {
-                console.error(`Error processing document ${fileName}:`, docError);
-                results.push({
-                    fileName,
-                    success: false,
-                    error: {
-                        code: 'PROCESSING_ERROR',
-                        message: docError.message
-                    }
-                });
-            }
-        }
-
-        // Invalidate the cache after bulk submission
-        invalidateFileCache();
-
-        return res.json({
-            success: true,
-            results
-        });
-
-    } catch (error) {
-        console.error('=== Bulk Submit Error ===', {
-            error: error.message,
-            stack: error.stack
-        });
-
-        return res.status(500).json({
-            success: false,
-            error: {
-                code: 'BULK_SUBMISSION_ERROR',
-                message: error.message || 'An unexpected error occurred during bulk submission',
-                details: error.stack
-            }
-        });
-    }
-});
-
 
 /**
  * List all files with fixed paths (optimized version using hardcoded paths)

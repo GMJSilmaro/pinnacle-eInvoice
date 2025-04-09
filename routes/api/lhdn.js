@@ -283,21 +283,32 @@ const fetchRecentDocuments = async (req) => {
                             break;
                         }
 
-                        // Map the required fields from the API response
+                        // Map the required fields from the API response - IMPORTANT: follow MyInvois API structure
                         const mappedDocuments = result.map(doc => ({
                             ...doc,
-                            issuerTin: doc.issuerTin || doc.supplierTin || doc.supplierTIN,
-                            issuerName: doc.issuerName || doc.supplierName,
-                            receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN,
-                            receiverName: doc.receiverName || doc.buyerName,
-                            receiverTIN: doc.receiverTIN || doc.buyerTIN,
-                            receiverRegistrationNo: doc.receiverRegistrationNo || doc.buyerRegistrationNo,
-                            receiverAddress: doc.receiverAddress || doc.buyerAddress,
-                            receiverPostcode: doc.receiverPostcode || doc.buyerPostcode,
-                            receiverCity: doc.receiverCity || doc.buyerCity,
-                            receiverState: doc.receiverState || doc.buyerState,
-                            receiverCountry: doc.receiverCountry || doc.buyerCountry,
-                            receiverPhone: doc.receiverPhone || doc.buyerPhone,
+                            // Map issuerTin or supplierTin to issuerTin
+                            issuerTin: doc.issuerTin || doc.supplierTin || null,
+                            
+                            // Map issuerName or supplierName to issuerName
+                            issuerName: doc.issuerName || doc.supplierName || null,
+                            
+                            // Map receiverId or buyerTin to receiverId
+                            receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN || null,
+                            
+                            // Map receiverName or buyerName to receiverName
+                            receiverName: doc.receiverName || doc.buyerName || null,
+                            
+                            // Map receiverTIN or buyerTIN to receiverTIN
+                            receiverTIN: doc.receiverTIN || doc.buyerTIN || null,
+                            
+                            receiverRegistrationNo: doc.receiverRegistrationNo || doc.buyerRegistrationNo || null,
+                            receiverAddress: doc.receiverAddress || doc.buyerAddress || null,
+                            receiverPostcode: doc.receiverPostcode || doc.buyerPostcode || null,
+                            receiverCity: doc.receiverCity || doc.buyerCity || null,
+                            receiverState: doc.receiverState || doc.buyerState || null,
+                            receiverCountry: doc.receiverCountry || doc.buyerCountry || null,
+                            receiverPhone: doc.receiverPhone || doc.buyerPhone || null,
+                            
                             uuid: doc.uuid,
                             submissionUid: doc.submissionUid,
                             longId: doc.longId,
@@ -312,12 +323,11 @@ const fetchRecentDocuments = async (req) => {
                             totalSales: doc.totalSales || doc.total || doc.netAmount || 0,
                             totalExcludingTax: doc.totalExcludingTax || 0,
                             totalDiscount: doc.totalDiscount || 0,
-                            totalNetAmount: doc.totalNetAmount || 0,
-                            totalPayableAmount: doc.totalPayableAmount || 0
+                            totalNetAmount: doc.totalNetAmount || doc.netAmount || 0,
+                            totalPayableAmount: doc.totalPayableAmount || doc.total || 0
                         }));
 
-                        console.log(mappedDocuments);
-
+                        console.log(`Mapped ${mappedDocuments.length} documents from API response`);
                         documents.push(...mappedDocuments);
                         console.log(`Successfully fetched page ${pageNo} with ${mappedDocuments.length} documents`);
 
@@ -851,6 +861,9 @@ const saveInboundStatus = async (data) => {
             const chunk = batch.slice(i, i + chunkSize);
             const results = await Promise.all(chunk.map(async item => {
                 try {
+                    // Ensure issuerName is set from supplierName if missing
+                    const issuerName = item.issuerName || item.supplierName || null;
+                    
                     await WP_INBOUND_STATUS.upsert({
                         uuid: item.uuid,
                         submissionUid: item.submissionUid,
@@ -858,10 +871,10 @@ const saveInboundStatus = async (data) => {
                         internalId: item.internalId,
                         typeName: item.typeName,
                         typeVersionName: item.typeVersionName,
-                        issuerTin: item.issuerTin,
-                        issuerName: item.issuerName,
-                        receiverId: item.receiverId,
-                        receiverName: item.receiverName,
+                        issuerTin: item.issuerTin || item.supplierTin || null,
+                        issuerName: issuerName,
+                        receiverId: item.receiverId || item.buyerTin || item.buyerTIN || null,
+                        receiverName: item.receiverName || item.buyerName || null,
                         dateTimeReceived: formatDate(item.dateTimeReceived),
                         dateTimeValidated: formatDate(item.dateTimeValidated),
                         status: item.status,
@@ -869,11 +882,16 @@ const saveInboundStatus = async (data) => {
                         totalSales: item.totalSales || item.total || item.netAmount || 0,
                         totalExcludingTax: item.totalExcludingTax || 0,
                         totalDiscount: item.totalDiscount || 0,
-                        totalNetAmount: item.totalNetAmount || 0,
-                        totalPayableAmount: item.totalPayableAmount || 0,
+                        totalNetAmount: item.totalNetAmount || item.netAmount || 0,
+                        totalPayableAmount: item.totalPayableAmount || item.total || 0,
                         last_sync_date: formatDate(new Date()),
                         sync_status: 'success'
                     });
+                    
+                    // Log if we fixed a missing issuerName
+                    if (!item.issuerName && item.supplierName) {
+                        console.log(`Fixed missing issuerName using supplierName for UUID: ${item.uuid}`);
+                    }
 
                     // Generate response file only for valid documents
                     if (item.status === 'Valid') {
@@ -1005,6 +1023,61 @@ router.get('/documents/recent', async (req, res) => {
                 }
             };
             
+            // Check for documents with missing issuerName
+            const docsWithMissingData = dbDocuments.filter(doc => 
+                !doc.issuerName || doc.issuerName === 'NULL' || doc.issuerName === '');
+            
+            // If we have documents with missing data, fetch from API
+            if (docsWithMissingData.length > 0) {
+                console.log(`Found ${docsWithMissingData.length} documents with missing issuerName`);
+                
+                try {
+                    // Get LHDN config for API calls
+                    const config = await getLHDNConfig();
+                    if (!config) {
+                        throw new Error('Could not get LHDN config');
+                    }
+                    
+                    // Get auth token
+                    const accessToken = req.session.lhdn?.accessToken;
+                    if (!accessToken) {
+                        throw new Error('No LHDN access token available');
+                    }
+                    
+                    // Process documents with missing data
+                    for (const doc of docsWithMissingData) {
+                        if (!doc.uuid) continue;
+                        
+                        console.log(`Fetching document details for UUID: ${doc.uuid}`);
+                        
+                        // Call API to get document details
+                        const apiEndpoint = `${config.baseUrl}/documents/${doc.uuid}`;
+                        const apiResponse = await axios.get(apiEndpoint, {
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (apiResponse.data && apiResponse.data.issuerName) {
+                            // Update document in memory
+                            doc.issuerName = apiResponse.data.issuerName;
+                            
+                            // Update the database record
+                            await WP_INBOUND_STATUS.update(
+                                { issuerName: apiResponse.data.issuerName },
+                                { where: { uuid: doc.uuid } }
+                            );
+                            
+                            console.log(`Updated issuerName for UUID: ${doc.uuid}`);
+                        }
+                    }
+                } catch (apiError) {
+                    console.error('Error fetching missing data from API:', apiError);
+                    // Continue with the data we have
+                }
+            }
+            
             const documents = dbDocuments.map(doc => {
                 // Get submission and validation dates
                 const receivedDate = doc.dateTimeReceived || doc.created_at;
@@ -1036,11 +1109,11 @@ router.get('/documents/recent', async (req, res) => {
                     totalDiscount: doc.totalDiscount || 0,
                     totalNetAmount: doc.totalNetAmount || 0,
                     totalPayableAmount: doc.totalPayableAmount || 0,
-                    issuerTin: doc.issuerTin,
+                    issuerTin: doc.issuerTin ,
                     issuerName: doc.issuerName,
                     receiverId: doc.receiverId,
                     receiverName: doc.receiverName,
-                    supplierName: doc.issuerName,
+                    supplierName: doc.issuerName, // Use the potentially updated issuerName
                     typeName: doc.typeName,
                     typeVersionName: doc.typeVersionName,
                     documentStatusReason: doc.documentStatusReason,
@@ -1057,6 +1130,7 @@ router.get('/documents/recent', async (req, res) => {
                     total: documents.length,
                     cached: true,
                     directDb: true,
+                    missingDataFetched: docsWithMissingData.length > 0,
                     timestamp: new Date().toISOString()
                 }
             });
@@ -2145,35 +2219,192 @@ router.post('/documents/refresh', async (req, res) => {
             // Get LHDN configuration
             const lhdnConfig = await getLHDNConfig();
             
-            // Make API call to LHDN
-            console.log('Fetching fresh data from LHDN API...');
-            const response = await axios.get(
-                `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
-                {
-                    params: {
-                        pageNo: 1,
-                        pageSize: 100,
-                        sortBy: 'dateTimeValidated',
-                        sortOrder: 'desc'
-                    },
-                    headers: {
-                        'Authorization': `Bearer ${req.session.accessToken}`,
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: lhdnConfig.timeout
+            // Fetch documents with multiple pages
+            console.log('Fetching fresh data from LHDN API with pagination...');
+            
+            // First, check for records with missing issuerName
+            const docsWithMissingData = await WP_INBOUND_STATUS.findAll({
+                where: {
+                    [Op.or]: [
+                        { issuerTin: null },
+                        { issuerTin: 'NULL' },
+                        { issuerTin: '' },
+                        { issuerName: null },
+                        { issuerName: 'NULL' },
+                        { issuerName: '' }
+                    ]
+                },
+                attributes: ['uuid']
+            });
+            
+            if (docsWithMissingData.length > 0) {
+                console.log(`Found ${docsWithMissingData.length} documents with missing issuerName to update`);
+            }
+            
+            // Create array to hold all documents
+            const allDocuments = [];
+            let pageNo = 1;
+            const pageSize = 100;
+            let hasMorePages = true;
+            
+            // Fetch up to 5 pages (500 documents)
+            const maxPages = 5;
+            
+            while (hasMorePages && pageNo <= maxPages) {
+                try {
+                    console.log(`Fetching page ${pageNo} of LHDN documents...`);
+                    const response = await axios.get(
+                        `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
+                        {
+                            params: {
+                                pageNo: pageNo,
+                                pageSize: pageSize,
+                                sortBy: 'dateTimeValidated',
+                                sortOrder: 'desc'
+                            },
+                            headers: {
+                                'Authorization': `Bearer ${req.session.lhdn?.accessToken || req.session.accessToken}`,
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json'
+                            },
+                            timeout: lhdnConfig.timeout
+                        }
+                    );
+                    
+                    const pageDocuments = response.data.result || [];
+                    console.log(`Fetched ${pageDocuments.length} documents from page ${pageNo}`);
+                    
+                    // If we got fewer documents than pageSize, we've reached the end
+                    if (pageDocuments.length < pageSize) {
+                        hasMorePages = false;
+                    }
+                    
+                    // Process each document to ensure supplier/issuer mapping is correct
+                    const processedDocuments = pageDocuments.map(doc => {
+                        return {
+                            ...doc,
+                            // Important: Map supplierName to issuerName if issuerName is missing
+                            issuerName: doc.issuerName || doc.supplierName || null,
+                            issuerTin:  doc.issuerTIN || doc.issuerTin || doc.supplierTin || doc.supplierTIN ||  null,
+                            receiverName: doc.receiverName || doc.buyerName || null, 
+                            receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN || null
+                        };
+                    });
+
+                    console.log("Current Process Documents:", processedDocuments);
+                    
+                    // Add to our collection
+                    allDocuments.push(...processedDocuments);
+                    
+                    // Move to next page
+                    pageNo++;
+                    
+                    // Small delay to avoid overwhelming the API
+                    await delay(500);
+                    
+                } catch (pageError) {
+                    console.error(`Error fetching page ${pageNo}:`, pageError.message);
+                    // Stop fetching more pages on error
+                    hasMorePages = false;
                 }
-            );
-
-            const documents = response.data.result || [];
-            console.log(`Fetched ${documents.length} documents from LHDN`);
-
-            // Save to database
-            await saveInboundStatus({ result: documents });
-
+            }
+            
+            console.log(`Total fetched: ${allDocuments.length} documents from ${pageNo-1} pages`);
+            
+            // Save all fetched documents to database
+            if (allDocuments.length > 0) {
+                await saveInboundStatus({ result: allDocuments });
+            }
+            
+            // Process documents with missing data separately if API fetch didn't update them
+            if (docsWithMissingData.length > 0) {
+                console.log(`Fetching individual details for ${docsWithMissingData.length} documents with missing data...`);
+                let updatedCount = 0;
+                
+                // Process in batches to avoid overwhelming the system
+                const batchSize = 10;
+                for (let i = 0; i < docsWithMissingData.length; i += batchSize) {
+                    const batch = docsWithMissingData.slice(i, i + batchSize);
+                    
+                    await Promise.all(batch.map(async (doc) => {
+                        try {
+                            // Fetch individual document details from API
+                            const apiEndpoint = `${lhdnConfig.baseUrl}/api/v1.0/documents/${doc.uuid}/details`;
+                            const apiResponse = await axios.get(apiEndpoint, {
+                                headers: {
+                                    'Authorization': `Bearer ${req.session.lhdn?.accessToken || req.session.accessToken}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                timeout: lhdnConfig.timeout
+                            });
+                            
+                            // Look for supplier/issuer name in the response
+                            const responseData = apiResponse.data;
+                            const supplierName = responseData.supplierName || 
+                                                responseData.issuerName || 
+                                                (responseData.document?.supplierName) || 
+                                                (responseData.document?.issuerName);
+                            
+                            if (supplierName) {
+                                // Update the database record
+                                await WP_INBOUND_STATUS.update(
+                                    { 
+                                        issuerName: supplierName,
+                                        last_sync_date: new Date()
+                                    },
+                                    { where: { uuid: doc.uuid } }
+                                );
+                                updatedCount++;
+                                console.log(`Updated issuerName to "${supplierName}" for UUID: ${doc.uuid}`);
+                            } else {
+                                console.log(`Could not find supplierName in API response for UUID: ${doc.uuid}`);
+                                
+                                // Try alternate endpoint as fallback
+                                try {
+                                    const rawDocEndpoint = `${lhdnConfig.baseUrl}/api/v1.0/documents/${doc.uuid}/raw`;
+                                    const rawDocResponse = await axios.get(rawDocEndpoint, {
+                                        headers: {
+                                            'Authorization': `Bearer ${req.session.lhdn?.accessToken || req.session.accessToken}`,
+                                            'Content-Type': 'application/json'
+                                        },
+                                        timeout: lhdnConfig.timeout
+                                    });
+                                    
+                                    // Parse raw document for supplier info
+                                    const rawData = rawDocResponse.data;
+                                    const parsedSupplierName = rawData.AccountingSupplierParty?.Party?.PartyLegalEntity?.RegistrationName?.value ||
+                                                               rawData.AccountingSupplierParty?.Party?.PartyName?.Name?.value;
+                                    
+                                    if (parsedSupplierName) {
+                                        await WP_INBOUND_STATUS.update(
+                                            { 
+                                                issuerName: parsedSupplierName,
+                                                last_sync_date: new Date()
+                                            },
+                                            { where: { uuid: doc.uuid } }
+                                        );
+                                        updatedCount++;
+                                        console.log(`Updated issuerName to "${parsedSupplierName}" from raw data for UUID: ${doc.uuid}`);
+                                    }
+                                } catch (rawError) {
+                                    console.error(`Error fetching raw document for ${doc.uuid}:`, rawError.message);
+                                }
+                            }
+                        } catch (detailError) {
+                            console.error(`Error fetching details for ${doc.uuid}:`, detailError.message);
+                        }
+                        
+                        // Small delay between requests
+                        await delay(200);
+                    }));
+                }
+                
+                console.log(`Updated ${updatedCount} documents with missing issuerName`);
+            }
+            
             // Log successful refresh
             await LoggingService.log({
-                description: `Successfully refreshed ${documents.length} documents from LHDN`,
+                description: `Successfully refreshed ${allDocuments.length} documents from LHDN`,
                 username: req.session.user.username,
                 userId: req.session.user.id,
                 ipAddress: req.ip,
@@ -2181,14 +2412,15 @@ router.post('/documents/refresh', async (req, res) => {
                 module: MODULES.API,
                 action: ACTIONS.READ,
                 status: STATUS.SUCCESS,
-                details: { count: documents.length }
+                details: { count: allDocuments.length }
             });
 
             // Return success response
             res.json({
                 success: true,
                 message: 'Successfully refreshed data from LHDN',
-                count: documents.length,
+                count: allDocuments.length,
+                missingDataUpdated: docsWithMissingData.length > 0,
                 timestamp: new Date().toISOString()
             });
 

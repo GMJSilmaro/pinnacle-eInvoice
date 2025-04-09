@@ -1,3 +1,27 @@
+// Add these lines at the top of the file, after class declarations
+// Cache mechanism to reduce unnecessary fetches
+const dataCache = {
+    tableData: null,
+    lastFetchTime: null,
+    cacheExpiry: 2 * 60 * 1000, // 2 minutes in milliseconds
+    
+    isCacheValid() {
+        return this.tableData && 
+               this.lastFetchTime && 
+               (Date.now() - this.lastFetchTime < this.cacheExpiry);
+    },
+    
+    updateCache(data) {
+        this.tableData = data;
+        this.lastFetchTime = Date.now();
+    },
+    
+    invalidateCache() {
+        this.tableData = null;
+        this.lastFetchTime = null;
+    }
+};
+
 class ValidationError extends Error {
     constructor(message, validationErrors = [], fileName = null) {
         super(message);
@@ -56,110 +80,281 @@ class InvoiceTableManager {
         InvoiceTableManager.instance = this;
         this.table = null;
         this.selectedRows = new Set();
+        
+        // Add a prefilter for all AJAX requests
+        $.ajaxPrefilter((options, originalOptions, jqXHR) => {
+            if (!options.beforeSend) {
+                options.beforeSend = () => {
+                    this.showLoadingBackdrop();
+                };
+            }
+            let oldComplete = options.complete;
+            options.complete = (jqXHR, textStatus) => {
+                this.hideLoadingBackdrop();
+                if (oldComplete) {
+                    oldComplete(jqXHR, textStatus);
+                }
+            };
+        });
+
         this.initializeTable();
         this.initializeCharts();
         this.initializeEventListeners();
     }
 
+    showLoadingBackdrop(message = 'Loading and Preparing Your Excel Files') {
+        // Remove any existing backdrop
+        $('#loadingBackdrop').remove();
+        
+        // Create and append new backdrop with enhanced UI
+        const backdrop = `
+            <div id="loadingBackdrop" class="excel-loading-backdrop">
+                <div class="excel-loading-content">
+                    <div class="excel-modal-header">
+                        <div class="excel-processing-icon">
+                            <div class="excel-document-stack">
+                                <div class="excel-document excel-doc1"></div>
+                                <div class="excel-document excel-doc2"></div>
+                                <div class="excel-document excel-doc3"></div>
+                            </div>
+                            <div class="excel-processing-circle"></div>
+                        </div>
+                        <div class="excel-processing-title">
+                            <h5>${message}</h5>
+                            <p>Processing documents. Please wait... ⏳</p>
+                            <p class="excel-loading-time-estimate">Estimated time: 1-2 minutes (large batches)</p>
+                            <p class="excel-loading-important">⚠️ Do not close or refresh this page. ⚠️</p>
+                        </div>
+                    </div>
+                    
+                    <div class="excel-processing-container">
+                        <div class="excel-invoice-animation">
+                            <div class="excel-invoice-paper">
+                                <div class="excel-invoice-header">
+                                    <div class="excel-invoice-line"></div>
+                                </div>
+                                <div class="excel-invoice-details">
+                                    <div class="excel-invoice-details-left">
+                                        <div class="excel-invoice-details-line"></div>
+                                        <div class="excel-invoice-details-line"></div>
+                                    </div>
+                                    <div class="excel-invoice-details-right">
+                                        <div class="excel-invoice-details-line"></div>
+                                        <div class="excel-invoice-details-line"></div>
+                                    </div>
+                                </div>
+                                <div class="excel-invoice-table">
+                                    <div class="excel-invoice-table-row">
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                    </div>
+                                    <div class="excel-invoice-table-row">
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                        <div class="excel-invoice-table-cell"></div>
+                                    </div>
+                                </div>
+                                <div class="excel-invoice-stamp"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="excel-processing-steps">
+                            <div class="excel-step-item excel-active" id="excelLoadingStep1">
+                                <i class="bi bi-file-text"></i>
+                                <span>Fetching Document Files</span>
+                            </div>
+                            <div class="excel-step-arrow">→</div>
+                            <div class="excel-step-item" id="excelLoadingStep2">
+                                <i class="bi bi-check2-circle"></i>
+                                <span>Validating & Transforming to LHDN Format</span>
+                            </div>
+                            <div class="excel-step-arrow">→</div>
+                            <div class="excel-step-item" id="excelLoadingStep3">
+                                <i class="bi bi-cloud-upload"></i>
+                                <span>Processing</span>
+                            </div>
+                        </div>
+
+                        <div id="excelLoadingStatusMessage" class="excel-processing-status">
+                            <div class="excel-status-icon">
+                                <i class="bi bi-arrow-repeat excel-spin"></i>
+                            </div>
+                            <span class="excel-status-text">Initializing document processing...</span>
+                        </div>
+                    </div>
+
+                    <div class="excel-progress-section">
+                        <div class="excel-progress-header">
+                            <div class="excel-progress-info">
+                                <span class="excel-progress-label">Processing Progress</span>
+                                <span class="excel-progress-percentage" id="excelLoadingProgressPercentage">0%</span>
+                            </div>
+                            <div class="excel-document-count">
+                                <i class="bi bi-files"></i>
+                                <span id="excelLoadingProcessedCount">0/0</span> documents
+                            </div>
+                        </div>
+                        <div class="excel-progress">
+                            <div id="excelLoadingProgressBar" 
+                                class="excel-progress-bar progress-bar-striped progress-bar-animated" 
+                                role="progressbar" 
+                                style="width: 0%" 
+                                aria-valuenow="0" 
+                                aria-valuemin="0" 
+                                aria-valuemax="100">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="excel-processing-info">
+                        <div id="excelLoadingFact" class="excel-info-box">
+                            <div class="excel-info-icon">
+                                <i class="bi bi-lightbulb"></i>
+                            </div>
+                            <div class="excel-info-content">
+                                <span class="excel-info-label">Processing Tip</span>
+                                <p class="excel-info-message">Automating invoicing can reduce errors by up to 80%.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        $('body').append(backdrop);
+        $('#loadingBackdrop').fadeIn(300);
+        
+        // Start animation sequence
+        this.startLoadingAnimation();
+    }
+
+    startLoadingAnimation() {
+        // Array of loading messages with progress percentages
+        const loadingStates = [
+            { message: 'Initializing document processing...', progress: 10 },
+            { message: 'Checking file formats...', progress: 20 },
+            { message: 'Validating document structure...', progress: 35 },
+            { message: 'Processing invoice data...', progress: 45 },
+            { message: 'Analyzing document content...', progress: 60 },
+            { message: 'Preparing document summary...', progress: 70 },
+            { message: 'Formatting data...', progress: 80 },
+            { message: 'Verifying tax information...', progress: 85 },
+            { message: 'Applying validation rules...', progress: 90 },
+            { message: 'Almost done...', progress: 95 }
+        ];
+
+        // Array of fun facts
+        const funFacts = [
+            'Automating invoicing can reduce errors by up to 80%.',
+            'E-invoicing can save up to 80% in processing costs.',
+            'Digital invoices are processed 5x faster than paper.',
+            'E-invoicing reduces carbon footprint by 36%.',
+            'Companies save 60-80% switching to e-invoicing.',
+            'Digital invoices cut processing time by 50%.',
+            'E-invoicing improves cash flow by 25%.',
+            'Malaysia aims for 80% e-invoice adoption by 2025.',
+            'E-invoicing reduces payment delays by 61%.',
+            'Digital transformation saves 150+ hours annually.'
+        ];
+
+        let currentStateIndex = 0;
+        let factIndex = 0;
+        
+        // Update progress bar and message
+        const updateLoadingState = () => {
+            if (!$('#loadingBackdrop').length) return;
+            
+            if (currentStateIndex < loadingStates.length) {
+                const currentState = loadingStates[currentStateIndex];
+                
+                // Update message
+                $('#excelLoadingStatusMessage').html(`
+                    <div class="excel-status-icon">
+                        <i class="bi bi-arrow-repeat excel-spin"></i>
+                    </div>
+                    <span class="excel-status-text">${currentState.message}</span>`);
+                
+                // Update progress
+                $('#excelLoadingProgressBar').css('width', `${currentState.progress}%`);
+                $('#excelLoadingProgressBar').attr('aria-valuenow', currentState.progress);
+                $('#excelLoadingProgressPercentage').text(`${currentState.progress}%`);
+                
+                // Update document count - simulate progress
+                const total = 10; // Example total
+                const processed = Math.floor(currentState.progress / 100 * total);
+                $('#excelLoadingProcessedCount').text(`${processed}/${total}`);
+                
+                // Update active step
+                $('.excel-step-item').removeClass('excel-active');
+                if (currentState.progress < 33) {
+                    $('#excelLoadingStep1').addClass('excel-active');
+                } else if (currentState.progress < 66) {
+                    $('#excelLoadingStep2').addClass('excel-active');
+                } else {
+                    $('#excelLoadingStep3').addClass('excel-active');
+                }
+                
+                currentStateIndex++;
+            }
+        };
+        
+        // Update fun facts
+        const updateFunFact = () => {
+            if (!$('#loadingBackdrop').length) return;
+            
+            const fact = funFacts[factIndex % funFacts.length];
+            $('#excelLoadingFact').html(`
+                <div class="excel-info-icon">
+                    <i class="bi bi-lightbulb"></i>
+                </div>
+                <div class="excel-info-content">
+                    <span class="excel-info-label">Processing Tip</span>
+                    <p class="excel-info-message">${fact}</p>
+                </div>`);
+            
+            factIndex++;
+        };
+        
+        // Start sequences
+        let interval = 800; 
+        const scheduleNextUpdate = () => {
+            if (currentStateIndex < loadingStates.length && $('#loadingBackdrop').length) {
+                updateLoadingState();
+                interval += 200;
+                setTimeout(scheduleNextUpdate, interval);
+            }
+        };
+        
+        scheduleNextUpdate();
+        
+        // Update fun facts every 5 seconds
+        this.factInterval = setInterval(updateFunFact, 5000);
+    }
+
+    hideLoadingBackdrop() {
+        // Clear any intervals
+        if (this.factInterval) {
+            clearInterval(this.factInterval);
+        }
+        
+        $('#loadingBackdrop').fadeOut(300, function() {
+            $(this).remove();
+        });
+    }
+
     initializeTable() {
         try {
-            console.log('===== TABLE INITIALIZATION START =====');
-            
             // Destroy existing table if it exists
             if ($.fn.DataTable.isDataTable('#invoiceTable')) {
-                console.log('Existing DataTable found, destroying it...');
                 $('#invoiceTable').DataTable().destroy();
                 $('#invoiceTable').empty();
             }
 
-            console.log('Initializing DataTable with AJAX configuration...');
+            const self = this; // Store reference to this
             
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
-                processing: false,
-                serverSide: false,
-                ajax: {
-                    url: '/api/outbound-files/list-fixed-paths',
-                    method: 'GET',
-                    dataSrc: (json) => {
-                        console.log('AJAX request completed, processing response...');
-                        
-                        if (!json.success) {
-                            console.error('Error in AJAX response:', json.error);
-                            this.showEmptyState(json.error?.message || 'Failed to load data');
-                            return [];
-                        }
-
-                        // Check if we have files in the response
-                        const files = json.files || json.allFiles || [];
-                        
-                        if (!files || files.length === 0) {
-                            this.showEmptyState('No EXCEL files found');
-                            return [];
-                        }
-
-                        // Process the files data
-                        const processedData = files.map(file => ({
-                            ...file,
-                            DT_RowId: file.fileName,
-                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
-                            fileName: file.fileName,
-                            documentType: file.documentType || 'Invoice',
-                            company: file.company,
-                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
-                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
-                            uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
-                            issueDate: file.issueDate,
-                            issueTime: file.issueTime,
-                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
-                            date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
-                            cancelled_by: file.cancelled_by || null,
-                            cancel_reason: file.cancel_reason || null,
-                            status: file.status || 'Pending',
-                            source: file.source,
-                            uuid: file.uuid || null,
-                            totalAmount: file.totalAmount || null
-                        }));
-
-                        // Enhanced debugging
-                        console.log('===== DEBUG START =====');
-                        console.log("API Response success:", json.success);
-                        console.log("API Response structure:", Object.keys(json));
-                        console.log("API Response files source:", json.files ? 'json.files' : (json.allFiles ? 'json.allFiles' : 'not found'));
-                        console.log("API Response files count:", files ? files.length : 0);
-                        console.log("Current Process Data for Consolidation:", processedData);
-                        console.log("Processed data length:", processedData.length);
-                        console.log('===== DEBUG END =====');
-
-                        // Update card totals after data is loaded
-                        setTimeout(() => this.updateCardTotals(), 0);
-
-                        return processedData;
-                    },
-                    error: (xhr, error, thrown) => {
-                        console.error('===== AJAX ERROR START =====');
-                        console.error('Ajax error:', error);
-                        console.error('Status code:', xhr.status);
-                        console.error('Status text:', xhr.statusText);
-                        console.error('Response text:', xhr.responseText);
-                        console.error('Thrown error:', thrown);
-                        console.error('===== AJAX ERROR END =====');
-                        
-                        let errorMessage = 'Error loading data. Please try again.';
-
-                        try {
-                            const response = xhr.responseJSON;
-                            if (response && response.error) {
-                                errorMessage = response.error.message || errorMessage;
-                            }
-                        } catch (e) {
-                            console.error('Error parsing error response:', e);
-                        }
-
-                        this.showEmptyState(errorMessage);
-                    }
-                },
-               
                 columns: [
                     {
                         data: null,
@@ -210,6 +405,7 @@ class InvoiceTableManager {
                     },
                     {
                         data: 'uploadedDate',
+                        orderable: true,
                         title: 'FILE UPLOADED',
                         render: (data, type, row) => this.renderUploadedDate(data, type, row)
                     },
@@ -244,7 +440,26 @@ class InvoiceTableManager {
                 scrollCollapse: true,
                 autoWidth: false,
                 pageLength: 10,
-                dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+                dom: '<"outbound-controls"<"outbound-length-control"l>><"outbound-table-responsive"t><"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+                initComplete: function() {
+                    // Add filter button handlers to existing buttons
+                    $('.quick-filters .btn[data-filter]').on('click', function() {
+                        $('.quick-filters .btn').removeClass('active');
+                        $(this).addClass('active');
+                        
+                        const filter = $(this).data('filter');
+                        if (filter === 'all') {
+                            self.table.column(8).search('').draw();
+                        } else {
+                            self.table.column(8).search('Pending').draw();
+                        }
+                    });
+
+                    // Set initial filter to Pending
+                    self.table.column(8).search('Pending').draw();
+                    $('.quick-filters .btn[data-filter="pending"]').addClass('active');
+                    $('.quick-filters .btn[data-filter="all"]').removeClass('active');
+                },
                 language: {
                     search: '',
                     searchPlaceholder: 'Search...',
@@ -259,9 +474,106 @@ class InvoiceTableManager {
                         last: '<i class="bi bi-chevron-double-right"></i>'
                     },
                     emptyTable: this.getEmptyStateHtml(),
-                    zeroRecords: this.getEmptyStateHtml('Searching for data...')
+                    zeroRecords: `<div class="text-center">
+                    <i class="bi bi-exclamation-triangle" style="font-size: 2em; color: var(--bs-warning);"></i>
+                    <p>No records found. Please try <a href="#" onclick="window.location.reload();">reloading the page</a> to refresh the data.</p>
+                    <p>Try <a href="#" onclick="window.location.reload();">reloading the page</a>. If the issue persists, please contact support.</p>
+                </div>`,
                 },
-                order: [6, 'desc'], 
+                processing: true,
+                serverSide: false,
+                ajax: {
+                    url: '/api/outbound-files/list-fixed-paths',
+                    method: 'GET',
+                    data: function(d) {
+                        // Add a cache control parameter
+                        d.forceRefresh = sessionStorage.getItem('forceRefreshOutboundTable') === 'true';
+                        // Clear the flag after using it
+                        if (d.forceRefresh) {
+                            sessionStorage.removeItem('forceRefreshOutboundTable');
+                            dataCache.invalidateCache();
+                        }
+                        return d;
+                    },
+                    dataSrc: (json) => {
+                        // If we're using the cache, bypass processing
+                        if (json.fromCache && json.cachedData) {
+                            return json.cachedData;
+                        }
+                        
+                        if (!json.success) {
+                            console.error('Error:', json.error);
+                            self.showEmptyState(json.error?.message || 'Failed to load data');
+                            // Don't refresh the page
+                            return [];
+                        }
+
+                        if (!json.files || json.files.length === 0) {
+                            self.showEmptyState('No EXCEL files found');
+                            // Don't refresh the page
+                            return [];
+                        }
+
+                        // Process the files data
+                        const processedData = json.files.map(file => ({
+                            ...file,
+                            DT_RowId: file.fileName,
+                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
+                            fileName: file.fileName,
+                            documentType: file.documentType || 'Invoice',
+                            company: file.company,
+                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
+                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
+                            uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
+                            issueDate: file.issueDate,
+                            issueTime: file.issueTime,
+                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
+                            date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
+                            cancelled_by: file.cancelled_by || null,
+                            cancel_reason: file.cancel_reason || null,
+                            status: file.status || 'Pending',
+                            source: file.source,
+                            uuid: file.uuid || null,
+                            totalAmount: file.totalAmount || null
+                        }));
+
+                        console.log('Current Processed Data: ', processedData);
+
+                        // Update the cache with the processed data
+                        dataCache.updateCache(processedData);
+
+                        //console.log("Current Process Data", processedData);
+
+                        // Update card totals after data is loaded
+                        setTimeout(() => this.updateCardTotals(), 0);
+
+                        return processedData;
+                    },
+                    beforeSend: function() {
+                        // Only show loading for the initial load or forced refreshes
+                        if (!dataCache.isCacheValid() || sessionStorage.getItem('forceRefreshOutboundTable') === 'true') {
+                            self.showLoadingBackdrop('Loading and Preparing Your Excel Files');
+                        }
+                    },
+                    complete: function() {
+                        // Hide loading backdrop
+                        self.hideLoadingBackdrop();
+                    }
+                },
+                order: [
+                    [8, 'desc'], // Status first (Pending at top)
+                    [6, 'desc'] // Then by upload date, newest first
+                ],
+                columnDefs: [
+                    {
+                        targets: 8, // STATUS column
+                        type: 'string'
+                    },
+                    {
+                        targets: 6, // FILE UPLOADED column
+                        type: 'date'
+                    }
+                ],
                 drawCallback: function (settings) {
                     // Update row indexes when table is redrawn (sorting, filtering, pagination)
                     $(this).find('tbody tr').each(function (index) {
@@ -272,7 +584,7 @@ class InvoiceTableManager {
                 createdRow: (row, data, dataIndex) => {
                     // Add a class to the row based on status
                     const status = (data.status || 'Pending').toLowerCase();
-                    if (['submitted', 'cancelled', 'rejected', 'invalid'].includes(status)) {
+                    if (['submitted', 'valid', 'cancelled', 'rejected', 'invalid'].includes(status)) {
                         $(row).addClass('non-selectable-row');
                         // Add a tooltip to explain why the row can't be selected
                         $(row).attr('title', `${status.charAt(0).toUpperCase() + status.slice(1)} items cannot be selected for re-submission`);
@@ -283,13 +595,11 @@ class InvoiceTableManager {
             });
 
             this.initializeFeatures();
-            console.log('===== TABLE INITIALIZATION COMPLETE =====');
 
         } catch (error) {
-            console.error('===== ERROR INITIALIZING DATATABLE =====');
             console.error('Error initializing DataTable:', error);
-            console.error('Error stack:', error.stack);
-            this.showEmptyState('Error initializing table. Please refresh the page.');
+            this.showEmptyState('Error initializing table. Please try refreshing the page if this persists.');
+            // Remove the page reload to prevent refresh
         }
     }
 
@@ -452,7 +762,7 @@ class InvoiceTableManager {
                     datasets: [{
                         data: [0, 0, 0, 0],
                         backgroundColor: [
-                            '#1d9a5c',  // Submitted - Semi Light Green
+                            '#198754',  // Submitted - Success Green
                             '#dc3545',  // Invalid - Red
                             '#ff8307',  // Pending - Orange
                             '#ffc107'   // Cancelled - Yellow
@@ -467,7 +777,10 @@ class InvoiceTableManager {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 20
+                                padding: 20,
+                                font: {
+                                    size: 11
+                                }
                             }
                         },
                         tooltip: {
@@ -486,91 +799,19 @@ class InvoiceTableManager {
             });
         }
 
-        // Initialize Outbound Document Trend Chart
-        const dailyCtx = document.getElementById('dailySubmissionsChart');
-        if (dailyCtx) {
-            window.dailySubmissionsChart = new Chart(dailyCtx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Total Documents',
-                        data: [],
-                        borderColor: '#0d6efd',
-                        tension: 0.1,
-                        fill: true,
-                        backgroundColor: 'rgba(13, 110, 253, 0.1)'
-                    }, {
-                        label: 'Successfully Validated',
-                        data: [],
-                        borderColor: '#198754',
-                        tension: 0.1,
-                        fill: true,
-                        backgroundColor: 'rgba(25, 135, 84, 0.1)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    },
-                    plugins: {
-                        legend: {
-                            display: true,
-                            position: 'bottom'
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const label = context.dataset.label || '';
-                                    const value = context.raw || 0;
-                                    return `${label}: ${value} documents`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            },
-                            title: {
-                                display: true,
-                                text: 'Number of Documents'
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            },
-                            title: {
-                                display: true,
-                                text: 'Date'
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
         // Initialize Validation Success Rate Chart
         const processingCtx = document.getElementById('processingTimeChart');
         if (processingCtx) {
             window.processingTimeChart = new Chart(processingCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Valid', 'Invalid', 'Pending'],
+                    labels: ['Submitted', 'Invalid', 'Pending'],
                     datasets: [{
                         data: [0, 0, 0],
                         backgroundColor: [
-                            '#1d9a5c',  // Valid - Green
+                            '#198754',  // Submitted - Success Green
                             '#dc3545',  // Invalid - Red
                             '#ff8307',  // Pending - Orange
-                            '#1d9a5c',  // Submitted - Semi Light Green
-                            '#ffc107'   // Cancelled - Yellow
                         ],
                         borderWidth: 1
                     }]
@@ -582,7 +823,10 @@ class InvoiceTableManager {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 20
+                                padding: 20,
+                                font: {
+                                    size: 11
+                                }
                             }
                         },
                         tooltip: {
@@ -591,28 +835,42 @@ class InvoiceTableManager {
                                     const label = context.label || '';
                                     const value = context.raw || 0;
                                     return `${label}: ${value.toFixed(1)}%`;
-                                },
-                                afterBody: function(context) {
-                                    return [
-                                        '',
-                                        'How this is calculated:',
-                                        '• Valid: Successfully validated documents',
-                                        '• Invalid: Failed validation',
-                                        '• Pending: Awaiting validation',
-                                        '',
-                                        'Percentage = (Status Count / Total Documents) × 100'
-                                    ];
                                 }
                             }
                         }
-                    },
-                    cutout: '70%'
+                    }
                 }
             });
         }
     }
 
+    updateStatisticsCharts(totals) {
+        // Update Document Status Distribution Chart
+        if (window.documentStatusChart) {
+            window.documentStatusChart.data.datasets[0].data = [
+                totals.submitted,
+                totals.invalid,
+                totals.pending,
+                totals.cancelled
+            ];
+            window.documentStatusChart.update();
+        }
 
+        // Update Validation Success Rate Chart
+        if (window.processingTimeChart && this.table) {
+            const total = totals.submitted + totals.invalid + totals.pending;
+            const submittedPercentage = total > 0 ? (totals.submitted / total) * 100 : 0;
+            const invalidPercentage = total > 0 ? (totals.invalid / total) * 100 : 0;
+            const pendingPercentage = total > 0 ? (totals.pending / total) * 100 : 0;
+
+            window.processingTimeChart.data.datasets[0].data = [
+                Math.round(submittedPercentage * 10) / 10,
+                Math.round(invalidPercentage * 10) / 10,
+                Math.round(pendingPercentage * 10) / 10
+            ];
+            window.processingTimeChart.update();
+        }
+    }
 
     // Helper method to show error message
     showErrorMessage(message) {
@@ -932,7 +1190,8 @@ class InvoiceTableManager {
             rejected: 'x-circle-fill',
             processing: 'arrow-repeat',
             failed: 'exclamation-triangle-fill',
-            invalid: 'exclamation-triangle-fill'
+            invalid: 'exclamation-triangle-fill',
+            valid: 'check-circle-fill'
         };
         const statusColors = {
             pending: '#ff8307',
@@ -941,13 +1200,20 @@ class InvoiceTableManager {
             rejected: '#dc3545',
             processing: '#0d6efd',
             failed: '#dc3545',
-            invalid: '#dc3545'
+            invalid: '#dc3545',
+            valid: '#198754'
         };
         const icon = icons[statusClass] || 'question-circle';
         const color = statusColors[statusClass];
 
         // Add spinning animation for processing status
         const spinClass = statusClass === 'processing' ? 'spin' : '';
+
+        // Special handling for valid status
+        if (statusClass === 'valid') {
+            return `<span class="outbound-status ${statusClass}" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: ${color}15; color: ${color}; font-weight: 500; transition: all 0.2s ease;">
+                <i class="bi bi-${icon} ${spinClass}" style="font-size: 14px;"></i>Valid</span>`;
+        }
 
         return `<span class="outbound-status ${statusClass}" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: ${color}15; color: ${color}; font-weight: 500; transition: all 0.2s ease;">
             <i class="bi bi-${icon} ${spinClass}" style="font-size: 14px;"></i>${status}</span>`;
@@ -1084,7 +1350,6 @@ class InvoiceTableManager {
         if (documentTypeFilter) {
             documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
         }
-
         // Clear Filters
         const clearFiltersBtn = document.getElementById('clearFilters');
         if (clearFiltersBtn) {
@@ -1122,7 +1387,7 @@ class InvoiceTableManager {
             const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value;
             const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value;
             if (startDate && endDate) {
-                const rowDate = new Date(row.uploaded_date);
+                const rowDate = new Date(data.uploadedDate);
                 const filterStart = new Date(startDate);
                 const filterEnd = new Date(endDate);
                 
@@ -1201,10 +1466,9 @@ class InvoiceTableManager {
                 ${label}: ${value}
                 <button class="close-btn" data-filter-type="${type}">×</button>
             `;
-            tag.querySelector('.close-btn').addEventListener('click', () => {
-                this.removeFilter(type);
-            });
-            return tag;
+            tag.querySelector('.close-btn').addEventListener('click', 
+                () => this.removeFilter(type));
+            container.appendChild(tag);
         };
 
         // Add tags for active filters
@@ -1505,7 +1769,7 @@ class InvoiceTableManager {
                 case 'cancelled':
                     totals.cancelled++;
                     break;
-                case 'queue':
+                case 'pending':
                     totals.pending++;
                     break;
                 default:
@@ -1531,18 +1795,18 @@ class InvoiceTableManager {
 
         // Calculate percentages for validation rate
         const totalForValidation = totals.submitted + totals.invalid + totals.pending;
-        const validPercentage = totalForValidation > 0 ? (totals.submitted / totalForValidation * 100) : 0;
+        const submittedPercentage = totalForValidation > 0 ? (totals.submitted / totalForValidation * 100) : 0;
         const invalidPercentage = totalForValidation > 0 ? (totals.invalid / totalForValidation * 100) : 0;
         const pendingPercentage = totalForValidation > 0 ? (totals.pending / totalForValidation * 100) : 0;
 
         // Update validation rate display
         const validationRateElement = document.querySelector('.success-rate');
         if (validationRateElement) {
-            validationRateElement.textContent = `${Math.round(validPercentage)}%`;
+            validationRateElement.textContent = `${Math.round(submittedPercentage)}%`;
             validationRateElement.setAttribute('data-bs-original-title', 
                 `<div class='p-2'>
-                    <strong>Current Success Rate:</strong> ${Math.round(validPercentage)}%<br>
-                    <small>Based on ${totals.submitted} successfully validated documents out of ${totalForValidation} total submissions</small>
+                    <strong>Current Success Rate:</strong> ${Math.round(submittedPercentage)}%<br>
+                    <small>Based on ${totals.submitted} successfully submitted documents out of ${totalForValidation} total submissions</small>
                 </div>`
             );
         }
@@ -1550,18 +1814,18 @@ class InvoiceTableManager {
         // Update main progress bar
         const mainProgressBar = document.querySelector('.validation-stats .progress-bar');
         if (mainProgressBar) {
-            mainProgressBar.style.width = `${validPercentage}%`;
-            mainProgressBar.setAttribute('aria-valuenow', validPercentage);
+            mainProgressBar.style.width = `${submittedPercentage}%`;
+            mainProgressBar.setAttribute('aria-valuenow', submittedPercentage);
         }
 
         // Update breakdown progress bars and percentages
-        // Valid
-        const validBar = document.querySelector('.breakdown-item:nth-child(1) .progress-bar');
-        const validPercentText = document.querySelector('.breakdown-item:nth-child(1) .text-success');
-        if (validBar && validPercentText) {
-            validBar.style.width = `${validPercentage}%`;
-            validBar.setAttribute('aria-valuenow', validPercentage);
-            validPercentText.textContent = `${Math.round(validPercentage)}%`;
+        // Submitted
+        const submittedBar = document.querySelector('.breakdown-item:nth-child(1) .progress-bar');
+        const submittedPercentText = document.querySelector('.breakdown-item:nth-child(1) .text-success');
+        if (submittedBar && submittedPercentText) {
+            submittedBar.style.width = `${submittedPercentage}%`;
+            submittedBar.setAttribute('aria-valuenow', submittedPercentage);
+            submittedPercentText.textContent = `${Math.round(submittedPercentage)}%`;
         }
 
         // Invalid
@@ -1582,15 +1846,15 @@ class InvoiceTableManager {
             pendingPercentText.textContent = `${Math.round(pendingPercentage)}%`;
         }
 
-        // Add detailed information to tooltips
-        const validTooltip = document.querySelector('.breakdown-item:nth-child(1) .bi-info-circle-fill');
-        if (validTooltip) {
-            validTooltip.setAttribute('data-bs-original-title',
+        // Update tooltips
+        const submittedTooltip = document.querySelector('.breakdown-item:nth-child(1) .bi-info-circle-fill');
+        if (submittedTooltip) {
+            submittedTooltip.setAttribute('data-bs-original-title',
                 `<div class='p-2'>
                     <strong>Submitted Documents:</strong><br>
-                    • ${totals.submitted} documents successfully validated<br>
-                    • ${Math.round(validPercentage)}% of total submissions<br>
-                    • Ready for LHDN processing
+                    • ${totals.submitted} documents submitted successfully<br>
+                    • ${Math.round(submittedPercentage)}% of total submissions<br>
+                    • Ready for processing
                 </div>`
             );
         }
@@ -1614,7 +1878,7 @@ class InvoiceTableManager {
                     <strong>Pending Documents:</strong><br>
                     • ${totals.pending} documents in queue<br>
                     • ${Math.round(pendingPercentage)}% of total submissions<br>
-                    • Awaiting LHDN validation
+                    • Awaiting validation
                 </div>`
             );
         }
@@ -1623,186 +1887,6 @@ class InvoiceTableManager {
         this.updateStatisticsCharts(totals);
     }
 
-    updateStatisticsCharts(totals) {
-        // Update Document Status Distribution Chart
-        if (window.documentStatusChart) {
-            window.documentStatusChart.data.datasets[0].data = [
-                totals.submitted,
-                totals.invalid,
-                totals.pending,
-                totals.cancelled
-            ];
-            window.documentStatusChart.update();
-        }
-
-        // Update Outbound Document Trend Chart
-        if (window.dailySubmissionsChart && this.table) {
-            const data = Array.from(this.table.rows().data());
-            const dateGroups = {};
-            const validatedGroups = {};
-            
-            // Group documents by date
-            data.forEach(row => {
-                const date = this.formatDate(row.uploaded_date);
-                dateGroups[date] = (dateGroups[date] || 0) + 1;
-                
-                // Count validated documents separately
-                if (row.status === 'submitted') {
-                    validatedGroups[date] = (validatedGroups[date] || 0) + 1;
-                }
-            });
-
-            // Get last 7 days
-            const today = new Date();
-            const last7Days = Array.from({length: 7}, (_, i) => {
-                const d = new Date(today);
-                d.setDate(d.getDate() - i);
-                return this.formatDate(d);
-            }).reverse();
-
-            // Update chart data with status counts over time
-            window.dailySubmissionsChart.data.labels = last7Days;
-            window.dailySubmissionsChart.data.datasets = [
-                {
-                    label: 'Submitted',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            row.status === 'submitted'
-                        ).length;
-                    }),
-                    borderColor: '#198754', // Success green
-                    backgroundColor: 'rgba(25, 135, 84, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                },
-                {
-                    label: 'Invalid',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            row.status === 'invalid'
-                        ).length;
-                    }),
-                    borderColor: '#dc3545', // Danger red
-                    backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                },
-                {
-                    label: 'Pending',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            row.status === 'pending'
-                        ).length;
-                    }),
-                    borderColor: '#ffc107', // Warning yellow
-                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                },
-                {
-                    label: 'Cancelled',
-                    data: last7Days.map(date => {
-                        return data.filter(row => 
-                            this.formatDate(row.uploaded_date) === date && 
-                            row.status === 'cancelled'
-                        ).length;
-                    }),
-                    borderColor: '#6c757d', // Secondary gray
-                    backgroundColor: 'rgba(108, 117, 125, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                }
-            ];
-
-            // Update chart options for better visibility
-            window.dailySubmissionsChart.options = {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            usePointStyle: true,
-                            padding: 15,
-                            font: {
-                                size: 11
-                            }
-                        }
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        titleColor: '#000',
-                        bodyColor: '#666',
-                        borderColor: '#ddd',
-                        borderWidth: 1,
-                        padding: 10,
-                        boxPadding: 3,
-                        usePointStyle: true,
-                        callbacks: {
-                            label: function(context) {
-                                return context.dataset.label + ': ' + context.parsed.y + ' documents';
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            font: {
-                                size: 11
-                            }
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            borderDash: [2, 2]
-                        },
-                        ticks: {
-                            font: {
-                                size: 11
-                            },
-                            stepSize: 1,
-                            callback: function(value) {
-                                if (Math.floor(value) === value) {
-                                    return value;
-                                }
-                            }
-                        }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                }
-            };
-            window.dailySubmissionsChart.update('none'); // Use 'none' to prevent animation flicker
-        }
-
-        // Update Validation Success Rate Chart
-        if (window.processingTimeChart && this.table) {
-            const total = totals.submitted + totals.invalid + totals.pending;
-            const validPercentage = total > 0 ? (totals.submitted / total) * 100 : 0;
-            const invalidPercentage = total > 0 ? (totals.invalid / total) * 100 : 0;
-            const pendingPercentage = total > 0 ? (totals.pending / total) * 100 : 0;
-
-            window.processingTimeChart.data.datasets[0].data = [
-                Math.round(validPercentage * 10) / 10,
-                Math.round(invalidPercentage * 10) / 10,
-                Math.round(pendingPercentage * 10) / 10
-            ];
-            window.processingTimeChart.update();
-        }
-    }
     // Helper method to animate number changes
     animateNumber(element, targetValue) {
         const startValue = parseInt(element.textContent) || 0;
@@ -2808,8 +2892,71 @@ class InvoiceTableManager {
         $('.dataTables_length select').addClass('form-select form-select-sm');
     }
 
-    refresh() {
-        this.table?.ajax.reload(null, false);
+    refresh(forceRefresh = false) {
+        if (forceRefresh) {
+            // Force a refresh from the server
+            sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+            this.table?.ajax.reload(null, false);
+        } else if (dataCache.isCacheValid()) {
+            // Use cached data if it's valid
+            console.log('Using cached data for table refresh');
+            if (this.table) {
+                const currentData = this.table.data().toArray();
+                // Only update if there's a difference in the data (like status changes)
+                if (JSON.stringify(currentData) !== JSON.stringify(dataCache.tableData)) {
+                    this.table.clear();
+                    this.table.rows.add(dataCache.tableData);
+                    this.table.draw(false); // false to keep current paging
+                }
+                // Update card totals regardless
+                this.updateCardTotals();
+            }
+        } else {
+            // No valid cache, get from server
+            this.table?.ajax.reload(null, false);
+        }
+    }
+    
+    /**
+     * Update the table data after submission without making AJAX calls
+     * @param {Array} results - Array of submission results from the API
+     */
+    updateTableAfterSubmission(results) {
+        if (!this.table) return;
+        
+        // Get current table data
+        const currentData = this.table.data().toArray();
+        
+        // Create a map of filenames to results for quick lookup
+        const resultsMap = new Map();
+        results.forEach(result => {
+            resultsMap.set(result.fileName, result);
+        });
+        
+        // Update data in-place
+        const updatedData = currentData.map(row => {
+            const result = resultsMap.get(row.fileName);
+            if (result) {
+                return {
+                    ...row,
+                    status: result.success ? 'Submitted' : row.status,
+                    date_submitted: result.success ? new Date().toISOString() : row.date_submitted,
+                    uuid: result.uuid || row.uuid
+                };
+            }
+            return row;
+        });
+        
+        // Update the cache with the new data
+        dataCache.updateCache(updatedData);
+        
+        // Update table without AJAX
+        this.table.clear();
+        this.table.rows.add(updatedData);
+        this.table.draw(false); // false to keep current paging
+        
+        // Update card totals
+        this.updateCardTotals();
     }
 
     cleanup() {
@@ -3262,7 +3409,7 @@ async function validateExcelFile(fileName, type, company, date) {
 
     try {
         const encodedFileName = encodeURIComponent(fileName);
-        const response = await fetch(`/api/outbound-files/${encodedFileName}/content`, {
+        const response = await fetch(`/api/outbound-files/${encodedFileName}/content-consolidated`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -3272,7 +3419,7 @@ async function validateExcelFile(fileName, type, company, date) {
                 type,
                 company,
                 date: formattedDate,
-                filePath: `${type}/${company}/${formattedDate}/${fileName}`
+                filePath: `Incoming/${company}/${formattedDate}/${fileName}`
             })
         });
 
@@ -4302,6 +4449,76 @@ async function updateStepStatus(stepNumber, status, message) {
     console.log(`✅ [Step ${stepNumber}] Status update completed`);
 }
 
+/**
+ * Update a single document's status without refreshing the entire table
+ * @param {string} fileName - The file name to update
+ */
+async function updateSingleDocumentStatus(fileName) {
+    try {
+        console.log('🔄 Updating status for document:', fileName);
+        const tableManager = InvoiceTableManager.getInstance();
+        
+        // Fetch the status of this specific document
+        const response = await fetch(`/api/outbound-files/status/${fileName}`);
+        if (!response.ok) {
+            console.error('❌ Error fetching document status');
+            return;
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            console.error('❌ Error in status response:', result.error);
+            return;
+        }
+        
+        if (result.exists) {
+            // Update the specific row in the table
+            const documentData = result.document;
+            
+            // Get current table data
+            const currentData = tableManager.table.data().toArray();
+            
+            // Find and update the row for this document
+            const updatedData = currentData.map(row => {
+                if (row.fileName === fileName) {
+                    return {
+                        ...row,
+                        status: documentData.status,
+                        uuid: documentData.uuid,
+                        submissionUid: documentData.submissionUid,
+                        date_submitted: documentData.date_submitted,
+                        date_cancelled: documentData.date_cancelled,
+                        statusUpdateTime: documentData.statusUpdateTime
+                    };
+                }
+                return row;
+            });
+            
+            // Update the cache with the new data
+            if (window.dataCache && typeof window.dataCache.updateCache === 'function') {
+                window.dataCache.updateCache(updatedData);
+            }
+            
+            // Update table without AJAX
+            tableManager.table.clear();
+            tableManager.table.rows.add(updatedData);
+            tableManager.table.draw(false); // false to keep current paging
+            
+            // Update card totals
+            tableManager.updateCardTotals();
+            
+            console.log('✅ Document status updated successfully');
+        } else {
+            console.warn('⚠️ Document not found in database, will perform full refresh');
+            tableManager.refresh();
+        }
+    } catch (error) {
+        console.error('❌ Error updating document status:', error);
+        // Fallback to full refresh if the targeted update fails
+        InvoiceTableManager.getInstance().refresh();
+    }
+}
+
 async function showSubmissionStatus(fileName, type, company, date, version) {
     console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
     window.currentFileName = fileName;
@@ -4490,8 +4707,8 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     }
 
                     await showSuccessMessage(fileName, version);
-                    // Refresh the table
-                    window.location.reload();
+                    // Use the new function to update just this document instead of refreshing the whole table
+                    await updateSingleDocumentStatus(fileName);
                 } catch (error) {
                     console.error('❌ Step execution failed:', error);
 
@@ -4557,7 +4774,7 @@ async function performStep2(data, version) {
         } = data;
 
         // Make the API call with all required parameters
-        const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn`, {
+        const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn-consolidated`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -4804,8 +5021,15 @@ async function cancelDocument(uuid, fileName, submissionDate) {
             }
         });
         console.log('Document cancelled successfully');
-        // Refresh the table
-        window.location.reload();
+        
+        // Update just this document's status instead of refreshing the entire table
+        try {
+            console.log('Updating document status in table for:', fileName);
+            await updateSingleDocumentStatus(fileName);
+        } catch (updateError) {
+            console.warn('Error updating single document status, falling back to full refresh:', updateError);
+            InvoiceTableManager.getInstance().refresh();
+        }
 
     } catch (error) {
         console.error('Error in cancellation process:', error);
@@ -4834,80 +5058,54 @@ async function cancelDocument(uuid, fileName, submissionDate) {
 
 async function deleteDocument(fileName, type, company, date) {
     try {
-        // Show confirmation dialog
+        console.log('Deleting document:', fileName);
+        
+        // First, confirm the deletion
         const result = await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Delete Document',
-                subtitle: 'Are you sure you want to delete this document?',
-                content: `
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-badge error">
-                                <i class="fas fa-exclamation-triangle"></i>
-                            </span>
-                            <span class="content-title">Warning</span>
-                        </div>
-                        <div class="content-desc">
-                            This action cannot be undone. The file will be permanently deleted.
-                        </div>
-                    </div>
-                    <div class="content-card">
-                        <div class="content-header">
-                            <span class="content-title">Document Details</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">File Name:</span>
-                            <span class="field-value">${fileName}</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">Type:</span>
-                            <span class="field-value">${type}</span>
-                        </div>
-                        <div class="field-row">
-                            <span class="field-label">Company:</span>
-                            <span class="field-value">${company}</span>
-                        </div>
-                    </div>
-                `
-            }),
+            title: 'Delete Document',
+            text: `Are you sure you want to delete this document? (${fileName})`,
+            icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: 'Yes, delete it',
-            cancelButtonText: 'Cancel',
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                cancelButton: 'outbound-action-btn cancel',
-                popup: 'semi-minimal-popup'
-            }
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
         });
 
         if (!result.isConfirmed) {
             return;
         }
 
-        // Show loading state
+        // Show loading
         Swal.fire({
-            title: 'Deleting Document...',
-            text: 'Please wait while we process your request',
+            title: 'Deleting...',
+            text: 'Please wait while we delete this document.',
             allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
         });
 
-        // Make API call to delete the file
+        // Make the API call to delete the document
         const response = await fetch(`/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
-
-        const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.error?.message || 'Failed to delete document');
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Failed to delete document');
         }
+
+        const data = await response.json();
 
         // Show success message
         await Swal.fire({
             html: createSemiMinimalDialog({
                 title: 'Document Deleted',
-                subtitle: 'The document has been successfully deleted',
+                subtitle: `${fileName} has been deleted successfully`,
                 content: `
                     <div class="content-card">
                         <div class="content-header">
@@ -4928,8 +5126,25 @@ async function deleteDocument(fileName, type, company, date) {
             }
         });
 
-        // Refresh the table
-        window.location.reload();
+        // Remove the row from the table directly instead of refreshing the entire table
+        const tableManager = InvoiceTableManager.getInstance();
+        if (tableManager.table) {
+            // Find the row with the matching fileName and remove it
+            const row = tableManager.table.row(`[id="${fileName}"]`);
+            if (row.length) {
+                row.remove().draw(false);
+                console.log('Row removed from table:', fileName);
+                
+                // Update card totals after removing the row
+                tableManager.updateCardTotals();
+            } else {
+                console.warn('Row not found in table, performing full refresh:', fileName);
+                InvoiceTableManager.getInstance().refresh();
+            }
+        } else {
+            console.warn('Table not initialized, performing full refresh');
+            InvoiceTableManager.getInstance().refresh();
+        }
 
     } catch (error) {
         console.error('Error deleting document:', error);
@@ -4953,7 +5168,7 @@ async function deleteDocument(fileName, type, company, date) {
                 `
             }),
             customClass: {
-                confirmButton: 'outbound-action-btn submit',
+                confirmButton: 'outbound-action-btn cancel',
                 popup: 'semi-minimal-popup'
             }
         });
@@ -5255,6 +5470,9 @@ async function showLHDNErrorModal(error) {
 
     // Check if this is a TIN matching error and provide specific guidance
     const isTINMatchingError = mainError.message.includes("authenticated TIN and documents TIN is not matching");
+    
+    // Check if this is a duplicate submission error
+    const isDuplicateSubmission = mainError.code === 'DUPLICATE_SUBMISSION' || mainError.code === 'DS302';
 
     // Create tooltip help content for TIN matching errors
     const tinErrorGuidance = `
@@ -5359,29 +5577,54 @@ async function showLHDNErrorModal(error) {
                 ${isTINMatchingError ? tinErrorGuidance : ''}
             </div>
             
+            <div class="next-steps-card" style="margin-top: 25px; padding: 15px; border-radius: 8px; background: rgba(255, 193, 7, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                    <i class="fas fa-lightbulb" style="color: #ffc107; margin-right: 8px; font-size: 16px;"></i>
+                    <span style="font-weight: 600; color: #495057; font-size: 13px;">Next Steps</span>
+                </div>
+                <ul style="margin: 0; padding-left: 25px; font-size: 12px; color: #495057;">
+                    ${getNextSteps(mainError.code)}
+                </ul>
+            </div>
+            
+            <style>
+                @keyframes pulseError {
+                    0% { transform: scale(1); }
+                    50% { transform: scale(1.1); }
+                    100% { transform: scale(1); }
+                }
+                .tooltip-container:hover .tooltip-content {
+                    display: block;
+                }
+            </style>
         `,
-        customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            popup: 'semi-minimal-popup'
-        },
         confirmButtonText: 'I Understand',
+        confirmButtonColor: '#3085d6',
+        width: 600,
         customClass: {
-            confirmButton: 'outbound-action-btn submit btn-sm',
-        },
-        showCloseButton: true,
-        didOpen: () => {
-            // Add event listeners for tooltips if needed
-            const tooltipContainers = document.querySelectorAll('.tooltip-container');
-            tooltipContainers.forEach(container => {
-                container.addEventListener('mouseenter', () => {
-                    container.querySelector('.tooltip-content').style.display = 'block';
-                });
-                container.addEventListener('mouseleave', () => {
-                    container.querySelector('.tooltip-content').style.display = 'none';
-                });
-            });
+            confirmButton: 'btn btn-primary'
         }
     });
+    
+    // Refresh the table if this is a duplicate submission error
+    // This ensures the table is updated even when a document is already submitted
+    if (isDuplicateSubmission) {
+        console.log('Updating table after duplicate submission error');
+        // Extract the filename from the error if possible
+        let fileName = window.currentFileName;
+        if (mainError.target && typeof mainError.target === 'string') {
+            // If target contains the document number, use that to help identify the file
+            fileName = mainError.target;
+        }
+        
+        // Use the more efficient single document update instead of full refresh
+        if (fileName) {
+            await updateSingleDocumentStatus(fileName);
+        } else {
+            // Fallback to full refresh if filename not available
+            InvoiceTableManager.getInstance().refresh();
+        }
+    }
 }
 
 // Helper function to format validation messages
@@ -5582,8 +5825,12 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleBulkSubmission(selectedDocs) {
     const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
     const progressDiv = document.getElementById('submissionProgress');
+    const tableManager = InvoiceTableManager.getInstance();
     
     try {
+        // Show loading backdrop with specific message
+        tableManager.showLoadingBackdrop('Submitting Documents to LHDN');
+        
         // Initialize progress UI
         if (!progressDiv) {
             throw new Error('Progress container not found');
@@ -5617,7 +5864,10 @@ async function handleBulkSubmission(selectedDocs) {
         // Submit documents
         const response = await fetch('/api/outbound-files/bulk-submit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest' // Add AJAX header to prevent full page reload
+            },
             body: JSON.stringify({ documents: selectedDocs, version })
         });
 
@@ -5647,8 +5897,12 @@ async function handleBulkSubmission(selectedDocs) {
         progressBar.setAttribute('aria-valuenow', 100);
         progressBar.classList.remove('progress-bar-animated');
 
-        // Refresh table and show summary
-        await InvoiceTableManager.getInstance().refresh();
+        // Hide loading backdrop before updating the table
+        tableManager.hideLoadingBackdrop();
+        
+        // Update table data in-place without AJAX refresh
+        tableManager.updateTableAfterSubmission(result.results);
+        
         const successCount = result.results.filter(r => r.success).length;
         const failureCount = result.results.filter(r => !r.success).length;
 
@@ -5674,6 +5928,10 @@ async function handleBulkSubmission(selectedDocs) {
 
     } catch (error) {
         console.error('Bulk submission error:', error);
+        
+        // Hide loading backdrop
+        tableManager.hideLoadingBackdrop();
+        
         if (progressDiv) {
             progressDiv.innerHTML = `
                 <div class="alert alert-danger">
@@ -5698,6 +5956,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const submitConsolidatedBtn = document.getElementById('submitConsolidatedBtn');
     if (submitConsolidatedBtn) {
         submitConsolidatedBtn.addEventListener('click', async function() {
+            const tableManager = InvoiceTableManager.getInstance();
+            
+            // Show loading backdrop during validation
+            tableManager.showLoadingBackdrop();
+            
             const selectedRows = Array.from(document.querySelectorAll('input.outbound-checkbox:checked'))
                 .map(checkbox => {
                     const row = checkbox.closest('tr');
@@ -5710,6 +5973,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
             if (selectedRows.length === 0) {
+                tableManager.hideLoadingBackdrop();
                 Swal.fire({
                     icon: 'warning',
                     title: 'No Documents Selected',
@@ -5735,6 +5999,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
                 consolidatedModal.hide();
                 await handleBulkSubmission(selectedRows);
+            } else {
+                // Hide loading backdrop if cancelled
+                tableManager.hideLoadingBackdrop();
             }
         });
     }

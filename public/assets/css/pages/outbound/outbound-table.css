@@ -403,6 +403,11 @@
     line-height: 1;
 }
 
+.badge-source.incoming {
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
 .badge-source.manual {
     background-color: #e0f2fe;
     color: #0369a1;
