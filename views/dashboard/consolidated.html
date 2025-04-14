@@ -262,8 +262,290 @@
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
       </div>
     </div>
+<<<<<<< HEAD
   </div>
 </div>
+=======
+            <!-- Table Section -->
+            <div class="table-container-wrapper">
+                <div class="table-card">
+                    <div class="table-header">
+                        <div class="table-header-content">
+                            <h2 class="table-title">Consolidated Document List</h2>
+                            <div class="table-actions">
+                                <!-- <button id="exportSelected" class="btn outbound-action-btn submit btn-sm ms-1" disabled>
+                                    <i class="bi bi-download me-2"></i>Export Selected
+                                </button> -->
+                            </div>
+                        </div>              
+                    </div>
+                    <div class="table-controls">
+                        <div class="d-flex align-items-center gap-1">
+                            <div class="modern-length">
+                                <!-- Length control will be inserted by DataTables -->
+                            </div>
+                            <div class="modern-search">
+                                <!-- Search control will be inserted by DataTables -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-body-container">
+                        <div class="responsive-table-container">
+                            <div class="table-section">
+                                <div class="outbound-table-container">
+               
+                                    <div>
+                                        <!-- Primary Filters Row -->
+                                        <div class="row g-3 mb-3">
+                                            <!-- Global Search -->
+                                            <div class="col-md-4">
+                                                <div class="search-wrapper position-relative">
+                                                    <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                                                    <input type="text" class="form-control form-control-lg ps-5" id="globalSearch" 
+                                                        placeholder="Search documents...">
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Quick Filters -->
+                                            <div class="col-md-8">
+                                                <div class="quick-filters d-flex gap-2">
+                                                    <!-- <button class="btn outbound-action-btn submit" data-bs-toggle="modal" data-bs-target="#consolidatedSubmitModal">
+                                                        <i class="bi bi-file-earmark-arrow-up me-1"></i>Bulk Submit
+                                                    </button> -->
+                                                    <button class="btn outbound-action-btn submit" data-filter="all">
+                                                        <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
+                                                    </button>
+                                          
+                                                    <button class="btn outbound-action-btn submit active" data-filter="pending">
+                                                        <i class="bi bi-clock-history me-1"></i>Pending
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" id="openFlatFileModalBtn" data-bs-toggle="modal" data-bs-target="#flatFileUploadModal" title="If you don't have custom integration, you can upload your own flat file">
+                                                        <i class="bi bi-file-earmark-text me-1"></i>Upload File
+                                                    </button>
+                                                    <!-- <button class="btn outbound-action-btn submit" data-filter="submitted">
+                                                        <i class="bi bi-check-circle me-1 text-success"></i>Submitted
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="invalid">
+                                                        <i class="bi bi-x-circle me-1 text-danger"></i>Invalid
+                                                    </button>
+                                                    
+                                                    <button class="btn outbound-action-btn submit" data-filter="cancelled">
+                                                        <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Cancelled
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="pending">
+                                                        <i class="bi bi-clock-history me-1 text-warning"></i>Pending
+                                                    </button> -->
+                                                    <!-- <div class="ms-auto">
+                                                        <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
+                                                            <i class="bi bi-eraser me-1"></i>Clear
+                                                        </button>
+                                                        <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+                                                            <i class="bi bi-sliders me-1"></i>Advanced
+                                                        </button>
+                                                    </div> -->
+                                                </div>
+                                            </div>
+                                        </div>
+                    
+                                        <!-- Advanced Filters (Collapsible) -->
+                                        <div class="collapse" id="advancedFilters">
+                                            <div class="advanced-filters-content border-top pt-3">
+                                                <div class="row g-3">
+                                                    <!-- Date Range -->
+                                                    <div class="col-md-6">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-calendar-range me-2"></i>Date Range
+                                                        </label>
+                                                        <div class="input-group">
+                                                            <input type="date" class="form-control" id="tableStartDate">
+                                                            <span class="input-group-text bg-light">to</span>
+                                                            <input type="date" class="form-control" id="tableEndDate">
+                                                        </div>
+                                                    </div>
+                    
+                                                    <!-- Amount Range -->
+                                                    <div class="col-md-6">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-currency-dollar me-2"></i>Amount Range
+                                                        </label>
+                                                        <div class="input-group">
+                                                            <input type="number" class="form-control" id="minAmount" placeholder="Min">
+                                                            <span class="input-group-text bg-light">to</span>
+                                                            <input type="number" class="form-control" id="maxAmount" placeholder="Max">
+                                                        </div>
+                                                    </div>
+                    
+                                                    <!-- Company Filter -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-building me-2"></i>Company
+                                                        </label>
+                                                        <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
+                                                    </div>
+                    
+                                                    <!-- Document Type -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-file-text me-2"></i>Document Type
+                                                        </label>
+                                                        <select class="form-select" id="documentTypeFilter">
+                                                            <option value="">All Types</option>
+                                                            <option value="Invoice">Invoice</option>
+                                                            <option value="Credit Note">Credit Note</option>
+                                                            <option value="Debit Note">Debit Note</option>
+                                                        </select>
+                                                    </div>
+                    
+                                                    <!-- Source -->
+                                                    <div class="col-md-4">
+                                                        <label class="form-label d-flex align-items-center">
+                                                            <i class="bi bi-diagram-2 me-2"></i>Source
+                                                            <i class="bi bi-info-circle ms-2" data-bs-html="true" 
+                                                            title="<div class='tooltip-content'>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-info-circle'></i>
+                                                                        <span><b>LHDN Validation:</b></span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-check-circle text-success'></i>
+                                                                        <span>Valid: Document passed validation</span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-x-circle text-danger'></i>
+                                                                        <span>Invalid: Failed validation checks</span>
+                                                                    </div>
+                                                                    <div class='tooltip-row'>
+                                                                        <i class='bi bi-clock-history text-warning'></i>
+                                                                        <span>Pending: Awaiting for Submission to LHDN for validation</span>
+                                                                    </div>
+                                                                </div>"></i>
+                                                        </label>
+                                                        <select class="form-select" id="sourceFilter">
+                                                            <option value="">LHDN</option>
+                                                            
+                                                        </select>
+                                                        <small class="text-muted mt-1 d-block">
+                                                            <i class="bi bi-info-circle-fill me-1"></i>
+                                                            LHDN responses include validation status and timestamps
+                                                        </small>
+                                                    </div>
+                                                </div>
+                    
+                                            
+                                                <!-- Filter Note -->
+                                                <div class="filter-note alert alert-info mt-3" role="alert">
+                                                    <i class="bi bi-info-circle me-2"></i>
+                                                    <small>
+                                                        Use the filters above to narrow down your results. Active filters will appear below as tags that you can easily remove. Click the 'x' on any tag to remove that filter, or use 'Clear all filters' to reset.
+                                                    </small>
+                                                </div>
+                    
+                                                <!-- Active Filters Display -->
+                                                <div class="active-filters mt-3 pt-3 border-top">
+                                                    <div class="d-flex align-items-center">
+                                                        <small class="text-muted me-2">Active Filters:</small>
+                                                        <div class="active-filter-tags" id="activeFilterTags">
+                                                            <!-- Active filter tags will be added here dynamically -->
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                      
+                                    </div>
+                                    <!-- End of new filter section -->
+                                  
+                    
+                                        <table id="invoiceTable" class="outbound-table-responsive">
+                                            <thead>
+                                                <tr>
+                                                    <th class="outbound-checkbox-column">
+                                                        <div class="outbound-checkbox-header">
+                                                            <input type="checkbox" class="outbound-checkbox" id="selectAll">
+                                                        </div>
+                                                    </th>
+                                                    <th>#</th>
+                                                    <th>INVOICE NO.</th>
+                                                    <th>COMPANY</th>
+                                                    <th>SUPPLIER</th>
+                                                    <th>RECEIVER</th>
+                                                    <th>DATE</th>
+                                                    <th>INV. DATE INFO</th>
+                                                    <th>STATUS</th>
+                                                    <th>SOURCE</th>
+                                                    <th>TOTAL AMOUNT</th>
+                                                    <th class="outbound-action-column">ACTION</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <!-- Example row with TIN validation button -->
+                                                <tr data-tin="123456789" data-id-type="BRN" data-id-value="ABC123456">
+                                                    <td class="outbound-checkbox-column">
+                                                        <input type="checkbox" class="outbound-checkbox">
+                                                    </td>
+                                                    <td>1</td>
+                                                    <td>INV-001</td>
+                                                    <td>Company A</td>
+                                                    <td>Supplier X</td>
+                                                    <td>Receiver Y</td>
+                                                    <td>2024-03-24</td>
+                                                    <td>Regular</td>
+                                                    <td class="status-cell">
+                                                        <span class="badge bg-warning">Pending</span>
+                                                    </td>
+                                                    <td>LHDN</td>
+                                                    <td>1,000.00</td>
+                                                    <td class="outbound-action-column">
+                                                        <div class="action-buttons">
+                                                            <button class="btn btn-sm validate-tin-btn" data-validate-tin>
+                                                                <i class="bi bi-shield-check"></i>
+                                                                Validate TIN
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-primary">
+                                                                <i class="bi bi-eye"></i>
+                                                                View
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-danger">
+                                                                <i class="bi bi-trash"></i>
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Loading Overlay -->
+                        <div id="tableLoadingOverlay" class="table-loading-overlay d-none">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Fetching documents...</p>
+                        </div>
+                    </div>
+                    
+                    
+       
+                    <div class="table-footer">
+                        <div class="disclaimer-note mt-2">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span>For a smooth submission process, verify all required fields are complete and accurate on your ERP System Before Submitting to LHDN. </br>
+                            <span>Pinnacle e-Invoice Portal performs initial validations for Mandatory fields before proceeding to LHDN submission</span>
+                            <a href="/help" class="ms-1 text-decoration-none" target="_blank">
+                                <i class="bi bi-question-circle" data-bs-toggle="tooltip" title="Click for help documentation"></i>
+                            </a>
+                        </div>
+                        <div class="disclaimer-note mt-2" style="background: rgba(220, 53, 69, 0.1); color: #842029;">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span><strong>Important Disclaimer:</strong> <br>
+                            Our platform provides validation services, but the ultimate responsibility for data accuracy lies with the user. 
+                            <br>
+                            We are not liable for any consequences, penalties, or issues arising from submission of incomplete, inaccurate or non-compliant data to LHDN.</span>
+                        </div>
+>>>>>>> 8ccddfa364bc2714953867d0df49c1bee453e878
 
 <!-- Flat File Mapping Modal -->
 <div class="modal fade" id="flatFileMappingModal" tabindex="-1" aria-hidden="true">

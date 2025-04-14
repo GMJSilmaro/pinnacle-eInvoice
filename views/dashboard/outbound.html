@@ -5,7 +5,7 @@
 <title>Outbound - eInvoice Portal</title>
 
 <!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script> 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -18,6 +18,8 @@
 <link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
 <!-- Template Main CSS Files -->
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
+<!-- Excel Loading Animation CSS -->
+<link href="/assets/css/pages/outbound/excel-loading.css" rel="stylesheet">
 
 <script src="/assets/js/config/validation-translations.js"></script>
 
@@ -1365,6 +1367,7 @@
     padding: 1rem;
     border-radius: 8px;
     border: 1px solid #e9ecef;
+    user-select: none;
 }
 
 #consolidationHeader:hover {
@@ -1374,6 +1377,7 @@
 
 #consolidationDetails {
     transition: all 0.3s ease-in-out;
+    overflow: hidden;
 }
 
 #consolidationDetails.collapse:not(.show) {
@@ -1382,193 +1386,64 @@
 
 #consolidationDetails.collapsing {
     height: 0;
-    overflow: hidden;
 }
 
-.toggle-icon {
-    transition: transform 0.3s ease;
+#toggleConsolidation {
+    padding: 0.25rem;
+    line-height: 1;
+    border-radius: 4px;
+}
+
+#toggleConsolidation:hover {
+    background-color: rgba(13, 110, 253, 0.1);
 }
 
 #toggleConsolidation[aria-expanded="true"] .toggle-icon {
     transform: rotate(180deg);
 }
 
-@keyframes slideOut {
-    from {
-        opacity: 1;
-        transform: translateX(0);
-    }
-    to {
-        opacity: 0;
-        transform: translateX(30px);
-    }
+/* Loading backdrop styles */
+.loading-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
-.requirements-container {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(0,0,0,.2) transparent;
+.loading-content {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+    text-align: center;
+    max-width: 400px;
 }
 
-.requirements-container::-webkit-scrollbar {
-    width: 6px;
+.loading-content .spinner-border {
+    width: 3rem;
+    height: 3rem;
+    margin-bottom: 1rem;
 }
 
-.requirements-container::-webkit-scrollbar-track {
-    background: transparent;
+.loading-message h5 {
+    margin-bottom: 0.5rem;
 }
 
-.requirements-container::-webkit-scrollbar-thumb {
-    background-color: rgba(0,0,0,.2);
-    border-radius: 3px;
-}
-
-.requirements-container::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(0,0,0,.3);
-}
-
-.bg-light {
-    background-color: rgba(248,249,250,.5) !important;
-}
-
-.table-sm td {
-    padding: 0.25rem;
-}
-
-.additional-details-container {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(0,0,0,.2) transparent;
-    max-height: 20px; /* Reduced from 300px */
-    overflow-y: auto;
-}
-
-.additional-details-container::-webkit-scrollbar {
-    width: 6px;
-}
-
-.additional-details-container::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.additional-details-container::-webkit-scrollbar-thumb {
-    background-color: rgba(0,0,0,.2);
-    border-radius: 3px;
-}
-
-.additional-details-container::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(0,0,0,.3);
-}
-
-.section-container {
-    transition: all 0.2s ease;
-    margin-bottom: 0.2rem; /* Reduced from default */
-    padding: 0.75rem !important; /* Reduced padding */
-}
-
-.section-container:last-child {
+.loading-message p {
+    color: #6c757d;
     margin-bottom: 0;
 }
 
-.section-container .table-sm td {
-    padding: 0.25rem 0.5rem; /* Reduced padding */
+.validation-result.success {
+    background-color: rgba(25, 135, 84, 0.1);
 }
 
-.requirements-section {
-    margin-bottom: 0.5rem; /* Reduced margin */
-}
-
-.requirements-section .bg-white {
-    padding: 0.75rem !important; /* Reduced padding */
-}
-
-.requirements-list.small {
-    margin-bottom: 0; /* Remove bottom margin */
-}
-
-.requirements-list.small .d-flex {
-    margin-bottom: 0.25rem; /* Reduced spacing between items */
-}
-
-.requirements-list.small .d-flex:last-child {
-    margin-bottom: 0;
-}
-
-#flatFileUploadModal .modal-body {
-    padding: 0 !important;
-}
-
-.upload-dropzone {
-    padding: 1rem; /* Reduced padding */
-}
-
-.section-container h6 {
-    font-size: 0.875rem; /* Smaller heading size */
-    margin-bottom: 0.5rem; /* Reduced margin */
-}
-
-.small {
-    font-size: 0.75rem !important; /* Slightly smaller text */
-}
-
-.section-container:hover {
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-.accordion-button:not(.collapsed) {
-    background-color: #f8f9fa;
-    color: navy;
-}
-
-.accordion-button:focus {
-    box-shadow: none;
-    border-color: rgba(0, 0, 0, .125);
-}
-
-.accordion-button::after {
-    transition: transform 0.3s ease-in-out;
-}
-
-.accordion-button:not(.collapsed)::after {
-    transform: rotate(-180deg);
-}
-
-.accordion-collapse {
-    transition: all 0.3s ease-in-out;
-}
-
-.requirements-list i {
-    transition: transform 0.2s ease;
-}
-
-.requirements-list div:hover i {
-    transform: scale(1.2);
-}
-
-.accordion-item {
-    margin-bottom: 5px;
-    border-radius: 6px !important;
-    overflow: hidden;
-}
-
-.accordion-button {
-    border-radius: 6px;
-    transition: all 0.2s ease-in-out;
-}
-
-.accordion-button:hover {
-    background-color: #f0f0f0;
-}
-
-.accordion-body {
-    padding: 1.5rem;
-}
-
-.requirements-list span {
-    transition: color 0.2s ease;
-}
-
-.requirements-list div:hover span {
-    color: navy;
-}
 </style>
 
 {% endblock %}
@@ -1600,7 +1475,7 @@
                 <i class="bi bi-box-arrow-in-right"></i>
                 </div>
                 <div class="welcome-content">
-                    <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">Outbound Invoices</h3>
+                    <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">Outbound</h3>
                             <p class="mb-0 cursor-pointer" data-bs-placement="bottom" data-bs-html="true" 
                             title="">
                     Manage and track your outbound document submissions, including validation and submission status.
@@ -1663,6 +1538,7 @@
             </div>
             <span class="card-title-new">SUBMITTED</span>
         </div>
+
 
         <!-- Invalid Card -->
         <div class="info-card invalid-card">
@@ -1919,13 +1795,16 @@
                 <div class="table-card">
                     <div class="table-header">
                         <div class="table-header-content">
-                            <h2 class="table-title">Consolidated Document List</h2>
+                            <h2 class="table-title">Outbound Document List</h2>
                             <div class="table-actions">
                                 <!-- <button id="exportSelected" class="btn outbound-action-btn submit btn-sm ms-1" disabled>
                                     <i class="bi bi-download me-2"></i>Export Selected
                                 </button> -->
                             </div>
-                        </div>              
+                            
+                        </div>
+                       
+                        
                     </div>
                     <div class="table-controls">
                         <div class="d-flex align-items-center gap-1">
@@ -1957,32 +1836,19 @@
                                             <!-- Quick Filters -->
                                             <div class="col-md-8">
                                                 <div class="quick-filters d-flex gap-2">
+<<<<<<< HEAD
                                                     <!-- <button class="btn outbound-action-btn submit" data-bs-toggle="modal" data-bs-target="#consolidatedSubmitModal">
                                                         <i class="bi bi-file-earmark-arrow-up me-1"></i>Bulk Submit
                                                     </button> -->
                                                     <button class="btn outbound-action-btn submit active" data-filter="all">
+=======
+                                                    <button class="btn outbound-action-btn submit" data-filter="all">
+>>>>>>> 8ccddfa364bc2714953867d0df49c1bee453e878
                                                         <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
                                                     </button>
-                                          
                                                     <button class="btn outbound-action-btn submit active" data-filter="pending">
                                                         <i class="bi bi-clock-history me-1"></i>Pending
                                                     </button>
-                                                    <!-- <button class="btn outbound-action-btn submit" id="openFlatFileModalBtn" data-bs-toggle="modal" data-bs-target="#flatFileUploadModal" title="If you don't have custom integration, you can upload your own flat file">
-                                                        <i class="bi bi-file-earmark-text me-1"></i>Upload File
-                                                    </button> -->
-                                                    <!-- <button class="btn outbound-action-btn submit" data-filter="submitted">
-                                                        <i class="bi bi-check-circle me-1 text-success"></i>Submitted
-                                                    </button>
-                                                    <button class="btn outbound-action-btn submit" data-filter="invalid">
-                                                        <i class="bi bi-x-circle me-1 text-danger"></i>Invalid
-                                                    </button>
-                                                    
-                                                    <button class="btn outbound-action-btn submit" data-filter="cancelled">
-                                                        <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Cancelled
-                                                    </button>
-                                                    <button class="btn outbound-action-btn submit" data-filter="pending">
-                                                        <i class="bi bi-clock-history me-1 text-warning"></i>Pending
-                                                    </button> -->
                                                     <!-- <div class="ms-auto">
                                                         <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
                                                             <i class="bi bi-eraser me-1"></i>Clear
@@ -1992,6 +1858,7 @@
                                                         </button>
                                                     </div> -->
                                                 </div>
+                                                
                                             </div>
                                         </div>
                     
@@ -2005,77 +1872,17 @@
                                                             <i class="bi bi-calendar-range me-2"></i>Date Range
                                                         </label>
                                                         <div class="input-group">
-                                                            <input type="date" class="form-control" id="tableStartDate">
+                                                            <input type="date" class="form-control" id="startDate" placeholder="Start date">
                                                             <span class="input-group-text bg-light">to</span>
-                                                            <input type="date" class="form-control" id="tableEndDate">
+                                                            <input type="date" class="form-control" id="endDate" placeholder="End date">
                                                         </div>
-                                                    </div>
-                    
-                                                    <!-- Amount Range -->
-                                                    <div class="col-md-6">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-currency-dollar me-2"></i>Amount Range
-                                                        </label>
-                                                        <div class="input-group">
-                                                            <input type="number" class="form-control" id="minAmount" placeholder="Min">
-                                                            <span class="input-group-text bg-light">to</span>
-                                                            <input type="number" class="form-control" id="maxAmount" placeholder="Max">
-                                                        </div>
-                                                    </div>
-                    
-                                                    <!-- Company Filter -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-building me-2"></i>Company
-                                                        </label>
-                                                        <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
-                                                    </div>
-                    
-                                                    <!-- Document Type -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-file-text me-2"></i>Document Type
-                                                        </label>
-                                                        <select class="form-select" id="documentTypeFilter">
-                                                            <option value="">All Types</option>
-                                                            <option value="Invoice">Invoice</option>
-                                                            <option value="Credit Note">Credit Note</option>
-                                                            <option value="Debit Note">Debit Note</option>
-                                                        </select>
-                                                    </div>
-                    
-                                                    <!-- Source -->
-                                                    <div class="col-md-4">
-                                                        <label class="form-label d-flex align-items-center">
-                                                            <i class="bi bi-diagram-2 me-2"></i>Source
-                                                            <i class="bi bi-info-circle ms-2" data-bs-html="true" 
-                                                            title="<div class='tooltip-content'>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-info-circle'></i>
-                                                                        <span><b>LHDN Validation:</b></span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-check-circle text-success'></i>
-                                                                        <span>Valid: Document passed validation</span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-x-circle text-danger'></i>
-                                                                        <span>Invalid: Failed validation checks</span>
-                                                                    </div>
-                                                                    <div class='tooltip-row'>
-                                                                        <i class='bi bi-clock-history text-warning'></i>
-                                                                        <span>Pending: Awaiting for Submission to LHDN for validation</span>
-                                                                    </div>
-                                                                </div>"></i>
-                                                        </label>
-                                                        <select class="form-select" id="sourceFilter">
-                                                            <option value="">LHDN</option>
-                                                            
-                                                        </select>
-                                                        <small class="text-muted mt-1 d-block">
-                                                            <i class="bi bi-info-circle-fill me-1"></i>
-                                                            LHDN responses include validation status and timestamps
+                                                        <small class="text-muted mt-1">
+                                                            <i class="bi bi-info-circle me-1"></i>
+                                                            Filter documents by their upload date
                                                         </small>
+                                                    </div>
+                    
+                                                        
                                                     </div>
                                                 </div>
                     
@@ -2126,7 +1933,7 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                               
+                                             
                                             </tbody>
                                         </table>
                                 </div>
@@ -2285,8 +2092,8 @@
                                 const consolidationHeader = document.getElementById('consolidationHeader');
                                 const consolidationDetails = document.getElementById('consolidationDetails');
                                 
-                                if (toggleBtn && consolidationDetails) {
-                                    // Initialize collapse
+                                if (toggleBtn && consolidationDetails && consolidationHeader) {
+                                    // Initialize collapse with Bootstrap
                                     const bsCollapse = new bootstrap.Collapse(consolidationDetails, {
                                         toggle: false
                                     });
@@ -2295,7 +2102,6 @@
                                     consolidationHeader.addEventListener('mouseenter', function() {
                                         this.style.transform = 'translateY(-2px)';
                                         this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
-                                        this.style.cursor = 'pointer';
                                     });
                                     
                                     consolidationHeader.addEventListener('mouseleave', function() {
@@ -2305,7 +2111,7 @@
 
                                     // Handle header click
                                     consolidationHeader.addEventListener('click', function(e) {
-                                        // Don't trigger if clicking the PDF link or its children
+                                        // Don't trigger if clicking the PDF link or toggle button
                                         if (!e.target.closest('a') && !e.target.closest('button')) {
                                             bsCollapse.toggle();
                                         }
@@ -2313,12 +2119,14 @@
 
                                     // Handle toggle button click
                                     toggleBtn.addEventListener('click', function(e) {
-                                        e.stopPropagation(); // Prevent event bubbling
+                                        e.preventDefault();
+                                        e.stopPropagation();
                                         bsCollapse.toggle();
                                     });
 
                                     // Handle collapse events
                                     consolidationDetails.addEventListener('show.bs.collapse', function () {
+                                        toggleBtn.setAttribute('aria-expanded', 'true');
                                         const icon = toggleBtn.querySelector('.toggle-icon');
                                         if (icon) {
                                             icon.style.transform = 'rotate(180deg)';
@@ -2326,9 +2134,10 @@
                                     });
 
                                     consolidationDetails.addEventListener('hide.bs.collapse', function () {
+                                        toggleBtn.setAttribute('aria-expanded', 'false');
                                         const icon = toggleBtn.querySelector('.toggle-icon');
                                         if (icon) {
-                                            icon.style.transform = 'rotate(0deg)';
+                                            icon.style.transform = 'rotate(0deg)'; 
                                         }
                                     });
 
@@ -2340,653 +2149,6 @@
                                 }
                             });
                         </script>
-
-         
-                        <!-- Add Flat File Upload Modal -->
-                        <div class="modal fade" id="flatFileUploadModal" tabindex="-1">
-                            <div class="modal-dialog modal-dialog-centered modal-lg">
-                                <div class="modal-content">
-                                    <div class="modal-header">
-                                        <h5 class="modal-title" id="flatFileUploadModalLabel">
-                                            <i class="bi bi-file-earmark-text me-2"></i>
-                                            Upload Flat File for Consolidation
-                                        </h5>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                    </div>
-                                    <div class="modal-body p-0">
-                                        <div class="row g-0">
-                                            <!-- Left Column - Upload Form -->
-                                            <div class="col-md-5 border-end">
-                                                <div class="p-4">
-                                                   <!-- Information Alert -->
-                                                   <div class="alert alert-info mb-3 small">
-                                                    <div class="d-flex">
-                                                        <div class="flex-shrink-0">
-                                                            <i class="bi bi-info-circle-fill"></i>
-                                                        </div>
-                                                        <div class="flex-grow-1 ms-2">
-                                                            <p class="mb-0"><strong>LHDN Recommendation:</strong><br> Upload your flat file in proper format for efficient processing.</p>
-                                                            <small>Properly formatted files are processed faster and reduce errors.</small>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                     <!-- Upload Area -->
-                                                     <div class="upload-dropzone border-2 border-dashed rounded-3 text-center py-4 mb-3" id="uploadArea">
-                                                        <div>Drag & Drop your file here</div>
-                                                        <div class="text-muted my-2 small">or</div>
-                                                        <div class="text-center mb-2">
-                                                            <a href="#" class="text-primary fw-bold" id="browseFilesLink">Browse Files</a>
-                                                            <input type="file" id="flatFileUpload" class="d-none" accept=".csv,.txt">
-                                                        </div>
-                                                        <div class="text-muted mt-2 small d-flex align-items-center justify-content-center">
-                                                            <i class="bi bi-info-circle me-1"></i>
-                                                            Maximum file size: 5MB
-                                                        </div>
-                                                    </div>
-                                                    <!-- File Details -->
-                                                    <div id="fileDetails" class="d-none mt-3">
-                                                        <div class="selected-file p-2 bg-light rounded">
-                                                            <div class="d-flex align-items-center">
-                                                                <i class="bi bi-file-earmark-text text-primary me-2"></i>
-                                                                <div class="flex-grow-1">
-                                                                    <h6 class="mb-0 file-name">filename.csv</h6>
-                                                                    <p class="mb-0 small text-muted file-info">Size: 0 KB</p>
-                                                                </div>
-                                                                <button class="btn btn-link text-danger p-0" id="removeFile">
-                                                                    <i class="bi bi-x-lg"></i>
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-          
-                                                  
-
-                                                    <!-- Example File Section -->
-                                                    <div class="mb-3 mt-2">
-                                                        <h6 class="small text-muted d-flex align-items-center mb-0 fw-normal">
-                                                            Example CSV Format
-                                                            <i class="bi bi-info-circle ms-2" 
-                                                               data-bs-toggle="tooltip" 
-                                                               data-bs-html="true"
-                                                               data-bs-placement="right"
-                                                               title="• Text fields: Use double quotes<br>• Dates: YYYY-MM-DD<br>• Amounts: 2 decimal places<br>• Exchange Rate: 4 decimal places<br>• MSIC: 5-digit code"></i>
-                                                        </h6>
-                                                        <div class="example-content">
-                                                            <div class="text-muted small mb-0 fw-normal">Header Row:</div>
-                                                            <pre class="bg-light border rounded p-2 small mb-0 fw-normal" style="overflow-x: auto;">SupplierName,SupplierTIN,SupplierSSM,SupplierSST,SupplierMSIC,BuyerName,BuyerTIN,BuyerSSM,BuyerSST,InvoiceNo,InvoiceDate,CurrencyCode,ExchangeRate,ItemDescription,Classification,TaxType,TaxRate,TaxAmount,TotalExclTax,TotalInclTax</pre>
-                                                            
-                                                            <div class="text-muted small mt-2 mb-0 fw-normal">Example Data:</div>
-                                                            <pre class="bg-light border rounded p-2 small mb-0 fw-normal" style="overflow-x: auto;">"ABC Company Sdn Bhd","T1234567","SSM123456","SST98765","46421","XYZ Trading","B7654321","BSSM654321","BSST12345","INV-2024-001","2024-03-26","MYR","1.0000","Office Supplies","G4","SST","6","60.00","1000.00","1060.00"</pre>
-                                                        </div>
-                                                    </div>
-
-                                                    <script>
-                                                        // Initialize tooltips
-                                                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-                                                        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                                                            return new bootstrap.Tooltip(tooltipTriggerEl);
-                                                        });
-                                                    </script>
-
-                                                </div>
-                                            </div>
-                                            
-                                            <!-- Right Column - Requirements & Information -->
-                                            <div class="col-md-7 bg-light">
-                                                <div class="p-3">
-                                                    <div class="text-center mb-2">
-                                                        <i class="bi bi-file-earmark-text h1 mb-1 d-block opacity-50"></i>
-                                                        <h6 class="mb-1">Consolidated e-Invoice Upload</h6>
-                                                    </div>
-                                          
-                                                     
-                                                    <div class="d-flex align-items-center mb-2">
-                                                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>
-                                                        <h6 class="mb-0">LHDN Submission Requirements<span style="color: red; animation: blinker 1s linear infinite;">*</span></h6>
-                                                    </div>
-
-                                                    
-                                                    <!-- Scrollable Additional Details Container -->
-                                                    <div class="additional-details-container" style="max-height: 380px; overflow-y: auto;">
-                                                    <!-- Fixed PXC Requirements Section -->
-                                                    <div class="requirements-section mb-1">
-                                                        <div class="accordion accordion-flush" id="requirementsAccordion">
-                                                            <!-- File Requirements -->
-                                                            <div class="accordion-item">
-                                                                <h2 class="accordion-header">
-                                                                    <button class="accordion-button mb-0 fw-normal" type="button" data-bs-toggle="collapse" data-bs-target="#fileRequirements" aria-expanded="true" aria-controls="fileRequirements">
-                                                                        <i class="bi bi-file-earmark-text me-2" style="color: navy;"></i>
-                                                                        File Requirements
-                                                                    </button>
-                                                                </h2>
-                                                                <div id="fileRequirements" class="accordion-collapse collapse show focus" data-bs-parent="#requirementsAccordion">
-                                                                    <div class="accordion-body">
-                                                                        <div class="requirements-list small">
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>File must be CSV/XLS/XLSX with proper delimiters</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Required fields must be present</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>UTF-8 encoding required</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Header row must include standard field names</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            <!-- Supplier Information -->
-                                                            <div class="accordion-item">
-                                                                <h2 class="accordion-header">
-                                                                    <button class="accordion-button collapsed mb-0 fw-normal" type="button" data-bs-toggle="collapse" data-bs-target="#supplierInfo" aria-expanded="false" aria-controls="supplierInfo">
-                                                                        <i class="bi bi-building me-2" style="color: navy;"></i>
-                                                                        Required Supplier Information
-                                                                    </button>
-                                                                </h2>
-                                                                <div id="supplierInfo" class="accordion-collapse collapse" data-bs-parent="#requirementsAccordion">
-                                                                    <div class="accordion-body">
-                                                                        <div class="requirements-list small">
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Supplier's Name and TIN (Tax Identification Number)</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Business Registration Number (SSM)</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>SST Registration Number (if applicable)</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>MSIC Code and Business Activity Description</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            <!-- Buyer Information -->
-                                                            <div class="accordion-item">
-                                                                <h2 class="accordion-header">
-                                                                    <button class="accordion-button collapsed mb-0 fw-normal" type="button" data-bs-toggle="collapse" data-bs-target="#buyerInfo" aria-expanded="false" aria-controls="buyerInfo">
-                                                                        <i class="bi bi-person me-2" style="color: navy;"></i>
-                                                                        Required Buyer Information
-                                                                    </button>
-                                                                </h2>
-                                                                <div id="buyerInfo" class="accordion-collapse collapse" data-bs-parent="#requirementsAccordion">
-                                                                    <div class="accordion-body">
-                                                                        <div class="requirements-list small">
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Buyer's Name and TIN</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Business Registration Number</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>SST Registration Number (if applicable)</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            <!-- Invoice Details -->
-                                                            <div class="accordion-item">
-                                                                <h2 class="accordion-header">
-                                                                    <button class="accordion-button collapsed mb-0 fw-normal" type="button" data-bs-toggle="collapse" data-bs-target="#invoiceDetails" aria-expanded="false" aria-controls="invoiceDetails">
-                                                                        <i class="bi bi-receipt me-2" style="color: navy;" ></i>
-                                                                        Required Invoice Details
-                                                                    </button>
-                                                                </h2>
-                                                                <div id="invoiceDetails" class="accordion-collapse collapse" data-bs-parent="#requirementsAccordion">
-                                                                    <div class="accordion-body">
-                                                                        <div class="requirements-list small">
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Invoice Number and Date</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Currency Code and Exchange Rate (if not MYR)</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Product/Service Classification and Description</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center mb-2">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Tax Details (Type, Rate, Amount)</span>
-                                                                            </div>
-                                                                            <div class="d-flex align-items-center">
-                                                                                <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
-                                                                                <span>Total Amount (Including and Excluding Tax)</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                                                                            <!-- Section Container Template (DRY) -->
-                                                        <!-- Use this template to create consistent section containers -->
-
-                                                        <!-- Buyer Details Section -->
-                                                        <div class="section-container bg-white p-3 rounded border mb-3">
-                                                            <div class="d-flex align-items-center mb-2">
-                                                                <i class="bi bi-person-badge text-primary me-2"></i>
-                                                                <h6 class="mb-0 fw-bold">Standard Buyer Details</h6>
-                                                            </div>
-                                                            <div class="small">
-                                                                <div class="row">
-                                                                    <div class="col-6 mb-2">
-                                                                        <span class="text-muted d-block">Name:</span>
-                                                                        <span>General Public</span>
-                                                                    </div>
-                                                                    <div class="col-6 mb-2">
-                                                                        <span class="text-muted d-block">TIN:</span>
-                                                                        <span>EI00000000010</span>
-                                                                    </div>
-                                                                    <div class="col-6 mb-2">
-                                                                        <span class="text-muted d-block">ID/Passport:</span>
-                                                                        <span>NA</span>
-                                                                    </div>
-                                                                    <div class="col-6 mb-2">
-                                                                        <span class="text-muted d-block">Other:</span>
-                                                                        <span>NA (Address/Contact/SST)</span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <!-- Consolidation Methods -->
-                                                        <div class="section-container bg-white p-3 rounded border mb-3">
-                                                            <div class="d-flex align-items-center mb-2">
-                                                                <i class="bi bi-diagram-3 text-primary me-2"></i>
-                                                                <h6 class="mb-0 fw-bold">Consolidation Methods</h6>
-                                                            </div>
-                                                            <ul class="small list-unstyled">
-                                                                <li class="mb-2 d-flex align-items-center">
-                                                                    <i class="bi bi-1-circle-fill text-primary me-2"></i>
-                                                                    <span>List each receipt as separate line items</span>
-                                                                </li>
-                                                                <li class="mb-2 d-flex align-items-center">
-                                                                    <i class="bi bi-2-circle-fill text-primary me-2"></i>
-                                                                    <span>Group continuous receipt numbers together</span>
-                                                                </li>
-                                                                <li class="d-flex align-items-center">
-                                                                    <i class="bi bi-3-circle-fill text-primary me-2"></i>
-                                                                    <span>Branch-specific consolidated submissions</span>
-                                                                </li>
-                                                            </ul>
-                                                        </div>
-
-                                                        <!-- System Limitations -->
-                                                        <div class="section-container bg-white p-3 rounded border">
-                                                            <div class="d-flex align-items-center mb-2">
-                                                                <i class="bi bi-exclamation-triangle text-warning me-2"></i>
-                                                                <h6 class="mb-0 fw-bold">System Limitations</h6>
-                                                            </div>
-                                                            <ul class="small list-unstyled">
-                                                                <li class="mb-2 d-flex align-items-center">
-                                                                    <i class="bi bi-dot me-2"></i>
-                                                                    <span>Maximum file size: 5MB</span>
-                                                                </li>
-                                                                <li class="mb-2 d-flex align-items-center">
-                                                                    <i class="bi bi-dot me-2"></i>
-                                                                    <span>Maximum 100 e-invoices per submission</span>
-                                                                </li>
-                                                                <li class="d-flex align-items-center">
-                                                                    <i class="bi bi-dot me-2"></i>
-                                                                    <span>Individual e-invoice size limit: 300KB</span>
-                                                                </li>
-                                                            </ul>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Fixed Bottom Section -->
-                                                    <div class="mt-3 pt-3 border-top">
-                                                        <div class="d-flex align-items-center">
-                                                            <i class="bi bi-lightbulb text-primary me-2"></i>
-                                                            <small class="text-muted">
-                                                                <strong>LHDN Best Practice:</strong> Validate all TINs before uploading
-                                                            </small>
-                                                            <a href="https://www.cleartax.com/my/en/consolidated-einvoicing-malaysia" 
-                                                               class="btn btn-link btn-sm ms-auto p-0" 
-                                                               target="_blank"
-                                                               data-bs-toggle="tooltip" 
-                                                               title="Learn more about Malaysia's e-Invoice consolidation requirements">
-                                                                <i class="bi bi-box-arrow-up-right"></i>
-                                                            </a>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <!-- Additional Guide -->
-                                                    <div class="mt-2">
-                                                        <div class="d-flex align-items-center">
-                                                            <i class="bi bi-info-circle text-info me-2"></i>
-                                                            <small class="text-muted">
-                                                                <strong>Pro Tip:</strong> Ensure your file size is under 5MB for optimal processing speed
-                                                            </small>
-                                                            <button type="button" 
-                                                                    class="btn btn-link btn-sm ms-auto p-0"
-                                                                    data-bs-toggle="tooltip"
-                                                                    title="Large files may take longer to process">
-                                                                <i class="bi bi-question-circle"></i>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="modal-footer border-top-0">
-                                        <button type="button" class="btn outbound-action-btn cancel" id="cancelUploadBtn" data-bs-dismiss="modal">Cancel</button>
-                                        <button type="button" class="btn outbound-action-btn submit" id="processFileBtn" disabled>
-                                            <i class="bi bi-arrow-right-circle me-2"></i>
-                                            Process File
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <style>
-                            .upload-dropzone {
-                                border: 2px dashed #dee2e6;
-                                transition: all 0.3s ease;
-                                background-color: #f8f9fa;
-                            }
-
-                            .upload-dropzone:hover {
-                                border-color: #0d6efd;
-                                background-color: rgba(13, 110, 253, 0.05);
-                                cursor: pointer;
-                            }
-
-                            .upload-dropzone.border-primary {
-                                border-color: #0d6efd;
-                                background-color: rgba(13, 110, 253, 0.05);
-                            }
-
-                            .selected-file {
-                                transition: all 0.3s ease;
-                                background-color: #f8f9fa !important;
-                                border: 1px solid #e9ecef;
-                            }
-
-                            .selected-file:hover {
-                                background-color: #e9ecef !important;
-                            }
-
-                            #flatFileUploadModal .modal-content {
-                                border-radius: 10px;
-                                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-                                border: none;
-                            }
-
-                            #flatFileUploadModal .modal-header {
-                                padding: 1rem 1.5rem;
-                            }
-
-                            #flatFileUploadModal .modal-body {
-                                padding: 1.5rem;
-                            }
-
-                            #flatFileUploadModal .modal-footer {
-                                padding: 1rem 1.5rem;
-                            }
-
-                            .requirement-item .check-icon {
-                                width: 24px;
-                                text-align: center;
-                            }
-
-                            #removeFile {
-                                opacity: 0.7;
-                                transition: all 0.2s ease;
-                            }
-
-                            #removeFile:hover {
-                                opacity: 1;
-                            }
-                            
-                            #processFileBtn {
-                                padding-left: 1.5rem;
-                                padding-right: 1.5rem;
-                            }
-                            
-                            #processFileBtn:hover:not(:disabled) {
-                                box-shadow: 0 4px 10px rgba(13, 110, 253, 0.25);
-                            }
-                            
-                            #processFileBtn:disabled {
-                                opacity: 0.65;
-                            }
-                            
-                            #browseFilesLink {
-                                text-decoration: none;
-                                color: #0d6efd;
-                                font-weight: 500;
-                            }
-                            
-                            #browseFilesLink:hover {
-                                text-decoration: underline;
-                            }
-                        </style>
-
-                        <script>
-                            document.addEventListener('DOMContentLoaded', function() {
-                                const uploadArea = document.getElementById('uploadArea');
-                                const fileInput = document.getElementById('flatFileUpload');
-                                const browseLink = document.getElementById('browseFilesLink');
-                                const fileDetails = document.getElementById('fileDetails');
-                                const fileName = document.querySelector('.file-name');
-                                const fileInfo = document.querySelector('.file-info');
-                                const removeFileBtn = document.getElementById('removeFile');
-                                const processFileBtn = document.getElementById('processFileBtn');
-
-                                // Redirect browse link to file input
-                                browseLink.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    fileInput.click();
-                                });
-
-                                // Drag and drop handlers
-                                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                                    uploadArea.addEventListener(eventName, preventDefaults, false);
-                                });
-
-                                function preventDefaults(e) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                }
-
-                                ['dragenter', 'dragover'].forEach(eventName => {
-                                    uploadArea.addEventListener(eventName, highlight, false);
-                                });
-
-                                ['dragleave', 'drop'].forEach(eventName => {
-                                    uploadArea.addEventListener(eventName, unhighlight, false);
-                                });
-
-                                function highlight(e) {
-                                    uploadArea.classList.add('border-primary');
-                                }
-
-                                function unhighlight(e) {
-                                    uploadArea.classList.remove('border-primary');
-                                }
-
-                                // Handle file drop
-                                uploadArea.addEventListener('drop', handleDrop, false);
-
-                                function handleDrop(e) {
-                                    const dt = e.dataTransfer;
-                                    const file = dt.files[0];
-                                    handleFile(file);
-                                }
-
-                                // Handle file selection
-                                fileInput.addEventListener('change', function(e) {
-                                    const file = e.target.files[0];
-                                    handleFile(file);
-                                });
-
-                                function handleFile(file) {
-                                    if (file) {
-                                        // Check file type
-                                        const validTypes = ['.csv', '.txt'];
-                                        const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-                                        
-                                        if (!validTypes.includes(fileExtension)) {
-                                            alert('Please upload a CSV or TXT file');
-                                            return;
-                                        }
-
-                                        // Check file size (10MB limit)
-                                        if (file.size > 10 * 1024 * 1024) {
-                                            alert('File size exceeds 10MB limit');
-                                            return;
-                                        }
-
-                                        // Update UI
-                                        fileName.textContent = file.name;
-                                        fileInfo.textContent = `Size: ${formatFileSize(file.size)}`;
-                                        fileDetails.classList.remove('d-none');
-                                        processFileBtn.disabled = false;
-                                    }
-                                }
-
-                                // Remove file
-                                removeFileBtn.addEventListener('click', function() {
-                                    fileInput.value = '';
-                                    fileDetails.classList.add('d-none');
-                                    processFileBtn.disabled = true;
-                                });
-
-                                // Cancel button handler
-                                const cancelUploadBtn = document.getElementById('cancelUploadBtn');
-                                if (cancelUploadBtn) {
-                                    cancelUploadBtn.addEventListener('click', function() {
-                                        // Reset file input and UI
-                                        fileInput.value = '';
-                                        fileDetails.classList.add('d-none');
-                                        processFileBtn.disabled = true;
-                                        
-                                        // Ensure backdrop is removed
-                                        setTimeout(() => {
-                                            const backdrop = document.querySelector('.modal-backdrop');
-                                            if (backdrop) {
-                                                backdrop.remove();
-                                            }
-                                            document.body.classList.remove('modal-open');
-                                            document.body.style.overflow = '';
-                                            document.body.style.paddingRight = '';
-                                        }, 200);
-                                    });
-                                }
-
-                                // Also handle modal hidden event to clean up backdrop
-                                const flatFileUploadModal = document.getElementById('flatFileUploadModal');
-                                if (flatFileUploadModal) {
-                                    flatFileUploadModal.addEventListener('hidden.bs.modal', function () {
-                                        // Ensure backdrop is removed
-                                        const backdrop = document.querySelector('.modal-backdrop');
-                                        if (backdrop) {
-                                            backdrop.remove();
-                                        }
-                                        document.body.classList.remove('modal-open');
-                                        document.body.style.overflow = '';
-                                        document.body.style.paddingRight = '';
-                                    });
-                                }
-
-                                // Process file button
-                                processFileBtn.addEventListener('click', function() {
-                                    // Close modal after processing
-                                    const modal = bootstrap.Modal.getInstance(document.getElementById('flatFileUploadModal'));
-                                    
-                                    // TODO: Add your file processing logic here
-                                    
-                                    // Show success message
-                                    showAlert('success', 'File Processed', 'Your flat file has been successfully processed.');
-                                    
-                                    // Reset the file input
-                                    fileInput.value = '';
-                                    fileDetails.classList.add('d-none');
-                                    processFileBtn.disabled = true;
-                                    
-                                    // Close the modal
-                                    modal.hide();
-                                });
-
-                                // Format file size
-                                function formatFileSize(bytes) {
-                                    if (bytes === 0) return '0 Bytes';
-                                    const k = 1024;
-                                    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-                                    const i = Math.floor(Math.log(bytes) / Math.log(k));
-                                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-                                }
-                                
-                                // Show alert function
-                                function showAlert(type, title, message) {
-                                    const alertTemplate = document.getElementById('alertTemplate');
-                                    if (!alertTemplate) return;
-                                    
-                                    const alertContainer = document.createElement('div');
-                                    alertContainer.className = 'alert-container';
-                                    document.body.appendChild(alertContainer);
-                                    
-                                    const alertClone = document.importNode(alertTemplate.content, true);
-                                    const alert = alertClone.querySelector('.custom-alert');
-                                    
-                                    // Set alert type
-                                    alert.classList.add(`alert-${type}`);
-                                    
-                                    // Set icon
-                                    const icon = alertClone.querySelector('.alert-icon');
-                                    if (type === 'success') {
-                                        icon.className = 'alert-icon bi bi-check-circle-fill';
-                                    } else if (type === 'error') {
-                                        icon.className = 'alert-icon bi bi-exclamation-circle-fill';
-                                    } else if (type === 'info') {
-                                        icon.className = 'alert-icon bi bi-info-circle-fill';
-                                    } else if (type === 'warning') {
-                                        icon.className = 'alert-icon bi bi-exclamation-triangle-fill';
-                                    }
-                                    
-                                    // Set content
-                                    alertClone.querySelector('.alert-title').textContent = title;
-                                    alertClone.querySelector('.alert-message').textContent = message;
-                                    
-                                    // Add to container
-                                    alertContainer.appendChild(alertClone);
-                                    
-                                    // Auto remove after 5 seconds
-                                    setTimeout(() => {
-                                        alert.classList.add('alert-hide');
-                                        setTimeout(() => {
-                                            alertContainer.remove();
-                                        }, 300);
-                                    }, 5000);
-                                }
-                            });
-                        </script>
-
                         <div class="pagination-container">
                         <!-- Pagination will be inserted by DataTables -->
                         </div>
@@ -3260,6 +2422,19 @@ document.addEventListener('DOMContentLoaded', function() {
 <script src="/assets/js/modules/tutorial/guided-tour.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
+<!-- Loading Backdrop Modal -->
+<div id="loadingBackdrop" class="loading-backdrop" style="display: none;">
+    <div class="loading-content">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <div class="loading-message">
+            <h5>Loading and Preparing Your Documents</h5>
+            <p>Please do not refresh the page...</p>
+        </div>
+    </div>
+</div>
+
 <!-- TIN Validation Modal -->
 <div class="modal fade" id="tinValidationModal" tabindex="-1" aria-labelledby="tinValidationModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -3349,242 +2524,3 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 {% endblock %} 
-
-<!-- Custom Invoice History Modal -->
-<div class="modal fade" id="invoiceHistoryModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-clock-history me-2"></i>
-                    Invoice History Timeline
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-0">
-                <div class="row g-0">
-                    <!-- Left Column - Timeline -->
-                    <div class="col-md-7 border-end">
-                        <div class="p-4">
-                            <div class="alert alert-info mb-4 small">
-                                <div class="d-flex">
-                                    <div class="flex-shrink-0">
-                                        <i class="bi bi-info-circle-fill"></i>
-                                    </div>
-                                    <div class="flex-grow-1 ms-2">
-                                        <p class="mb-0"><strong>Timeline View:</strong><br> Track the complete lifecycle of your invoice from creation to submission.</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Timeline Component -->
-                            <div class="invoice-timeline">
-                                <div class="timeline-item">
-                                    <div class="timeline-point bg-success">
-                                        <i class="bi bi-plus-lg"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <h6 class="mb-1">Invoice Created</h6>
-                                        <p class="mb-0 small text-muted" id="timelineCreatedDate">June 15, 2024 - 09:45 AM</p>
-                                        <p class="mb-0 small">Initial invoice generated in the system</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="timeline-item">
-                                    <div class="timeline-point bg-primary">
-                                        <i class="bi bi-pencil"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <h6 class="mb-1">Invoice Modified</h6>
-                                        <p class="mb-0 small text-muted" id="timelineModifiedDate">June 16, 2024 - 10:30 AM</p>
-                                        <p class="mb-0 small">Invoice details updated</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="timeline-item">
-                                    <div class="timeline-point bg-warning">
-                                        <i class="bi bi-check2-circle"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <h6 class="mb-1">Validation Complete</h6>
-                                        <p class="mb-0 small text-muted" id="timelineValidatedDate">June 17, 2024 - 11:15 AM</p>
-                                        <p class="mb-0 small">Invoice validated against LHDN requirements</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="timeline-item">
-                                    <div class="timeline-point bg-info">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <h6 class="mb-1">Submitted to LHDN</h6>
-                                        <p class="mb-0 small text-muted" id="timelineSubmittedDate">June 18, 2024 - 02:30 PM</p>
-                                        <p class="mb-0 small">Invoice successfully submitted to tax authority</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="timeline-item">
-                                    <div class="timeline-point bg-success">
-                                        <i class="bi bi-check-lg"></i>
-                                    </div>
-                                    <div class="timeline-content">
-                                        <h6 class="mb-1">Acknowledged by LHDN</h6>
-                                        <p class="mb-0 small text-muted" id="timelineAcknowledgedDate">June 19, 2024 - 10:45 AM</p>
-                                        <p class="mb-0 small">Receipt confirmation received from tax authority</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Right Column - Details & Actions -->
-                    <div class="col-md-5 bg-light">
-                        <div class="p-4">
-                            <div class="text-center mb-3">
-                                <i class="bi bi-file-earmark-text h1 mb-2 d-block text-primary opacity-75"></i>
-                                <h6 class="mb-1">Invoice Details</h6>
-                                <p class="mb-0 small text-muted" id="invoiceNumberDisplay">INV-2024-0123</p>
-                            </div>
-                            
-                            <!-- Invoice Summary -->
-                            <div class="invoice-summary mb-4">
-                                <div class="summary-item d-flex justify-content-between border-bottom py-2">
-                                    <span class="text-muted">Status:</span>
-                                    <span class="badge bg-success" id="invoiceStatusBadge">Completed</span>
-                                </div>
-                                <div class="summary-item d-flex justify-content-between border-bottom py-2">
-                                    <span class="text-muted">Submission ID:</span>
-                                    <span id="submissionIdDisplay">LHDN-98765432</span>
-                                </div>
-                                <div class="summary-item d-flex justify-content-between border-bottom py-2">
-                                    <span class="text-muted">Buyer:</span>
-                                    <span id="buyerNameDisplay">ABC Company</span>
-                                </div>
-                                <div class="summary-item d-flex justify-content-between border-bottom py-2">
-                                    <span class="text-muted">Amount:</span>
-                                    <span id="invoiceAmountDisplay">RM 1,234.56</span>
-                                </div>
-                                <div class="summary-item d-flex justify-content-between border-bottom py-2">
-                                    <span class="text-muted">Tax Amount:</span>
-                                    <span id="taxAmountDisplay">RM 74.07</span>
-                                </div>
-                            </div>
-                            
-                            <!-- Action Buttons -->
-                            <div class="d-grid gap-2 mb-4">
-                                <button class="btn btn-outline-primary btn-sm" id="viewInvoicePdfBtn">
-                                    <i class="bi bi-file-earmark-pdf me-2"></i>
-                                    View PDF
-                                </button>
-                                <button class="btn btn-outline-secondary btn-sm" id="downloadInvoiceBtn">
-                                    <i class="bi bi-download me-2"></i>
-                                    Download
-                                </button>
-                            </div>
-                            
-                            <!-- History Notes -->
-                            <div class="history-notes">
-                                <h6 class="mb-2 small fw-bold">Notes & Comments</h6>
-                                <div class="notes-container bg-white p-3 rounded border small" style="max-height: 120px; overflow-y: auto;">
-                                    <div class="note-item mb-2">
-                                        <div class="d-flex justify-content-between">
-                                            <span class="fw-bold">System</span>
-                                            <span class="text-muted">Jun 19, 2024</span>
-                                        </div>
-                                        <p class="mb-0">Invoice successfully processed by LHDN.</p>
-                                    </div>
-                                    <div class="note-item">
-                                        <div class="d-flex justify-content-between">
-                                            <span class="fw-bold">John Doe</span>
-                                            <span class="text-muted">Jun 16, 2024</span>
-                                        </div>
-                                        <p class="mb-0">Updated buyer information as requested.</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" id="printTimelineBtn">
-                    <i class="bi bi-printer me-2"></i>
-                    Print Timeline
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Demo function to show the invoice history modal
-        window.showInvoiceHistoryModal = function(invoiceId) {
-            // Update invoice details
-            document.getElementById('invoiceNumberDisplay').textContent = invoiceId || 'INV-2024-0123';
-            
-            // Set current dates for timeline (for demo)
-            const today = new Date();
-            const day1 = new Date(today);
-            day1.setDate(today.getDate() - 4);
-            const day2 = new Date(today);
-            day2.setDate(today.getDate() - 3);
-            const day3 = new Date(today);
-            day3.setDate(today.getDate() - 2);
-            const day4 = new Date(today);
-            day4.setDate(today.getDate() - 1);
-            const day5 = new Date(today);
-            
-            // Format dates for display
-            const formatDate = (date) => {
-                return date.toLocaleDateString('en-US', { 
-                    month: 'long', 
-                    day: 'numeric', 
-                    year: 'numeric' 
-                }) + ' - ' + date.toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-            };
-            
-            // Update timeline dates
-            document.getElementById('timelineCreatedDate').textContent = formatDate(day1);
-            document.getElementById('timelineModifiedDate').textContent = formatDate(day2);
-            document.getElementById('timelineValidatedDate').textContent = formatDate(day3);
-            document.getElementById('timelineSubmittedDate').textContent = formatDate(day4);
-            document.getElementById('timelineAcknowledgedDate').textContent = formatDate(day5);
-            
-            // Show the modal
-            const modal = new bootstrap.Modal(document.getElementById('invoiceHistoryModal'));
-            modal.show();
-        };
-        
-        // Add event listeners for the modal buttons
-        const viewPdfBtn = document.getElementById('viewInvoicePdfBtn');
-        if (viewPdfBtn) {
-            viewPdfBtn.addEventListener('click', function() {
-                // In a real application, this would open the PDF viewer
-                alert('Opening PDF viewer...');
-            });
-        }
-        
-        const downloadBtn = document.getElementById('downloadInvoiceBtn');
-        if (downloadBtn) {
-            downloadBtn.addEventListener('click', function() {
-                // In a real application, this would trigger a download
-                alert('Downloading invoice...');
-            });
-        }
-        
-        const printTimelineBtn = document.getElementById('printTimelineBtn');
-        if (printTimelineBtn) {
-            printTimelineBtn.addEventListener('click', function() {
-                // In a real application, this would open the print dialog
-                window.print();
-            });
-        }
-    });
-</script>
-</body>
-</html>
