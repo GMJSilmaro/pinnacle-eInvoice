@@ -800,4 +800,93 @@ router.delete('/profile-image', auth.isAdmin, async (req, res) => {
   }
 });
 
+// Get company settings for consolidation
+router.get('/settings', auth.middleware, async (req, res) => {
+  try {
+    // Use req.user instead of req.session.user for API authentication
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // Get user details first
+    const user = await WP_USER_REGISTRATION.findOne({
+      where: { ID: req.user.id }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Find company using user's TIN
+    const company = await WP_COMPANY_SETTINGS.findOne({
+      where: { TIN: user.TIN }
+    });
+
+    if (!company) {
+      // Return default data instead of error for better user experience
+      return res.json({
+        company_name: 'General Public',
+        tin_number: user.TIN || 'T00000000',
+        business_registration_number: user.IDValue || 'BRN00000',
+        sst_number: '',
+        msic_code: '',
+        address: 'Company Address',
+        address_line1: '',
+        address_line2: '',
+        city: '',
+        state: '',
+        postal_code: '',
+        country: 'MYS',
+        contact_number: user.Phone || '',
+        email: user.Email || ''
+      });
+    }
+
+    // Format for consolidation module
+    const companyData = {
+      company_name: company.CompanyName,
+      tin_number: company.TIN,
+      business_registration_number: company.BRN,
+      sst_number: company.SSTRegistrationNumber || '',
+      msic_code: company.MSICCode || '',
+      address: company.Address,
+      address_line1: company.AddressLine1 || '',
+      address_line2: company.AddressLine2 || '',
+      city: company.City || '',
+      state: company.State || '',
+      postal_code: company.PostalCode || '',
+      country: company.Country || 'MYS',
+      contact_number: company.Phone,
+      email: company.Email
+    };
+
+    res.json(companyData);
+  } catch (error) {
+    console.error('Error fetching company settings for consolidation:', error);
+    // Return default data on error
+    res.json({
+      company_name: 'Your Company Name',
+      tin_number: 'T00000000',
+      business_registration_number: 'BRN00000',
+      sst_number: '',
+      msic_code: '',
+      address: 'Company Address',
+      address_line1: '',
+      address_line2: '',
+      city: '',
+      state: '',
+      postal_code: '',
+      country: 'MYS',
+      contact_number: '',
+      email: ''
+    });
+  }
+});
+
 module.exports = router;

@@ -1219,63 +1219,128 @@ class InvoiceTableManager {
     }
 
     renderActions(row) {
-        if (!row.status || row.status === 'Pending') {
-            return `
-                <div class="d-flex gap-2">
-                    <button 
-                        class="outbound-action-btn submit"
-                        onclick="submitToLHDN('${row.fileName}', '${row.source}', '${row.company}', '${row.uploadedDate}')"
-                        data-id="${row.id}">
-                        <i class="bi bi-cloud-upload"></i>
-                        Submit
-                    </button>
-                    <button 
-                        class="outbound-action-btn cancel"
-                        onclick="deleteDocument('${row.fileName}', '${row.source}', '${row.company}', '${row.uploadedDate}')"
-                        data-id="${row.id}">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>`;
+        const status = (row.status || 'Pending').toLowerCase();
+        const isFlatFile = row.source === 'Flat File';
+        
+        let actionsHtml = '<div class="outbound-actions">';
+        
+        // For flat files that need mapping
+        if (isFlatFile && row.is_mapped === 0) {
+            actionsHtml += `
+                <button class="outbound-action-btn map" 
+                        data-id="${row.flatFileId}" 
+                        data-uuid="${row.uuid}"
+                        data-bs-toggle="tooltip" 
+                        title="Map fields to LHDN format">
+                    <i class="bi bi-diagram-3"></i>
+                    <span>Map</span>
+                </button>`;
         }
-
-        if (row.status === 'Submitted') {
-            const timeInfo = this.calculateRemainingTime(row.date_submitted);
-            if (timeInfo && !timeInfo.expired) {
-                return `
-                    <button 
-                        class="outbound-action-btn cancel"
-                        onclick="cancelDocument('${row.uuid}', '${row.fileName}', '${row.date_submitted}')"
-                        data-id="${row.id}"
-                        data-uuid="${row.uuid}">
-                        <i class="bi bi-x-circle"></i>
-                        Cancel
-                    </button>`;
-            }
+        
+        // For mapped flat files that can be submitted
+        if (isFlatFile && row.is_mapped === 1 && status === 'pending') {
+            actionsHtml += `
+                <button class="outbound-action-btn submit" 
+                        data-id="${row.flatFileId}"
+                        data-uuid="${row.uuid}"
+                        data-bs-toggle="tooltip" 
+                        title="Submit to LHDN">
+                    <i class="bi bi-send"></i>
+                    <span>Submit</span>
+                </button>`;
         }
-
-        if (row.status === 'Invalid') {
-            return `
-             <button 
-                class="outbound-action-btn"
-                disabled
-                data-bs-toggle="tooltip" 
-                data-bs-placement="top"
-                title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'LHDN Cancellation successfully processed' : 'LHDN Validation is finalized, Kindly check the Inbound Page status for more details'}">
-                <i class="bi bi-check-circle"></i>
-                ${row.status}
-            </button>`;
+        
+        // Add other action buttons based on status
+        if (!isFlatFile && status === 'pending') {
+            // Only show submission button for regular files
+            actionsHtml += `
+                <button class="outbound-action-btn submit" 
+                        data-file="${row.fileName}" 
+                        data-type="${row.type}"
+                        data-company="${row.company}"
+                        data-date="${row.date}"
+                        data-bs-toggle="tooltip" 
+                        title="Submit to LHDN">
+                    <i class="bi bi-send"></i>
+                    <span>Submit</span>
+                </button>`;
         }
-
-        return `
-            <button 
-                class="outbound-action-btn"
-                disabled
-                data-bs-toggle="tooltip" 
-                data-bs-placement="top"
-                title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'LHDN Cancellation successfully processed' : 'LHDN Validation is finalized, Kindly check the Inbound Page status for more details'}">
-                <i class="bi bi-check-circle"></i>
-                ${row.status}
-            </button>`;
+        
+        if (status === 'pending') {
+            actionsHtml += `
+                <button class="outbound-action-btn validate" 
+                        data-file="${row.fileName}" 
+                        data-type="${row.type}"
+                        data-company="${row.company}"
+                        data-date="${row.date}"
+                        data-bs-toggle="tooltip" 
+                        title="Validate XML">
+                    <i class="bi bi-shield-check"></i>
+                    <span>Validate</span>
+                </button>
+                <button class="outbound-action-btn delete" 
+                        data-file="${row.fileName}" 
+                        data-type="${row.type}"
+                        data-company="${row.company}"
+                        data-date="${row.date}"
+                        data-bs-toggle="tooltip" 
+                        title="Delete file">
+                    <i class="bi bi-trash"></i>
+                    <span>Delete</span>
+                </button>`;
+        } else if (status === 'valid' || status === 'submitted') {
+            actionsHtml += `
+                <button class="outbound-action-btn details" 
+                        data-file="${row.fileName}" 
+                        data-type="${row.type}"
+                        data-company="${row.company}"
+                        data-date="${row.date}"
+                        data-bs-toggle="tooltip" 
+                        title="View submission details">
+                    <i class="bi bi-list-check"></i>
+                    <span>Details</span>
+                </button>
+                <button class="outbound-action-btn cancel" 
+                        data-file="${row.fileName}" 
+                        data-type="${row.type}"
+                        data-company="${row.company}"
+                        data-date="${row.date}"
+                        data-uuid="${row.uuid || ''}"
+                        data-bs-toggle="tooltip" 
+                        title="Cancel submission">
+                    <i class="bi bi-x-circle"></i>
+                    <span>Cancel</span>
+                </button>`;
+        } else if (status === 'invalid' || status === 'rejected') {
+            actionsHtml += `
+                <button class="outbound-action-btn error" 
+                        data-file="${row.fileName}" 
+                        data-type="${row.type}"
+                        data-company="${row.company}"
+                        data-date="${row.date}"
+                        data-uuid="${row.uuid || ''}"
+                        data-bs-toggle="tooltip" 
+                        title="View error details">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <span>Errors</span>
+                </button>`;
+        } else if (status === 'cancelled') {
+            actionsHtml += `
+                <button class="outbound-action-btn details" 
+                        data-file="${row.fileName}" 
+                        data-type="${row.type}"
+                        data-company="${row.company}"
+                        data-date="${row.date}"
+                        data-uuid="${row.uuid || ''}"
+                        data-bs-toggle="tooltip" 
+                        title="View cancellation details">
+                    <i class="bi bi-info-circle"></i>
+                    <span>Details</span>
+                </button>`;
+        }
+        
+        actionsHtml += '</div>';
+        return actionsHtml;
     }
 
     calculateRemainingTime(submissionDate) {
@@ -1354,6 +1419,29 @@ class InvoiceTableManager {
         if (clearFiltersBtn) {
             clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
         }
+        
+        // Add template download functionality
+        const openFlatFileModalBtn = document.getElementById('openFlatFileModalBtn');
+        if (openFlatFileModalBtn) {
+            // Add download template button to the modal when it's shown
+            openFlatFileModalBtn.addEventListener('click', () => {
+                // Make sure the download template button is added only once
+                if (!document.getElementById('downloadTemplateBtn')) {
+                    const modalFooter = document.querySelector('#flatFileUploadModal .modal-footer');
+                    if (modalFooter) {
+                        const downloadBtn = document.createElement('button');
+                        downloadBtn.id = 'downloadTemplateBtn';
+                        downloadBtn.className = 'btn btn-outline-primary me-auto';
+                        downloadBtn.innerHTML = '<i class="bi bi-download me-1"></i>Download Template';
+                        downloadBtn.addEventListener('click', this.downloadFlatFileTemplate.bind(this));
+                        modalFooter.prepend(downloadBtn);
+                    }
+                }
+            });
+        }
+        
+        // Initialize file upload functionality
+        this.initializeFlatFileUpload();
     }
 
     applyQuickFilter(filterValue) {
@@ -3393,6 +3481,201 @@ class InvoiceTableManager {
     //     return true;
     // }
 
+    // Add new method for downloading the template
+    downloadFlatFileTemplate() {
+        const templateUrl = '/assets/templates/consolidation_template.csv';
+        
+        // Create a temporary link element
+        const downloadLink = document.createElement('a');
+        downloadLink.href = templateUrl;
+        downloadLink.download = 'consolidation_template.csv';
+        
+        // Append to the document, click it, and remove it
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        // Show success message
+        this.showSuccessToast('Template downloaded successfully. Please fill it with your data and upload it back.');
+    }
+
+    // Add method for showing toast messages
+    showSuccessToast(message) {
+        // Create toast container if it doesn't exist
+        let toastContainer = document.querySelector('.toast-container');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+            toastContainer.style.zIndex = '1050';
+            document.body.appendChild(toastContainer);
+        }
+        
+        // Create toast
+        const toastId = 'toast-' + Date.now();
+        const toastHtml = `
+            <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header">
+                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                    <strong class="me-auto">Success</strong>
+                    <small>Just now</small>
+                    <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+                <div class="toast-body">
+                    ${message}
+                </div>
+            </div>
+        `;
+        
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+        
+        // Initialize and show the toast
+        const toastEl = document.getElementById(toastId);
+        const toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 });
+        toast.show();
+        
+        // Remove toast after it's hidden
+        toastEl.addEventListener('hidden.bs.toast', () => {
+            toastEl.remove();
+        });
+    }
+
+    // Add method to initialize flat file upload functionality
+    initializeFlatFileUpload() {
+        const fileInput = document.getElementById('flatFileUpload');
+        const browseFilesLink = document.getElementById('browseFilesLink');
+        const uploadArea = document.getElementById('uploadArea');
+        const fileDetails = document.getElementById('fileDetails');
+        const removeFileBtn = document.getElementById('removeFile');
+        
+        if (!fileInput || !browseFilesLink || !uploadArea || !fileDetails || !removeFileBtn) return;
+        
+        // Trigger file input when browse link is clicked
+        browseFilesLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            fileInput.click();
+        });
+        
+        // Handle file drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('bg-light');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('bg-light');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('bg-light');
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelection(fileInput.files[0]);
+            }
+        });
+        
+        // Handle file selection via file input
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) {
+                handleFileSelection(fileInput.files[0]);
+            }
+        });
+        
+        // Remove selected file
+        removeFileBtn.addEventListener('click', () => {
+            fileInput.value = '';
+            fileDetails.classList.add('d-none');
+            uploadArea.classList.remove('d-none');
+        });
+        
+        // Handler for file selection
+        const handleFileSelection = (file) => {
+            // Validate file type (CSV or TXT)
+            const validTypes = ['.csv', '.txt'];
+            const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+            
+            if (!validTypes.includes(fileExt)) {
+                this.showErrorMessage('Invalid file type. Please upload a CSV or TXT file.');
+                return;
+            }
+            
+            // Validate file size (max 5MB)
+            const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+            if (file.size > maxSize) {
+                this.showErrorMessage('File is too large. Maximum allowed size is 5MB.');
+                return;
+            }
+            
+            // Update UI to show file details
+            const fileName = document.querySelector('.file-name');
+            const fileInfo = document.querySelector('.file-info');
+            
+            fileName.textContent = file.name;
+            fileInfo.textContent = `Size: ${formatFileSize(file.size)}`;
+            
+            uploadArea.classList.add('d-none');
+            fileDetails.classList.remove('d-none');
+            
+            // Add upload button to modal footer if it doesn't exist
+            const modalFooter = document.querySelector('#flatFileUploadModal .modal-footer');
+            if (modalFooter && !document.getElementById('uploadFileBtn')) {
+                const uploadBtn = document.createElement('button');
+                uploadBtn.id = 'uploadFileBtn';
+                uploadBtn.className = 'btn btn-primary';
+                uploadBtn.innerHTML = '<i class="bi bi-cloud-upload me-1"></i>Upload & Process';
+                uploadBtn.addEventListener('click', () => this.uploadFlatFile(file));
+                modalFooter.appendChild(uploadBtn);
+            }
+        };
+        
+        // Helper function to format file size
+        const formatFileSize = (bytes) => {
+            if (bytes < 1024) return bytes + ' bytes';
+            else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            else return (bytes / 1048576).toFixed(1) + ' MB';
+        };
+    }
+
+    // Add method to handle flat file upload and processing
+    async uploadFlatFile(file) {
+        try {
+            // Show loading state
+            this.showLoadingBackdrop('Processing your file...');
+            
+            // Create FormData and append file
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Send file to server
+            const response = await fetch('/api/consolidation/upload-flat-file', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to upload file');
+            }
+            
+            const data = await response.json();
+            
+            // Hide loading backdrop
+            this.hideLoadingBackdrop();
+            
+            // Close the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('flatFileUploadModal'));
+            modal.hide();
+            
+            // Show success message and refresh the table
+            this.showSuccessToast(`File uploaded successfully. ${data.recordsProcessed || 0} records processed.`);
+            this.refresh(true);
+            
+        } catch (error) {
+            this.hideLoadingBackdrop();
+            this.showErrorMessage('Error uploading file: ' + error.message);
+        }
+    }
 }
 
 async function validateExcelFile(fileName, type, company, date) {

@@ -442,18 +442,6 @@ class InvoiceTableManager {
                 dom: '<"outbound-controls"<"outbound-length-control"l>><"outbound-table-responsive"t><"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 initComplete: function() {
                     // Add filter button handlers to existing buttons
-                    $('.quick-filters .btn[data-filter]').on('click', function() {
-                        $('.quick-filters .btn').removeClass('active');
-                        $(this).addClass('active');
-                        
-                        const filter = $(this).data('filter');
-                        if (filter === 'all') {
-                            self.table.column(8).search('').draw();
-                        } else {
-                            self.table.column(8).search('Pending').draw();
-                        }
-                    });
-
                     // Set initial filter to Pending
                     self.table.column(8).search('Pending').draw();
                     $('.quick-filters .btn[data-filter="pending"]').addClass('active');
@@ -475,7 +463,7 @@ class InvoiceTableManager {
                     emptyTable: this.getEmptyStateHtml(),
                     zeroRecords: `<div class="text-center">
                     <i class="bi bi-exclamation-triangle" style="font-size: 2em; color: var(--bs-warning);"></i>
-                    <p>No records found. Please try <a href="#" onclick="window.location.reload();">reloading the page</a> to refresh the data.</p>
+                    <p>Searching Records Please Wait.... Try <a href="#" onclick="window.location.reload();">reloading the page</a> to refresh the data.</p>
                     <p>Try <a href="#" onclick="window.location.reload();">reloading the page</a>. If the issue persists, please contact support.</p>
                 </div>`,
                 },
@@ -3359,40 +3347,6 @@ class InvoiceTableManager {
         
      
     }
-    
-    // // Increment validation counter and check session limits
-    // incrementValidationCounter() {
-    //     // Get current session count
-    //     let sessionCount = parseInt(sessionStorage.getItem('validation_session_count') || '0');
-        
-    //     // Check session limit (100 validations per session)
-    //     if (sessionCount >= 100) {
-    //         this.showWarningMessage("You've reached the maximum number of validations for this session. Please refresh the page or try again later.");
-    //         return false;
-    //     }
-        
-    //     // Increment counter
-    //     sessionCount++;
-    //     sessionStorage.setItem('validation_session_count', sessionCount);
-        
-    //     // Update the counter badge
-    //     const badge = document.getElementById('validationCountBadge');
-    //     if (badge) {
-    //         badge.innerHTML = sessionCount;
-            
-    //         // Update badge color based on session count
-    //         if (sessionCount > 80) {
-    //             badge.className = 'ms-2 badge rounded-pill bg-danger';
-    //         } else if (sessionCount > 50) {
-    //             badge.className = 'ms-2 badge rounded-pill bg-warning text-dark';
-    //         } else {
-    //             badge.className = 'ms-2 badge rounded-pill bg-primary';
-    //         }
-    //     }
-        
-    //     return true;
-    // }
-
 }
 
 async function validateExcelFile(fileName, type, company, date) {

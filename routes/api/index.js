@@ -31,6 +31,12 @@ const lhdnRoutes = require('./lhdn');
 const configRoutes = require('./config');
 const geminiRoutes = require('./gemini.routes');
 
+// Import consolidation routes
+const consolidationRoutes = require('./consolidation.routes');
+
+// Import utils routes
+const utilsRoutes = require('./utils');
+
 
 // Add admin settings routes
 router.use('/admin', auth.isAdmin, adminSettingsRoutes);
@@ -43,6 +49,12 @@ router.use('/lhdn', lhdnRoutes);
 router.use('/config', configRoutes);
 router.use('/user', userRoutes);
 router.use('/gemini', geminiRoutes);
+
+// Register consolidation routes
+router.use('/consolidation', consolidationRoutes);
+
+// Register utils routes
+router.use('/utils', utilsRoutes);
 
 
 // Configure multer for file uploads
