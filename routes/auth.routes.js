@@ -181,19 +181,30 @@ router.post('/login', async (req, res, next) => {
                 // Store token separately in session
                 req.session.accessToken = tokenResult.token;
                 req.session.tokenExpiry = tokenResult.expiry;
+                
+                // Set sessionStorage flag for client
+                req.session.hasValidToken = true;
               } else {
                 console.warn(`Token acquisition succeeded but token is null. Warning: ${tokenResult.warning}`);
                 // Set a flag in session indicating LHDN API access may be limited
                 req.session.lhdnTokenWarning = tokenResult.warning;
+                req.session.hasValidToken = false;
               }
             } else {
               console.warn(`Token acquisition failed: ${tokenResult.error}`);
+              req.session.hasValidToken = false;
+              req.session.lhdnTokenWarning = tokenResult.error || "Failed to obtain LHDN token";
               // Continue with login - tokens will be obtained as needed during API calls
             }
           } catch (tokenError) {
             console.error('Token acquisition error:', tokenError);
+            req.session.hasValidToken = false;
+            req.session.lhdnTokenWarning = tokenError.message || "Unexpected error obtaining LHDN token";
             // Continue with login - we'll try to get the token again later
           }
+
+          // Explicitly save the session before continuing
+          await new Promise((resolve) => req.session.save(resolve));
 
           // Log successful login
           await LoggingService.log({
@@ -213,10 +224,14 @@ router.post('/login', async (req, res, next) => {
               success: true,
               message: 'Successfully logged in',
               user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                isAdmin: user.admin === true
+                id: user.ID,
+                username: user.Username,
+                email: user.Email,
+                isAdmin: user.Admin === true || user.Admin === 1
+              },
+              tokenStatus: {
+                hasValidToken: req.session.hasValidToken === true,
+                warning: req.session.lhdnTokenWarning
               },
               redirect: '/dashboard'
             });

@@ -353,8 +353,16 @@ class InvoiceTableManager {
 
             const self = this; // Store reference to this
             
-            // Check for LHDN token warnings
-            this.checkLhdnTokenStatus();
+            // Check for LHDN token warnings passed from login
+            if (window.tokenStatus && !window.tokenStatus.hasValidToken && window.tokenStatus.warning) {
+                sessionStorage.setItem('lhdnTokenWarning', window.tokenStatus.warning);
+                this.showLhdnWarningMessage(window.tokenStatus.warning);
+                // Clear the global variable after using it
+                delete window.tokenStatus;
+            } else {
+                // If not found in window object, check through API
+                this.checkLhdnTokenStatus();
+            }
             
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
@@ -563,11 +571,11 @@ class InvoiceTableManager {
                             // Check if there's a specific error message
                             if (jqXHR.responseJSON && jqXHR.responseJSON.error) {
                                 if (jqXHR.responseJSON.error.code === 'AUTH_ERROR') {
-                                    window.location.href = '/auth/login?expired=true&reason=session_expired';
+                                    window.location.href = '/api/auth/login?expired=true&reason=session_expired';
                                     return;
                                 }
                             } else {
-                                window.location.href = '/auth/login?expired=true&reason=session_expired';
+                                window.location.href = '/api/auth/login?expired=true&reason=session_expired';
                                 return;
                             }
                         }

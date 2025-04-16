@@ -751,6 +751,14 @@ document.addEventListener('DOMContentLoaded', function() {
             if (response.ok && result.success) {
                 remainingAttempts = 5;
                 
+                // Check for token status from the response
+                if (result.tokenStatus) {
+                    if (!result.tokenStatus.hasValidToken && result.tokenStatus.warning) {
+                        // Store warning in sessionStorage for other pages to access
+                        sessionStorage.setItem('lhdnTokenWarning', result.tokenStatus.warning);
+                    }
+                }
+                
                 await Swal.fire({
                     icon: 'success',
                     title: 'Welcome Back!',
