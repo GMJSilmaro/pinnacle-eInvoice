@@ -2473,10 +2473,96 @@ router.get('/submission/:submissionUid', async (req, res) => {
 });
 
 
+/**
+ * Find all files with the same name across different directories
+ * @param {string} fileName - The filename to search for
+ * @param {string} networkPath - The base network path to search in
+ * @returns {Promise<Array>} - Array of file paths to delete
+ */
+async function findAllFilesWithName(fileName, networkPath) {
+    const filePaths = [];
+    const types = ['Manual', 'Schedule'];
+    
+    for (const type of types) {
+        const typeDir = path.join(networkPath, type);
+        
+        // Skip if directory doesn't exist
+        if (!fs.existsSync(typeDir)) continue;
+        
+        try {
+            // Get list of company directories
+            const companies = await fsPromises.readdir(typeDir);
+            
+            // Check each company directory
+            for (const company of companies) {
+                const companyDir = path.join(typeDir, company);
+                
+                // Skip if not a directory
+                try {
+                    const stat = await fsPromises.stat(companyDir);
+                    if (!stat.isDirectory()) continue;
+                } catch (err) {
+                    console.error(`Error checking company directory ${companyDir}:`, err);
+                    continue;
+                }
+                
+                // Get list of date directories
+                let dates;
+                try {
+                    dates = await fsPromises.readdir(companyDir);
+                } catch (err) {
+                    console.error(`Error reading company directory ${companyDir}:`, err);
+                    continue;
+                }
+                
+                // Check each date directory
+                for (const date of dates) {
+                    const dateDir = path.join(companyDir, date);
+                    
+                    // Skip if not a directory
+                    try {
+                        const stat = await fsPromises.stat(dateDir);
+                        if (!stat.isDirectory()) continue;
+                    } catch (err) {
+                        console.error(`Error checking date directory ${dateDir}:`, err);
+                        continue;
+                    }
+                    
+                    // Get list of files
+                    let files;
+                    try {
+                        files = await fsPromises.readdir(dateDir);
+                    } catch (err) {
+                        console.error(`Error reading date directory ${dateDir}:`, err);
+                        continue;
+                    }
+                    
+                    // Check if any file matches our filename
+                    for (const file of files) {
+                        if (file === fileName) {
+                            const filePath = path.join(dateDir, file);
+                            filePaths.push({
+                                path: filePath,
+                                type,
+                                company,
+                                date
+                            });
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`Error processing ${type} directory:`, error);
+        }
+    }
+    
+    return filePaths;
+}
+
 router.delete('/:fileName', async (req, res) => {
     try {
         const { fileName } = req.params;
-        const { type, company, date } = req.query;
+        const { type, company, date, deleteAll = false } = req.query;
 
         // Get active SAP configuration
         const config = await getActiveSAPConfig();
@@ -2484,6 +2570,58 @@ router.delete('/:fileName', async (req, res) => {
             throw new Error('Failed to get SAP configuration');
         }
 
+        if (deleteAll === 'true') {
+            console.log(`Finding all files with name: ${fileName}`);
+            const allFiles = await findAllFilesWithName(fileName, config.networkPath);
+            
+            if (allFiles.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'FILE_NOT_FOUND',
+                        message: 'No files found with the specified name'
+                    }
+                });
+            }
+            
+            // Delete all found files
+            const deletedFiles = [];
+            const failedFiles = [];
+            
+            for (const file of allFiles) {
+                try {
+                    await fsPromises.unlink(file.path);
+                    deletedFiles.push({
+                        path: file.path,
+                        type: file.type,
+                        company: file.company,
+                        date: file.date
+                    });
+                    
+                    // Log each deletion
+                    await logDBOperation(req.app.get('models'), req, `Deleted file: ${fileName} from ${file.path}`, {
+                        module: 'OUTBOUND',
+                        action: 'DELETE',
+                        status: 'SUCCESS'
+                    });
+                } catch (error) {
+                    console.error(`Error deleting file ${file.path}:`, error);
+                    failedFiles.push({
+                        path: file.path,
+                        error: error.message
+                    });
+                }
+            }
+            
+            return res.json({
+                success: true,
+                message: `Deleted ${deletedFiles.length} files successfully${failedFiles.length > 0 ? `, ${failedFiles.length} files failed to delete` : ''}`,
+                deletedFiles,
+                failedFiles
+            });
+        }
+        
+        // Original behavior - delete a specific file
         // Construct file path
         const formattedDate = moment(date).format('YYYY-MM-DD');
         const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);

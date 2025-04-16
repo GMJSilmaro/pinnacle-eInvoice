@@ -286,6 +286,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                           <li><i class="fas fa-check-circle"></i> FAQ section</li>
                           <li><i class="fas fa-check-circle"></i> Support contact information</li>
                       </ul>
+                      <div class="latest-update">
+                          <h4><i class="fas fa-bell"></i> Latest Update</h4>
+                          <div class="update-content">
+                              <span class="update-date">December 2023</span>
+                              <ul>
+                                  <li>Enhanced dashboard analytics</li>
+                                  <li>Improved invoice processing speed</li>
+                                  <li>New TIN search functionality</li>
+                                  <li>Bug fixes and performance improvements</li>
+                              </ul>
+                          </div>
+                      </div>
                       <div class="help-guide-actions">
                           <button onclick="window.location.href='/help'" class="btn-view-help">View Help Page</button>
                           <button onclick="closeHelpGuide()" class="btn-close-help">Maybe Later</button>
@@ -357,6 +369,60 @@ document.addEventListener('DOMContentLoaded', async () => {
   
                   .help-guide-content ul li i {
                       color: #10b981;
+                  }
+
+                  .latest-update {
+                      background: #f8fafc;
+                      border-radius: 8px;
+                      padding: 1rem;
+                      margin-bottom: 1.5rem;
+                      text-align: left;
+                  }
+
+                  .latest-update h4 {
+                      color: #1e293b;
+                      font-size: 1.1rem;
+                      margin-bottom: 0.75rem;
+                      display: flex;
+                      align-items: center;
+                      gap: 0.5rem;
+                  }
+
+                  .latest-update h4 i {
+                      color: #f59e0b;
+                  }
+
+                  .update-content {
+                      font-size: 0.9rem;
+                  }
+
+                  .update-date {
+                      display: inline-block;
+                      background: #e2e8f0;
+                      color: #475569;
+                      padding: 0.25rem 0.75rem;
+                      border-radius: 1rem;
+                      font-size: 0.8rem;
+                      margin-bottom: 0.75rem;
+                  }
+
+                  .update-content ul {
+                      margin: 0;
+                  }
+
+                  .update-content ul li {
+                      color: #475569;
+                      margin-bottom: 0.5rem;
+                      font-size: 0.9rem;
+                      position: relative;
+                      padding-left: 1rem;
+                  }
+
+                  .update-content ul li:before {
+                      content: "•";
+                      position: absolute;
+                      left: 0;
+                      color: #3b82f6;
                   }
   
                   .help-guide-actions {

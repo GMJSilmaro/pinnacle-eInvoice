@@ -3552,8 +3552,8 @@ class InvoiceTableManager {
         
         // Trigger file input when browse link is clicked
         browseFilesLink.addEventListener('click', (e) => {
-            e.preventDefault();
             fileInput.click();
+            e.preventDefault();
         });
         
         // Handle file drag and drop
