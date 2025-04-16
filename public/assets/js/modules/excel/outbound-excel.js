@@ -473,6 +473,9 @@ class InvoiceTableManager {
                 ajax: {
                     url: '/api/outbound-files/list-all',
                     method: 'GET',
+                    xhrFields: {
+                        withCredentials: true
+                    },
                     data: function(d) {
                         // Add a cache control parameter
                         d.forceRefresh = sessionStorage.getItem('forceRefreshOutboundTable') === 'true';
@@ -546,6 +549,20 @@ class InvoiceTableManager {
                     complete: function() {
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.error('Ajax error:', textStatus, errorThrown);
+                        
+                        // Check for authentication error
+                        if (jqXHR.status === 401) {
+                            // Authentication error - redirect to login
+                            self.hideLoadingBackdrop();
+                            window.location.href = '/auth/login?expired=true&reason=session_expired';
+                            return;
+                        }
+                        
+                        // Other error handling
+                        self.showErrorMessage(`Failed to load data: ${textStatus}`);
                     }
                 },
                 order: [
