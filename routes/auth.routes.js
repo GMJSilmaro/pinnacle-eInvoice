@@ -140,10 +140,7 @@ router.post('/login', async (req, res, next) => {
         }
 
         try {
-          // Get token from LHDN
-          const tokenData = await getTokenAsTaxPayer();
-          
-          // Set up session
+          // Set up session first, so at least login works even if token fails
           req.session.user = {
             id: user.ID,
             username: user.Username,
@@ -156,23 +153,32 @@ router.post('/login', async (req, res, next) => {
             isActive: true
           };
 
-          // Store token separately in session
-          if (tokenData && tokenData.access_token) {
-            req.session.accessToken = tokenData.access_token;
-            req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
+          // Get token from LHDN
+          let tokenData = null;
+          try {
+            tokenData = await getTokenAsTaxPayer();
+            
+            // Store token separately in session
+            if (tokenData && tokenData.access_token) {
+              req.session.accessToken = tokenData.access_token;
+              req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
+            }
+          } catch (tokenError) {
+            console.error('Token acquisition error:', tokenError);
+            // Log the error but do not fail the login process
           }
 
           return res.json({
             success: true,
-            message: 'Login successful',
+            message: tokenData ? 'Login successful' : 'Login successful but could not obtain access token',
             accessToken: tokenData?.access_token,
             user: req.session.user
           });
         } catch (error) {
-          console.error('Token acquisition error:', error);
+          console.error('Session setup error:', error);
           return res.status(500).json({
             success: false,
-            message: 'Login successful but failed to get access token'
+            message: 'Login successful but failed to set up session'
           });
         }
       });
