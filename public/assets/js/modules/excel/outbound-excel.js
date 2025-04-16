@@ -557,7 +557,22 @@ class InvoiceTableManager {
                         if (jqXHR.status === 401) {
                             // Authentication error - redirect to login
                             self.hideLoadingBackdrop();
-                            window.location.href = '/auth/login?expired=true&reason=session_expired';
+                            // Check if there's a specific error message
+                            if (jqXHR.responseJSON && jqXHR.responseJSON.error) {
+                                if (jqXHR.responseJSON.error.code === 'AUTH_ERROR') {
+                                    window.location.href = '/auth/login?expired=true&reason=session_expired';
+                                    return;
+                                }
+                            } else {
+                                window.location.href = '/auth/login?expired=true&reason=session_expired';
+                                return;
+                            }
+                        }
+                        
+                        // Handle specific API token errors
+                        if (jqXHR.responseJSON && jqXHR.responseJSON.error && 
+                            jqXHR.responseJSON.error.includes('invalid_client')) {
+                            self.showErrorMessage('LHDN API connection error: Invalid client credentials. Please contact the administrator.');
                             return;
                         }
                         
@@ -2898,27 +2913,57 @@ class InvoiceTableManager {
     }
 
     refresh(forceRefresh = false) {
-        if (forceRefresh) {
-            // Force a refresh from the server
-            sessionStorage.setItem('forceRefreshOutboundTable', 'true');
-            this.table?.ajax.reload(null, false);
-        } else if (dataCache.isCacheValid()) {
-            // Use cached data if it's valid
-            console.log('Using cached data for table refresh');
-            if (this.table) {
-                const currentData = this.table.data().toArray();
-                // Only update if there's a difference in the data (like status changes)
-                if (JSON.stringify(currentData) !== JSON.stringify(dataCache.tableData)) {
-                    this.table.clear();
-                    this.table.rows.add(dataCache.tableData);
-                    this.table.draw(false); // false to keep current paging
-                }
-                // Update card totals regardless
-                this.updateCardTotals();
+        // Clear any existing session timeout status
+        sessionStorage.removeItem('session_expired');
+        
+        // First try to refresh the access token if needed
+        this.refreshAccessToken().then(() => {
+            if (forceRefresh) {
+                sessionStorage.setItem('forceRefreshOutboundTable', 'true');
             }
-        } else {
-            // No valid cache, get from server
-            this.table?.ajax.reload(null, false);
+            
+            if ($.fn.DataTable.isDataTable('#invoiceTable')) {
+                $('#invoiceTable').DataTable().ajax.reload();
+            } else {
+                this.initializeTable();
+            }
+        }).catch(error => {
+            console.error('Failed to refresh access token:', error);
+            // Continue with the table load anyway, the error will be handled by the ajax error handler
+            if (forceRefresh) {
+                sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+            }
+            
+            if ($.fn.DataTable.isDataTable('#invoiceTable')) {
+                $('#invoiceTable').DataTable().ajax.reload();
+            } else {
+                this.initializeTable();
+            }
+        });
+    }
+
+    // Refresh the access token if needed
+    async refreshAccessToken() {
+        try {
+            // Call a token refresh endpoint
+            const response = await fetch('/api/auth/refresh-token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin' // Important for sending cookies
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to refresh token');
+            }
+            
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Token refresh error:', error);
+            throw error;
         }
     }
     

@@ -432,39 +432,97 @@ const validateCredentials = async (settings) => {
   }
 };
 
-async function getAccessToken(req) {
+async function getAccessToken(user) {
   try {
-    // Check if token exists in session and is not expired
-    if (req.session?.accessToken && req.session?.tokenExpiryTime > Date.now()) {
-      console.log('Using existing token from session (expires in', 
-        Math.round((req.session.tokenExpiryTime - Date.now()) / 1000), 'seconds)');
-      return req.session.accessToken;
+    console.log('Getting access token for user:', user ? user.username : 'unknown');
+    
+    // Get LHDN configuration
+    let settings;
+    try {
+      settings = await getConfig();
+      if (!settings) {
+        console.error('LHDN configuration is empty or invalid');
+        return {
+          success: false,
+          error: 'Missing or invalid LHDN configuration'
+        };
+      }
+    } catch (configError) {
+      console.error('Configuration error:', configError);
+      return {
+        success: false,
+        error: `Failed to get LHDN configuration: ${configError.message}`
+      };
+    }
+    
+    // Additional validation and logging for credentials
+    if (!settings.clientId || !settings.clientSecret) {
+      console.error('Missing client credentials in LHDN configuration. Check your configuration in the database.');
+      return {
+        success: false,
+        error: 'Missing client credentials in LHDN configuration',
+        details: {
+          hasClientId: !!settings.clientId,
+          hasClientSecret: !!settings.clientSecret
+        }
+      };
     }
 
-    console.log('No valid token in session, generating a new one');
+    // Log masked credentials for debugging
+    console.log('Using client credentials:', {
+      clientId: settings.clientId,
+      clientSecret: settings.clientSecret ? '****' + settings.clientSecret.substring(settings.clientSecret.length - 4) : 'null',
+      environment: settings.environment || 'default',
+      middlewareUrl: settings.middlewareUrl || 'not configured'
+    });
     
-    // Get new token
-    const tokenData = await getTokenAsTaxPayer();
-    
-    if (tokenData && tokenData.access_token) {
-      // Store token in session with expiry
-      req.session.accessToken = tokenData.access_token;
-      req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
+    // Try to get a token
+    try {
+      const tokenData = await getTokenAsTaxPayer();
       
-      // Add a buffer to avoid edge cases (5 minutes before actual expiry)
-      const bufferTime = 5 * 60 * 1000; 
-      req.session.tokenSafeExpiryTime = req.session.tokenExpiryTime - bufferTime;
+      if (!tokenData || !tokenData.access_token) {
+        console.error('Failed to obtain access token - empty response');
+        return {
+          success: false,
+          error: 'Empty response from token service'
+        };
+      }
       
-      console.log('New token generated and stored in session (expires in', 
-        Math.round(tokenData.expires_in), 'seconds)');
+      // Return success with token info
+      return {
+        success: true,
+        token: tokenData.access_token,
+        expiry: Date.now() + (tokenData.expires_in * 1000),
+        expiresIn: tokenData.expires_in
+      };
+    } catch (tokenError) {
+      console.error('Token acquisition error:', tokenError);
       
-      return tokenData.access_token;
+      // Check for invalid client error specifically
+      if (tokenError.message && tokenError.message.includes('invalid_client')) {
+        console.error('CRITICAL: Invalid client credentials. Please verify your LHDN API client ID and secret.');
+        return {
+          success: false,
+          error: 'Invalid client credentials. Please verify your LHDN API client ID and secret.',
+          errorCode: 'INVALID_CLIENT',
+          details: {
+            message: tokenError.message
+          }
+        };
+      }
+      
+      // Other token errors
+      return {
+        success: false,
+        error: tokenError.message || 'Unknown error acquiring token'
+      };
     }
-    
-    throw new Error('Failed to obtain access token');
   } catch (error) {
-    console.error('Error getting access token:', error);
-    throw error;
+    console.error('Unexpected error in getAccessToken:', error);
+    return {
+      success: false,
+      error: 'Unexpected error acquiring token: ' + (error.message || 'Unknown error')
+    };
   }
 }
 
