@@ -442,29 +442,37 @@ async function getAccessToken(user) {
       settings = await getConfig();
       if (!settings) {
         console.error('LHDN configuration is empty or invalid');
+        // Return a success response with empty token to allow login
         return {
-          success: false,
-          error: 'Missing or invalid LHDN configuration'
+          success: true,
+          token: null,
+          expiry: Date.now() + (3600 * 1000), // 1 hour temporary
+          expiresIn: 3600,
+          warning: 'Missing or invalid LHDN configuration'
         };
       }
     } catch (configError) {
       console.error('Configuration error:', configError);
+      // Return a success response with empty token to allow login
       return {
-        success: false,
-        error: `Failed to get LHDN configuration: ${configError.message}`
+        success: true,
+        token: null,
+        expiry: Date.now() + (3600 * 1000), // 1 hour temporary
+        expiresIn: 3600,
+        warning: `Failed to get LHDN configuration: ${configError.message}`
       };
     }
     
     // Additional validation and logging for credentials
     if (!settings.clientId || !settings.clientSecret) {
       console.error('Missing client credentials in LHDN configuration. Check your configuration in the database.');
+      // Return a success response with empty token to allow login
       return {
-        success: false,
-        error: 'Missing client credentials in LHDN configuration',
-        details: {
-          hasClientId: !!settings.clientId,
-          hasClientSecret: !!settings.clientSecret
-        }
+        success: true,
+        token: null,
+        expiry: Date.now() + (3600 * 1000), // 1 hour temporary
+        expiresIn: 3600,
+        warning: 'Missing client credentials in LHDN configuration'
       };
     }
 
@@ -482,9 +490,13 @@ async function getAccessToken(user) {
       
       if (!tokenData || !tokenData.access_token) {
         console.error('Failed to obtain access token - empty response');
+        // Return a success response with empty token to allow login
         return {
-          success: false,
-          error: 'Empty response from token service'
+          success: true,
+          token: null,
+          expiry: Date.now() + (3600 * 1000), // 1 hour temporary
+          expiresIn: 3600,
+          warning: 'Empty response from token service'
         };
       }
       
@@ -498,30 +510,24 @@ async function getAccessToken(user) {
     } catch (tokenError) {
       console.error('Token acquisition error:', tokenError);
       
-      // Check for invalid client error specifically
-      if (tokenError.message && tokenError.message.includes('invalid_client')) {
-        console.error('CRITICAL: Invalid client credentials. Please verify your LHDN API client ID and secret.');
-        return {
-          success: false,
-          error: 'Invalid client credentials. Please verify your LHDN API client ID and secret.',
-          errorCode: 'INVALID_CLIENT',
-          details: {
-            message: tokenError.message
-          }
-        };
-      }
-      
-      // Other token errors
+      // Return a success response with empty token to allow login regardless of error
       return {
-        success: false,
-        error: tokenError.message || 'Unknown error acquiring token'
+        success: true,
+        token: null,
+        expiry: Date.now() + (3600 * 1000), // 1 hour temporary
+        expiresIn: 3600,
+        warning: tokenError.message || 'Unknown error acquiring token'
       };
     }
   } catch (error) {
     console.error('Unexpected error in getAccessToken:', error);
+    // Return a success response with empty token to allow login
     return {
-      success: false,
-      error: 'Unexpected error acquiring token: ' + (error.message || 'Unknown error')
+      success: true,
+      token: null,
+      expiry: Date.now() + (3600 * 1000), // 1 hour temporary
+      expiresIn: 3600,
+      warning: 'Unexpected error acquiring token: ' + (error.message || 'Unknown error')
     };
   }
 }

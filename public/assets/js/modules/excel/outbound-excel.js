@@ -353,6 +353,9 @@ class InvoiceTableManager {
 
             const self = this; // Store reference to this
             
+            // Check for LHDN token warnings
+            this.checkLhdnTokenStatus();
+            
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
                 columns: [
@@ -3410,6 +3413,64 @@ class InvoiceTableManager {
         
      
     }
+
+    // After hideLoadingBackdrop method
+    showLhdnWarningMessage(message) {
+        // Create warning banner if it doesn't exist
+        if (!$('#lhdn-api-warning').length) {
+            const warningHtml = `
+                <div id="lhdn-api-warning" class="alert alert-warning alert-dismissible fade show mb-3" role="alert">
+                    <div class="d-flex">
+                        <div class="me-3">
+                            <i class="bi bi-exclamation-triangle-fill fs-4"></i>
+                        </div>
+                        <div>
+                            <h5 class="alert-heading">LHDN API Connection Warning</h5>
+                            <p class="mb-0">There is an issue connecting to the LHDN API: ${message || 'Invalid client credentials'}</p>
+                            <p class="mb-0">Some features related to LHDN submissions may not work correctly.</p>
+                            <p class="mb-0">Please contact your administrator to verify the LHDN API configuration.</p>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            $('.content-header').after(warningHtml);
+        }
+    }
+
+    // Check for LHDN token status
+    checkLhdnTokenStatus() {
+        try {
+            // First check session storage for any warnings
+            if (sessionStorage.getItem('lhdnTokenWarning')) {
+                const warningMessage = sessionStorage.getItem('lhdnTokenWarning');
+                this.showLhdnWarningMessage(warningMessage);
+                return;
+            }
+            
+            // If not found in session storage, check API
+            fetch('/api/auth/token-status', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.warning) {
+                    // Store in session storage and show warning
+                    sessionStorage.setItem('lhdnTokenWarning', data.warning);
+                    this.showLhdnWarningMessage(data.warning);
+                }
+            })
+            .catch(error => {
+                console.error('Error checking token status:', error);
+            });
+        } catch (error) {
+            console.error('Error in checkLhdnTokenStatus:', error);
+        }
+    }
 }
 
 async function validateExcelFile(fileName, type, company, date) {
@@ -4891,12 +4952,12 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                 <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
                     <span style="color: #595959; font-weight: 600;">UUID:</span>
                     <span style="color: #595959;">${uuid}</span>
-                            </div>
-                            <div>
+                        </div>
+                        <div>
                     <span style="color: #595959; font-weight: 600;">Submission Date:</span>
                     <span style="color: #595959;">${submissionDate}</span>
-                            </div>
                         </div>
+                    </div>
 
             <div style="margin-top: 12px;">
                 <label style="display: block; color: #595959; font-weight: 600; margin-bottom: 5px;">
@@ -4910,7 +4971,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                     placeholder="Please provide a reason for cancellation"
                     onkeyup="this.style.borderColor = this.value.trim() ? '#28a745' : '#dc3545'"
                 ></textarea>
-            </div>
+                </div>
         </div>
 
         <style>

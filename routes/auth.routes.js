@@ -137,30 +137,55 @@ router.post('/login', async (req, res, next) => {
               error: loginErr.message
             });
           }
+          
+          // Ensure user data is properly stored in session
+          req.session.user = {
+            id: user.ID,
+            ID: user.ID, // Include both for compatibility
+            username: user.Username,
+            admin: user.Admin === 1 || user.Admin === true,
+            IDType: user.IDType,
+            IDValue: user.IDValue,
+            TIN: user.TIN,
+            Email: user.Email,
+            lastLoginTime: new Date(),
+            isActive: true
+          };
 
           // Update last login time
-          const updatedUser = await WP_USER_REGISTRATION.update(
-            {
-              LastLoginTime: new Date()
-            },
-            {
-              where: { ID: user.id }
-            }
-          );
-
-          // Update active session tracking
-          updateActiveSession(user.username);
+          try {
+            const updatedUser = await WP_USER_REGISTRATION.update(
+              {
+                LastLoginTime: new Date()
+              },
+              {
+                where: { ID: user.ID }
+              }
+            );
+            
+            // Update active session tracking
+            updateActiveSession(user.username);
+          } catch (updateError) {
+            console.error('Failed to update last login time:', updateError);
+            // Continue login process despite error
+          }
           
           // Try to get LHDN token for future API calls
           let tokenData = null;
           try {
             const tokenResult = await tokenService.getAccessToken(user);
             
-            // Store token only if successful
+            // Store token only if successful and token exists
             if (tokenResult.success) {
-              // Store token separately in session
-              req.session.accessToken = tokenResult.token;
-              req.session.tokenExpiry = tokenResult.expiry;
+              if (tokenResult.token) {
+                // Store token separately in session
+                req.session.accessToken = tokenResult.token;
+                req.session.tokenExpiry = tokenResult.expiry;
+              } else {
+                console.warn(`Token acquisition succeeded but token is null. Warning: ${tokenResult.warning}`);
+                // Set a flag in session indicating LHDN API access may be limited
+                req.session.lhdnTokenWarning = tokenResult.warning;
+              }
             } else {
               console.warn(`Token acquisition failed: ${tokenResult.error}`);
               // Continue with login - tokens will be obtained as needed during API calls
@@ -366,7 +391,7 @@ router.get('/logout', async (req, res) => {
 /**
  * API endpoint to refresh the access token
  */
-router.post('/api/auth/refresh-token', async (req, res) => {
+router.post('/refresh-token', async (req, res) => {
   try {
     // Check if user is authenticated
     if (!req.session || !req.session.user) {
@@ -419,6 +444,79 @@ router.post('/api/auth/refresh-token', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'An error occurred while refreshing the token',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * API endpoint to check token status
+ */
+router.get('/token-status', async (req, res) => {
+  try {
+    // Check if user is authenticated
+    if (!req.session || !req.session.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Check if there's a token warning in the session
+    if (req.session.lhdnTokenWarning) {
+      return res.json({
+        success: true,
+        hasToken: false,
+        warning: req.session.lhdnTokenWarning
+      });
+    }
+
+    // Check if there's a valid token in the session
+    if (req.session.accessToken && req.session.tokenExpiry && Date.now() < req.session.tokenExpiry) {
+      return res.json({
+        success: true,
+        hasToken: true
+      });
+    }
+
+    // Try to get a new token
+    try {
+      const tokenResult = await tokenService.getAccessToken(req.session.user);
+      
+      if (tokenResult.success && tokenResult.token) {
+        // Update token in session
+        req.session.accessToken = tokenResult.token;
+        req.session.tokenExpiry = tokenResult.expiry;
+        
+        return res.json({
+          success: true,
+          hasToken: true
+        });
+      } else {
+        // Store warning in session
+        req.session.lhdnTokenWarning = tokenResult.warning || 'Invalid LHDN configuration';
+        
+        return res.json({
+          success: true,
+          hasToken: false,
+          warning: req.session.lhdnTokenWarning
+        });
+      }
+    } catch (error) {
+      console.error('Token status check error:', error);
+      
+      return res.json({
+        success: true,
+        hasToken: false,
+        warning: error.message || 'Failed to obtain LHDN token'
+      });
+    }
+  } catch (error) {
+    console.error('Token status endpoint error:', error);
+    
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while checking token status',
       error: error.message
     });
   }
