@@ -150,7 +150,8 @@ async function submitDocument(docs, token) {
         'DUPLICATE_SUBMISSION': 'This document has already been submitted or is being processed.',
         'E-INVOICE-TIN-VALIDATION-PARTY-VALIDATION': 'TIN validation failed. The document TIN doesn\'t match with your authenticated TIN.',
         'INVALID_PARAMETER': 'Invalid parameters provided. Please check your document formatting.',
-        'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again or contact support.'
+        'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again or contact support.',
+        'TIN_MISMATCH': 'The Tax Identification Number (TIN) in the document does not match the TIN of the authenticated user.'
       };
       
       return {
@@ -182,6 +183,19 @@ async function submitDocument(docs, token) {
     
     if (err.response?.status === 400) {
       const errorData = err.response.data;
+      
+      // Special handling for TIN mismatch error
+      if (errorData?.error?.details && errorData.error.details.some(d => 
+          d.message && d.message.includes('authenticated TIN and documents TIN is not matching'))) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'TIN_MISMATCH',
+            message: 'The Tax Identification Number (TIN) in the document does not match the TIN of the authenticated user.',
+            details: errorData.error.details
+          }
+        };
+      }
       
       // Special handling for duplicate document submission
       if (errorData?.code === 'DS302' || (errorData?.details && errorData.details.some(d => d.code === 'DS302'))) {

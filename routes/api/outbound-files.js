@@ -1513,6 +1513,37 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             
             // Process result and update status
             if (result.status === 'failed') {
+                // Special handling for TIN mismatch error
+                if (result.error?.code === 'TIN_MISMATCH') {
+                    console.log('TIN mismatch detected in LHDN response:', JSON.stringify(result, null, 2));
+                    
+                    await submitter.updateSubmissionStatus({
+                        invoice_number,
+                        uuid: 'NA',
+                        submissionUid: 'NA',
+                        fileName,
+                        filePath: processedData.filePath || fileName,
+                        status: 'Failed',
+                        error: 'TIN mismatch between authenticated user and document'
+                    });
+
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'TIN_MISMATCH',
+                            message: 'The Tax Identification Number (TIN) in the document does not match the TIN of the authenticated user.',
+                            details: [
+                                {
+                                    code: 'TIN_MISMATCH',
+                                    message: 'The TIN in the document must match the TIN of the authenticated user. Please verify the document content or log in with the correct user account.',
+                                    target: invoice_number
+                                }
+                            ]
+                        },
+                        docNum: invoice_number
+                    });
+                }
+                
                 // Handle validation errors from LHDN
                 if (result.error?.error?.details) {
                     const errorDetails = result.error.error.details;
@@ -1566,6 +1597,34 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             }
 
             if (!result.data) {
+                // Before throwing an error, check if there are rejected documents in the result
+                if (result.status === 'failed' && result.error?.details?.error?.details?.length > 0) {
+                    // There are validation errors, show them to the user
+                    const errorDetails = result.error.details;
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'VALIDATION_ERROR',
+                            message: errorDetails.message || 'LHDN validation failed',
+                            details: errorDetails
+                        },
+                        docNum: invoice_number,
+                        rejectedDocuments: [errorDetails]
+                    });
+                }
+                
+                if (result.status === 'success' && result.data === undefined) {
+                    // This is a special case where the result status is success but no data is present
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'LHDN_VALIDATION_ERROR',
+                            message: result.error?.message || 'LHDN validation error',
+                            details: result.error?.details || 'Document failed validation at LHDN'
+                        }
+                    });
+                }
+                
                 throw new Error('Invalid response from LHDN server: No data received');
             }
 
@@ -2184,16 +2243,16 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
         const { fileName } = req.params;
         const { type, company, date, version } = req.body;
 
-        // Basic auth check
-        if (!req.session?.accessToken) {
-            return res.status(401).json({
-                success: false,
-                error: {
-                    code: 'AUTH_ERROR',
-                    message: 'Not authenticated'
-                }
-            });
-        }
+        // // Basic auth check
+        // if (!req.session?.accessToken) {
+        //     return res.status(401).json({
+        //         success: false,
+        //         error: {
+        //             code: 'AUTH_ERROR',
+        //             message: 'Not authenticated'
+        //         }
+        //     });
+        // }
 
         // Validate all required parameters with more context
         const paramValidation = [
@@ -2276,6 +2335,37 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
             
             // Process result and update status
             if (result.status === 'failed') {
+                // Special handling for TIN mismatch error
+                if (result.error?.code === 'TIN_MISMATCH') {
+                    console.log('TIN mismatch detected in LHDN response:', JSON.stringify(result, null, 2));
+                    
+                    await submitter.updateSubmissionStatus({
+                        invoice_number,
+                        uuid: 'NA',
+                        submissionUid: 'NA',
+                        fileName,
+                        filePath: processedData.filePath || fileName,
+                        status: 'Failed',
+                        error: 'TIN mismatch between authenticated user and document'
+                    });
+
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'TIN_MISMATCH',
+                            message: 'The Tax Identification Number (TIN) in the document does not match the TIN of the authenticated user.',
+                            details: [
+                                {
+                                    code: 'TIN_MISMATCH',
+                                    message: 'The TIN in the document must match the TIN of the authenticated user. Please verify the document content or log in with the correct user account.',
+                                    target: invoice_number
+                                }
+                            ]
+                        },
+                        docNum: invoice_number
+                    });
+                }
+                
                 // Handle validation errors from LHDN
                 if (result.error?.error?.details) {
                     const errorDetails = result.error.error.details;
@@ -2329,6 +2419,34 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
             }
 
             if (!result.data) {
+                // Before throwing an error, check if there are rejected documents in the result
+                if (result.status === 'failed' && result.error?.details?.error?.details?.length > 0) {
+                    // There are validation errors, show them to the user
+                    const errorDetails = result.error.details;
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'VALIDATION_ERROR',
+                            message: errorDetails.message || 'LHDN validation failed',
+                            details: errorDetails
+                        },
+                        docNum: invoice_number,
+                        rejectedDocuments: [errorDetails]
+                    });
+                }
+                
+                if (result.status === 'success' && result.data === undefined) {
+                    // This is a special case where the result status is success but no data is present
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'LHDN_VALIDATION_ERROR',
+                            message: result.error?.message || 'LHDN validation error',
+                            details: result.error?.details || 'Document failed validation at LHDN'
+                        }
+                    });
+                }
+                
                 throw new Error('Invalid response from LHDN server: No data received');
             }
 

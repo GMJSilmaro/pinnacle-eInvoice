@@ -3359,7 +3359,7 @@ class InvoiceTableManager {
      
     }
     
-    // Add this method to the InvoiceTableManager class to fix source values during data processing
+    //  to fix source values during data processing
     convertSource(source) {
         return source || 'Incoming';
     }
@@ -4761,7 +4761,44 @@ async function performStep2(data, version) {
         if (!response.ok) {
             console.error('❌ [Step 2] API error response:', result);
             await updateStepStatus(2, 'error', 'Submission failed');
-            showLHDNErrorModal(result.error);
+            
+            // Display more specific error information if available
+            if (result.error) {
+                // Check for TIN mismatch error specifically
+                if (result.error.code === 'TIN_MISMATCH') {
+                    console.log('TIN mismatch error detected:', result.error);
+                    showTINMismatchError(result);
+                }
+                // Check if there are validation errors in rejectedDocuments
+                else if (result.rejectedDocuments && result.rejectedDocuments.length > 0) {
+                    // Display the validation error details
+                    const rejectedDoc = result.rejectedDocuments[0];
+                    showLHDNErrorModal({
+                        code: 'VALIDATION_ERROR',
+                        message: `LHDN validation failed: ${rejectedDoc.error?.message || 'Document validation failed'}`,
+                        details: rejectedDoc.error?.details || rejectedDoc
+                    });
+                } 
+                // Check if it's a LHDN validation error
+                else if (result.error.code === 'VALIDATION_ERROR' || result.error.code === 'LHDN_VALIDATION_ERROR') {
+                    showLHDNErrorModal({
+                        code: result.error.code,
+                        message: result.error.message || 'LHDN validation failed',
+                        details: result.error.details || 'Document failed validation at LHDN'
+                    });
+                }
+                // Regular error display
+                else {
+                    showLHDNErrorModal(result.error);
+                }
+            } else {
+                showLHDNErrorModal({
+                    code: 'SUBMISSION_ERROR',
+                    message: 'LHDN submission failed',
+                    details: 'An unknown error occurred during submission'
+                });
+            }
+            
             throw new Error('LHDN submission failed');
         }
 
@@ -6849,7 +6886,6 @@ class FileUploadManager {
         });
     }
 
-    // ... existing code ...
 }
 
 // Consolidated initialization
@@ -6924,3 +6960,59 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('initializeTemplateDownload function not found');
     }
 });
+
+// Add this function to show a specialized TIN mismatch error message
+function showTINMismatchError(error) {
+    const title = 'Tax Identification Number (TIN) Mismatch';
+    const mainError = error.error || {};
+    
+    const modalHtml = `
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title text-white">
+                    <i class="fas fa-exclamation-triangle mr-2"></i> ${title}
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <strong>Authentication Error:</strong> ${mainError.message || 'The TIN in the document does not match the TIN of the authenticated user'}
+                </div>
+                
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="fas fa-info-circle mr-2"></i>Why this happened</h6>
+                    </div>
+                    <div class="card-body">
+                        <p>When submitting a document to LHDN, the Tax Identification Number (TIN) in the document must match the TIN of the authenticated user account.</p>
+                        <p>This is a security measure to ensure that documents are only submitted by authorized users.</p>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="fas fa-tasks mr-2"></i>How to fix this</h6>
+                    </div>
+                    <div class="card-body">
+                        <ol class="mb-0">
+                            <li>Check that the TIN in the document is correct</li>
+                            <li>Verify that you are logged in with the correct user account that matches the TIN in the document</li>
+                            <li>If necessary, update the document with the correct TIN</li>
+                            <li>Try submitting the document again</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    `;
+
+    $('#errorModal').html(modalHtml);
+    $('#errorModal').modal('show');
+}
+
+// Then find the function that handles errors and add the TIN_MISMATCH case

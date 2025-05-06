@@ -504,6 +504,21 @@ class LHDNSubmitter {
         throw new Error('No valid authentication token found');
       }
 
+      // Extract and log the document TIN for debugging
+      if (docs && docs.length > 0 && docs[0].document) {
+        try {
+          const docJson = JSON.parse(Buffer.from(docs[0].document, 'base64').toString());
+          const docTin = docJson?.Invoice?.[0]?.AccountingSupplierParty?.[0]?.Party?.[0]?.PartyTaxScheme?.[0]?.CompanyID?.[0]?._ || 'TIN not found';
+          console.log('Document Supplier TIN:', docTin);
+          
+          if (this.req && this.req.session && this.req.session.user) {
+            console.log('Session User TIN:', this.req.session.user.tin || 'Not available');
+          }
+        } catch (parseError) {
+          console.error('Error parsing document to extract TIN:', parseError);
+        }
+      }
+
       const result = await submitDocument(docs, token);
       console.log('Submission result:', JSON.stringify(result, null, 2));
 
