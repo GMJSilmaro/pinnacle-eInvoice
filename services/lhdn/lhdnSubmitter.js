@@ -507,6 +507,38 @@ class LHDNSubmitter {
       const result = await submitDocument(docs, token);
       console.log('Submission result:', JSON.stringify(result, null, 2));
 
+      // Check for undefined or malformed response
+      if (!result) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'EMPTY_RESPONSE',
+            message: 'No response received from LHDN. The service might be unavailable.',
+            details: [{
+              code: 'EMPTY_RESPONSE',
+              message: 'The LHDN API returned an empty response. Please try again later or contact support.',
+              target: docs[0]?.codeNumber || 'Unknown'
+            }]
+          }
+        };
+      }
+
+      // Check if response is successful but empty
+      if (result.status === 'success' && (!result.data || result.data === undefined)) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'INVALID_RESPONSE',
+            message: 'LHDN returned an invalid response format. No documents were accepted or rejected.',
+            details: [{
+              code: 'INVALID_RESPONSE',
+              message: 'The LHDN API returned a success status but with no document details. Please try again later.',
+              target: docs[0]?.codeNumber || 'Unknown'
+            }]
+          }
+        };
+      }
+
       // Check if there are rejected documents
       if (result.data?.rejectedDocuments?.length > 0) {
         const rejectedDoc = result.data.rejectedDocuments[0];
@@ -516,6 +548,40 @@ class LHDNSubmitter {
             code: rejectedDoc.code || 'REJECTION',
             message: rejectedDoc.message || 'Document was rejected by LHDN',
             details: rejectedDoc
+          }
+        };
+      }
+
+      // Check if the result doesn't have expected properties
+      if (result.data && !result.data.acceptedDocuments && !result.data.rejectedDocuments) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'UNEXPECTED_RESPONSE',
+            message: 'LHDN returned an unexpected response format. Please verify the document status manually.',
+            details: [{
+              code: 'UNEXPECTED_RESPONSE',
+              message: 'The API response did not contain information about accepted or rejected documents.',
+              target: docs[0]?.codeNumber || 'Unknown',
+              response: JSON.stringify(result)
+            }]
+          }
+        };
+      }
+
+      // If we have an empty acceptedDocuments array, inform the user
+      if (result.data && Array.isArray(result.data.acceptedDocuments) && result.data.acceptedDocuments.length === 0 && 
+          (!result.data.rejectedDocuments || result.data.rejectedDocuments.length === 0)) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'NO_DOCUMENT_PROCESSED',
+            message: 'No documents were accepted or rejected by LHDN. The submission may not have been processed correctly.',
+            details: [{
+              code: 'NO_DOCUMENT_PROCESSED',
+              message: 'The LHDN API returned empty document lists. Please verify the document status in the LHDN portal.',
+              target: docs[0]?.codeNumber || 'Unknown'
+            }]
           }
         };
       }
@@ -530,12 +596,53 @@ class LHDNSubmitter {
         fullError: JSON.stringify(error.response?.data, null, 2)
       });
 
+      // Handle network errors specifically
+      if (error.message && (
+          error.message.includes('timeout') || 
+          error.message.includes('network') || 
+          error.message.includes('ETIMEDOUT') ||
+          error.message.includes('ECONNREFUSED') ||
+          error.message.includes('ENOTFOUND'))) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'NETWORK_ERROR',
+            message: 'Network error while connecting to LHDN. Please check your internet connection.',
+            details: [{
+              code: 'NETWORK_ERROR',
+              message: `Network communication error: ${error.message}`,
+              target: docs[0]?.codeNumber || 'Unknown'
+            }]
+          }
+        };
+      }
+      
+      // Handle timeout separately
+      if (error.code === 'ECONNABORTED' || (error.message && error.message.includes('timeout'))) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'TIMEOUT',
+            message: 'The connection to LHDN timed out. Please try again later.',
+            details: [{
+              code: 'TIMEOUT',
+              message: 'Request timed out while waiting for LHDN response. The server might be busy.',
+              target: docs[0]?.codeNumber || 'Unknown'
+            }]
+          }
+        };
+      }
+
       return {
         status: 'failed',
         error: {
           code: error.response?.data?.code || 'SUBMISSION_ERROR',
           message: error.message || 'Failed to submit document to LHDN',
-          details: error.response?.data?.error?.details || error.response?.data?.details || error.response?.data
+          details: error.response?.data?.error?.details || error.response?.data?.details || [{
+            code: 'UNKNOWN_ERROR',
+            message: error.message || 'An unknown error occurred during submission',
+            target: docs[0]?.codeNumber || 'Unknown'
+          }]
         }
       };
     }

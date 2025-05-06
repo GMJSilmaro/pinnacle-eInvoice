@@ -130,14 +130,60 @@ async function submitDocument(docs, token) {
       }
     }
 
+    // Enhanced error handling with human-readable messages
+    const getHumanReadableError = (errorData) => {
+      const errorCode = errorData?.code || 'UNKNOWN_ERROR';
+      
+      // Map of LHDN error codes to user-friendly messages
+      const errorMessages = {
+        'DS302': 'This document has already been submitted to LHDN. Please check the document status in LHDN portal.',
+        'CF321': 'Document issue date is invalid. Documents must be submitted within 7 days of issuance.',
+        'CF364': 'Invalid item classification code. Please ensure all items have valid classification codes.',
+        'CF401': 'Tax calculation error. Please verify all tax amounts and calculations in your document.',
+        'CF402': 'Currency error. Please check that all monetary values use the correct currency code.',
+        'CF403': 'Invalid tax code. Please verify the tax codes used in your document.',
+        'CF404': 'Invalid identification. Please check all party identification numbers (TIN, BRN, etc.).',
+        'CF405': 'Invalid party information. Please verify supplier/customer details are complete and valid.',
+        'AUTH001': 'Authentication failure. Your session may have expired, please try logging in again.',
+        'AUTH003': 'Unauthorized access. Your account does not have permission to submit this document.',
+        'VALIDATION_ERROR': 'Document validation failed. Please review the document and correct all errors.',
+        'DUPLICATE_SUBMISSION': 'This document has already been submitted or is being processed.',
+        'E-INVOICE-TIN-VALIDATION-PARTY-VALIDATION': 'TIN validation failed. The document TIN doesn\'t match with your authenticated TIN.',
+        'INVALID_PARAMETER': 'Invalid parameters provided. Please check your document formatting.',
+        'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again or contact support.'
+      };
+      
+      return {
+        code: errorCode,
+        message: errorMessages[errorCode] || errorData?.message || 'Failed to submit document to LHDN. Please check your document and try again.',
+        details: errorData?.details || errorData?.error?.details || [{
+          code: errorCode,
+          message: errorData?.message || 'Unknown error occurred',
+          target: docs[0]?.codeNumber || 'Unknown'
+        }]
+      };
+    };
+
     // Handle other errors
     if (err.response?.status === 500) {
-      throw new Error('External LHDN SubmitDocument API hitting 500 (Internal Server Error). Please contact LHDN support.');
+      return {
+        status: 'failed',
+        error: {
+          code: 'SYSTEM_ERROR',
+          message: 'LHDN system is currently experiencing technical issues. Please try again later or contact LHDN support.',
+          details: [{
+            code: 'SYSTEM_ERROR',
+            message: 'External LHDN SubmitDocument API hitting 500 (Internal Server Error). Please try again later.',
+            target: docs[0]?.codeNumber || 'Unknown'
+          }]
+        }
+      };
     }
     
     if (err.response?.status === 400) {
       const errorData = err.response.data;
       
+      // Special handling for duplicate document submission
       if (errorData?.code === 'DS302' || (errorData?.details && errorData.details.some(d => d.code === 'DS302'))) {
         return {
           status: 'failed',
@@ -153,10 +199,26 @@ async function submitDocument(docs, token) {
         };
       }
       
-      return { status: 'failed', error: errorData };
+      // Return enhanced error with human-readable message
+      return { 
+        status: 'failed', 
+        error: getHumanReadableError(errorData) 
+      };
     }
     
-    throw err;
+    // Default error handler for other status codes
+    return {
+      status: 'failed',
+      error: {
+        code: 'SUBMISSION_ERROR',
+        message: 'Failed to submit document to LHDN',
+        details: [{
+          code: err.response?.status?.toString() || 'UNKNOWN',
+          message: err.message || 'Unknown error occurred',
+          target: docs[0]?.codeNumber || 'Unknown'
+        }]
+      }
+    };
   }
 } 
 

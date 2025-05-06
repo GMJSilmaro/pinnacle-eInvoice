@@ -3,24 +3,30 @@ module.exports = {
     {
       name: 'eInvoice',
       script: './server.js',
-      instances: 3,
+      instances: 1,
       autorestart: true,
-      watch: true,
+      watch: false,
       ignore_watch: ["node_modules", "public", "logs", "*.log", "temp", "*.xlsx"],
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'development',
         SECURE_COOKIE: 'false',
-        TRUST_PROXY: 'true'
+        TRUST_PROXY: 'true',
       },
       env_production: {
         NODE_ENV: 'production',
         SECURE_COOKIE: 'false',
-        TRUST_PROXY: 'true'
+        TRUST_PROXY: 'true',
       },
-      log_file: 'C:/inetpub/wwwroot/eInvoice/logs/combined.log',  
-      out_file: 'C:/inetpub/wwwroot/eInvoice/logs/out.log',        
-      error_file: 'C:/inetpub/wwwroot/eInvoice/logs/error.log',    
+      log_file: './logs/combined.log',
+      out_file: './logs/out.log',
+      error_file: './logs/error.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      max_size: '100M',
+      rotate_interval: '1d',
+      retain_history: 30,
+      merge_logs: true,
+      time: true
     }
   ]
 };

@@ -2786,11 +2786,9 @@ function updateCharts() {
         const processingTimes = [0, 0, 0, 0, 0]; // [<1min, 1-5min, 5-15min, 15-30min, >30min]
 
         allData.forEach(row => {
-            if (row.dateTimeReceived && row.dateTimeIssued) {
-                const receivedTime = new Date(row.dateTimeReceived);
-                const issuedTime = new Date(row.dateTimeIssued);
-                const processingTime = (receivedTime - issuedTime) / (1000 * 60); // Convert to minutes
-
+            // Use processingTimeMinutes from backend if available
+            const processingTime = typeof row.processingTimeMinutes === 'number' ? row.processingTimeMinutes : null;
+            if (processingTime !== null && !isNaN(processingTime)) {
                 if (processingTime < 1) processingTimes[0]++;
                 else if (processingTime < 5) processingTimes[1]++;
                 else if (processingTime < 15) processingTimes[2]++;

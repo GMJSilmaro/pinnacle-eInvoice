@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
-const fsPromises = require('fs').promises;
+const fsPromises = fs.promises;
 const XLSX = require('xlsx');
 const { processExcelData } = require('../../services/lhdn/processExcelData');
 const { mapToLHDNFormat } = require('../../services/lhdn/lhdnMapper');
@@ -18,10 +18,12 @@ const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../ser
 const { getActiveSAPConfig } = require('../../config/paths');
 const NodeCache = require('node-cache');
 const fileCache = new NodeCache({ stdTTL: 900 }); // 15 minutes cache instead of 1 minute
-// Add cache helper functions at the top after fileCache declaration
+
+// Add os module to the beginning of the file
+const os = require('os');
+
 const CACHE_KEY_PREFIX = 'outbound_files';
 
-// Add a lastModified timestamp to track when files were last modified
 let lastFilesModifiedTime = null;
 let lastStatusUpdateTime = null;
 
@@ -69,11 +71,15 @@ async function checkForStatusUpdates(timestamp) {
     try {
         if (!timestamp) return true;
         
+        // Format the date properly for SQL Server
+        const date = new Date(timestamp);
+        const formattedDate = date.toISOString().slice(0, 19).replace('T', ' ');
+        
         const latestUpdate = await WP_OUTBOUND_STATUS.findOne({
             attributes: ['updated_at'],
             where: {
                 updated_at: {
-                    [Op.gt]: new Date(timestamp)
+                    [Op.gt]: formattedDate
                 }
             },
             order: [['updated_at', 'DESC']],
@@ -1526,7 +1532,43 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         docNum: invoice_number
                     });
                 }
+
+                // Handle server errors (500)
+                if (result.error?.response?.status === 500) {
+                    const errorMessage = result.error.response.data?.message || 'Internal server error';
+                    const activityId = result.error.response.data?.activityId;
+                    
+                    await submitter.updateSubmissionStatus({
+                        invoice_number,
+                        uuid: 'NA',
+                        submissionUid: 'NA',
+                        fileName,
+                        filePath: processedData.filePath || fileName,
+                        status: 'Failed',
+                        error: JSON.stringify({
+                            message: errorMessage,
+                            activityId,
+                            type: 'SERVER_ERROR'
+                        })
+                    });
+
+                    return res.status(500).json({
+                        success: false,
+                        error: {
+                            code: 'LHDN_SERVER_ERROR',
+                            message: errorMessage,
+                            activityId,
+                            details: 'LHDN server encountered an error. Please try again later or contact support if the issue persists.'
+                        },
+                        docNum: invoice_number
+                    });
+                }
             }
+
+            if (!result.data) {
+                throw new Error('Invalid response from LHDN server: No data received');
+            }
+
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
                 // First update the submission status in database
@@ -2253,7 +2295,43 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                         docNum: invoice_number
                     });
                 }
+
+                // Handle server errors (500)
+                if (result.error?.response?.status === 500) {
+                    const errorMessage = result.error.response.data?.message || 'Internal server error';
+                    const activityId = result.error.response.data?.activityId;
+                    
+                    await submitter.updateSubmissionStatus({
+                        invoice_number,
+                        uuid: 'NA',
+                        submissionUid: 'NA',
+                        fileName,
+                        filePath: processedData.filePath || fileName,
+                        status: 'Failed',
+                        error: JSON.stringify({
+                            message: errorMessage,
+                            activityId,
+                            type: 'SERVER_ERROR'
+                        })
+                    });
+
+                    return res.status(500).json({
+                        success: false,
+                        error: {
+                            code: 'LHDN_SERVER_ERROR',
+                            message: errorMessage,
+                            activityId,
+                            details: 'LHDN server encountered an error. Please try again later or contact support if the issue persists.'
+                        },
+                        docNum: invoice_number
+                    });
+                }
             }
+
+            if (!result.data) {
+                throw new Error('Invalid response from LHDN server: No data received');
+            }
+
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
                 // First update the submission status in database
@@ -2472,7 +2550,6 @@ router.get('/submission/:submissionUid', async (req, res) => {
     }
 });
 
-
 /**
  * Find all files with the same name across different directories
  * @param {string} fileName - The filename to search for
@@ -2564,12 +2641,56 @@ router.delete('/:fileName', async (req, res) => {
         const { fileName } = req.params;
         const { type, company, date, deleteAll = false } = req.query;
 
-        // Get active SAP configuration
+        console.log('Delete request received:', { fileName, type, company, date, deleteAll });
+
+        // Check if this is a consolidated file (special handling)
+        if (type === 'consolidated') {
+            console.log('Processing consolidated file deletion');
+            
+            // Find the file in the consolidated directory structure regardless of date folder
+            const fileResult = await findConsolidatedFile(fileName);
+            
+            if (!fileResult) {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'FILE_NOT_FOUND',
+                        message: 'File not found in the consolidated directory'
+                    }
+                });
+            }
+            
+            // Delete the file
+            try {
+                await fsPromises.unlink(fileResult.path);
+                console.log('Consolidated file deleted successfully:', fileResult.path);
+                
+                // Log the deletion
+                await logDBOperation(req.app.get('models'), req, `Deleted consolidated file: ${fileName} from ${fileResult.path}`, {
+                    module: 'OUTBOUND',
+                    action: 'DELETE',
+                    status: 'SUCCESS'
+                });
+                
+                return res.json({
+                    success: true,
+                    message: 'File deleted successfully',
+                    path: fileResult.path
+                });
+            } catch (deleteError) {
+                console.error('Error deleting consolidated file:', deleteError);
+                throw new Error(`Failed to delete consolidated file: ${deleteError.message}`);
+            }
+        }
+
+        // Rest of the delete code for standard files
+        // Get active SAP configuration for standard files
         const config = await getActiveSAPConfig();
         if (!config.success) {
             throw new Error('Failed to get SAP configuration');
         }
 
+        // If deleteAll is true, find and delete all files with the same name
         if (deleteAll === 'true') {
             console.log(`Finding all files with name: ${fileName}`);
             const allFiles = await findAllFilesWithName(fileName, config.networkPath);
@@ -2625,9 +2746,11 @@ router.delete('/:fileName', async (req, res) => {
         // Construct file path
         const formattedDate = moment(date).format('YYYY-MM-DD');
         const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
+        console.log('Standard file path:', filePath);
 
         // Check if file exists
         if (!fs.existsSync(filePath)) {
+            console.log('File not found at path:', filePath);
             return res.status(404).json({
                 success: false,
                 error: {
@@ -2639,6 +2762,7 @@ router.delete('/:fileName', async (req, res) => {
 
         // Delete file
         await fsPromises.unlink(filePath);
+        console.log('Standard file deleted successfully:', filePath);
 
         // Log the deletion
         await logDBOperation(req.app.get('models'), req, `Deleted file: ${fileName}`, {
@@ -3222,5 +3346,356 @@ router.get('/status/:fileName', async (req, res) => {
         });
     }
 });
+
+const multer = require('multer');
+const storage = multer.diskStorage({
+    destination: async function (req, file, cb) {
+        try {
+            const { company, date } = req.body;
+            const formattedDate = moment(date).format('YYYY-MM-DD');
+            const uploadPath = path.join('C:\\SFTPRoot_Consolidation', 'Incoming', company, formattedDate);
+            
+            // Ensure directory exists
+            await ensureDirectoryExists(uploadPath);
+            cb(null, uploadPath);
+        } catch (error) {
+            cb(error);
+        }
+    },
+    filename: function (req, file, cb) {
+        // Keep original filename
+        cb(null, file.originalname);
+    }
+});
+
+const upload = multer({ 
+    storage: storage,
+    fileFilter: function (req, file, cb) {
+        // Check file type
+        if (!file.originalname.match(/\.(xls|xlsx)$/i)) {
+            return cb(new Error('Only Excel files are allowed'));
+        }
+        cb(null, true);
+    }
+});
+
+// Configure multer for file upload (completely simplified version)
+const uploadFolder = path.join(process.cwd(), 'public/uploads');
+
+// Ensure upload folder exists
+try {
+    if (!fs.existsSync(uploadFolder)) {
+        fs.mkdirSync(uploadFolder, { recursive: true });
+        console.log(`Created upload folder: ${uploadFolder}`);
+    }
+} catch (err) {
+    console.error(`Failed to create upload folder: ${err.message}`);
+}
+
+// Define the base path for consolidated uploads
+const consolidatedBasePath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
+
+// Ensure base directory exists
+try {
+    if (!fs.existsSync(consolidatedBasePath)) {
+        fs.mkdirSync(consolidatedBasePath, { recursive: true });
+        console.log(`Created consolidated base path: ${consolidatedBasePath}`);
+    }
+} catch (err) {
+    console.error(`Failed to create consolidated base path: ${err.message}`);
+}
+
+const consolidatedStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        // Create today's folder with format YYYY-MM-DD
+        const today = moment().format('YYYY-MM-DD');
+        const uploadPath = path.join(consolidatedBasePath, today);
+        
+        // Only create the directory if it doesn't exist
+        if (!fs.existsSync(uploadPath)) {
+            try {
+                fs.mkdirSync(uploadPath, { recursive: true });
+                console.log(`Created upload directory: ${uploadPath}`);
+            } catch (err) {
+                console.error(`Failed to create upload directory: ${err.message}`);
+                return cb(err);
+            }
+        } else {
+            console.log(`Using existing upload directory: ${uploadPath}`);
+        }
+        
+        cb(null, uploadPath);
+    },
+    filename: function (req, file, cb) {
+        // Keep original filename to maintain format needed for processing
+        cb(null, file.originalname);
+    }
+});
+
+const fileFilter = function (req, file, cb) {
+    // Check if it's an Excel file
+    if (!file.originalname.match(/\.(xlsx|xls)$/i)) {
+        return cb(new Error('Only Excel files (.xlsx, .xls) are allowed'));
+    }
+    cb(null, true);
+};
+
+const consolidatedUpload = multer({
+    storage: consolidatedStorage,
+    fileFilter: fileFilter,
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB
+    }
+});
+
+/**
+ * Diagnostic endpoint to check upload directories and permissions
+ */
+router.get('/check-upload-dirs', async (req, res) => {
+    const results = {
+        cwd: process.cwd(),
+        temp_dir: os.tmpdir(),
+        node_env: process.env.NODE_ENV,
+        directories: [],
+        success: true
+    };
+
+    // Test directories to check
+    const dirsToCheck = [
+        { path: path.join(process.cwd(), 'public/uploads'), name: 'Public Uploads' },
+        { path: path.join(process.cwd(), 'tmp'), name: 'Tmp Folder' },
+        { path: 'C:\\SFTPRoot_Consolidation', name: 'SFTP Root' },
+        { path: os.tmpdir(), name: 'OS Temp' }
+    ];
+
+    // Check each directory
+    for (const dir of dirsToCheck) {
+        const dirResult = {
+            name: dir.name,
+            path: dir.path,
+            exists: false,
+            writable: false,
+            created_test_file: false,
+            error: null
+        };
+
+        try {
+            // Check if directory exists
+            if (fs.existsSync(dir.path)) {
+                dirResult.exists = true;
+
+                // Check if writable by trying to create a test file
+                const testFile = path.join(dir.path, `.write-test-${Date.now()}.txt`);
+                try {
+                    fs.writeFileSync(testFile, 'test');
+                    dirResult.writable = true;
+                    dirResult.created_test_file = true;
+                    
+                    // Clean up test file
+                    try {
+                        fs.unlinkSync(testFile);
+                    } catch (cleanupErr) {
+                        dirResult.error = `Can write but cannot delete: ${cleanupErr.message}`;
+                    }
+                } catch (writeErr) {
+                    dirResult.error = `Not writable: ${writeErr.message}`;
+                }
+            } else {
+                // Try to create the directory
+                try {
+                    fs.mkdirSync(dir.path, { recursive: true });
+                    dirResult.exists = true;
+                    
+                    // Check if newly created directory is writable
+                    const testFile = path.join(dir.path, `.write-test-${Date.now()}.txt`);
+                    try {
+                        fs.writeFileSync(testFile, 'test');
+                        dirResult.writable = true;
+                        dirResult.created_test_file = true;
+                        
+                        // Clean up test file
+                        try {
+                            fs.unlinkSync(testFile);
+                        } catch (cleanupErr) {
+                            dirResult.error = `Can write but cannot delete: ${cleanupErr.message}`;
+                        }
+                    } catch (writeErr) {
+                        dirResult.error = `Directory created but not writable: ${writeErr.message}`;
+                    }
+                } catch (mkdirErr) {
+                    dirResult.error = `Cannot create directory: ${mkdirErr.message}`;
+                }
+            }
+        } catch (err) {
+            dirResult.error = `Error checking directory: ${err.message}`;
+        }
+
+        results.directories.push(dirResult);
+        
+        // If this is the upload folder we're using and it's not writable, mark overall test as failed
+        if (dir.path === uploadFolder && !dirResult.writable) {
+            results.success = false;
+        }
+    }
+
+    return res.json(results);
+});
+
+/**
+ * Simple diagnostic endpoint to check server status
+ */
+router.get('/ping', (req, res) => {
+    try {
+        const result = {
+            success: true,
+            cwd: process.cwd(),
+            env: process.env.NODE_ENV || 'development',
+            time: new Date().toISOString(),
+            server: os.hostname(),
+            platform: os.platform(),
+            uploadFolderExists: fs.existsSync(path.join(process.cwd(), 'public/uploads'))
+        };
+        
+        return res.json(result);
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+            stack: error.stack
+        });
+    }
+});
+
+/**
+ * Upload consolidated Excel file endpoint
+ */
+router.post('/upload-consolidated', consolidatedUpload.single('file'), async (req, res) => {
+    console.log('Starting consolidated file upload...');
+    try {
+        // Basic check if file was uploaded
+        if (!req.file) {
+            console.error('No file uploaded');
+            return res.status(400).json({
+                success: false,
+                message: 'No file uploaded'
+            });
+        }
+
+        console.log('File received:', {
+            originalname: req.file.originalname,
+            filename: req.file.filename,
+            path: req.file.path,
+            size: req.file.size
+        });
+        
+        console.log('Request body:', req.body);
+
+        // Skip validation for manual uploads (accept either 'manual' or 'manual_upload' parameters)
+        if (req.body.manual === 'true' || req.body.manual_upload === 'true') {
+            console.log('Manual upload detected, skipping validation');
+            
+            return res.json({
+                success: true,
+                file: {
+                    originalname: req.file.originalname,
+                    filename: req.file.filename,
+                    path: req.file.path,
+                    size: req.file.size
+                }
+            });
+        }
+
+        // For automatic uploads, validate file name format
+        const isValidFormat = isValidFileFormat(req.file.originalname);
+        if (!isValidFormat) {
+            console.error('Invalid filename format:', req.file.originalname);
+            try {
+                await fsPromises.unlink(req.file.path);
+            } catch (unlinkErr) {
+                console.error('Error deleting invalid file:', unlinkErr);
+            }
+            
+            return res.status(400).json({
+                success: false,
+                message: 'Filename does not follow the required format: XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS'
+            });
+        }
+
+        // Return success response
+        return res.json({
+            success: true,
+            file: {
+                originalname: req.file.originalname,
+                filename: req.file.filename,
+                path: req.file.path,
+                size: req.file.size
+            }
+        });
+
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        
+        // Clean up - delete file if it was uploaded
+        if (req.file) {
+            try {
+                await fsPromises.unlink(req.file.path);
+            } catch (unlinkErr) {
+                console.error('Error deleting invalid file:', unlinkErr);
+            }
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'An unknown error occurred during upload'
+        });
+    }
+});
+
+/**
+ * Helper function to find a file within the consolidated path
+ * Searches all date folders for a file with the given name
+ */
+async function findConsolidatedFile(fileName) {
+    const consolidatedBasePath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
+    
+    if (!fs.existsSync(consolidatedBasePath)) {
+        console.log('Consolidated base path does not exist:', consolidatedBasePath);
+        return null;
+    }
+    
+    try {
+        // Read all date directories in the base path
+        const dateDirs = await fsPromises.readdir(consolidatedBasePath);
+        
+        // Search each date directory for the file
+        for (const dateDir of dateDirs) {
+            const datePathStat = await fsPromises.stat(path.join(consolidatedBasePath, dateDir));
+            
+            // Skip if not a directory
+            if (!datePathStat.isDirectory()) continue;
+            
+            const filePath = path.join(consolidatedBasePath, dateDir, fileName);
+            
+            // Check if file exists
+            try {
+                const fileStat = await fsPromises.stat(filePath);
+                if (fileStat.isFile()) {
+                    console.log('Found consolidated file:', filePath);
+                    return {
+                        path: filePath,
+                        dateDir: dateDir
+                    };
+                }
+            } catch (err) {
+                // File doesn't exist in this date folder, continue searching
+            }
+        }
+    } catch (error) {
+        console.error('Error searching for consolidated file:', error);
+    }
+    
+    console.log('Could not find consolidated file:', fileName);
+    return null;
+}
 
 module.exports = router;

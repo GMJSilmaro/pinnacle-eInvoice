@@ -1,3 +1,5 @@
+// Add these lines at the top of the file, after class declarations
+// Cache mechanism to reduce unnecessary fetches
 const dataCache = {
     tableData: null,
     lastFetchTime: null,
@@ -366,7 +368,7 @@ class InvoiceTableManager {
                             const title = disabledStatus ? `Cannot select ${status} items` : '';
 
                             return `<div>
-                                <input type="checkbox" class="outbound-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
+                                <input type="checkbox" class="outbound-checkbox row-checkbox" ${disabledAttr} data-status="${status}" title="${title}">
                             </div>`;
                         }
                     },
@@ -519,7 +521,7 @@ class InvoiceTableManager {
                             invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
                             fileName: file.fileName,
                             documentType: file.documentType || 'Invoice',
-                            company: file.company || 'PXC Branch',
+                            company: file.company,
                             buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
                             supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
                             uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
@@ -530,7 +532,7 @@ class InvoiceTableManager {
                             cancelled_by: file.cancelled_by || null,
                             cancel_reason: file.cancel_reason || null,
                             status: file.status || 'Pending',
-                            source: self.convertSource(file.source),
+                            source: file.source,
                             uuid: file.uuid || null,
                             totalAmount: file.totalAmount || null
                         }));
@@ -1229,8 +1231,8 @@ class InvoiceTableManager {
                         Submit
                     </button>
                     <button 
-                        class="outbound-action-btn cancel delete-btn"
-                        onclick="deleteDocument('${row.fileName}', '${row.source || 'Incoming'}', '${row.company || 'PXC Branch'}', '${row.uploadedDate}')"
+                        class="outbound-action-btn cancel"
+                        onclick="deleteDocument('${row.fileName}', '${row.source}', '${row.company}', '${row.uploadedDate}')"
                         data-id="${row.id}">
                         <i class="bi bi-trash"></i>
                     </button>
@@ -3359,10 +3361,39 @@ class InvoiceTableManager {
      
     }
     
-    // Add this method to the InvoiceTableManager class to fix source values during data processing
-    convertSource(source) {
-        return source || 'Incoming';
-    }
+    // // Increment validation counter and check session limits
+    // incrementValidationCounter() {
+    //     // Get current session count
+    //     let sessionCount = parseInt(sessionStorage.getItem('validation_session_count') || '0');
+        
+    //     // Check session limit (100 validations per session)
+    //     if (sessionCount >= 100) {
+    //         this.showWarningMessage("You've reached the maximum number of validations for this session. Please refresh the page or try again later.");
+    //         return false;
+    //     }
+        
+    //     // Increment counter
+    //     sessionCount++;
+    //     sessionStorage.setItem('validation_session_count', sessionCount);
+        
+    //     // Update the counter badge
+    //     const badge = document.getElementById('validationCountBadge');
+    //     if (badge) {
+    //         badge.innerHTML = sessionCount;
+            
+    //         // Update badge color based on session count
+    //         if (sessionCount > 80) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-danger';
+    //         } else if (sessionCount > 50) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-warning text-dark';
+    //         } else {
+    //             badge.className = 'ms-2 badge rounded-pill bg-primary';
+    //         }
+    //     }
+        
+    //     return true;
+    // }
+
 }
 
 async function validateExcelFile(fileName, type, company, date) {
@@ -5027,7 +5058,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
 
 async function deleteDocument(fileName, type, company, date) {
     try {
-        console.log('Deleting document:', fileName, 'Type:', type, 'Company:', company, 'Date:', date);
+        console.log('Deleting document:', fileName);
         
         // First, confirm the deletion
         const result = await Swal.fire({
@@ -5055,51 +5086,44 @@ async function deleteDocument(fileName, type, company, date) {
             }
         });
 
-        let url;
-        
-        // Determine if we are in the consolidated view
-        const isConsolidatedView = window.location.href.includes('consolidated');
-        
-        // Check if this is a consolidated document
-        if (isConsolidatedView || type === 'Incoming') {
-            // For consolidated files, use a special path pattern
-            url = `/api/outbound-files/${encodeURIComponent(fileName)}?type=consolidated&company=PXC%20Branch`;
-            console.log('Using consolidated deletion URL:', url);
-        } else {
-            // Standard deletion for regular outbound files
-            // Format the date for the URL
-            const formattedDate = moment(date).format('YYYY-MM-DD');
-            url = `/api/outbound-files/${encodeURIComponent(fileName)}?type=${encodeURIComponent(type)}&company=${encodeURIComponent(company)}&date=${encodeURIComponent(formattedDate)}`;
-            console.log('Using standard deletion URL:', url);
-        }
-
         // Make the API call to delete the document
-        const response = await fetch(url, {
+        const response = await fetch(`/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
             }
         });
 
-        let data;
-        try {
-            data = await response.json();
-            console.log('Delete response:', data);
-        } catch (parseError) {
-            console.error('Failed to parse response:', parseError);
-            data = { success: false, error: { message: 'Invalid server response' } };
-        }
-        
         if (!response.ok) {
-            throw new Error(data.error?.message || 'Failed to delete document');
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Failed to delete document');
         }
+
+        const data = await response.json();
 
         // Show success message
         await Swal.fire({
-            icon: 'success',
-            title: 'Document Deleted',
-            text: 'The file has been successfully deleted.',
-            confirmButtonColor: '#1e88e5'
+            html: createSemiMinimalDialog({
+                title: 'Document Deleted',
+                subtitle: `${fileName} has been deleted successfully`,
+                content: `
+                    <div class="content-card">
+                        <div class="content-header">
+                            <span class="content-badge success">
+                                <i class="fas fa-check-circle"></i>
+                            </span>
+                            <span class="content-title">Success</span>
+                        </div>
+                        <div class="content-desc">
+                            The file has been permanently deleted from the system.
+                        </div>
+                    </div>
+                `
+            }),
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                popup: 'semi-minimal-popup'
+            }
         });
 
         // Remove the row from the table directly instead of refreshing the entire table
@@ -5115,21 +5139,38 @@ async function deleteDocument(fileName, type, company, date) {
                 tableManager.updateCardTotals();
             } else {
                 console.warn('Row not found in table, performing full refresh:', fileName);
-                tableManager.refresh(true);
+                InvoiceTableManager.getInstance().refresh();
             }
         } else {
             console.warn('Table not initialized, performing full refresh');
-            window.location.reload();
+            InvoiceTableManager.getInstance().refresh();
         }
 
     } catch (error) {
         console.error('Error deleting document:', error);
 
         await Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'Failed to delete document: ' + error.message,
-            confirmButtonColor: '#d33'
+            html: createSemiMinimalDialog({
+                title: 'Error',
+                subtitle: 'Failed to delete document',
+                content: `
+                    <div class="content-card">
+                        <div class="content-header">
+                            <span class="content-badge error">
+                                <i class="fas fa-times-circle"></i>
+                            </span>
+                            <span class="content-title">Error Details</span>
+                        </div>
+                        <div class="content-desc">
+                            ${error.message}
+                        </div>
+                    </div>
+                `
+            }),
+            customClass: {
+                confirmButton: 'outbound-action-btn cancel',
+                popup: 'semi-minimal-popup'
+            }
         });
     }
 }
@@ -5966,7 +6007,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Function to handle file upload - Modified to only show file details, not upload the file immediately
+// Function to handle file upload
 async function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -5982,34 +6023,57 @@ async function handleFileUpload(event) {
         return;
     }
 
-    // Display file details instead of uploading directly
-    const fileDetails = document.getElementById('fileDetails');
-    const fileName = fileDetails?.querySelector('.file-name');
-    const fileInfo = fileDetails?.querySelector('.file-info');
-    const uploadArea = document.getElementById('uploadArea');
-    const processFileBtn = document.getElementById('processFileBtn');
-    
-    if (fileName && fileInfo) {
-        // Update file details
-        fileName.textContent = file.name;
-        fileInfo.textContent = `Size: ${(file.size / 1024).toFixed(2)} KB`;
-        
-        // Show file details
-        fileDetails.classList.remove('d-none');
-        
-        // Hide upload area
-        if (uploadArea) {
-            uploadArea.style.display = 'none';
+    // Create FormData
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', 'Incoming');
+    formData.append('company', 'PXC Branch');
+    formData.append('date', moment().format('YYYY-MM-DD'));
+
+    try {
+        // Show loading state
+        Swal.fire({
+            title: 'Uploading...',
+            text: 'Please wait while we process your file',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showConfirmButton: false,
+            willOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        // Upload file
+        const response = await fetch('/api/outbound-files/upload-consolidated', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error?.message || 'Upload failed');
         }
-        
-        // Enable process button
-        if (processFileBtn) {
-            processFileBtn.disabled = false;
-        }
-        
-        console.log('File details displayed, waiting for Process File button click');
-    } else {
-        console.error('Could not find file details elements');
+
+        // Show success message
+        Swal.fire({
+            icon: 'success',
+            title: 'Upload Successful',
+            text: 'Your file has been uploaded successfully',
+            confirmButtonColor: '#1e88e5'
+        });
+
+        // Refresh the file list
+        await refreshFileList();
+
+    } catch (error) {
+        console.error('Upload error:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Upload Failed',
+            text: error.message || 'An error occurred while uploading the file',
+            confirmButtonColor: '#1e88e5'
+        });
     }
 }
 
@@ -6100,26 +6164,14 @@ function isValidFileFormat(fileName) {
     }
 }
 
-
-const fileUploadElement = document.getElementById('fileUpload');
-if (fileUploadElement) {
-    fileUploadElement.addEventListener('change', handleFileUpload);
-} else {
-    // Try the alternative ID that seems to be used in the application
-    const flatFileUploadElement = document.getElementById('flatFileUpload');
-    if (flatFileUploadElement) {
-        flatFileUploadElement.addEventListener('change', handleFileUpload);
-        console.log('Event listener added to flatFileUpload instead of fileUpload');
-    } else {
-        console.warn('Neither fileUpload nor flatFileUpload elements found in the DOM');
-    }
-}
+// Add event listener to file input
+document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
 
 // Function to refresh file list after upload
 async function refreshFileList() {
     try {
-        // Get the DataTable instance - use invoiceTable which is the ID in consolidated.html
-        const table = $('#invoiceTable').DataTable();
+        // Get the DataTable instance
+        const table = $('#fileTable').DataTable();
         
         if (!table || !table.ajax) {
             console.error("DataTable instance not found or initialized correctly");
@@ -6155,160 +6207,156 @@ async function refreshFileList() {
 // Class to handle file upload functionality
 class FileUploadManager {
     constructor() {
-        console.log('FileUploadManager initialized');
         this.uploadArea = document.getElementById('uploadArea');
         this.fileInput = document.getElementById('flatFileUpload');
         this.processFileBtn = document.getElementById('processFileBtn');
         this.browseFilesLink = document.getElementById('browseFilesLink');
         this.maxFileSize = 5 * 1024 * 1024; // 5MB
         this.allowedTypes = ['.xlsx', '.xls'];
-        this.selectedFile = null;
         
-        console.log('DOM Elements found:',
-            'uploadArea:', !!this.uploadArea,
-            'fileInput:', !!this.fileInput,
-            'processFileBtn:', !!this.processFileBtn,
-            'browseFilesLink:', !!this.browseFilesLink
-        );
-        
-        // Check if our inline script has already set up event handlers
-        this.inlineScriptActive = window.fileUploadHandlersInitialized === true;
-        console.log('Inline script active:', this.inlineScriptActive);
-        
-        if (!this.inlineScriptActive) {
-            console.log('Initializing all event listeners');
-            this.initializeEventListeners();
-        } else {
-            // Only initialize the process button handler if inline script is active
-            console.log('Only initializing process button handler');
-            this.initializeProcessButtonHandler();
-            console.log('Using inline script handlers for file upload, only initializing process button');
-        }
-    }
-    
-    initializeProcessButtonHandler() {
-        console.log('Initializing process button handler');
-        // Process file button - always handle this from the JS
-        if (this.processFileBtn) {
-            console.log('Process button found, adding click handler');
-            this.processFileBtn.addEventListener('click', this.handleProcessFile.bind(this));
-            console.log('Process button handler initialized');
-        } else {
-            console.error('Process button not found in the DOM. Looking for element with ID "processFileBtn"');
-            // Try to find it again just to be sure
-            const processBtn = document.getElementById('processFileBtn');
-            console.log('Direct query for processFileBtn returned:', processBtn);
-        }
-        
-        // Set up a mutation observer to watch for new file selections
-        const fileDetails = document.getElementById('fileDetails');
-        if (fileDetails) {
-            console.log('File details element found, setting up mutation observer');
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                        // Check if file details is now visible
-                        if (!fileDetails.classList.contains('d-none')) {
-                            const fileName = fileDetails.querySelector('.file-name')?.textContent;
-                            if (fileName) {
-                                console.log('File selected from inline script:', fileName);
-                                // Find the file object from the file input
-                                const files = this.fileInput?.files;
-                                if (files && files.length > 0) {
-                                    this.selectedFile = files[0];
-                                    console.log('File selected in mutation observer:', this.selectedFile);
-                                    
-                                    // Enable the process button if it exists
-                                    if (this.processFileBtn) {
-                                        this.processFileBtn.disabled = false;
-                                        console.log('Process button enabled');
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            });
-            
-            observer.observe(fileDetails, { attributes: true });
-            console.log('Mutation observer set up for file details element');
-        } else {
-            console.error('File details element not found in the DOM. Looking for element with ID "fileDetails"');
-        }
+        this.initializeEventListeners();
     }
 
     initializeEventListeners() {
-        console.log('Initializing full file upload event listeners');
-        
         // Drag and drop events
-        if (this.uploadArea) {
-            this.uploadArea.addEventListener('dragover', this.handleDragOver.bind(this));
-            this.uploadArea.addEventListener('dragleave', this.handleDragLeave.bind(this));
-            this.uploadArea.addEventListener('drop', this.handleDrop.bind(this));
-        }
+        this.uploadArea?.addEventListener('dragover', this.handleDragOver.bind(this));
+        this.uploadArea?.addEventListener('dragleave', this.handleDragLeave.bind(this));
+        this.uploadArea?.addEventListener('drop', this.handleDrop.bind(this));
 
         // File input change event
-        if (this.fileInput) {
-            this.fileInput.addEventListener('change', this.handleFileSelection.bind(this));
-        }
+        this.fileInput?.addEventListener('change', this.handleFileSelection.bind(this));
+
+        // Browse files link
+        this.browseFilesLink?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.fileInput?.click();
+        });
 
         // Process file button
-        if (this.processFileBtn) {
-            this.processFileBtn.addEventListener('click', this.handleProcessFile.bind(this));
-        }
-        
-        // Cancel upload button
-        const cancelUploadBtn = document.getElementById('cancelUploadBtn');
-        if (cancelUploadBtn) {
-            cancelUploadBtn.addEventListener('click', () => {
-                this.resetUI();
-            });
-        }
-        
-        // Remove any file button in the file details container
-        const removeFileBtn = document.getElementById('removeFile');
-        if (removeFileBtn) {
-            removeFileBtn.addEventListener('click', () => {
-                this.resetUI();
-            });
+        this.processFileBtn?.addEventListener('click', this.handleProcessFile.bind(this));
+    }
+
+    handleDragOver(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.uploadArea.classList.add('border-primary');
+    }
+
+    handleDragLeave(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.uploadArea.classList.remove('border-primary');
+    }
+
+    handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.uploadArea.classList.remove('border-primary');
+
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            this.validateAndProcessFile(files[0]);
         }
     }
 
-    async handleProcessFile() {
-        console.log('Processing file...', this);
-        
-        // Get the file from file input if not already selected
-        if (!this.selectedFile && this.fileInput && this.fileInput.files.length > 0) {
-            this.selectedFile = this.fileInput.files[0];
-            console.log('File selected from input:', this.selectedFile);
+    handleFileSelection(e) {
+        const files = e.target.files;
+        if (files.length) {
+            this.validateAndProcessFile(files[0]);
         }
-        
-        if (!this.selectedFile) {
-            console.warn('No file selected for processing');
-            this.showError('Please select a file to upload');
+    }
+
+    async validateAndProcessFile(file) {
+        // Reset UI
+        this.resetUI();
+
+        // Validate file type
+        const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+        if (!this.allowedTypes.includes(fileExt)) {
+            this.showError('Invalid file type. Please upload only Excel files (.xlsx or .xls)');
+            return;
+        }
+
+        // Validate file size
+        if (file.size > this.maxFileSize) {
+            this.showError(`File size exceeds maximum allowed size of 5MB`);
             return;
         }
 
         try {
-            // Disable the process button to prevent double submission
-            if (this.processFileBtn) {
-                this.processFileBtn.disabled = true;
-                this.processFileBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-2"></i>Uploading...';
+            // Check if this is a duplicate file by checking if it exists in the table
+            const isDuplicate = await this.checkForDuplicateFile(file.name);
+            if (isDuplicate) {
+                // Show warning but still allow upload
+                Swal.fire({
+                    title: 'Duplicate File',
+                    text: 'A file with this name may already exist. Are you sure you want to upload it?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#1e88e5',
+                    cancelButtonColor: '#dc3545',
+                    confirmButtonText: 'Yes, upload it'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Show file details and continue
+                        this.showFileDetails(file);
+                        this.processFileBtn.disabled = false;
+                        this.selectedFile = file;
+                    }
+                });
+            } else {
+                // Show file details
+                this.showFileDetails(file);
+                
+                // Enable process button
+                this.processFileBtn.disabled = false;
+                this.selectedFile = file;
             }
-            
-            // Validate filename format before uploading
-            const filename = this.selectedFile.name;
-            if (!this.validateFilenameFormat(filename)) {
-                this.showFilenameFormatError();
-                return;
-            }
-            
-            // Show loading state with progress
-            this.showLoadingState('Uploading and processing your file...');
+        } catch (error) {
+            console.error('Error checking for duplicate file:', error);
+            // Still show file details if check fails
+            this.showFileDetails(file);
+            this.processFileBtn.disabled = false;
+            this.selectedFile = file;
+        }
+    }
 
-            // Validate file type only (without strict filename validation)
+    // Add method to check for duplicate files
+    async checkForDuplicateFile(fileName) {
+        try {
+            // Only attempt this check if DataTable is initialized
+            const table = $('#fileTable').DataTable();
+            if (!table || !table.data) {
+                return false;
+            }
+            
+            // Search the DataTable for matching filenames
+            const tableData = table.data();
+            for (let i = 0; i < tableData.length; i++) {
+                const rowData = tableData[i];
+                // Check if the row data has a filename that matches
+                if (rowData && 
+                    (rowData.fileName === fileName || 
+                     (rowData.fileName && rowData.fileName.includes(fileName)))) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (error) {
+            console.error('Error checking for duplicate file:', error);
+            return false; // Default to allowing upload on error
+        }
+    }
+
+    async handleProcessFile() {
+        if (!this.selectedFile) return;
+
+        try {
+            // Show loading state
+            this.showLoadingState();
+
+            // Validate file again before sending
             const fileExt = '.' + this.selectedFile.name.split('.').pop().toLowerCase();
-            console.log('File extension:', fileExt, 'Allowed types:', this.allowedTypes);
             if (!this.allowedTypes.includes(fileExt)) {
                 throw new Error('Invalid file type. Please upload only Excel files (.xlsx or .xls)');
             }
@@ -6316,157 +6364,101 @@ class FileUploadManager {
             // Create FormData
             const formData = new FormData();
             formData.append('file', this.selectedFile);
-            formData.append('manual', 'true'); // Flag to indicate manual upload
             
-            // API endpoint for consolidated upload 
-            const endpoint = '/api/outbound-files/upload-consolidated';
-            
-            console.log('Uploading file to:', endpoint);
-            const response = await fetch(endpoint, {
+            // Add metadata
+            const today = moment().format('YYYY-MM-DD');
+            formData.append('type', 'Incoming');
+            formData.append('company', 'PXC Branch');
+            formData.append('date', today);
+
+            // Upload file with proper error handling
+            const response = await fetch('/api/outbound-files/upload-consolidated', {
                 method: 'POST',
-                body: formData,
+                body: formData
             });
-            
+
             const result = await response.json();
-            console.log('Upload response:', result);
-            
+
             if (!response.ok) {
                 console.error('Upload response error:', result);
-                const errorMessage = result.message || result.error?.message || 'Upload failed: Server error';
-                
-                // Check if this is a filename format error
-                if (errorMessage.includes('Filename does not follow the required format')) {
-                    // Show specialized format error
-                    this.showFilenameFormatError();
-                    return;
-                }
-                
-                // Hide loading state before showing error
-                this.hideLoadingState();
-                
-                // Show error modal - will return after user interacts with it
-                this.showError(errorMessage);
-                
-                // Close the modal after error is shown and user acknowledges it
-                this.closeUploadModal();
-                
-                // Reset UI state
-                this.resetUI();
-                
-                return; // Exit early
+                throw new Error(result.error?.message || 'Upload failed');
             }
 
             // Show success message
             this.showSuccess('File uploaded successfully');
 
             // Refresh the file list
-            try {
-                await refreshFileList();
-            } catch (refreshError) {
-                console.warn('Failed to refresh file list:', refreshError);
-                // Continue execution even if refresh fails
+            await refreshFileList();
+
+            // Close the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('flatFileUploadModal'));
+            if (modal) {
+                modal.hide();
+            } else {
+                console.warn('Modal instance not found');
             }
-
-            // Close the modal and ensure backdrop is also removed
-            this.closeUploadModal();
-
-            // Reset UI at the end
-            this.resetUI();
 
         } catch (error) {
             console.error('Upload error:', error);
-            
-            // Hide loading state before showing error
-            this.hideLoadingState();
-            
-            // Show error with proper message
-            this.showError(error.message || 'Failed to upload file. Please try again later.');
-            
-            // Close the modal after error is shown
-            this.closeUploadModal();
-            
-            // Reset UI state
-            this.resetUI();
+            this.showError(error.message || 'Failed to upload file');
         } finally {
-            // Re-enable the process button
-            if (this.processFileBtn) {
-                this.processFileBtn.disabled = false;
-                this.processFileBtn.innerHTML = '<i class="bi bi-arrow-right-circle me-2"></i>Process File';
-            }
+            this.hideLoadingState();
         }
     }
-    
-    // Add helper method to close the upload modal
-    closeUploadModal() {
-        try {
-            const modalEl = document.getElementById('flatFileUploadModal');
-            if (modalEl) {
-                const modal = bootstrap.Modal.getInstance(modalEl);
-                if (modal) {
-                    modal.hide();
-                }
-                // Remove any lingering backdrops
-                document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
-                    backdrop.remove();
-                });
-                // Reset body classes
-                document.body.classList.remove('modal-open');
-                document.body.style.overflow = '';
-                document.body.style.paddingRight = '';
-            }
-        } catch (modalError) {
-            console.warn('Error closing modal:', modalError);
-            // Force cleanup of modal artifacts
-            document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
-                backdrop.remove();
-            });
-            document.body.classList.remove('modal-open');
-            document.body.style.overflow = '';
-            document.body.style.paddingRight = '';
-        }
+
+    showFileDetails(file) {
+        // Update UI to show selected file
+        const fileDetails = document.createElement('div');
+        fileDetails.className = 'selected-file rounded p-3 mt-3';
+        fileDetails.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="bi bi-file-earmark-excel text-success fs-4 me-2"></i>
+                <div class="flex-grow-1">
+                    <div class="fw-bold text-truncate">${file.name}</div>
+                    <div class="text-muted small">${this.formatFileSize(file.size)}</div>
+                </div>
+                <button type="button" class="btn-close" aria-label="Remove file"></button>
+            </div>
+        `;
+
+        // Add remove functionality
+        const removeBtn = fileDetails.querySelector('.btn-close');
+        removeBtn.addEventListener('click', () => this.resetUI());
+
+        // Add to DOM
+        this.uploadArea.style.display = 'none';
+        this.uploadArea.parentNode.insertBefore(fileDetails, this.uploadArea.nextSibling);
     }
-    
+
     resetUI() {
-        console.log('Resetting UI');
         // Clear file input
-        if (this.fileInput) {
-            this.fileInput.value = '';
-        }
+        if (this.fileInput) this.fileInput.value = '';
         
-        // Hide the file details container
-        const fileDetails = document.getElementById('fileDetails');
-        if (fileDetails) {
-            fileDetails.classList.add('d-none');
-        }
+        // Remove file details if exists
+        const fileDetails = document.querySelector('.selected-file');
+        if (fileDetails) fileDetails.remove();
         
-        // Show the upload area
+        // Show upload area
         if (this.uploadArea) {
             this.uploadArea.style.display = 'block';
             this.uploadArea.classList.remove('border-primary');
         }
         
         // Disable process button
-        if (this.processFileBtn) {
-            this.processFileBtn.disabled = true;
-        }
+        if (this.processFileBtn) this.processFileBtn.disabled = true;
         
         // Clear selected file
         this.selectedFile = null;
+        
+        // Remove any error messages
+        const errorMessages = document.querySelectorAll('.file-error-message');
+        errorMessages.forEach(el => el.remove());
     }
-    
+
     showLoadingState() {
         Swal.fire({
             title: 'Uploading...',
-            html: `
-                <div class="text-center">
-                    <div class="mb-3">Please wait while we process your file</div>
-                    <div class="progress mb-3" style="height: 10px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                             role="progressbar" style="width: 100%"></div>
-                    </div>
-                    <div class="small text-muted">This may take a moment</div>
-                </div>
-            `,
+            text: 'Please wait while we process your file',
             allowOutsideClick: false,
             allowEscapeKey: false,
             showConfirmButton: false,
@@ -6477,22 +6469,7 @@ class FileUploadManager {
     }
 
     hideLoadingState() {
-        // Close any open SweetAlert dialogs
-        try {
-            if (typeof Swal !== 'undefined') {
-                Swal.close();
-            }
-            
-            // Also remove any manually added loading overlays if they exist
-            const loadingOverlays = document.querySelectorAll('.swal2-container, .loading-overlay');
-            if (loadingOverlays.length > 0) {
-                loadingOverlays.forEach(overlay => {
-                    overlay.remove();
-                });
-            }
-        } catch (error) {
-            console.warn('Error hiding loading state:', error);
-        }
+        Swal.close();
     }
 
     showSuccess(message) {
@@ -6500,427 +6477,379 @@ class FileUploadManager {
             icon: 'success',
             title: 'Success',
             text: message,
-            confirmButtonColor: '#1e88e5',
-            didClose: () => {
-                // Refresh the file list once more when the success dialog is closed
-                try {
-                    refreshFileList();
-                } catch (e) {
-                    console.warn('Error refreshing file list on dialog close:', e);
-                }
-            }
+            confirmButtonColor: '#1e88e5'
         });
     }
 
     showError(message) {
-        // Make sure any loading state is hidden first
-        this.hideLoadingState();
-        
-        // Use SweetAlert2 for showing error
         Swal.fire({
             icon: 'error',
             title: 'Error',
             text: message,
-            confirmButtonColor: '#1e88e5',
-            allowOutsideClick: false,
-            allowEscapeKey: false
+            confirmButtonColor: '#1e88e5'
         });
     }
 
-    // Add missing handleDragOver, handleDragLeave, and handleDrop methods
-    handleDragOver(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (this.uploadArea) {
-            this.uploadArea.classList.add('border-primary');
-        }
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
-    
-    handleDragLeave(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (this.uploadArea) {
-            this.uploadArea.classList.remove('border-primary');
-        }
-    }
-    
-    handleDrop(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (this.uploadArea) {
-            this.uploadArea.classList.remove('border-primary');
-        }
-        
-        const dt = e.dataTransfer;
-        if (dt.files && dt.files.length) {
-            this.handleFileSelection(dt.files[0]);
-        }
-    }
-    
-    // Add handleFileSelection method if it doesn't exist
-    handleFileSelection(file) {
-        console.log('File selected:', file);
-        
-        // Check if this is an event or a file
-        let selectedFile = file;
-        if (file instanceof Event) {
-            const target = file.target;
-            if (target && target.files && target.files.length > 0) {
-                selectedFile = target.files[0];
-            }
-        }
-        
-        if (!selectedFile) {
-            console.warn('No file provided to handleFileSelection');
-            return;
-        }
-        
-        // Validate file extension
-        const fileExt = '.' + selectedFile.name.split('.').pop().toLowerCase();
-        if (!this.allowedTypes.includes(fileExt)) {
-            this.showError(`Invalid file type. Please upload only ${this.allowedTypes.join(' or ')} files.`);
-            return;
-        }
-        
-        // Validate file size
-        if (selectedFile.size > this.maxFileSize) {
-            this.showError(`File is too large. Maximum allowed size is ${this.maxFileSize / (1024 * 1024)}MB.`);
-            return;
-        }
-        
-        // Store the selected file
-        this.selectedFile = selectedFile;
-        
-        // Update UI
-        const fileDetails = document.getElementById('fileDetails');
-        const fileName = fileDetails?.querySelector('.file-name');
-        const fileInfo = fileDetails?.querySelector('.file-info');
-        
-        if (fileDetails && fileName && fileInfo) {
-            // Update file details
-            fileName.textContent = selectedFile.name;
-            fileInfo.textContent = `Size: ${(selectedFile.size / 1024).toFixed(2)} KB`;
-            
-            // Show file details
-            fileDetails.classList.remove('d-none');
-            
-            // Hide upload area
-            if (this.uploadArea) {
-                this.uploadArea.style.display = 'none';
-            }
-            
-            // Enable process button
-            if (this.processFileBtn) {
-                this.processFileBtn.disabled = false;
-            }
-            
-            console.log('File details displayed, process button enabled');
-        } else {
-            console.error('Could not find file details elements:',
-                'fileDetails:', !!fileDetails,
-                'fileName:', !!fileName,
-                'fileInfo:', !!fileInfo
-            );
-        }
-    }
-
-    // Add this new method to FileUploadManager
-    showFilenameFormatError() {
-        const self = this;
-        Swal.fire({
-            icon: 'error',
-            title: 'Filename Format Error',
-            html: `
-                <div class="text-start">
-                    <p>Your filename does not follow the required format:</p>
-                    <div class="alert alert-info small">
-                        <strong>Required Format:</strong>
-                        <code>XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS</code>
-                    </div>
-                    
-                    <p><strong>Where:</strong></p>
-                    <ul class="text-start small">
-                        <li><strong>XX</strong>: Document type code (01, 02, 03, etc.)</li>
-                        <li><strong>InvoiceNumber</strong>: Your invoice reference number</li>
-                        <li><strong>eInvoice</strong>: Must be exact text "eInvoice"</li>
-                        <li><strong>YYYYMMDDHHMMSS</strong>: Date/time in format (Year, Month, Day, Hour, Minute, Second)</li>
-                    </ul>
-                    
-                    <p><strong>Example:</strong></p>
-                    <div class="bg-light p-2 rounded">
-                        <code>01_INV2024001_eInvoice_20240426152233</code>
-                    </div>
-                    
-                    <div class="alert alert-warning mt-3 small">
-                        <i class="bi bi-lightbulb me-2"></i>
-                        <strong>Tip:</strong> You can rename your file manually or use our "Fix Format" option which will automatically rename your file for you.
-                    </div>
-                </div>
-            `,
-            confirmButtonColor: '#1e88e5',
-            confirmButtonText: 'I Understand',
-            showCancelButton: true,
-            cancelButtonText: 'Fix Format',
-            cancelButtonColor: '#28a745',
-            width: '42em'
-        }).then((result) => {
-            if (result.dismiss === Swal.DismissReason.cancel) {
-                // User wants to fix the format
-                self.showFileRenameDialog();
-            }
-        });
-    }
-
-    // Add back the validator function
-    validateFilenameFormat(filename) {
-        // Remove file extension
-        const filenameWithoutExt = filename.split('.')[0];
-        
-        // Regex pattern for XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS
-        // Where XX is document type (01, 02, etc.)
-        // InvoiceNumber can be any alphanumeric string
-        // eInvoice is fixed text
-        // YYYYMMDDHHMMSS is date/time format
-        const pattern = /^\d{2}_[a-zA-Z0-9_-]+_eInvoice_\d{14}$/;
-        
-        return pattern.test(filenameWithoutExt);
-    }
-
-    // Add this method to help users rename their file
-    showFileRenameDialog() {
-        const self = this;
-        if (!this.selectedFile) {
-            this.showError('No file selected');
-            return;
-        }
-        
-        // Get current filename without extension
-        const originalFilename = this.selectedFile.name;
-        const extension = originalFilename.split('.').pop().toLowerCase();
-        
-        // Generate timestamp for the new filename
-        const now = new Date();
-        const timestamp = now.getFullYear() +
-            String(now.getMonth() + 1).padStart(2, '0') +
-            String(now.getDate()).padStart(2, '0') +
-            String(now.getHours()).padStart(2, '0') +
-            String(now.getMinutes()).padStart(2, '0') +
-            String(now.getSeconds()).padStart(2, '0');
-        
-        Swal.fire({
-            title: 'Fix Filename Format',
-            html: `
-                <div class="text-start">
-                    <p>Please provide the following information to rename your file:</p>
-                    
-                    <div class="form-group mb-3">
-                        <label for="docType" class="form-label">Document Type:</label>
-                        <select id="docType" class="form-select">
-                            <option value="01">01 - Invoice</option>
-                            <option value="02">02 - Credit Note</option>
-                            <option value="03">03 - Debit Note</option>
-                            <option value="04">04 - Refund Note</option>
-                            <option value="11">11 - Self-billed Invoice</option>
-                            <option value="12">12 - Self-billed Credit Note</option>
-                            <option value="13">13 - Self-billed Debit Note</option>
-                            <option value="14">14 - Self-billed Refund Note</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group mb-3">
-                        <label for="invoiceNumber" class="form-label">Invoice Number:</label>
-                        <input type="text" id="invoiceNumber" class="form-control" placeholder="Enter invoice number" value="INV${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}">
-                    </div>
-                    
-                    <div class="alert alert-info small">
-                        <i class="bi bi-info-circle me-2"></i>
-                        New filename will be: <span id="newFilenamePreview" class="fw-bold"></span>.${extension}
-                    </div>
-                </div>
-            `,
-            confirmButtonText: 'Rename & Continue',
-            confirmButtonColor: '#28a745',
-            showCancelButton: true,
-            cancelButtonText: 'Cancel',
-            width: '42em',
-            didOpen: () => {
-                // Update the filename preview when inputs change
-                const updatePreview = () => {
-                    const docType = document.getElementById('docType').value;
-                    const invoiceNumber = document.getElementById('invoiceNumber').value;
-                    const newFilename = `${docType}_${invoiceNumber}_eInvoice_${timestamp}`;
-                    document.getElementById('newFilenamePreview').textContent = newFilename;
-                };
-                
-                // Initial preview
-                updatePreview();
-                
-                // Add event listeners
-                document.getElementById('docType').addEventListener('change', updatePreview);
-                document.getElementById('invoiceNumber').addEventListener('input', updatePreview);
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                const docType = document.getElementById('docType').value;
-                const invoiceNumber = document.getElementById('invoiceNumber').value;
-                
-                // Create the new filename
-                const newFilename = `${docType}_${invoiceNumber}_eInvoice_${timestamp}.${extension}`;
-                
-                // Create a new file with the correct name
-                self.renameAndUploadFile(newFilename);
-            }
-        });
-    }
-
-    // Add method to rename and upload the file
-    renameAndUploadFile(newFilename) {
-        const self = this;
-        
-        if (!this.selectedFile) {
-            this.showError('No file selected');
-            return;
-        }
-        
-        // Show loading state
-        this.showLoadingState('Preparing your file...');
-        
-        // Create a new file object with the new name
-        const newFile = new File([this.selectedFile], newFilename, { 
-            type: this.selectedFile.type,
-            lastModified: this.selectedFile.lastModified
-        });
-        
-        // Update the selected file
-        this.selectedFile = newFile;
-        
-        // Update file details display
-        const fileDetails = document.getElementById('fileDetails');
-        const fileName = fileDetails?.querySelector('.file-name');
-        const fileInfo = fileDetails?.querySelector('.file-info');
-        
-        if (fileDetails && fileName && fileInfo) {
-            // Update file details
-            fileName.textContent = newFilename;
-            fileInfo.textContent = `Size: ${(this.selectedFile.size / 1024).toFixed(2)} KB`;
-            
-            // Make sure file details are visible
-            fileDetails.classList.remove('d-none');
-            
-            // Hide upload area if needed
-            if (this.uploadArea) {
-                this.uploadArea.style.display = 'none';
-            }
-            
-            // Enable process button
-            if (this.processFileBtn) {
-                this.processFileBtn.disabled = false;
-            }
-        }
-        
-        // Close loading state
-        this.hideLoadingState();
-        
-        // Show success message with preview of the renamed file
-        Swal.fire({
-            icon: 'success',
-            title: 'File Renamed',
-            html: `
-                <p>Your file has been renamed to the correct format:</p>
-                <div class="alert alert-success">
-                    <i class="bi bi-check-circle me-2"></i>
-                    <strong>${newFilename}</strong>
-                </div>
-                <p class="small text-muted mt-3">Click "Continue Upload" to proceed with the renamed file.</p>
-            `,
-            confirmButtonColor: '#28a745',
-            confirmButtonText: 'Continue Upload',
-            showCancelButton: true,
-            cancelButtonText: 'Cancel Upload',
-            cancelButtonColor: '#6c757d'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Proceed with upload
-                self.handleProcessFile();
-            } else {
-                // User canceled, reset the UI
-                self.resetUI();
-            }
-        });
-    }
-
-    // ... existing code ...
 }
 
-// Consolidated initialization
-document.addEventListener('DOMContentLoaded', (event) => {
-    console.log('DOMContentLoaded event fired', event);
-    console.log('Initializing FileUploadManager');
-    // Set a flag to indicate the inline script is active
-    window.fileUploadHandlersInitialized = true;
-    console.log('fileUploadHandlersInitialized set to true');
-    
-    // Initialize the FileUploadManager
-    try {
-        console.log('Creating new FileUploadManager instance');
-        const fileUploadManager = new FileUploadManager();
-        console.log('FileUploadManager instance created successfully:', fileUploadManager);
-        
-        // Store it globally for debugging
-        window.fileUploadManager = fileUploadManager;
-        console.log('FileUploadManager instance stored in window.fileUploadManager for debugging');
-    } catch (error) {
-        console.error('Error initializing FileUploadManager:', error);
+// Initialize file upload functionality
+document.addEventListener('DOMContentLoaded', () => {
+    new FileUploadManager();
+});
+
+// Initialize file upload functionality
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if upload button exists
+    const openFlatFileModalBtn = document.getElementById('openFlatFileModalBtn');
+    if (openFlatFileModalBtn) {
+        // Create and add modal on button click instead of using existing HTML
+        openFlatFileModalBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            createAndShowFileUploadModal();
+        });
     }
-    
-    // Initialize template download if needed
-    if (typeof initializeTemplateDownload === 'function') {
-        console.log('initializing template download');
-        initializeTemplateDownload();
-    } else {
-        console.log('initializeTemplateDownload function not found');
+
+    // Remove the event listener for the modal that might exist in HTML
+    const existingModal = document.getElementById('flatFileUploadModal');
+    if (existingModal) {
+        existingModal.remove();
     }
 });
 
-// Function to initialize template download
+// Function to create and show file upload modal
+function createAndShowFileUploadModal() {
+    // Check if modal already exists
+    let modal = document.getElementById('flatFileUploadModal');
+    if (modal) {
+        // If it exists, just show it
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+        return;
+    }
+
+    // Create modal HTML
+    const modalHTML = `
+    <div class="modal fade" id="flatFileUploadModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="flatFileUploadModalLabel">
+                        <i class="bi bi-file-earmark-text me-2"></i>
+                        Upload Flat File for Consolidation
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="row g-0">
+                        <!-- Left Column - Upload Form -->
+                        <div class="col-md-5 border-end">
+                            <div class="p-4">
+                                <div class="text-center mb-2">
+                                  <i class="bi bi-file-earmark-text h1 mb-1 d-block opacity-50"></i>
+                                  <h6 class="mb-1">Consolidated e-Invoice Upload</h6>
+                                </div>
+
+                                <!-- Download Template Button -->
+                                <div class="text-center mb-3">
+                                    <button class="btn btn-outline-primary btn-sm" id="downloadTemplateBtn">
+                                        <i class="bi bi-download me-1"></i>
+                                        Download Template (.xls)
+                                    </button>
+                                    <div class="text-muted small mt-1">
+                                        Use this template for proper formatting
+                                    </div>
+                                </div>
+
+                               <!-- Information Alert -->
+                               <div class="alert alert-info mb-3 small">
+                                <div class="d-flex">
+                                    <div class="flex-shrink-0">
+                                        <i class="bi bi-info-circle-fill"></i>
+                                    </div>
+                                    <div class="flex-grow-1 ms-2">
+                                        <p class="mb-0"><strong>LHDN Recommendation:</strong><br> Upload your flat file in proper format for efficient processing.</p>
+                                        <small>Properly formatted files are processed faster and reduce errors.</small>
+                                    </div>
+                                </div>
+                            </div>
+                                 <!-- Upload Area -->
+                                 <div class="upload-dropzone border-2 border-dashed rounded-3 text-center py-4 mb-3" id="uploadArea">
+                                    <div>Drag & Drop your file here</div>
+                                    <div class="text-muted my-2 small">or</div>
+                                    <div class="text-center mb-2">
+                                        <a href="#" class="text-primary fw-bold" id="browseFilesLink">Browse Files</a>
+                                        <input type="file" id="flatFileUpload" class="d-none" accept=".xlsx,.xls">
+                                    </div>
+                                    <div class="text-muted mt-2 small d-flex align-items-center justify-content-center">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        Maximum file size: 5MB
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Right Column - Requirements & Information -->
+                        <div class="col-md-7 bg-light">
+                            <div class="p-3">
+                               
+                                 
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="bi bi-exclamation-triangle text-danger me-2"></i>
+                                    <h6 class="mb-0">LHDN Submission Requirements<span style="color: red; animation: blinker 1s linear infinite;">*</span></h6>
+                                </div>
+
+                                
+                                <!-- Scrollable Additional Details Container -->
+                                <div class="additional-details-container" style="max-height: 380px; overflow-y: auto;">
+                                <!-- Fixed PXC Requirements Section -->
+                                <div class="requirements-section mb-1">
+                                    <div class="accordion accordion-flush" id="requirementsAccordion">
+                                        <!-- File Requirements -->
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header">
+                                                <button class="accordion-button mb-0 fw-normal" type="button" data-bs-toggle="collapse" data-bs-target="#fileRequirements" aria-expanded="true" aria-controls="fileRequirements">
+                                                    <i class="bi bi-file-earmark-text me-2" style="color: navy;"></i>
+                                                    File Requirements
+                                                </button>
+                                            </h2>
+                                            <div id="fileRequirements" class="accordion-collapse collapse show focus" data-bs-parent="#requirementsAccordion">
+                                                <div class="accordion-body">
+                                                    <div class="requirements-list small">
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>File must be CSV/XLS/XLSX with proper delimiters</span>
+                                                        </div>
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>Required fields must be present</span>
+                                                        </div>
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>UTF-8 encoding required</span>
+                                                        </div>
+                                                        <div class="d-flex align-items-center">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>Header row must include standard field names</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Supplier Information -->
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header">
+                                                <button class="accordion-button collapsed mb-0 fw-normal" type="button" data-bs-toggle="collapse" data-bs-target="#supplierInfo" aria-expanded="false" aria-controls="supplierInfo">
+                                                    <i class="bi bi-building me-2" style="color: navy;"></i>
+                                                    Required Supplier Information
+                                                </button>
+                                            </h2>
+                                            <div id="supplierInfo" class="accordion-collapse collapse" data-bs-parent="#requirementsAccordion">
+                                                <div class="accordion-body">
+                                                    <div class="requirements-list small">
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>Supplier's Name and TIN (Tax Identification Number)</span>
+                                                        </div>
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>Business Registration Number (SSM)</span>
+                                                        </div>
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>SST Registration Number (if applicable)</span>
+                                                        </div>
+                                                        <div class="d-flex align-items-center">
+                                                            <i class="bi bi-check-circle text-success me-2" style="color: navy;"></i>
+                                                            <span>MSIC Code and Business Activity Description</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="processFileBtn" disabled>Process File</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Download Template Popup -->
+    <div class="position-fixed top-50 start-50 translate-middle bg-white rounded-3 shadow" 
+         id="downloadPopup" 
+         style="width: 380px; z-index: 1060; display: none; box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);">
+        <div class="p-3">
+            <!-- Header -->
+             
+            <div class="d-flex align-items-center mb-3">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-file-text me-2"></i>
+                        <span>Select e-Invoice Type</span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" onclick="closeDownloadPopup()"></button>
+            </div>
+
+            <!-- Content -->
+            <div>
+                <select class="form-select mb-2" id="downloadTaxTypeSelect">
+                    <option value="01" selected>01 - Invoice</option>
+                    <option value="02">02 - Credit Note</option>
+                    <option value="03">03 - Debit Note</option>
+                    <option value="04">04 - Refund Note</option>
+                    <option value="11">11 - Self-billed Invoice</option>
+                    <option value="12">12 - Self-billed Credit Note</option>
+                    <option value="13">13 - Self-billed Debit Note</option>
+                    <option value="14">14 - Self-billed Refund Note</option>
+                </select>
+
+                <!-- Info Text -->
+                <div class="d-flex align-items-start rounded p-2 mb-3" 
+                        style="background-color: #E8F0FE;">
+                    <i class="bi bi-info-circle me-2" style="color: #1967D2;"></i>
+                    <span class="small" style="color: #1967D2;" id="downloadTaxTypeInfo">Standard invoice template for regular transactions.</span>
+                </div>
+
+                <!-- File Requirements -->
+                <div class="mb-3">
+                    <div class="mb-2">File Requirements</div>
+                    <div class="d-flex flex-column gap-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            <span class="small text-secondary">File must be CSV/XLS/XLSX with proper delimiters</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            <span class="small text-secondary">Required fields must be present</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            <span class="small text-secondary">UTF-8 encoding required</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-check2 text-success me-2"></i>
+                            <span class="small text-secondary">Header row must include standard field names</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-danger btn-sm px-3" onclick="closeDownloadPopup()">Cancel</button>
+                <button type="button" class="btn btn-sm px-3" 
+                    style="background-color: #2B3479; color: white;" 
+                    onmouseover="this.style.backgroundColor='#1e2554'" 
+                    onmouseout="this.style.backgroundColor='#2B3479'"
+                    onclick="downloadTemplate()">
+                    Download Template
+                </button>
+            </div>
+        </div>
+    </div>
+    `;
+
+    // Append modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // Get the modal element
+    modal = document.getElementById('flatFileUploadModal');
+
+    // Initialize event handlers for template download
+    initializeTemplateDownload();
+
+    // Initialize file upload manager for the new modal
+    const fileUploadManager = new FileUploadManager();
+
+    // Show the modal
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+// Function to initialize template download functionality
 function initializeTemplateDownload() {
-    console.log('Initializing template download');
-    
-    // Set up download template button handler if it exists
+    // Tax type descriptions
+    const downloadTaxTypeGuide = {
+        '01': 'Standard invoice template for regular transactions.',
+        '02': 'Use for adjustments that decrease the invoice value.',
+        '03': 'Use for adjustments that increase the invoice value.',
+        '04': 'Specific template for refund transactions.',
+        '11': 'For cases where the buyer generates the invoice on behalf of the seller.',
+        '12': 'Self-billed version of credit note.',
+        '13': 'Self-billed version of debit note.',
+        '14': 'Self-billed version of refund note.'
+    };
+
+    // Set up download template button
     const downloadTemplateBtn = document.getElementById('downloadTemplateBtn');
     if (downloadTemplateBtn) {
         downloadTemplateBtn.addEventListener('click', function(e) {
             e.preventDefault();
-            
-            // Show download options popup
-            const downloadPopup = document.getElementById('downloadPopup');
-            if (downloadPopup) {
-                downloadPopup.style.display = 'block';
-            } else {
-                console.warn('Download popup element not found');
+            document.getElementById('downloadPopup').style.display = 'block';
+        });
+    }
+
+    // Set up tax type select change
+    const downloadTaxTypeSelect = document.getElementById('downloadTaxTypeSelect');
+    if (downloadTaxTypeSelect) {
+        downloadTaxTypeSelect.addEventListener('change', function() {
+            const selectedType = this.value;
+            const infoElement = document.getElementById('downloadTaxTypeInfo');
+            if (infoElement) {
+                infoElement.textContent = downloadTaxTypeGuide[selectedType];
             }
         });
-        
-        console.log('Download template button handler initialized');
-    } else {
-        console.warn('Download template button not found in the DOM');
     }
 }
 
-// Initialize all components when the DOM is fully loaded
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM fully loaded, initializing components');
-    
-    // Initialize date/time display
-    DateTimeManager.updateDateTime();
-    
-    // Initialize the table manager
-    const tableManager = InvoiceTableManager.getInstance();
-    
-    // Initialize template download functionality
-    if (typeof initializeTemplateDownload === 'function') {
-        initializeTemplateDownload();
-    } else {
-        console.log('initializeTemplateDownload function not found');
+// Function to close download popup
+function closeDownloadPopup() {
+    const popup = document.getElementById('downloadPopup');
+    if (popup) {
+        popup.style.display = 'none';
     }
-});
+}
+
+// Function to download template
+function downloadTemplate() {
+    const selectedTaxType = document.getElementById('downloadTaxTypeSelect').value;
+    
+    // Generate timestamp
+    const now = new Date();
+    const timestamp = now.getFullYear() +
+        String(now.getMonth() + 1).padStart(2, '0') +
+        String(now.getDate()).padStart(2, '0') +
+        String(now.getHours()).padStart(2, '0') +
+        String(now.getMinutes()).padStart(2, '0') +
+        String(now.getSeconds()).padStart(2, '0');
+
+    // Create filename with selected tax type
+    const filename = `${selectedTaxType}_CONSOFILENAME_eInvoice_${timestamp}.xls`;
+    
+    // Create a temporary link and trigger download
+    const tempLink = document.createElement('a');
+    tempLink.href = '/templates/01_CONSOFILENAME_eInvoice_20250410165153.xls';
+    tempLink.download = filename;
+    document.body.appendChild(tempLink);
+    tempLink.click();
+    document.body.removeChild(tempLink);
+
+    // Close the popup
+    closeDownloadPopup();
+}

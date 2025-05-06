@@ -51,6 +51,14 @@ router.get('/inbound', (req, res) => {
   });
 });
 
+router.get('/sdk-updates', (req, res) => {
+  res.render('dashboard/sdk-updates.html', {
+    title: 'SDK Updates',
+    user: req.session.user || null,
+    layout: 'layout'
+  });
+});
+
 router.get('/company-profile', auth.isAdmin, (req, res) => {
   res.render('dashboard/company-profile.html', {
     title: 'Company Profile',

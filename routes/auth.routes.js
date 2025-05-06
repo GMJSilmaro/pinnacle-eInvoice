@@ -6,12 +6,10 @@ const moment = require('moment');
 const loggingConfig = require('../config/logging.config');
 const { checkActiveSession, updateActiveSession, removeActiveSession, checkLoginAttempts, trackLoginAttempt } = require('../middleware/auth.middleware');
 const passport = require('passport');
-const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../services/logging.service');
-const tokenService = require('../services/token.service');
+const { LoggingService } = require('../services/logging.service');
+const { getTokenAsTaxPayer } = require('../services/token.service');
+const { LOG_TYPES, ACTIONS, STATUS } = require('../services/logging.service');
 const { updateUserActivity } = require('../middleware/auth.middleware');
-const { WP_USER_LOGIN_HISTORY } = require('../models');
-const logger = require('../utils/logger');
-const { CONFIG, auth: authHelper } = require('../middleware');
 
 // Move constants to top
 const LOGIN_CONSTANTS = {
@@ -110,40 +108,46 @@ router.post('/login', async (req, res, next) => {
     }
     // Use Passport authentication
     passport.authenticate('local', async (err, user, info) => {
-      try {
-        if (err) {
-          await trackLoginAttempt(username, clientIP, false);
-          return res.status(500).json({
-            success: false,
-            message: 'Authentication error',
-            error: err.message
-          });
+      if (err) {
+        await trackLoginAttempt(username, clientIP, false);
+        return next(err);
+      }
+
+      if (!user) {
+        await trackLoginAttempt(username, clientIP, false);
+        return res.status(401).json({
+          success: false,
+          message: info.message || 'Invalid credentials'
+        });
+      }
+
+      // Log successful login
+      await trackLoginAttempt(username, clientIP, true);
+
+
+      // Update last login time
+      await WP_USER_REGISTRATION.update({
+        LastLoginTime: sequelize.literal('GETDATE()'),
+        ValidStatus: '1'
+      }, {
+        where: { ID: user.ID }
+      });
+
+      // Login with Passport
+      req.logIn(user, async (loginErr) => {
+        if (loginErr) {
+          return next(loginErr);
         }
 
-        if (!user) {
-          await trackLoginAttempt(username, clientIP, false);
-          return res.status(401).json({
-            success: false,
-            message: info ? info.message : 'Authentication failed'
-          });
-        }
-
-        // Authentication successful
-        req.login(user, async (loginErr) => {
-          if (loginErr) {
-            return res.status(500).json({
-              success: false,
-              message: 'Login error',
-              error: loginErr.message
-            });
-          }
+        try {
+          // Get token from LHDN
+          const tokenData = await getTokenAsTaxPayer();
           
-          // Ensure user data is properly stored in session
+          // Set up session
           req.session.user = {
             id: user.ID,
-            ID: user.ID, // Include both for compatibility
             username: user.Username,
-            admin: user.Admin === 1 || user.Admin === true,
+            admin: user.Admin === 1,
             IDType: user.IDType,
             IDValue: user.IDValue,
             TIN: user.TIN,
@@ -152,109 +156,31 @@ router.post('/login', async (req, res, next) => {
             isActive: true
           };
 
-          // Update last login time
-          try {
-            const updatedUser = await WP_USER_REGISTRATION.update(
-              {
-                LastLoginTime: new Date()
-              },
-              {
-                where: { ID: user.ID }
-              }
-            );
-            
-            // Update active session tracking
-            updateActiveSession(user.username);
-          } catch (updateError) {
-            console.error('Failed to update last login time:', updateError);
-            // Continue login process despite error
-          }
-          
-          // Try to get LHDN token for future API calls
-          let tokenData = null;
-          try {
-            const tokenResult = await tokenService.getAccessToken(user);
-            
-            // Store token only if successful and token exists
-            if (tokenResult.success) {
-              if (tokenResult.token) {
-                // Store token separately in session
-                req.session.accessToken = tokenResult.token;
-                req.session.tokenExpiry = tokenResult.expiry;
-                
-                // Set sessionStorage flag for client
-                req.session.hasValidToken = true;
-              } else {
-                console.warn(`Token acquisition succeeded but token is null. Warning: ${tokenResult.warning}`);
-                // Set a flag in session indicating LHDN API access may be limited
-                req.session.lhdnTokenWarning = tokenResult.warning;
-                req.session.hasValidToken = false;
-              }
-            } else {
-              console.warn(`Token acquisition failed: ${tokenResult.error}`);
-              req.session.hasValidToken = false;
-              req.session.lhdnTokenWarning = tokenResult.error || "Failed to obtain LHDN token";
-              // Continue with login - tokens will be obtained as needed during API calls
-            }
-          } catch (tokenError) {
-            console.error('Token acquisition error:', tokenError);
-            req.session.hasValidToken = false;
-            req.session.lhdnTokenWarning = tokenError.message || "Unexpected error obtaining LHDN token";
-            // Continue with login - we'll try to get the token again later
+          // Store token separately in session
+          if (tokenData && tokenData.access_token) {
+            req.session.accessToken = tokenData.access_token;
+            req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
           }
 
-          // Explicitly save the session before continuing
-          await new Promise((resolve) => req.session.save(resolve));
-
-          // Log successful login
-          await LoggingService.log({
-            description: 'User logged in successfully',
-            username: user.username,
-            userId: user.id,
-            ipAddress: req.ip,
-            logType: LOG_TYPES.INFO,
-            module: MODULES.AUTH,
-            action: ACTIONS.LOGIN,
-            status: STATUS.SUCCESS
+          return res.json({
+            success: true,
+            message: 'Login successful',
+            accessToken: tokenData?.access_token,
+            user: req.session.user
           });
-
-          // Redirect based on request type
-          if (req.xhr || req.headers.accept?.includes('application/json')) {
-            return res.json({
-              success: true,
-              message: 'Successfully logged in',
-              user: {
-                id: user.ID,
-                username: user.Username,
-                email: user.Email,
-                isAdmin: user.Admin === true || user.Admin === 1
-              },
-              tokenStatus: {
-                hasValidToken: req.session.hasValidToken === true,
-                warning: req.session.lhdnTokenWarning
-              },
-              redirect: '/dashboard'
-            });
-          } else {
-            return res.redirect('/dashboard');
-          }
-        });
-      } catch (authError) {
-        console.error('Authentication error:', authError);
-        return res.status(500).json({
-          success: false,
-          message: 'Authentication process error',
-          error: authError.message
-        });
-      }
+        } catch (error) {
+          console.error('Token acquisition error:', error);
+          return res.status(500).json({
+            success: false,
+            message: 'Login successful but failed to get access token'
+          });
+        }
+      });
     })(req, res, next);
-  } catch (e) {
-    console.error('Login route error:', e);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error',
-      error: e.message
-    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    next(error);
   }
 });
 
@@ -401,140 +327,6 @@ router.get('/logout', async (req, res) => {
         res.clearCookie('connect.sid');
         res.redirect('/auth/login');
     }
-});
-
-/**
- * API endpoint to refresh the access token
- */
-router.post('/refresh-token', async (req, res) => {
-  try {
-    // Check if user is authenticated
-    if (!req.session || !req.session.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-    }
-
-    // Get user details from session
-    const user = req.session.user;
-    
-    console.log(`Refreshing token for user: ${user.username} (ID: ${user.id})`);
-    
-    // Attempt to get a new token
-    const tokenResult = await tokenService.getAccessToken(user);
-    
-    if (!tokenResult.success) {
-      console.error(`Token refresh failed for user ${user.username}:`, tokenResult.error);
-      return res.status(400).json({
-        success: false,
-        message: 'Failed to refresh access token',
-        error: tokenResult.error
-      });
-    }
-    
-    // Store the new token in the session
-    req.session.accessToken = tokenResult.token;
-    req.session.tokenExpiry = tokenResult.expiry;
-    
-    await LoggingService.log({
-      description: `Access token refreshed successfully`,
-      username: user.username,
-      userId: user.id,
-      ipAddress: req.ip,
-      logType: LOG_TYPES.INFO,
-      module: MODULES.AUTH,
-      action: ACTIONS.UPDATE,
-      status: STATUS.SUCCESS
-    });
-    
-    return res.json({
-      success: true,
-      message: 'Token refreshed successfully',
-      expiresIn: tokenResult.expiresIn
-    });
-  } catch (error) {
-    console.error('Token refresh error:', error);
-    
-    return res.status(500).json({
-      success: false,
-      message: 'An error occurred while refreshing the token',
-      error: error.message
-    });
-  }
-});
-
-/**
- * API endpoint to check token status
- */
-router.get('/token-status', async (req, res) => {
-  try {
-    // Check if user is authenticated
-    if (!req.session || !req.session.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-    }
-
-    // Check if there's a token warning in the session
-    if (req.session.lhdnTokenWarning) {
-      return res.json({
-        success: true,
-        hasToken: false,
-        warning: req.session.lhdnTokenWarning
-      });
-    }
-
-    // Check if there's a valid token in the session
-    if (req.session.accessToken && req.session.tokenExpiry && Date.now() < req.session.tokenExpiry) {
-      return res.json({
-        success: true,
-        hasToken: true
-      });
-    }
-
-    // Try to get a new token
-    try {
-      const tokenResult = await tokenService.getAccessToken(req.session.user);
-      
-      if (tokenResult.success && tokenResult.token) {
-        // Update token in session
-        req.session.accessToken = tokenResult.token;
-        req.session.tokenExpiry = tokenResult.expiry;
-        
-        return res.json({
-          success: true,
-          hasToken: true
-        });
-      } else {
-        // Store warning in session
-        req.session.lhdnTokenWarning = tokenResult.warning || 'Invalid LHDN configuration';
-        
-        return res.json({
-          success: true,
-          hasToken: false,
-          warning: req.session.lhdnTokenWarning
-        });
-      }
-    } catch (error) {
-      console.error('Token status check error:', error);
-      
-      return res.json({
-        success: true,
-        hasToken: false,
-        warning: error.message || 'Failed to obtain LHDN token'
-      });
-    }
-  } catch (error) {
-    console.error('Token status endpoint error:', error);
-    
-    return res.status(500).json({
-      success: false,
-      message: 'An error occurred while checking token status',
-      error: error.message
-    });
-  }
 });
 
 // Add a catch-all route for /auth/* to handle 404s

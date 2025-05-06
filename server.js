@@ -110,22 +110,6 @@ app.use('/reports', express.static(path.join(__dirname, 'src/reports')));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session configuration with secure cookies
-// app.use(session({
-//   ...serverConfig.sessionConfig,
-//   cookie: {
-//     ...serverConfig.sessionConfig.cookie,
-//     secure: process.env.SECURE_COOKIE === 'true',
-//     sameSite: 'lax',
-//     maxAge: authConfig.session.timeout,
-//     rolling: true,
-//     httpOnly: true   // Ensure cookies are HTTP only
-//   },
-//   resave: true,
-//   saveUninitialized: true
-// }));
-
-
-// Session configuration with secure cookies
 app.use(session({
   ...serverConfig.sessionConfig,
   cookie: {

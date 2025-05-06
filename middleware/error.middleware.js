@@ -31,18 +31,6 @@ const errorMiddleware = async (err, req, res, next) => {
     console.error('Error logging to database:', logError);
   }
 
-  // Handle database connection errors
-  if (err.name === 'SequelizeConnectionError' || 
-      err.name === 'SequelizeConnectionRefusedError' ||
-      err.message?.includes('database') || 
-      err.message?.includes('connection')) {
-    return res.status(503).json({
-      success: false,
-      message: 'Database connection error. Please try again later.',
-      error: process.env.NODE_ENV === 'production' ? 'Service unavailable' : err.message
-    });
-  }
-
   // Handle specific error types
   if (err.name === 'BQEAuthError') {
     return res.redirect('/outbound-bqe?auth=error');
@@ -52,16 +40,6 @@ const errorMiddleware = async (err, req, res, next) => {
     return res.status(401).json({
       success: false,
       message: 'Unauthorized access'
-    });
-  }
-
-  // Authentication errors
-  if (err.message?.includes('token') || err.message?.includes('authentication')) {
-    return res.status(401).json({
-      success: false,
-      message: process.env.NODE_ENV === 'production' 
-        ? 'Authentication error' 
-        : err.message
     });
   }
 

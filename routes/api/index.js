@@ -30,6 +30,7 @@ const logsRoutes = require('./logs.routes');
 const lhdnRoutes = require('./lhdn');
 const configRoutes = require('./config');
 const geminiRoutes = require('./gemini.routes');
+const rssRoutes = require('./rss');
 
 // Import consolidation routes
 const consolidationRoutes = require('./consolidation.routes');
@@ -49,6 +50,7 @@ router.use('/lhdn', lhdnRoutes);
 router.use('/config', configRoutes);
 router.use('/user', userRoutes);
 router.use('/gemini', geminiRoutes);
+router.use('/rss', rssRoutes);
 
 // Register consolidation routes
 router.use('/consolidation', consolidationRoutes);

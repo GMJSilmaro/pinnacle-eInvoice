@@ -1082,7 +1082,19 @@ router.get('/documents/recent', async (req, res) => {
                 // Get submission and validation dates
                 const receivedDate = doc.dateTimeReceived || doc.created_at;
                 const validatedDate = doc.dateTimeValidated;
-                
+                // Calculate processing time in minutes (float)
+                let processingTimeMinutes = null;
+                if (receivedDate && validatedDate) {
+                    try {
+                        const received = new Date(receivedDate);
+                        const validated = new Date(validatedDate);
+                        if (!isNaN(received.getTime()) && !isNaN(validated.getTime())) {
+                            processingTimeMinutes = (validated - received) / (1000 * 60);
+                        }
+                    } catch (e) {
+                        processingTimeMinutes = null;
+                    }
+                }
                 return {
                     uuid: doc.uuid,
                     submissionUid: doc.submissionUid,
@@ -1093,7 +1105,6 @@ router.get('/documents/recent', async (req, res) => {
                     dateTimeValidated: formatDateForDisplay(validatedDate),
                     submissionDate: formatDateForDisplay(receivedDate),
                     validationDate: formatDateForDisplay(validatedDate),
-                    
                     // UI display formatted dates
                     receivedDateFormatted: formatDateForUI(receivedDate),
                     validatedDateFormatted: formatDateForUI(validatedDate),
@@ -1102,7 +1113,6 @@ router.get('/documents/recent', async (req, res) => {
                         type: validatedDate ? 'Validated' : 'Submitted',
                         tooltip: validatedDate ? 'LHDN Validation Date' : 'LHDN Submission Date'
                     },
-                    
                     status: doc.status,
                     totalSales: doc.totalSales || 0,
                     totalExcludingTax: doc.totalExcludingTax || 0,
@@ -1117,7 +1127,8 @@ router.get('/documents/recent', async (req, res) => {
                     typeName: doc.typeName,
                     typeVersionName: doc.typeVersionName,
                     documentStatusReason: doc.documentStatusReason,
-                    documentCurrency: 'MYR'
+                    documentCurrency: 'MYR',
+                    processingTimeMinutes 
                 };
             });
 

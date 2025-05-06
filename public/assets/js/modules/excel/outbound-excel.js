@@ -1,4 +1,3 @@
-// Add these lines at the top of the file, after class declarations
 // Cache mechanism to reduce unnecessary fetches
 const dataCache = {
     tableData: null,
@@ -353,17 +352,6 @@ class InvoiceTableManager {
 
             const self = this; // Store reference to this
             
-            // Check for LHDN token warnings passed from login
-            if (window.tokenStatus && !window.tokenStatus.hasValidToken && window.tokenStatus.warning) {
-                sessionStorage.setItem('lhdnTokenWarning', window.tokenStatus.warning);
-                this.showLhdnWarningMessage(window.tokenStatus.warning);
-                // Clear the global variable after using it
-                delete window.tokenStatus;
-            } else {
-                // If not found in window object, check through API
-                this.checkLhdnTokenStatus();
-            }
-            
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
                 columns: [
@@ -454,6 +442,18 @@ class InvoiceTableManager {
                 dom: '<"outbound-controls"<"outbound-length-control"l>><"outbound-table-responsive"t><"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 initComplete: function() {
                     // Add filter button handlers to existing buttons
+                    $('.quick-filters .btn[data-filter]').on('click', function() {
+                        $('.quick-filters .btn').removeClass('active');
+                        $(this).addClass('active');
+                        
+                        const filter = $(this).data('filter');
+                        if (filter === 'all') {
+                            self.table.column(8).search('').draw();
+                        } else {
+                            self.table.column(8).search('Pending').draw();
+                        }
+                    });
+
                     // Set initial filter to Pending
                     self.table.column(8).search('Pending').draw();
                     $('.quick-filters .btn[data-filter="pending"]').addClass('active');
@@ -475,7 +475,7 @@ class InvoiceTableManager {
                     emptyTable: this.getEmptyStateHtml(),
                     zeroRecords: `<div class="text-center">
                     <i class="bi bi-exclamation-triangle" style="font-size: 2em; color: var(--bs-warning);"></i>
-                    <p>Searching Records Please Wait.... Try <a href="#" onclick="window.location.reload();">reloading the page</a> to refresh the data.</p>
+                    <p>No records found. Please try <a href="#" onclick="window.location.reload();">reloading the page</a> to refresh the data.</p>
                     <p>Try <a href="#" onclick="window.location.reload();">reloading the page</a>. If the issue persists, please contact support.</p>
                 </div>`,
                 },
@@ -484,9 +484,6 @@ class InvoiceTableManager {
                 ajax: {
                     url: '/api/outbound-files/list-all',
                     method: 'GET',
-                    xhrFields: {
-                        withCredentials: true
-                    },
                     data: function(d) {
                         // Add a cache control parameter
                         d.forceRefresh = sessionStorage.getItem('forceRefreshOutboundTable') === 'true';
@@ -560,35 +557,6 @@ class InvoiceTableManager {
                     complete: function() {
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                        console.error('Ajax error:', textStatus, errorThrown);
-                        
-                        // Check for authentication error
-                        if (jqXHR.status === 401) {
-                            // Authentication error - redirect to login
-                            self.hideLoadingBackdrop();
-                            // Check if there's a specific error message
-                            if (jqXHR.responseJSON && jqXHR.responseJSON.error) {
-                                if (jqXHR.responseJSON.error.code === 'AUTH_ERROR') {
-                                    window.location.href = '/api/auth/login?expired=true&reason=session_expired';
-                                    return;
-                                }
-                            } else {
-                                window.location.href = '/api/auth/login?expired=true&reason=session_expired';
-                                return;
-                            }
-                        }
-                        
-                        // Handle specific API token errors
-                        if (jqXHR.responseJSON && jqXHR.responseJSON.error && 
-                            jqXHR.responseJSON.error.includes('invalid_client')) {
-                            self.showErrorMessage('LHDN API connection error: Invalid client credentials. Please contact the administrator.');
-                            return;
-                        }
-                        
-                        // Other error handling
-                        self.showErrorMessage(`Failed to load data: ${textStatus}`);
                     }
                 },
                 order: [
@@ -2924,57 +2892,27 @@ class InvoiceTableManager {
     }
 
     refresh(forceRefresh = false) {
-        // Clear any existing session timeout status
-        sessionStorage.removeItem('session_expired');
-        
-        // First try to refresh the access token if needed
-        this.refreshAccessToken().then(() => {
-            if (forceRefresh) {
-                sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+        if (forceRefresh) {
+            // Force a refresh from the server
+            sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+            this.table?.ajax.reload(null, false);
+        } else if (dataCache.isCacheValid()) {
+            // Use cached data if it's valid
+            console.log('Using cached data for table refresh');
+            if (this.table) {
+                const currentData = this.table.data().toArray();
+                // Only update if there's a difference in the data (like status changes)
+                if (JSON.stringify(currentData) !== JSON.stringify(dataCache.tableData)) {
+                    this.table.clear();
+                    this.table.rows.add(dataCache.tableData);
+                    this.table.draw(false); // false to keep current paging
+                }
+                // Update card totals regardless
+                this.updateCardTotals();
             }
-            
-            if ($.fn.DataTable.isDataTable('#invoiceTable')) {
-                $('#invoiceTable').DataTable().ajax.reload();
-            } else {
-                this.initializeTable();
-            }
-        }).catch(error => {
-            console.error('Failed to refresh access token:', error);
-            // Continue with the table load anyway, the error will be handled by the ajax error handler
-            if (forceRefresh) {
-                sessionStorage.setItem('forceRefreshOutboundTable', 'true');
-            }
-            
-            if ($.fn.DataTable.isDataTable('#invoiceTable')) {
-                $('#invoiceTable').DataTable().ajax.reload();
-            } else {
-                this.initializeTable();
-            }
-        });
-    }
-
-    // Refresh the access token if needed
-    async refreshAccessToken() {
-        try {
-            // Call a token refresh endpoint
-            const response = await fetch('/api/auth/refresh-token', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'same-origin' // Important for sending cookies
-            });
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to refresh token');
-            }
-            
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error('Token refresh error:', error);
-            throw error;
+        } else {
+            // No valid cache, get from server
+            this.table?.ajax.reload(null, false);
         }
     }
     
@@ -3421,64 +3359,40 @@ class InvoiceTableManager {
         
      
     }
-
-    // After hideLoadingBackdrop method
-    showLhdnWarningMessage(message) {
-        // Create warning banner if it doesn't exist
-        if (!$('#lhdn-api-warning').length) {
-            const warningHtml = `
-                <div id="lhdn-api-warning" class="alert alert-warning alert-dismissible fade show mb-3" role="alert">
-                    <div class="d-flex">
-                        <div class="me-3">
-                            <i class="bi bi-exclamation-triangle-fill fs-4"></i>
-                        </div>
-                        <div>
-                            <h5 class="alert-heading">LHDN API Connection Warning</h5>
-                            <p class="mb-0">There is an issue connecting to the LHDN API: ${message || 'Invalid client credentials'}</p>
-                            <p class="mb-0">Some features related to LHDN submissions may not work correctly.</p>
-                            <p class="mb-0">Please contact your administrator to verify the LHDN API configuration.</p>
-                        </div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            `;
-            $('.content-header').after(warningHtml);
-        }
-    }
-
-    // Check for LHDN token status
-    checkLhdnTokenStatus() {
-        try {
-            // First check session storage for any warnings
-            if (sessionStorage.getItem('lhdnTokenWarning')) {
-                const warningMessage = sessionStorage.getItem('lhdnTokenWarning');
-                this.showLhdnWarningMessage(warningMessage);
-                return;
-            }
+    
+    // // Increment validation counter and check session limits
+    // incrementValidationCounter() {
+    //     // Get current session count
+    //     let sessionCount = parseInt(sessionStorage.getItem('validation_session_count') || '0');
+        
+    //     // Check session limit (100 validations per session)
+    //     if (sessionCount >= 100) {
+    //         this.showWarningMessage("You've reached the maximum number of validations for this session. Please refresh the page or try again later.");
+    //         return false;
+    //     }
+        
+    //     // Increment counter
+    //     sessionCount++;
+    //     sessionStorage.setItem('validation_session_count', sessionCount);
+        
+    //     // Update the counter badge
+    //     const badge = document.getElementById('validationCountBadge');
+    //     if (badge) {
+    //         badge.innerHTML = sessionCount;
             
-            // If not found in session storage, check API
-            fetch('/api/auth/token-status', {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'same-origin'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.warning) {
-                    // Store in session storage and show warning
-                    sessionStorage.setItem('lhdnTokenWarning', data.warning);
-                    this.showLhdnWarningMessage(data.warning);
-                }
-            })
-            .catch(error => {
-                console.error('Error checking token status:', error);
-            });
-        } catch (error) {
-            console.error('Error in checkLhdnTokenStatus:', error);
-        }
-    }
+    //         // Update badge color based on session count
+    //         if (sessionCount > 80) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-danger';
+    //         } else if (sessionCount > 50) {
+    //             badge.className = 'ms-2 badge rounded-pill bg-warning text-dark';
+    //         } else {
+    //             badge.className = 'ms-2 badge rounded-pill bg-primary';
+    //         }
+    //     }
+        
+    //     return true;
+    // }
+
 }
 
 async function validateExcelFile(fileName, type, company, date) {
@@ -3782,7 +3696,7 @@ async function validateExcelFile(fileName, type, company, date) {
                                 propertyPath: `Invoice.TaxTotal.TaxSubtotal[${index}].TaxableAmount`
                             });
                         }
-                        // ... additional tax subtotal validations ...
+                        
                     });
                 }
             }
@@ -4960,12 +4874,12 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                 <div style="margin-bottom: 6px; padding: 6px; border-radius: 4px;">
                     <span style="color: #595959; font-weight: 600;">UUID:</span>
                     <span style="color: #595959;">${uuid}</span>
-                        </div>
-                        <div>
+                            </div>
+                            <div>
                     <span style="color: #595959; font-weight: 600;">Submission Date:</span>
                     <span style="color: #595959;">${submissionDate}</span>
+                            </div>
                         </div>
-                    </div>
 
             <div style="margin-top: 12px;">
                 <label style="display: block; color: #595959; font-weight: 600; margin-bottom: 5px;">
@@ -4979,7 +4893,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                     placeholder="Please provide a reason for cancellation"
                     onkeyup="this.style.borderColor = this.value.trim() ? '#28a745' : '#dc3545'"
                 ></textarea>
-                </div>
+            </div>
         </div>
 
         <style>
@@ -5148,12 +5062,19 @@ async function deleteDocument(fileName, type, company, date) {
         // First, confirm the deletion
         const result = await Swal.fire({
             title: 'Delete Document',
-            text: `Are you sure you want to delete this document? (${fileName})`,
+            html: `
+                <div class="mb-3">
+                    <p>Are you sure you want to delete this document? (${fileName})</p>
+                </div>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> All files with the same name will be deleted.
+                </div>
+            `,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#d33',
             cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Yes, delete it!'
+            confirmButtonText: 'Yes, delete all files!'
         });
 
         if (!result.isConfirmed) {
@@ -5163,7 +5084,7 @@ async function deleteDocument(fileName, type, company, date) {
         // Show loading
         Swal.fire({
             title: 'Deleting...',
-            text: 'Please wait while we delete this document.',
+            text: 'Please wait while we delete all matching documents.',
             allowOutsideClick: false,
             showConfirmButton: false,
             didOpen: () => {
@@ -5171,8 +5092,11 @@ async function deleteDocument(fileName, type, company, date) {
             }
         });
 
-        // Make the API call to delete the document
-        const response = await fetch(`/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}`, {
+        // Make the API call to delete the document with deleteAll=true
+        const url = `/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}&deleteAll=true`;
+        console.log('Delete URL:', url);
+        
+        const response = await fetch(url, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
@@ -5185,12 +5109,25 @@ async function deleteDocument(fileName, type, company, date) {
         }
 
         const data = await response.json();
+        
+        // Prepare success message based on the response
+        let successMessage = `${fileName} has been deleted successfully`;
+        let successDetails = 'The file has been permanently deleted from the system.';
+        
+        if (data.deletedFiles && data.deletedFiles.length > 0) {
+            successMessage = `Deleted ${data.deletedFiles.length} files successfully`;
+            successDetails = `All files with the name "${fileName}" have been permanently deleted from the system.`;
+            
+            if (data.failedFiles && data.failedFiles.length > 0) {
+                successDetails += `<br><br>Note: ${data.failedFiles.length} files could not be deleted.`;
+            }
+        }
 
         // Show success message
         await Swal.fire({
             html: createSemiMinimalDialog({
                 title: 'Document Deleted',
-                subtitle: `${fileName} has been deleted successfully`,
+                subtitle: successMessage,
                 content: `
                     <div class="content-card">
                         <div class="content-header">
@@ -5200,7 +5137,7 @@ async function deleteDocument(fileName, type, company, date) {
                             <span class="content-title">Success</span>
                         </div>
                         <div class="content-desc">
-                            The file has been permanently deleted from the system.
+                            ${successDetails}
                         </div>
                     </div>
                 `

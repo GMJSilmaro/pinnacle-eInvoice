@@ -71,7 +71,7 @@
 
 .outbound-table-responsive thead th {
     background: #f8fafc;
-    padding: 0.6rem;
+    padding: 0.3rem;
     font-weight: 800;
     color: #475569;
     font-size: 0.775rem;
@@ -365,10 +365,7 @@
     appearance: none;
     cursor: pointer;
     position: relative;
-    margin: 0;
-    padding: 0;
     background-color: #fff;
-    vertical-align: middle;
 }
 
 .outbound-checkbox:checked {
@@ -379,8 +376,6 @@
 .outbound-checkbox:checked::after {
     content: '';
     position: absolute;
-    left: 4px;
-    top: 1px;
     width: 4px;
     height: 8px;
     border: solid white;
