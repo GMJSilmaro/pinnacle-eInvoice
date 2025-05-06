@@ -1650,7 +1650,7 @@ async function getTemplateData(uuid, accessToken, user) {
     
          // Calculate hypothetical tax for exempt items
          let hypotheticalTax = '0.00';
-         let isExempt = taxTypeCode === 'E' || taxTypeCode === '06';
+         let isExempt = taxTypeCode === 'E';
          if (isExempt) {
              // Use standard service tax rate of 8% if item is exempt
              hypotheticalTax = (lineAmount * 8 / 100).toLocaleString('en-MY', { 
@@ -1716,7 +1716,7 @@ async function getTemplateData(uuid, accessToken, user) {
         taxRate: parseFloat(summary.taxRate).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         taxAmount: parseFloat(summary.taxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         LHDNtaxExemptionReason: taxExempReason || 'Not Applicable',
-        hypotheticalTaxAmount: summary.taxType === 'E' || summary.taxType === '06' ? 
+        hypotheticalTaxAmount: summary.taxType === 'E' ? 
         parseFloat(summary.hypotheticalTaxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
         '0.00'
     }));
