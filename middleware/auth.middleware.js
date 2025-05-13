@@ -41,7 +41,7 @@ const handleUnauthorized = async (req, res, reason = 'unauthorized') => {
       reason: reason
     });
   }
-  return res.redirect('/auth/login');
+  return res.redirect('/login');
 };
 
 // Helper function to handle session expiry
@@ -188,7 +188,7 @@ const authMiddleware = (req, res, next) => {
     });
   }
   
-  res.redirect('/auth/login');
+  res.redirect('/login');
 };
 
 const isAdmin = (req, res, next) => {
@@ -267,7 +267,7 @@ const handleLogout = async (req, res) => {
             if (req.xhr || req.headers.accept?.includes('application/json')) {
                 res.json({ success: true });
             } else {
-                res.redirect('/auth/login');
+                res.redirect('/login');
             }
         });
     } catch (error) {

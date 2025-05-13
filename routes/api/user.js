@@ -8,6 +8,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const { Op } = require('sequelize');
+const { auth } = require('../../middleware');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -404,7 +405,114 @@ router.post('/upload-signature', checkAdmin, upload.single('signature'), async (
     }
 });
 
-// Get user profile
+router.post('/auth/logout', checkAdmin, async (req, res) => {
+    try {
+        req.session.destroy();
+        res.json({
+            success: true,
+            message: 'User logged out successfully'
+        });
+    } catch (error) {
+        console.error('Error logging out user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to log out user: ' + error.message
+        });
+    }
+});
+
+// Extend session endpoint
+router.post('/extend-session', async (req, res) => {
+    try {
+        // Check if user is authenticated
+        if (!req.session?.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required'
+            });
+        }
+
+        // Get user from database to ensure they still exist and are valid
+        const user = await WP_USER_REGISTRATION.findOne({
+            where: {
+                ID: req.session.user.id,
+                ValidStatus: 1
+            },
+            attributes: ['ID', 'Username', 'FullName']
+        });
+
+        if (!user) {
+            // User no longer exists or is no longer valid
+            req.session.destroy((err) => {
+                if (err) console.error('Error destroying invalid session:', err);
+            });
+            return res.status(401).json({
+                success: false,
+                message: 'User account is no longer valid'
+            });
+        }
+
+        // Update session timestamp and touch the session
+        req.session.lastActivity = Date.now();
+        req.session.touch(); // This explicitly tells the session store to refresh the session
+        
+        // Log session extension
+        await WP_LOGS.create({
+            Description: `User ${req.session.user.username} extended their session`,
+            CreateTS: sequelize.literal('GETDATE()'),
+            LoggedUser: req.session.user.username,
+            Action: 'EXTEND_SESSION',
+            IPAddress: req.ip
+        });
+
+        // Return session info with the response
+        res.json({
+            success: true,
+            message: 'Session extended successfully',
+            sessionInfo: {
+                username: user.Username,
+                fullName: user.FullName,
+                lastActivity: req.session.lastActivity,
+                // Calculate when the session will expire
+                expiresAt: new Date(Date.now() + req.session.cookie.maxAge).toISOString()
+            }
+        });
+    } catch (error) {
+        console.error('Error extending session:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to extend session'
+        });
+    }
+});
+
+// Lightweight session check endpoint
+router.get('/check-session', async (req, res) => {
+    try {
+        // Check if user is authenticated
+        if (!req.session || !req.session.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Not authenticated'
+            });
+        }
+
+        // Simply return success if session exists
+        return res.json({
+            success: true,
+            message: 'Session is valid',
+            username: req.session.user.username
+        });
+    } catch (error) {
+        console.error('Error checking session:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to check session'
+        });
+    }
+});
+
+// Profile endpoint for session checking
 router.get('/profile', async (req, res) => {
     try {
         if (!req.session?.user) {
@@ -904,6 +1012,66 @@ router.get('/company/list', checkAdmin, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch company list'
+        });
+    }
+});
+
+/**
+ * Get user profile information - used for session checks
+ */
+router.get('/profile', async (req, res) => {
+    try {
+        // Check if user is authenticated
+        if (!req.session || !req.session.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Not authenticated'
+            });
+        }
+
+        // Get user from database to ensure they still exist and are valid
+        const user = await WP_USER_REGISTRATION.findOne({
+            where: {
+                ID: req.session.user.id,
+                ValidStatus: 1
+            },
+            attributes: [
+                'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
+                'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
+                'ProfilePicture'
+            ]
+        });
+
+        if (!user) {
+            // User no longer exists or is no longer valid
+            req.session.destroy();
+            return res.status(401).json({
+                success: false,
+                message: 'User account is no longer valid'
+            });
+        }
+
+        // Return user profile data
+        return res.json({
+            success: true,
+            user: {
+                id: user.ID,
+                fullName: user.FullName,
+                email: user.Email,
+                username: user.Username,
+                phone: user.Phone,
+                userType: user.UserType,
+                admin: user.Admin === 1,
+                profilePicture: user.ProfilePicture,
+                twoFactorEnabled: user.TwoFactorEnabled === 1,
+                notificationsEnabled: user.NotificationsEnabled === 1
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch user profile'
         });
     }
 });

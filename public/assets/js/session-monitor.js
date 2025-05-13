@@ -6,12 +6,19 @@
     const MAX_FAILURES = 3; // Number of consecutive failures before forcing logout
 
     function checkSession() {
+        // Skip session check if a DataTables request is in progress
+        if (window._dataTablesRequestInProgress) {
+            console.log('Skipping session check due to DataTables request in progress');
+            return;
+        }
+        
         fetch('/api/user/profile', {
             method: 'GET',
             headers: {
                 'Accept': 'application/json',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             },
             credentials: 'same-origin'
         })
@@ -26,7 +33,7 @@
             if (!data.success || !data.user) {
                 consecutiveFailures++;
                 if (consecutiveFailures >= MAX_FAILURES) {
-                    window.location.href = '/auth/login';
+                    window.location.href = '/login';
                 }
                 return;
             }
@@ -40,7 +47,7 @@
             console.error('Session check error:', error);
             consecutiveFailures++;
             if (consecutiveFailures >= MAX_FAILURES && error.status === 401) {
-                window.location.href = '/auth/login';
+                window.location.href = '/login';
             }
         });
     }

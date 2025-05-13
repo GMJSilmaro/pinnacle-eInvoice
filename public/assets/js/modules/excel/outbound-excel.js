@@ -482,14 +482,24 @@ class InvoiceTableManager {
                 processing: true,
                 serverSide: false,
                 ajax: {
+                    //url: '/api/outbound-files/list-all',
                     url: '/api/outbound-files/list-all',
                     method: 'GET',
                     data: function(d) {
-                        // Add a cache control parameter
+                        // Add cache control parameters
                         d.forceRefresh = sessionStorage.getItem('forceRefreshOutboundTable') === 'true';
-                        // Clear the flag after using it
+                        d.manualRefresh = sessionStorage.getItem('manualRefreshOutboundTable') === 'true';
+                        
+                        // Add timestamp to prevent caching
+                        d._timestamp = new Date().getTime();
+                        
+                        // Clear the flags after using them
                         if (d.forceRefresh) {
                             sessionStorage.removeItem('forceRefreshOutboundTable');
+                            dataCache.invalidateCache();
+                        }
+                        if (d.manualRefresh) {
+                            sessionStorage.removeItem('manualRefreshOutboundTable');
                             dataCache.invalidateCache();
                         }
                         return d;
@@ -549,14 +559,33 @@ class InvoiceTableManager {
                         return processedData;
                     },
                     beforeSend: function() {
-                        // Only show loading for the initial load or forced refreshes
-                        if (!dataCache.isCacheValid() || sessionStorage.getItem('forceRefreshOutboundTable') === 'true') {
+                        // Set global flag to indicate DataTables request is in progress
+                        window._dataTablesRequestInProgress = true;
+                        
+                        // Show loading for initial load, forced refreshes, or manual refreshes
+                        if (!dataCache.isCacheValid() || 
+                            sessionStorage.getItem('forceRefreshOutboundTable') === 'true' ||
+                            sessionStorage.getItem('manualRefreshOutboundTable') === 'true') {
                             self.showLoadingBackdrop('Loading and Preparing Your Excel Files');
                         }
                     },
                     complete: function() {
+                        // Clear the DataTables request flag
+                        window._dataTablesRequestInProgress = false;
+                        
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
+                    },
+                    error: function(xhr, error, thrown) {
+                        // Clear the DataTables request flag on error
+                        window._dataTablesRequestInProgress = false;
+                        console.error('DataTables AJAX error:', error, thrown);
+                        
+                        // Hide loading backdrop
+                        self.hideLoadingBackdrop();
+                        
+                        // Show error message
+                        self.showEmptyState('Error loading data. Please try refreshing the page.');
                     }
                 },
                 order: [
@@ -1239,7 +1268,7 @@ class InvoiceTableManager {
         }
 
         if (row.status === 'Submitted') {
-            const timeInfo = this.calculateRemainingTime(row.date_submitted);
+            const timeInfo = this.calculateRemainingTime(row.date_submitted);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
             if (timeInfo && !timeInfo.expired) {
                 return `
                     <button 
@@ -2215,11 +2244,6 @@ class InvoiceTableManager {
             this.showWarningMessage("This TIN and ID combination was recently validated. Please wait before validating again.");
             return;
         }
-        
-        // // Check session validation limit
-        // if (!this.incrementValidationCounter()) {
-        //     return; // Session limit reached, warning already shown
-        // }
         
         // Show loading state
         const validateButton = document.getElementById('validateSingleTin');
@@ -3356,43 +3380,8 @@ class InvoiceTableManager {
             sessionCount = 0;
             sessionStorage.setItem('validation_session_count', sessionCount);
         }
-        
-     
     }
     
-    // // Increment validation counter and check session limits
-    // incrementValidationCounter() {
-    //     // Get current session count
-    //     let sessionCount = parseInt(sessionStorage.getItem('validation_session_count') || '0');
-        
-    //     // Check session limit (100 validations per session)
-    //     if (sessionCount >= 100) {
-    //         this.showWarningMessage("You've reached the maximum number of validations for this session. Please refresh the page or try again later.");
-    //         return false;
-    //     }
-        
-    //     // Increment counter
-    //     sessionCount++;
-    //     sessionStorage.setItem('validation_session_count', sessionCount);
-        
-    //     // Update the counter badge
-    //     const badge = document.getElementById('validationCountBadge');
-    //     if (badge) {
-    //         badge.innerHTML = sessionCount;
-            
-    //         // Update badge color based on session count
-    //         if (sessionCount > 80) {
-    //             badge.className = 'ms-2 badge rounded-pill bg-danger';
-    //         } else if (sessionCount > 50) {
-    //             badge.className = 'ms-2 badge rounded-pill bg-warning text-dark';
-    //         } else {
-    //             badge.className = 'ms-2 badge rounded-pill bg-primary';
-    //         }
-    //     }
-        
-    //     return true;
-    // }
-
 }
 
 async function validateExcelFile(fileName, type, company, date) {
@@ -5093,7 +5082,9 @@ async function deleteDocument(fileName, type, company, date) {
         });
 
         // Make the API call to delete the document with deleteAll=true
-        const url = `/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}&deleteAll=true`;
+        //const url = `/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}&deleteAll=true`;
+        // Add a new function or modify existing to call with deleteByInvoice
+        const url = `/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}&deleteByInvoice=true`;
         console.log('Delete URL:', url);
         
         const response = await fetch(url, {

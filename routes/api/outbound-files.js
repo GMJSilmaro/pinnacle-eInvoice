@@ -383,37 +383,13 @@ async function logError(description, error, options = {}) {
     }
 }
 
-
 /**
  * List all files from network directories with caching and duplicate filtering
+ * Optimized to fetch only the latest timestamp files and handle duplicates
  */
 router.get('/list-all', async (req, res) => {
     console.log('Starting list-all endpoint');
     
-    // Check authentication
-    if (!req.session?.user) {
-        console.log('Unauthorized access attempt - no session user');
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_ERROR',
-                message: 'Authentication required'
-            }
-        });
-    }
-
-    // Check if access token exists
-    if (!req.session?.accessToken) {
-        console.log('Unauthorized access attempt - no access token');
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_ERROR',
-                message: 'Access token required'
-            }
-        });
-    }
-
     const processLog = {
         details: [],
         summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
@@ -424,6 +400,7 @@ router.get('/list-all', async (req, res) => {
         const cacheKey = generateCacheKey();
         const { polling, initialLoad } = req.query;
         const forceRefresh = req.query.forceRefresh === 'true';
+        const manualRefresh = req.query.manualRefresh === 'true'; // New parameter for manual refresh button
         const realTime = req.query.realTime === 'true';
         
         // Get the latest status update timestamp
@@ -437,12 +414,13 @@ router.get('/list-all', async (req, res) => {
 
         // If initialLoad=true is provided, force cache refresh
         // If forceRefresh=true is provided, force cache refresh
-        if (initialLoad === 'true' || forceRefresh) {
+        // If manualRefresh=true is provided, force cache refresh (for the new refresh button)
+        if (initialLoad === 'true' || forceRefresh || manualRefresh) {
             console.log('Force refresh requested, bypassing cache');
             fileCache.del(cacheKey);
         }
-        // Check cache first if not in real-time mode
-        else if (!realTime) {
+        // Check cache first if not in real-time mode and not a manual refresh
+        else if (!realTime && !manualRefresh) {
             console.log('Checking cache');
             const cachedData = fileCache.get(cacheKey);
             if (cachedData) {
@@ -574,23 +552,6 @@ router.get('/list-all', async (req, res) => {
                 throw new Error('Invalid SAP configuration format');
             }
         }
-
-        if (!settings.networkPath) {
-            throw new Error('Network path not configured in SAP settings');
-        }
-
-        // Validate network path accessibility
-        console.log('Validating network path:', settings.networkPath);
-        const networkValid = await testNetworkPathAccessibility(settings.networkPath, {
-            serverName: settings.domain || '',
-            serverUsername: settings.username,
-            serverPassword: settings.password
-        });
-
-        if (!networkValid.success) {
-            throw new Error(`Network path not accessible: ${networkValid.error}`);
-        }
-
         // Get inbound statuses for comparison
         console.log('Fetching inbound statuses');
         const inboundStatuses = await WP_INBOUND_STATUS.findAll({
@@ -783,10 +744,14 @@ router.get('/list-all', async (req, res) => {
 
     } catch (error) {
         console.error('Error in list-all:', error);
-        await logError('Error listing outbound files', error, {
-            action: 'LIST_ALL',
-            userId: req.user?.id
-        });
+        try {
+            await logError('Error listing outbound files', error, {
+                action: 'LIST_ALL',
+                userId: req.user ? req.user.id : null // Make user ID optional
+            });
+        } catch (logError) {
+            console.error('Failed to log error:', logError);
+        }
 
         res.status(500).json({
             success: false,
@@ -2754,12 +2719,38 @@ async function findAllFilesWithName(fileName, networkPath) {
     return filePaths;
 }
 
+// Helper to delete all files by InvoiceNumber in the standard directory structure
+async function deleteFilesByInvoiceNumber(invoiceNumber, config, type, company, date) {
+    const deletedFiles = [];
+    const failedFiles = [];
+    const formattedDate = moment(date).format('YYYY-MM-DD');
+    const dirPath = path.join(config.networkPath, type, company, formattedDate);
+    let files;
+    try {
+        files = await fsPromises.readdir(dirPath);
+    } catch (err) {
+        return { deletedFiles, failedFiles: [{ path: dirPath, error: err.message }] };
+    }
+    // Match files containing _{InvoiceNumber}_ in their name
+    const matchingFiles = files.filter(f => f.includes(`_${invoiceNumber}_`));
+    for (const f of matchingFiles) {
+        const filePath = path.join(dirPath, f);
+        try {
+            await fsPromises.unlink(filePath);
+            deletedFiles.push({ path: filePath });
+        } catch (error) {
+            failedFiles.push({ path: filePath, error: error.message });
+        }
+    }
+    return { deletedFiles, failedFiles };
+}
+
 router.delete('/:fileName', async (req, res) => {
     try {
         const { fileName } = req.params;
-        const { type, company, date, deleteAll = false } = req.query;
+        const { type, company, date, deleteAll, deleteByInvoice } = req.query;
 
-        console.log('Delete request received:', { fileName, type, company, date, deleteAll });
+        console.log('Delete request received:', { fileName, type, company, date, deleteAll, deleteByInvoice });
 
         // Check if this is a consolidated file (special handling)
         if (type === 'consolidated') {
@@ -2801,11 +2792,53 @@ router.delete('/:fileName', async (req, res) => {
             }
         }
 
-        // Rest of the delete code for standard files
         // Get active SAP configuration for standard files
         const config = await getActiveSAPConfig();
         if (!config.success) {
             throw new Error('Failed to get SAP configuration');
+        }
+
+        // If deleteByInvoice is true, extract InvoiceNumber and delete all matching files
+        if (deleteByInvoice === 'true') {
+            // Try to extract InvoiceNumber from filename (e.g. OUTBOUND_ARDN800058_20240513T130119.xlsx)
+            const parts = fileName.split('_');
+            let invoiceNumber = null;
+            if (parts.length >= 3) {
+                invoiceNumber = parts[1];
+            }
+            if (!invoiceNumber) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'INVALID_FILENAME',
+                        message: 'Could not extract InvoiceNumber from filename.'
+                    }
+                });
+            }
+            const { deletedFiles, failedFiles } = await deleteFilesByInvoiceNumber(invoiceNumber, config, type, company, date);
+            if (deletedFiles.length === 0 && failedFiles.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'FILE_NOT_FOUND',
+                        message: 'No files found with the specified InvoiceNumber.'
+                    }
+                });
+            }
+            // Log each deletion
+            for (const f of deletedFiles) {
+                await logDBOperation(req.app.get('models'), req, `Deleted file by InvoiceNumber: ${invoiceNumber} from ${f.path}`, {
+                    module: 'OUTBOUND',
+                    action: 'DELETE',
+                    status: 'SUCCESS'
+                });
+            }
+            return res.json({
+                success: true,
+                message: `Deleted ${deletedFiles.length} files with InvoiceNumber ${invoiceNumber}${failedFiles.length > 0 ? `, ${failedFiles.length} files failed to delete` : ''}`,
+                deletedFiles,
+                failedFiles
+            });
         }
 
         // If deleteAll is true, find and delete all files with the same name

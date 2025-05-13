@@ -109,7 +109,7 @@
     }
   }
 
-  // Function to extend session
+  // Function to extend session - uses enhanced backend endpoint
   async function extendSession() {
     try {
       // Show loading state
@@ -127,33 +127,88 @@
         method: 'POST',
         credentials: 'same-origin',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
         }
       });
 
-      if (response.ok) {
-        isWarningShown = false;
-        resetIdleTimer();
-        
-        Swal.fire({
-          title: '<i class="bi bi-check-circle text-success"></i> Session Extended',
-          html: 'Your session has been successfully extended.',
-          icon: false,
-          timer: 2000,
-          timerProgressBar: true,
-          showConfirmButton: false,
-          customClass: {
-            popup: 'rounded-3 shadow',
-            title: 'fs-5',
-            htmlContainer: 'py-2'
-          }
-        });
-      } else {
-        throw new Error('Failed to extend session');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to extend session');
       }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to extend session');
+      }
+      
+      // Reset warning state and timers
+      isWarningShown = false;
+      resetIdleTimer();
+      
+      // Update session data in storage
+      sessionStorage.setItem('lastSessionCheck', Date.now().toString());
+      
+      // If we received session info, update the navbar data
+      if (data.sessionInfo) {
+        const navbarData = sessionStorage.getItem('navbarData');
+        if (navbarData) {
+          const parsedData = JSON.parse(navbarData);
+          if (parsedData.user) {
+            // Update relevant user data
+            if (data.sessionInfo.username) {
+              parsedData.user.username = data.sessionInfo.username;
+            }
+            if (data.sessionInfo.fullName) {
+              parsedData.user.fullName = data.sessionInfo.fullName;
+            }
+            sessionStorage.setItem('navbarData', JSON.stringify(parsedData));
+          }
+        }
+      }
+      
+      // Show success message with expiry time if available
+      let successMessage = 'Your session has been successfully extended.';
+      if (data.sessionInfo && data.sessionInfo.expiresAt) {
+        const expiryTime = new Date(data.sessionInfo.expiresAt);
+        const formattedTime = expiryTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        successMessage += `<br><span class="small text-muted">Valid until ${formattedTime}</span>`;
+      }
+      
+      Swal.fire({
+        title: '<i class="bi bi-check-circle text-success"></i> Session Extended',
+        html: successMessage,
+        icon: false,
+        timer: 3000,
+        timerProgressBar: true,
+        showConfirmButton: false,
+        customClass: {
+          popup: 'rounded-3 shadow',
+          title: 'fs-5',
+          htmlContainer: 'py-2'
+        }
+      });
     } catch (error) {
       console.error('Error extending session:', error);
-      handleSessionExpiry();
+      
+      // Show error message
+      Swal.fire({
+        title: '<i class="bi bi-exclamation-circle text-danger"></i> Session Error',
+        html: `Unable to extend your session: ${error.message}`,
+        icon: false,
+        confirmButtonText: 'Login Again',
+        confirmButtonColor: '#0d6efd',
+        timer: 5000,
+        timerProgressBar: true,
+        customClass: {
+          popup: 'rounded-3 shadow',
+          title: 'fs-5',
+          htmlContainer: 'py-2'
+        }
+      }).then((result) => {
+        handleSessionExpiry();
+      });
     }
   }
 
@@ -188,49 +243,113 @@
     resetIdleTimer();
   }
 
-  // Function to check session status with improved error handling
+  // Function to check session status with improved error handling - uses lightweight endpoint
   async function checkSession() {
+    // Don't check session if we're on the login page or other public pages
+    if (window.location.pathname.includes('/auth/login') || 
+        window.location.pathname.includes('/auth/register') ||
+        window.location.pathname.includes('/auth/forgot-password')) {
+      return true; // Consider session valid on public pages
+    }
     try {
       // Don't check session if warning is shown
       if (isWarningShown) {
         return true;
       }
-
-      // Clear any existing session error states
-      sessionStorage.removeItem('sessionError');
-
-      const response = await fetch('/api/user/profile', {
-        method: 'GET',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        },
-        credentials: 'same-origin'
-      });
-
-      // Handle various response statuses
-      if (response.status === 401 || response.status === 403) {
-        return false;
-      }
-
-      if (!response.ok) {
-        throw new Error(`Session check failed: ${response.status}`);
-      }
-
-      const data = await response.json();
       
-      if (!data || !data.success || !data.user) {
+      // Check if we've recently had a session error to avoid repeated failed requests
+      const lastErrorTime = sessionStorage.getItem('lastSessionErrorTime');
+      if (lastErrorTime && (Date.now() - parseInt(lastErrorTime) < 30000)) { // 30 seconds cooldown
+        console.log('Session check skipped due to recent error');
         return false;
       }
 
-      // Update session timestamp on valid session
-      sessionStorage.setItem('lastSessionCheck', Date.now().toString());
-      sessionStorage.setItem('navbarData', JSON.stringify(data));
+      // Use cached session data if available and recent (within last 5 minutes)
+      const lastCheck = sessionStorage.getItem('lastSessionCheck');
+      if (lastCheck) {
+        const timeSinceLastCheck = Date.now() - parseInt(lastCheck);
+        if (timeSinceLastCheck < 5 * 60 * 1000) { // 5 minutes
+          console.log('Using cached session timestamp');
+          return true;
+        }
+      }
+      
+      // Set a timeout to prevent hanging requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        // Only abort if we're not in the middle of a DataTables request
+        if (!window._dataTablesRequestInProgress) {
+          controller.abort();
+        }
+      }, 5000); // 5 second timeout
+      
+      try {
+        // Use the lightweight session check endpoint instead of the full profile endpoint
+        const response = await fetch('/api/user/check-session', {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+        
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId);
 
-      return true;
+        // Handle various response statuses
+        if (response.status === 401 || response.status === 403) {
+          // Only log and consider session expired if we're on a protected page
+          // and we're not on a page that uses DataTables
+          if (!window.location.pathname.includes('/auth/') && 
+              !window.location.pathname.includes('/dashboard/outbound')) {
+            console.log('Session expired or unauthorized');
+            return false;
+          } else {
+            // On auth pages or DataTables pages, 401 is handled separately
+            return true;
+          }
+        }
+
+        if (!response.ok) {
+          throw new Error(`Session check failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data || !data.success) {
+          console.log('Session check returned unsuccessful response');
+          return false;
+        }
+
+        // Update session timestamp on valid session
+        sessionStorage.setItem('lastSessionCheck', Date.now().toString());
+        
+        // If we need to update the UI with username, store it
+        if (data.username) {
+          const navbarData = sessionStorage.getItem('navbarData');
+          if (navbarData) {
+            // Update just the username in the existing data
+            const parsedData = JSON.parse(navbarData);
+            if (parsedData.user) {
+              parsedData.user.username = data.username;
+              sessionStorage.setItem('navbarData', JSON.stringify(parsedData));
+            }
+          }
+        }
+
+        return true;
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError; // Re-throw to be caught by outer catch
+      }
     } catch (error) {
       console.error('Session check error:', error);
-      sessionStorage.setItem('sessionError', error.message);
+      // Record the time of the error to implement cooldown
+      sessionStorage.setItem('lastSessionErrorTime', Date.now().toString());
+      // Don't set sessionError to avoid UI disruption
       return false;
     }
   }
@@ -300,13 +419,19 @@
 
     // Check session every 5 minutes
     window.sessionCheckInterval = setInterval(async () => {
-      if (window.location.pathname.includes('/auth/logout') || isWarningShown) {
+      // Skip session check if a DataTables request is in progress
+      if (window.location.pathname.includes('/auth/logout') || isWarningShown || window._dataTablesRequestInProgress) {
         return;
       }
 
-      const isValid = await checkSession();
-      if (!isValid) {
-        handleSessionExpiry();
+      try {
+        const isValid = await checkSession();
+        if (!isValid) {
+          handleSessionExpiry();
+        }
+      } catch (error) {
+        console.warn('Session check error (non-critical):', error);
+        // Don't expire the session on check errors
       }
     }, 300000); // 5 minutes
 
@@ -446,6 +571,14 @@
     }
 
     try {
+      // Check if we already have a session error
+      const sessionError = sessionStorage.getItem('sessionError');
+      if (sessionError) {
+        console.log('Session error detected:', sessionError);
+        setDefaultValues();
+        return;
+      }
+      
       const response = await fetch('/api/user/profile', {
         method: 'GET',
         headers: {
@@ -457,8 +590,9 @@
 
       if (!response.ok) {
         if (response.status === 401) {
-          console.log('User not authenticated, redirecting to login...');
-          window.location.href = '/auth/login';
+          console.log('User not authenticated');
+          // Instead of redirecting, just set default values
+          setDefaultValues();
           return;
         }
         throw new Error(`Failed to fetch user details: ${response.status}`);

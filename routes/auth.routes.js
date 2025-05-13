@@ -101,11 +101,19 @@ router.post('/login', async (req, res, next) => {
     // Check login attempts
     const attemptCheck = checkLoginAttempts(username, clientIP);
     if (!attemptCheck.allowed) {
-      return res.status(429).json({ 
-        success: false, 
-        message: attemptCheck.message 
-      });
+      // Check if this is an API request or form submission
+      const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
+      if (isApiRequest) {
+        return res.status(429).json({ 
+          success: false, 
+          message: attemptCheck.message 
+        });
+      } else {
+        // Form submission - redirect with error
+        return res.redirect('/login?error=too-many-attempts');
+      }
     }
+    
     // Use Passport authentication
     passport.authenticate('local', async (err, user, info) => {
       if (err) {
@@ -115,15 +123,22 @@ router.post('/login', async (req, res, next) => {
 
       if (!user) {
         await trackLoginAttempt(username, clientIP, false);
-        return res.status(401).json({
-          success: false,
-          message: info.message || 'Invalid credentials'
-        });
+        
+        // Check if this is an API request or form submission
+        const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
+        if (isApiRequest) {
+          return res.status(401).json({
+            success: false,
+            message: info.message || 'Invalid credentials'
+          });
+        } else {
+          // Form submission - redirect with error
+          return res.redirect('/login?error=invalid-credentials');
+        }
       }
 
       // Log successful login
       await trackLoginAttempt(username, clientIP, true);
-
 
       // Update last login time
       await WP_USER_REGISTRATION.update({
@@ -161,19 +176,34 @@ router.post('/login', async (req, res, next) => {
             req.session.accessToken = tokenData.access_token;
             req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
           }
-
-          return res.json({
-            success: true,
-            message: 'Login successful',
-            accessToken: tokenData?.access_token,
-            user: req.session.user
-          });
+          
+          // Check if this is an API request or form submission
+          const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
+          if (isApiRequest) {
+            return res.json({
+              success: true,
+              message: 'Login successful',
+              accessToken: tokenData?.access_token,
+              user: req.session.user
+            });
+          } else {
+            // Form submission - redirect to dashboard
+            return res.redirect('/dashboard');
+          }
         } catch (error) {
           console.error('Token acquisition error:', error);
-          return res.status(500).json({
-            success: false,
-            message: 'Login successful but failed to get access token'
-          });
+          
+          // Check if this is an API request or form submission
+          const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
+          if (isApiRequest) {
+            return res.status(500).json({
+              success: false,
+              message: 'Login successful but failed to get access token'
+            });
+          } else {
+            // Form submission - redirect to dashboard anyway
+            return res.redirect('/dashboard');
+          }
         }
       });
     })(req, res, next);
@@ -314,7 +344,7 @@ router.get('/logout', async (req, res) => {
                 }
 
                 // For GET requests, redirect to login page
-                res.redirect('/auth/login');
+                res.redirect('/login');
             });
         } catch (error) {
             console.error('Logout error:', error);
@@ -325,7 +355,7 @@ router.get('/logout', async (req, res) => {
         }
     } else {
         res.clearCookie('connect.sid');
-        res.redirect('/auth/login');
+        res.redirect('/login');
     }
 });
 
