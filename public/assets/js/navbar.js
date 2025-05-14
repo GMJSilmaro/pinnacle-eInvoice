@@ -1,8 +1,17 @@
 // Wrap everything in an IIFE to avoid global namespace pollution
 (function() {
+  // Reset DataTables request flags on page load to prevent conflicts
+  window._dataTablesRequestInProgress = false;
+  window._dataTablesRequestStartTime = null;
+
   // Initialize on DOMContentLoaded
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeNavbar);
+    document.addEventListener('DOMContentLoaded', function() {
+      // Reset DataTables request flags again on DOM content loaded
+      window._dataTablesRequestInProgress = false;
+      window._dataTablesRequestStartTime = null;
+      initializeNavbar();
+    });
   } else {
     initializeNavbar();
   }
@@ -280,7 +289,17 @@
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
         // Only abort if we're not in the middle of a DataTables request
-        if (!window._dataTablesRequestInProgress) {
+        // or if the DataTables request has been running for too long (more than 30 seconds)
+        const dataTablesRunningTooLong = window._dataTablesRequestStartTime &&
+          (Date.now() - window._dataTablesRequestStartTime > 30000);
+
+        if (!window._dataTablesRequestInProgress || dataTablesRunningTooLong) {
+          // If a DataTables request has been running too long, we should reset the flag
+          if (dataTablesRunningTooLong) {
+            console.warn('DataTables request has been running for too long, resetting flag');
+            window._dataTablesRequestInProgress = false;
+            window._dataTablesRequestStartTime = null;
+          }
           controller.abort();
         }
       }, 5000); // 5 second timeout

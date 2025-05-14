@@ -38,9 +38,20 @@
     // Check session status
     function checkSession() {
         // Skip session check if a DataTables request is in progress
-        if (window._dataTablesRequestInProgress) {
+        // But check if the request has been running for too long (more than 30 seconds)
+        const dataTablesRunningTooLong = window._dataTablesRequestStartTime &&
+            (Date.now() - window._dataTablesRequestStartTime > 30000);
+
+        if (window._dataTablesRequestInProgress && !dataTablesRunningTooLong) {
             console.log('Skipping session check due to DataTables request in progress');
             return;
+        }
+
+        // If a DataTables request has been running too long, we should reset the flag
+        if (dataTablesRunningTooLong) {
+            console.warn('DataTables request has been running for too long, resetting flag');
+            window._dataTablesRequestInProgress = false;
+            window._dataTablesRequestStartTime = null;
         }
 
         fetch('/api/user/profile', {

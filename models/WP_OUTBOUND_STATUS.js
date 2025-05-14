@@ -61,6 +61,18 @@ const WP_OUTBOUND_STATUS = sequelize.define('WP_OUTBOUND_STATUS', {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: sequelize.fn('GETDATE')
+    },
+    submitted_by: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
+    supplier_name: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
+    buyer_name: {
+        type: DataTypes.STRING(255),
+        allowNull: true
     }
 }, {
     tableName: 'WP_OUTBOUND_STATUS',

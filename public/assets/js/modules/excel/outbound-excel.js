@@ -80,6 +80,10 @@ class InvoiceTableManager {
         this.table = null;
         this.selectedRows = new Set();
 
+        // Reset DataTables request flags to ensure they're in a clean state
+        window._dataTablesRequestInProgress = false;
+        window._dataTablesRequestStartTime = null;
+
         // Add a prefilter for all AJAX requests
         $.ajaxPrefilter((options, originalOptions, jqXHR) => {
             if (!options.beforeSend) {
@@ -90,6 +94,13 @@ class InvoiceTableManager {
             let oldComplete = options.complete;
             options.complete = (jqXHR, textStatus) => {
                 this.hideLoadingBackdrop();
+
+                // Ensure DataTables request flags are cleared
+                if (options.url && options.url.includes('/api/outbound-files/')) {
+                    window._dataTablesRequestInProgress = false;
+                    window._dataTablesRequestStartTime = null;
+                }
+
                 if (oldComplete) {
                     oldComplete(jqXHR, textStatus);
                 }
@@ -337,6 +348,10 @@ class InvoiceTableManager {
             clearInterval(this.factInterval);
         }
 
+        // Ensure DataTables request flags are cleared
+        window._dataTablesRequestInProgress = false;
+        window._dataTablesRequestStartTime = null;
+
         $('#loadingBackdrop').fadeOut(300, function() {
             $(this).remove();
         });
@@ -562,6 +577,9 @@ class InvoiceTableManager {
                         // Set global flag to indicate DataTables request is in progress
                         window._dataTablesRequestInProgress = true;
 
+                        // Store the timestamp when the request started
+                        window._dataTablesRequestStartTime = Date.now();
+
                         // Show loading for initial load, forced refreshes, or manual refreshes
                         if (!dataCache.isCacheValid() ||
                             sessionStorage.getItem('forceRefreshOutboundTable') === 'true' ||
@@ -572,6 +590,7 @@ class InvoiceTableManager {
                     complete: function() {
                         // Clear the DataTables request flag
                         window._dataTablesRequestInProgress = false;
+                        window._dataTablesRequestStartTime = null;
 
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
@@ -579,6 +598,7 @@ class InvoiceTableManager {
                     error: function(xhr, error, thrown) {
                         // Clear the DataTables request flag on error
                         window._dataTablesRequestInProgress = false;
+                        window._dataTablesRequestStartTime = null;
                         console.error('DataTables AJAX error:', error, thrown);
 
                         // Hide loading backdrop
@@ -4217,6 +4237,489 @@ async function showConfirmationDialog(fileName, type, company, date, version) {
     }).then((result) => result.isConfirmed);
 }
 
+// Show JSON preview dialog
+async function showJsonPreview(fileName, type, company, date, version) {
+    // First, show loading indicator
+    const tableManager = InvoiceTableManager.getInstance();
+    tableManager.showLoadingBackdrop('Generating JSON Preview...');
+
+    try {
+        // Fetch the JSON preview from the API
+        const response = await fetch(`/api/outbound-files/${fileName}/generate-preview`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                type,
+                company,
+                date,
+                version
+            })
+        });
+
+        // Hide loading indicator
+        tableManager.hideLoadingBackdrop();
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || 'Failed to generate preview');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error?.message || 'Failed to generate preview');
+        }
+
+        // Extract summary information
+        const summary = data.summary;
+
+        // Create content for the preview - more polished and professional layout
+        const summaryContent = `
+            <div class="preview-container" style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                <!-- Invoice Summary - Left column -->
+                <div class="preview-column" style="flex: 1; min-width: 280px;">
+                    <div class="content-card" style="height: 100%; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden;">
+                        <div class="content-header" style="padding: 8px 12px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
+                            <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; background: rgba(13, 110, 253, 0.1); margin-right: 8px;">
+                                <i class="fas fa-file-invoice" style="color: #0d6efd; font-size: 12px;"></i>
+                            </div>
+                            <span class="content-title" style="font-weight: 600; font-size: 13px; color: #212529;">Invoice Summary</span>
+                        </div>
+                        <div style="padding: 8px 12px;">
+                            <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; width: 40%; color: #495057;"><strong>Invoice Number:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.invoiceNumber}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Document Type:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.documentType}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Issue Date:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.issueDate}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Total Amount:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">
+                                        <span class="badge" style="background-color: #0d6efd; font-weight: 500; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                                            ${summary.currency} ${summary.totalAmount}
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Item Count:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.itemCount}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Company Information - Right column -->
+                <div class="preview-column" style="flex: 1; min-width: 280px;">
+                    <div class="content-card" style="margin: 0 0 10px 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden;">
+                        <div class="content-header" style="padding: 8px 12px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
+                            <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; background: rgba(25, 135, 84, 0.1); margin-right: 8px;">
+                                <i class="fas fa-building" style="color: #198754; font-size: 12px;"></i>
+                            </div>
+                            <span class="content-title" style="font-weight: 600; font-size: 13px; color: #212529;">Supplier Information</span>
+                        </div>
+                        <div style="padding: 8px 12px;">
+                            <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; width: 25%; color: #495057;"><strong>Name:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.supplier.name}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>ID:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.supplier.id}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="content-card" style="margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden;">
+                        <div class="content-header" style="padding: 8px 12px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
+                            <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; background: rgba(220, 53, 69, 0.1); margin-right: 8px;">
+                                <i class="fas fa-user" style="color: #dc3545; font-size: 12px;"></i>
+                            </div>
+                            <span class="content-title" style="font-weight: 600; font-size: 13px; color: #212529;">Buyer Information</span>
+                        </div>
+                        <div style="padding: 8px 12px;">
+                            <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; width: 25%; color: #495057;"><strong>Name:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.buyer.name}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>ID:</strong></td>
+                                    <td style="padding: 3px 0; color: #212529;">${summary.buyer.id}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- JSON Preview - Modern design with loading animation -->
+            <div class="content-card json-preview-card" style="margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f8f9fa, #f1f3f5); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center; cursor: pointer;" id="jsonPreviewHeader">
+                    <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(13, 202, 240, 0.15); margin-right: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
+                        <i class="fas fa-code" style="color: #0dcaf0; font-size: 12px;"></i>
+                    </div>
+                    <span class="content-title" style="font-weight: 600; font-size: 14px; color: #212529;">JSON Data</span>
+                    <span class="ms-auto">
+                        <button id="toggleJsonBtn" class="outbound-btn-lhdn submit" style="background-color: #0d6efd; color: white; font-size: 12px; padding: 5px 12px; border-radius: 4px; border: none; box-shadow: 0 1px 2px rgba(0,0,0,0.1); transition: all 0.2s;">
+                            <i class="fas fa-code"></i> View JSON
+                        </button>
+                    </span>
+                </div>
+
+                <!-- Loading animation (initially hidden) -->
+                <div id="jsonLoadingAnimation" style="display: none; padding: 20px; text-align: center; background: #f8f9fa;">
+                    <div class="json-loading-steps" style="display: flex; justify-content: space-between; max-width: 500px; margin: 0 auto;">
+                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 100px;">
+                            <div class="json-loading-icon" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(13, 110, 253, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                                <i class="fas fa-file-invoice" style="color: #0d6efd; font-size: 16px;"></i>
+                            </div>
+                            <div class="json-loading-text" style="font-size: 12px; color: #495057; font-weight: 500;">Validating</div>
+                            <div class="json-loading-status" style="font-size: 11px; color: #0d6efd; margin-top: 4px;">Complete</div>
+                        </div>
+                        <div class="json-loading-connector" style="flex-grow: 1; height: 2px; background: #dee2e6; margin-top: 18px;"></div>
+                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 100px;">
+                            <div class="json-loading-icon" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(13, 110, 253, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                                <i class="fas fa-cogs" style="color: #0d6efd; font-size: 16px;"></i>
+                            </div>
+                            <div class="json-loading-text" style="font-size: 12px; color: #495057; font-weight: 500;">Processing</div>
+                            <div class="json-loading-status json-loading-active" style="font-size: 11px; color: #0d6efd; margin-top: 4px;">
+                                <div class="spinner-border spinner-border-sm" style="width: 10px; height: 10px; border-width: 1px;" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="json-loading-connector" style="flex-grow: 1; height: 2px; background: #dee2e6; margin-top: 18px;"></div>
+                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 100px;">
+                            <div class="json-loading-icon" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(173, 181, 189, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                                <i class="fas fa-check-circle" style="color: #adb5bd; font-size: 16px;"></i>
+                            </div>
+                            <div class="json-loading-text" style="font-size: 12px; color: #adb5bd; font-weight: 500;">Ready</div>
+                            <div class="json-loading-status" style="font-size: 11px; color: #adb5bd; margin-top: 4px;">Waiting</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JSON Content (initially hidden) -->
+                <div id="jsonPreviewContent" style="display: none; max-height: 150px; overflow-y: auto; background: #f8f9fa; padding: 12px; border-radius: 0 0 4px 4px; font-family: 'Consolas', monospace; font-size: 11px; text-align: left; border-top: 1px solid rgba(0,0,0,0.05);">
+                    <pre id="jsonFormattedContent" style="margin-bottom: 0; white-space: pre-wrap; text-align: left; display: block; overflow-x: auto;">${JSON.stringify(data.lhdnJson, null, 2)}</pre>
+                </div>
+            </div>
+        `;
+
+        // Show the preview dialog with improved styling
+        const result = await Swal.fire({
+            html: createSemiMinimalDialog({
+                title: 'Invoice Preview',
+                subtitle: 'Review the invoice details before submitting to LHDN',
+                content: summaryContent
+            }),
+            showCancelButton: true,
+            confirmButtonText: 'Proceed with Submission',
+            cancelButtonText: 'Cancel',
+            width: 720,
+            padding: '0.75rem',
+            focusConfirm: false,
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                cancelButton: 'outbound-action-btn cancel',
+                popup: 'semi-minimal-popup compact-preview',
+                actions: 'preview-actions',
+                container: 'preview-container'
+            },
+            didOpen: () => {
+                // Add custom CSS for compact preview
+                const style = document.createElement('style');
+                style.textContent = `
+                    .preview-container {
+                        max-width: 100%;
+                    }
+                    .compact-preview {
+                        border-radius: 10px !important;
+                    }
+                    .compact-preview .semi-minimal-title {
+                        font-size: 18px;
+                        margin-bottom: 4px;
+                        color: #212529;
+                    }
+                    .compact-preview .semi-minimal-subtitle {
+                        font-size: 13px;
+                        margin-bottom: 12px;
+                        color: #6c757d;
+                    }
+                    .compact-preview .preview-actions {
+                        margin-top: 12px;
+                    }
+                    .compact-preview .outbound-action-btn {
+                        border-radius: 6px;
+                        font-size: 14px;
+                        padding: 8px 16px;
+                        font-weight: 500;
+                        transition: all 0.2s;
+                    }
+                  
+                    .compact-preview #toggleJsonBtn {
+                        transition: all 0.2s ease;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    }
+                    .compact-preview #toggleJsonBtn:hover {
+                        background-color: #0b5ed7 !important;
+                        transform: translateY(-1px);
+                        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+                    }
+                    .compact-preview #toggleJsonBtn:active {
+                        transform: translateY(0);
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                    }
+                    /* JSON Preview Card */
+                    .compact-preview .json-preview-card {
+                        transition: all 0.3s ease;
+                    }
+                    .compact-preview .json-preview-card:hover {
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                    }
+
+                    /* JSON Loading Animation */
+                    .compact-preview #jsonLoadingAnimation {
+                        padding: 15px 10px;
+                    }
+                    .compact-preview .json-loading-connector {
+                        transition: background 0.5s ease;
+                    }
+                    .compact-preview .json-loading-icon {
+                        transition: all 0.3s ease;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    }
+                    .compact-preview .json-loading-text {
+                        transition: color 0.3s ease;
+                    }
+                    .compact-preview .json-loading-status {
+                        transition: color 0.3s ease;
+                        height: 16px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+
+                    /* JSON Content */
+                    .compact-preview #jsonPreviewContent {
+                        text-align: left !important;
+                        background: #f8f9fa;
+                        border-top: 1px solid rgba(0,0,0,0.05);
+                        transition: all 0.3s ease;
+                    }
+                    .compact-preview #jsonPreviewContent pre {
+                        font-size: 11px;
+                        color: #495057;
+                        text-align: left !important;
+                        margin: 0;
+                        padding: 0;
+                        line-height: 1.4;
+                    }
+
+                    /* JSON syntax highlighting */
+                    .compact-preview #jsonPreviewContent .json-key {
+                        color: #0d6efd;
+                        font-weight: 600;
+                    }
+                    .compact-preview #jsonPreviewContent .json-string {
+                        color: #198754;
+                    }
+                    .compact-preview #jsonPreviewContent .json-number {
+                        color: #dc3545;
+                    }
+                    .compact-preview #jsonPreviewContent .json-boolean {
+                        color: #6f42c1;
+                        font-weight: 600;
+                    }
+                    .compact-preview #jsonPreviewContent .json-null {
+                        color: #6c757d;
+                        font-style: italic;
+                    }
+                `;
+                document.head.appendChild(style);
+
+                // Function to format JSON with syntax highlighting
+                const formatJson = (json) => {
+                    if (typeof json !== 'string') {
+                        json = JSON.stringify(json, null, 2);
+                    }
+
+                    // Add syntax highlighting
+                    json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                        let cls = 'json-number';
+                        if (/^"/.test(match)) {
+                            if (/:$/.test(match)) {
+                                cls = 'json-key';
+                            } else {
+                                cls = 'json-string';
+                            }
+                        } else if (/true|false/.test(match)) {
+                            cls = 'json-boolean';
+                        } else if (/null/.test(match)) {
+                            cls = 'json-null';
+                        }
+                        return '<span class="' + cls + '">' + match + '</span>';
+                    });
+                };
+
+                // Show loading animation first
+                const jsonLoadingAnimation = document.getElementById('jsonLoadingAnimation');
+                const jsonContent = document.getElementById('jsonPreviewContent');
+                const toggleBtn = document.getElementById('toggleJsonBtn');
+
+                // Simulate the loading process
+                const simulateJsonLoading = () => {
+                    // Show loading animation
+                    jsonLoadingAnimation.style.display = 'block';
+
+                    // Get all steps and connectors
+                    const steps = jsonLoadingAnimation.querySelectorAll('.json-loading-step');
+                    const connectors = jsonLoadingAnimation.querySelectorAll('.json-loading-connector');
+
+                    // Step 1 is already complete
+
+                    // After 1 second, complete step 2 (Processing)
+                    setTimeout(() => {
+                        // Update step 2
+                        steps[1].querySelector('.json-loading-status').innerHTML = 'Complete';
+
+                        // Update connector to step 3
+                        connectors[1].style.background = 'linear-gradient(to right, #0d6efd, #adb5bd)';
+
+                        // Update step 3 to active
+                        steps[2].querySelector('.json-loading-icon').style.background = 'rgba(13, 110, 253, 0.1)';
+                        steps[2].querySelector('.json-loading-icon i').style.color = '#0d6efd';
+                        steps[2].querySelector('.json-loading-text').style.color = '#495057';
+                        steps[2].querySelector('.json-loading-status').innerHTML = `
+                            <div class="spinner-border spinner-border-sm" style="width: 10px; height: 10px; border-width: 1px;" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        `;
+                        steps[2].querySelector('.json-loading-status').style.color = '#0d6efd';
+
+                        // After another 1 second, complete step 3 (Ready)
+                        setTimeout(() => {
+                            // Update step 3
+                            steps[2].querySelector('.json-loading-status').innerHTML = 'Complete';
+
+                            // Format the JSON content
+                            const jsonElement = document.getElementById('jsonFormattedContent');
+                            if (jsonElement) {
+                                try {
+                                    const jsonObj = JSON.parse(jsonElement.textContent);
+                                    jsonElement.innerHTML = formatJson(jsonObj);
+                                } catch (e) {
+                                    console.error('Error formatting JSON:', e);
+                                }
+                            }
+
+                            // After a short delay, hide loading and show JSON
+                            setTimeout(() => {
+                                jsonLoadingAnimation.style.display = 'none';
+                                jsonContent.style.display = 'block';
+                                toggleBtn.innerHTML = '<i class="fas fa-code-slash"></i> Hide JSON';
+                                toggleBtn.style.backgroundColor = '#6c757d';
+                            }, 500);
+                        }, 800);
+                    }, 1000);
+                };
+
+                // Add event listener for the toggle JSON button
+                toggleBtn.addEventListener('click', function() {
+                    const isVisible = jsonContent.style.display !== 'none';
+                    const isLoading = jsonLoadingAnimation.style.display !== 'none';
+
+                    if (isVisible) {
+                        // Hide JSON content
+                        jsonContent.style.display = 'none';
+                        this.innerHTML = '<i class="fas fa-code"></i> View JSON';
+                        this.style.backgroundColor = '#0d6efd';
+                    } else if (isLoading) {
+                        // If loading is visible, hide it
+                        jsonLoadingAnimation.style.display = 'none';
+                        this.innerHTML = '<i class="fas fa-code"></i> View JSON';
+                        this.style.backgroundColor = '#0d6efd';
+                    } else {
+                        // Start the loading animation
+                        simulateJsonLoading();
+                        this.innerHTML = '<i class="fas fa-times"></i> Cancel';
+                        this.style.backgroundColor = '#6c757d';
+                    }
+                });
+
+                // Also make the header clickable to toggle JSON
+                document.getElementById('jsonPreviewHeader').addEventListener('click', function(e) {
+                    // Don't trigger if the button itself was clicked
+                    if (e.target.closest('#toggleJsonBtn')) {
+                        return;
+                    }
+
+                    const isVisible = jsonContent.style.display !== 'none';
+                    const isLoading = jsonLoadingAnimation.style.display !== 'none';
+
+                    // Add a subtle hover effect
+                    this.style.transition = 'background-color 0.2s';
+                    const originalBackground = this.style.background;
+                    this.style.background = 'linear-gradient(to right, #e9ecef, #dee2e6)';
+                    setTimeout(() => {
+                        this.style.background = originalBackground;
+                    }, 200);
+
+                    if (isVisible) {
+                        // Hide JSON content
+                        jsonContent.style.display = 'none';
+                        toggleBtn.innerHTML = '<i class="fas fa-code"></i> View JSON';
+                        toggleBtn.style.backgroundColor = '#0d6efd';
+                    } else if (isLoading) {
+                        // If loading is visible, hide it
+                        jsonLoadingAnimation.style.display = 'none';
+                        toggleBtn.innerHTML = '<i class="fas fa-code"></i> View JSON';
+                        toggleBtn.style.backgroundColor = '#0d6efd';
+                    } else {
+                        // Start the loading animation
+                        simulateJsonLoading();
+                        toggleBtn.innerHTML = '<i class="fas fa-times"></i> Cancel';
+                        toggleBtn.style.backgroundColor = '#6c757d';
+                    }
+                });
+            }
+        });
+
+        return result.isConfirmed;
+
+    } catch (error) {
+        tableManager.hideLoadingBackdrop();
+        console.error('Error generating JSON preview:', error);
+
+        // Show error modal
+        await Swal.fire({
+            icon: 'error',
+            title: 'Preview Generation Failed',
+            text: error.message || 'Failed to generate JSON preview',
+            confirmButtonText: 'OK',
+            customClass: {
+                confirmButton: 'outbound-action-btn submit',
+                popup: 'semi-minimal-popup'
+            }
+        });
+
+        return false;
+    }
+}
+
 // Step functions for the submission process
 async function performStep1(fileName, type, company, date) {
     console.log('🚀 [Step 1] Starting validation with params:', { fileName, type, company, date });
@@ -4465,8 +4968,18 @@ async function submitToLHDN(fileName, type, company, date) {
             return;
         }
 
-        // 3. Show submission status modal and start process
-        console.log('📤 Step 3: Starting submission status process');
+        // 3. Show JSON mapping preview
+        console.log('🔍 Step 3: Showing JSON mapping preview');
+        const previewConfirmed = await showJsonPreview(fileName, type, company, date, version);
+        console.log('🔍 Preview confirmation result:', previewConfirmed);
+
+        if (!previewConfirmed) {
+            console.log('❌ Submission cancelled by user after preview');
+            return;
+        }
+
+        // 4. Show submission status modal and start process
+        console.log('📤 Step 4: Starting submission status process');
         await showSubmissionStatus(fileName, type, company, date, version);
 
     } catch (error) {
@@ -5806,7 +6319,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const manager = InvoiceTableManager.getInstance();
+    // Initialize the table manager and update date/time
+    InvoiceTableManager.getInstance();
     DateTimeManager.updateDateTime();
 });
 
@@ -5907,21 +6421,27 @@ class ConsolidatedSubmissionManager {
 
                     if (validationResult.success) {
                         // If validation successful, submit to LHDN
-                        const submitResult = await submitToLHDN(doc.fileName, doc.type, doc.company, doc.date, version);
+                        try {
+                            // Show a progress message
+                            submissionProgress.innerHTML += `
+                                <div class="alert alert-info">
+                                    Submitting ${doc.fileName} to LHDN...
+                                </div>
+                            `;
 
-                        if (submitResult.success) {
+                            await submitToLHDN(doc.fileName, doc.type, doc.company, doc.date, version);
                             successCount++;
                             results.push({
                                 fileName: doc.fileName,
                                 status: 'success',
                                 message: 'Successfully submitted'
                             });
-                        } else {
+                        } catch (error) {
                             failureCount++;
                             results.push({
                                 fileName: doc.fileName,
                                 status: 'error',
-                                message: submitResult.error || 'Submission failed'
+                                message: error.message || 'Submission failed'
                             });
                         }
                     } else {
@@ -6107,8 +6627,25 @@ async function handleBulkSubmission(selectedDocs) {
     }
 }
 
+// Reset DataTables request flag on page load to prevent conflicts
+window.addEventListener('load', function() {
+    window._dataTablesRequestInProgress = false;
+    window._dataTablesRequestStartTime = null;
+    console.log('DataTables request flags reset on page load');
+});
+
+// Reset DataTables request flag on page unload to prevent conflicts on next page load
+window.addEventListener('beforeunload', function() {
+    window._dataTablesRequestInProgress = false;
+    window._dataTablesRequestStartTime = null;
+});
+
 // Add event listener for bulk submit button
 document.addEventListener('DOMContentLoaded', function() {
+    // Reset DataTables request flag on DOM content loaded
+    window._dataTablesRequestInProgress = false;
+    window._dataTablesRequestStartTime = null;
+
     const submitConsolidatedBtn = document.getElementById('submitConsolidatedBtn');
     if (submitConsolidatedBtn) {
         submitConsolidatedBtn.addEventListener('click', async function() {
