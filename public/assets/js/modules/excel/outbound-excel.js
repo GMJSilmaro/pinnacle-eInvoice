@@ -3,18 +3,18 @@ const dataCache = {
     tableData: null,
     lastFetchTime: null,
     cacheExpiry: 2 * 60 * 1000, // 2 minutes in milliseconds
-    
+
     isCacheValid() {
-        return this.tableData && 
-               this.lastFetchTime && 
+        return this.tableData &&
+               this.lastFetchTime &&
                (Date.now() - this.lastFetchTime < this.cacheExpiry);
     },
-    
+
     updateCache(data) {
         this.tableData = data;
         this.lastFetchTime = Date.now();
     },
-    
+
     invalidateCache() {
         this.tableData = null;
         this.lastFetchTime = null;
@@ -64,7 +64,7 @@ class DateTimeManager {
 
 class InvoiceTableManager {
     static instance = null;
-    
+
     static getInstance() {
         if (!InvoiceTableManager.instance) {
             InvoiceTableManager.instance = new InvoiceTableManager();
@@ -79,7 +79,7 @@ class InvoiceTableManager {
         InvoiceTableManager.instance = this;
         this.table = null;
         this.selectedRows = new Set();
-        
+
         // Add a prefilter for all AJAX requests
         $.ajaxPrefilter((options, originalOptions, jqXHR) => {
             if (!options.beforeSend) {
@@ -104,7 +104,7 @@ class InvoiceTableManager {
     showLoadingBackdrop(message = 'Loading and Preparing Your Excel Files') {
         // Remove any existing backdrop
         $('#loadingBackdrop').remove();
-        
+
         // Create and append new backdrop with enhanced UI
         const backdrop = `
             <div id="loadingBackdrop" class="excel-loading-backdrop">
@@ -125,7 +125,7 @@ class InvoiceTableManager {
                             <p class="excel-loading-important">⚠️ Do not close or refresh this page. ⚠️</p>
                         </div>
                     </div>
-                    
+
                     <div class="excel-processing-container">
                         <div class="excel-invoice-animation">
                             <div class="excel-invoice-paper">
@@ -157,7 +157,7 @@ class InvoiceTableManager {
                                 <div class="excel-invoice-stamp"></div>
                             </div>
                         </div>
-                        
+
                         <div class="excel-processing-steps">
                             <div class="excel-step-item excel-active" id="excelLoadingStep1">
                                 <i class="bi bi-file-text"></i>
@@ -195,12 +195,12 @@ class InvoiceTableManager {
                             </div>
                         </div>
                         <div class="excel-progress">
-                            <div id="excelLoadingProgressBar" 
-                                class="excel-progress-bar progress-bar-striped progress-bar-animated" 
-                                role="progressbar" 
-                                style="width: 0%" 
-                                aria-valuenow="0" 
-                                aria-valuemin="0" 
+                            <div id="excelLoadingProgressBar"
+                                class="excel-progress-bar progress-bar-striped progress-bar-animated"
+                                role="progressbar"
+                                style="width: 0%"
+                                aria-valuenow="0"
+                                aria-valuemin="0"
                                 aria-valuemax="100">
                             </div>
                         </div>
@@ -220,10 +220,10 @@ class InvoiceTableManager {
                 </div>
             </div>
         `;
-        
+
         $('body').append(backdrop);
         $('#loadingBackdrop').fadeIn(300);
-        
+
         // Start animation sequence
         this.startLoadingAnimation();
     }
@@ -259,31 +259,31 @@ class InvoiceTableManager {
 
         let currentStateIndex = 0;
         let factIndex = 0;
-        
+
         // Update progress bar and message
         const updateLoadingState = () => {
             if (!$('#loadingBackdrop').length) return;
-            
+
             if (currentStateIndex < loadingStates.length) {
                 const currentState = loadingStates[currentStateIndex];
-                
+
                 // Update message
                 $('#excelLoadingStatusMessage').html(`
                     <div class="excel-status-icon">
                         <i class="bi bi-arrow-repeat excel-spin"></i>
                     </div>
                     <span class="excel-status-text">${currentState.message}</span>`);
-                
+
                 // Update progress
                 $('#excelLoadingProgressBar').css('width', `${currentState.progress}%`);
                 $('#excelLoadingProgressBar').attr('aria-valuenow', currentState.progress);
                 $('#excelLoadingProgressPercentage').text(`${currentState.progress}%`);
-                
+
                 // Update document count - simulate progress
                 const total = 10; // Example total
                 const processed = Math.floor(currentState.progress / 100 * total);
                 $('#excelLoadingProcessedCount').text(`${processed}/${total}`);
-                
+
                 // Update active step
                 $('.excel-step-item').removeClass('excel-active');
                 if (currentState.progress < 33) {
@@ -293,15 +293,15 @@ class InvoiceTableManager {
                 } else {
                     $('#excelLoadingStep3').addClass('excel-active');
                 }
-                
+
                 currentStateIndex++;
             }
         };
-        
+
         // Update fun facts
         const updateFunFact = () => {
             if (!$('#loadingBackdrop').length) return;
-            
+
             const fact = funFacts[factIndex % funFacts.length];
             $('#excelLoadingFact').html(`
                 <div class="excel-info-icon">
@@ -311,12 +311,12 @@ class InvoiceTableManager {
                     <span class="excel-info-label">Processing Tip</span>
                     <p class="excel-info-message">${fact}</p>
                 </div>`);
-            
+
             factIndex++;
         };
-        
+
         // Start sequences
-        let interval = 800; 
+        let interval = 800;
         const scheduleNextUpdate = () => {
             if (currentStateIndex < loadingStates.length && $('#loadingBackdrop').length) {
                 updateLoadingState();
@@ -324,9 +324,9 @@ class InvoiceTableManager {
                 setTimeout(scheduleNextUpdate, interval);
             }
         };
-        
+
         scheduleNextUpdate();
-        
+
         // Update fun facts every 5 seconds
         this.factInterval = setInterval(updateFunFact, 5000);
     }
@@ -336,7 +336,7 @@ class InvoiceTableManager {
         if (this.factInterval) {
             clearInterval(this.factInterval);
         }
-        
+
         $('#loadingBackdrop').fadeOut(300, function() {
             $(this).remove();
         });
@@ -351,7 +351,7 @@ class InvoiceTableManager {
             }
 
             const self = this; // Store reference to this
-            
+
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
                 columns: [
@@ -445,7 +445,7 @@ class InvoiceTableManager {
                     $('.quick-filters .btn[data-filter]').on('click', function() {
                         $('.quick-filters .btn').removeClass('active');
                         $(this).addClass('active');
-                        
+
                         const filter = $(this).data('filter');
                         if (filter === 'all') {
                             self.table.column(8).search('').draw();
@@ -489,10 +489,10 @@ class InvoiceTableManager {
                         // Add cache control parameters
                         d.forceRefresh = sessionStorage.getItem('forceRefreshOutboundTable') === 'true';
                         d.manualRefresh = sessionStorage.getItem('manualRefreshOutboundTable') === 'true';
-                        
+
                         // Add timestamp to prevent caching
                         d._timestamp = new Date().getTime();
-                        
+
                         // Clear the flags after using them
                         if (d.forceRefresh) {
                             sessionStorage.removeItem('forceRefreshOutboundTable');
@@ -509,7 +509,7 @@ class InvoiceTableManager {
                         if (json.fromCache && json.cachedData) {
                             return json.cachedData;
                         }
-                        
+
                         if (!json.success) {
                             console.error('Error:', json.error);
                             self.showEmptyState(json.error?.message || 'Failed to load data');
@@ -561,9 +561,9 @@ class InvoiceTableManager {
                     beforeSend: function() {
                         // Set global flag to indicate DataTables request is in progress
                         window._dataTablesRequestInProgress = true;
-                        
+
                         // Show loading for initial load, forced refreshes, or manual refreshes
-                        if (!dataCache.isCacheValid() || 
+                        if (!dataCache.isCacheValid() ||
                             sessionStorage.getItem('forceRefreshOutboundTable') === 'true' ||
                             sessionStorage.getItem('manualRefreshOutboundTable') === 'true') {
                             self.showLoadingBackdrop('Loading and Preparing Your Excel Files');
@@ -572,7 +572,7 @@ class InvoiceTableManager {
                     complete: function() {
                         // Clear the DataTables request flag
                         window._dataTablesRequestInProgress = false;
-                        
+
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
                     },
@@ -580,10 +580,10 @@ class InvoiceTableManager {
                         // Clear the DataTables request flag on error
                         window._dataTablesRequestInProgress = false;
                         console.error('DataTables AJAX error:', error, thrown);
-                        
+
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
-                        
+
                         // Show error message
                         self.showEmptyState('Error loading data. Please try refreshing the page.');
                     }
@@ -635,7 +635,7 @@ class InvoiceTableManager {
         // Quick Filters
         document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
             button.addEventListener('click', (e) => {
-                document.querySelectorAll('.quick-filters .btn').forEach(btn => 
+                document.querySelectorAll('.quick-filters .btn').forEach(btn =>
                     btn.classList.remove('active'));
                 e.target.closest('.btn').classList.add('active');
                 this.applyFilters();
@@ -660,12 +660,12 @@ class InvoiceTableManager {
         ].join(',');
 
         document.querySelectorAll(advancedFilterInputs).forEach(input => {
-            input.addEventListener(input.type === 'select-one' ? 'change' : 'input', 
+            input.addEventListener(input.type === 'select-one' ? 'change' : 'input',
                 () => this.applyFilters());
         });
 
         // Clear Filters
-        document.getElementById('clearFilters')?.addEventListener('click', 
+        document.getElementById('clearFilters')?.addEventListener('click',
             () => this.clearAllFilters());
     }
 
@@ -674,7 +674,7 @@ class InvoiceTableManager {
 
         // Store current filter values
         const filters = this.getActiveFilters();
-        
+
         // Apply filters to DataTable
         this.table.draw();
 
@@ -702,14 +702,14 @@ class InvoiceTableManager {
 
         const createTag = (label, value, type) => {
             if (!value) return;
-            
+
             const tag = document.createElement('div');
             tag.className = 'filter-tag';
             tag.innerHTML = `
                 ${label}: ${value}
                 <button class="close-btn" data-filter-type="${type}">×</button>
             `;
-            tag.querySelector('.close-btn').addEventListener('click', 
+            tag.querySelector('.close-btn').addEventListener('click',
                 () => this.removeFilter(type));
             container.appendChild(tag);
         };
@@ -744,7 +744,7 @@ class InvoiceTableManager {
         ].join(',')).forEach(input => input.value = '');
 
         // Reset quick filters
-        document.querySelectorAll('.quick-filters .btn').forEach(btn => 
+        document.querySelectorAll('.quick-filters .btn').forEach(btn =>
             btn.classList.remove('active'));
         document.querySelector('.quick-filters .btn[data-filter="all"]')
             .classList.add('active');
@@ -986,9 +986,9 @@ class InvoiceTableManager {
 
         return `
             <div class="invoice-info-wrapper" style="
-                display: flex; 
-                flex-direction: column; 
-                gap: 4px; 
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
                 text-align: left;
                 min-width: 200px;
             ">
@@ -1001,8 +1001,8 @@ class InvoiceTableManager {
                     width: 100%;
                 ">
                     <i class="bi bi-hash text-primary"></i>
-                    <span class="invoice-text" 
-                        title="${data}" 
+                    <span class="invoice-text"
+                        title="${data}"
                         style="
                             white-space: nowrap;
                             overflow: hidden;
@@ -1010,7 +1010,7 @@ class InvoiceTableManager {
                             max-width: calc(100% - 24px);
                         ">${data}</span>
                 </div>
-                
+
                 <div class="file-info" style="
                     display: flex;
                     align-items: center;
@@ -1113,11 +1113,11 @@ class InvoiceTableManager {
         const timeRemaining = showTimeRemaining ? this.calculateRemainingTime(submittedDate) : null;
 
         return `
-            <div class="date-info" style="width: 140px;"> 
+            <div class="date-info" style="width: 140px;">
                 ${submittedFormatted ? `
-                    <div class="date-row" 
-                         data-bs-toggle="tooltip" 
-                         data-bs-placement="top" 
+                    <div class="date-row"
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
                          title="Date and time when document was submitted to LHDN">
                         <i class="bi bi-check-circle me-1 text-success"></i>
                         <span class="date-value">
@@ -1128,9 +1128,9 @@ class InvoiceTableManager {
                     </div>
                 ` : ''}
                 ${cancelledFormatted ? `
-                    <div class="date-row cancelled-info" 
-                         data-bs-toggle="tooltip" 
-                         data-bs-placement="top" 
+                    <div class="date-row cancelled-info"
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
                          title="${row.cancellation_reason ? `Cancel Reason: ${row.cancellation_reason}` : ''}">
                         <i class="bi bi-x-circle me-1 text-warning"></i>
                         <span class="date-value">
@@ -1144,17 +1144,17 @@ class InvoiceTableManager {
                     </div>
                 ` : ''}
                 ${showTimeRemaining && timeRemaining ? `
-                    <div class="time-remaining" 
-                         data-bs-toggle="tooltip" 
-                         data-bs-placement="top" 
+                    <div class="time-remaining"
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
                          title="Time remaining before the 72-hour cancellation window expires">
                         <i class="bi bi-clock${timeRemaining.hours < 24 ? '-fill' : ''} me-1"></i>
                         <span class="time-text">${timeRemaining.hours}h ${timeRemaining.minutes}m left</span>
                     </div>
                 ` : row.status !== 'Submitted' || cancelledFormatted ? `
-                    <div class="time-not-applicable" 
-                         data-bs-toggle="tooltip" 
-                         data-bs-placement="top" 
+                    <div class="time-not-applicable"
+                         data-bs-toggle="tooltip"
+                         data-bs-placement="top"
                          title="Cancellation window not applicable for this document status">
                         <i class="bi bi-dash-circle me-1"></i>
                         <span class="text-muted">Not Applicable</span>
@@ -1251,14 +1251,14 @@ class InvoiceTableManager {
         if (!row.status || row.status === 'Pending') {
             return `
                 <div class="d-flex gap-2">
-                    <button 
+                    <button
                         class="outbound-action-btn submit"
                         onclick="submitToLHDN('${row.fileName}', '${row.source}', '${row.company}', '${row.uploadedDate}')"
                         data-id="${row.id}">
                         <i class="bi bi-cloud-upload"></i>
                         Submit
                     </button>
-                    <button 
+                    <button
                         class="outbound-action-btn cancel"
                         onclick="deleteDocument('${row.fileName}', '${row.source}', '${row.company}', '${row.uploadedDate}')"
                         data-id="${row.id}">
@@ -1268,10 +1268,10 @@ class InvoiceTableManager {
         }
 
         if (row.status === 'Submitted') {
-            const timeInfo = this.calculateRemainingTime(row.date_submitted);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+            const timeInfo = this.calculateRemainingTime(row.date_submitted);
             if (timeInfo && !timeInfo.expired) {
                 return `
-                    <button 
+                    <button
                         class="outbound-action-btn cancel"
                         onclick="cancelDocument('${row.uuid}', '${row.fileName}', '${row.date_submitted}')"
                         data-id="${row.id}"
@@ -1284,10 +1284,10 @@ class InvoiceTableManager {
 
         if (row.status === 'Invalid') {
             return `
-             <button 
+             <button
                 class="outbound-action-btn"
                 disabled
-                data-bs-toggle="tooltip" 
+                data-bs-toggle="tooltip"
                 data-bs-placement="top"
                 title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'LHDN Cancellation successfully processed' : 'LHDN Validation is finalized, Kindly check the Inbound Page status for more details'}">
                 <i class="bi bi-check-circle"></i>
@@ -1296,10 +1296,10 @@ class InvoiceTableManager {
         }
 
         return `
-            <button 
+            <button
                 class="outbound-action-btn"
                 disabled
-                data-bs-toggle="tooltip" 
+                data-bs-toggle="tooltip"
                 data-bs-placement="top"
                 title="${row.status === 'Failed' ? 'Please cancel this transaction and create the same transaction with a new Document No.' : row.status === 'Cancelled' ? 'LHDN Cancellation successfully processed' : 'LHDN Validation is finalized, Kindly check the Inbound Page status for more details'}">
                 <i class="bi bi-check-circle"></i>
@@ -1334,7 +1334,7 @@ class InvoiceTableManager {
                 document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
                 // Add active class to clicked button
                 e.target.closest('.btn').classList.add('active');
-                
+
                 const filterValue = e.target.closest('.btn').dataset.filter;
                 this.applyQuickFilter(filterValue);
             });
@@ -1394,8 +1394,8 @@ class InvoiceTableManager {
 
         // Apply filter based on value
         this.table.column('status:name').search(
-            filterValue === 'all' ? '' : filterValue, 
-            false, 
+            filterValue === 'all' ? '' : filterValue,
+            false,
             false
         ).draw();
 
@@ -1418,7 +1418,7 @@ class InvoiceTableManager {
                 const rowDate = new Date(data.uploadedDate);
                 const filterStart = new Date(startDate);
                 const filterEnd = new Date(endDate);
-                
+
                 if (rowDate < filterStart || rowDate > filterEnd) {
                     passFilter = false;
                 }
@@ -1428,7 +1428,7 @@ class InvoiceTableManager {
             const minAmount = parseFloat(document.getElementById('minAmount').value) || 0;
             const maxAmount = parseFloat(document.getElementById('maxAmount').value) || Infinity;
             const rowAmount = parseFloat(row.total_amount?.replace(/[^0-9.-]+/g, '') || 0);
-            
+
             if (rowAmount < minAmount || rowAmount > maxAmount) {
                 passFilter = false;
             }
@@ -1494,7 +1494,7 @@ class InvoiceTableManager {
                 ${label}: ${value}
                 <button class="close-btn" data-filter-type="${type}">×</button>
             `;
-            tag.querySelector('.close-btn').addEventListener('click', 
+            tag.querySelector('.close-btn').addEventListener('click',
                 () => this.removeFilter(type));
             container.appendChild(tag);
         };
@@ -1657,7 +1657,7 @@ class InvoiceTableManager {
                 }
             });
 
-           
+
             // Initialize new tooltips
             tooltipTriggerList.forEach(tooltipTriggerEl => {
                 new bootstrap.Tooltip(tooltipTriggerEl, {
@@ -1831,7 +1831,7 @@ class InvoiceTableManager {
         const validationRateElement = document.querySelector('.success-rate');
         if (validationRateElement) {
             validationRateElement.textContent = `${Math.round(submittedPercentage)}%`;
-            validationRateElement.setAttribute('data-bs-original-title', 
+            validationRateElement.setAttribute('data-bs-original-title',
                 `<div class='p-2'>
                     <strong>Current Success Rate:</strong> ${Math.round(submittedPercentage)}%<br>
                     <small>Based on ${totals.submitted} successfully submitted documents out of ${totalForValidation} total submissions</small>
@@ -1910,7 +1910,7 @@ class InvoiceTableManager {
                 </div>`
             );
         }
-      
+
         // Update statistics charts
         this.updateStatisticsCharts(totals);
     }
@@ -2014,7 +2014,7 @@ class InvoiceTableManager {
     // New method to initialize TIN validation
     initializeTINValidation() {
         console.log('Initializing TIN validation functionality');
-        
+
         // Get form elements
         const validationForm = document.getElementById('tinValidationForm');
         const tinInput = document.getElementById('tinNumber');
@@ -2023,13 +2023,13 @@ class InvoiceTableManager {
         const validateButton = document.getElementById('validateSingleTin');
         const clearHistoryButton = document.getElementById('clearHistory');
         const historyContainer = document.getElementById('validationHistory');
-        
+
         // Check if elements exist
         if (!tinInput || !idTypeInput || !idValueInput || !validateButton) {
             console.warn('TIN validation elements not found in the DOM');
             return;
         }
-        
+
         // Initialize tooltips
         const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
         tooltips.forEach(tooltip => {
@@ -2038,25 +2038,25 @@ class InvoiceTableManager {
                 placement: 'auto'
             });
         });
-        
+
         // Initialize validation history
         this.initValidationHistory();
-        
+
         // Add validation form submit handler
         if (validationForm && validateButton) {
             validateButton.addEventListener('click', async (e) => {
                 e.preventDefault();
-                
+
                 // Validate form inputs
                 if (!this.validateForm(validationForm)) {
                     return;
                 }
-                
+
                 // Perform validation
                 await this.validateTIN(tinInput, idTypeInput, idValueInput);
             });
         }
-        
+
         // Event listener for Enter key in the inputs
         [tinInput, idTypeInput, idValueInput].forEach(input => {
             input.addEventListener('keypress', async (e) => {
@@ -2068,21 +2068,21 @@ class InvoiceTableManager {
                 }
             });
         });
-        
+
         // Clear history button
         if (clearHistoryButton) {
             clearHistoryButton.addEventListener('click', () => {
                 this.clearValidationHistory();
             });
         }
-        
+
         // Add ID type guidance
         if (idTypeInput) {
             idTypeInput.addEventListener('change', () => {
                 this.showIdTypeGuidance(idTypeInput.value);
             });
         }
-        
+
         // Initialize modal behavior
         const tinValidationModal = document.getElementById('tinValidationModal');
         if (tinValidationModal) {
@@ -2092,22 +2092,22 @@ class InvoiceTableManager {
                     validationForm.reset();
                     validationForm.classList.remove('was-validated');
                 }
-                
+
                 // Reset result section
                 const resultContent = document.getElementById('validationResultContent');
                 const emptyState = document.getElementById('emptyResultState');
-                
+
                 if (resultContent && emptyState) {
                     resultContent.classList.add('d-none');
                     emptyState.classList.remove('d-none');
                 }
-                
+
                 // Hide guidance
                 const guidanceSection = document.getElementById('idTypeGuidance');
                 if (guidanceSection) {
                     guidanceSection.classList.add('d-none');
                 }
-                
+
                 // Clear search input
                 const searchInput = document.getElementById('historySearchInput');
                 if (searchInput) {
@@ -2115,26 +2115,26 @@ class InvoiceTableManager {
                 }
             });
         }
-        
+
         // Add event listeners to validate TIN buttons in table rows
         this.addTableTinValidationListeners();
     }
-    
+
     // Validate form using Bootstrap's validation
     validateForm(form) {
         form.classList.add('was-validated');
         return form.checkValidity();
     }
-    
+
     // Show ID type guidance
     showIdTypeGuidance(idType) {
         const guidanceSection = document.getElementById('idTypeGuidance');
         const guidanceContent = document.getElementById('guidanceContent');
-        
+
         if (!guidanceSection || !guidanceContent) return;
-        
+
         let content = '';
-        
+
         switch(idType) {
             case 'NRIC':
                 content = `
@@ -2147,7 +2147,7 @@ class InvoiceTableManager {
                     </ul>
                 `;
                 break;
-                
+
             case 'PASSPORT':
                 content = `
                     <p class="mb-1 small">Passport format varies by country:</p>
@@ -2158,7 +2158,7 @@ class InvoiceTableManager {
                     </ul>
                 `;
                 break;
-                
+
             case 'BRN':
                 content = `
                     <p class="mb-1 small">Business Registration Number format:</p>
@@ -2169,7 +2169,7 @@ class InvoiceTableManager {
                     </ul>
                 `;
                 break;
-                
+
             case 'ARMY':
                 content = `
                     <p class="mb-1 small">Army Number format:</p>
@@ -2179,11 +2179,11 @@ class InvoiceTableManager {
                     </ul>
                 `;
                 break;
-                
+
             default:
                 content = '';
         }
-        
+
         if (content) {
             guidanceContent.innerHTML = content;
             guidanceSection.classList.remove('d-none');
@@ -2191,32 +2191,32 @@ class InvoiceTableManager {
             guidanceSection.classList.add('d-none');
         }
     }
-    
+
     // Add TIN validation listeners to table buttons
     addTableTinValidationListeners() {
         // Use event delegation since table rows may be dynamically added
         $(document).on('click', '[data-validate-tin]', async (e) => {
             const button = e.currentTarget;
             const row = button.closest('tr');
-            
+
             if (row) {
                 const tin = row.dataset.tin;
                 const idType = row.dataset.idType;
                 const idValue = row.dataset.idValue;
-                
+
                 if (tin && idType && idValue) {
                     try {
                         button.disabled = true;
                         button.innerHTML = '<i class="bi bi-arrow-repeat spin"></i> Validating';
-                        
+
                         const result = await this.callValidateAPI(tin, idType, idValue);
-                        
+
                         // Show validation result
                         this.showValidationResultModal(result, tin, idType, idValue);
-                        
+
                         // Add to history
                         this.addToValidationHistory(tin, idType, idValue, result.isValid);
-                        
+
                     } catch (error) {
                         this.showErrorMessage(`TIN validation failed: ${error.message}`);
                     } finally {
@@ -2229,14 +2229,14 @@ class InvoiceTableManager {
             }
         });
     }
-    
+
     // Validate TIN using the UI form
     async validateTIN(tinInput, idTypeInput, idValueInput) {
         // Get input values
         const tin = tinInput.value.trim();
         const idType = idTypeInput.value;
         const idValue = idValueInput.value.trim();
-        
+
         // Check for recent validations to prevent spam
         const isDuplicate = this.checkRecentValidation(tin, idType, idValue);
         if (isDuplicate) {
@@ -2244,32 +2244,32 @@ class InvoiceTableManager {
             this.showWarningMessage("This TIN and ID combination was recently validated. Please wait before validating again.");
             return;
         }
-        
+
         // Show loading state
         const validateButton = document.getElementById('validateSingleTin');
         const originalContent = validateButton.innerHTML;
         validateButton.disabled = true;
         validateButton.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i> Validating...';
-        
+
         try {
             // Add to recent validations with timestamp to track cooldown
             this.addToRecentValidations(tin, idType, idValue);
-            
+
             // Call API
             const result = await this.callValidateAPI(tin, idType, idValue);
-            
+
             // Show validation result in the modal
             this.showValidationResultInModal(result, tin, idType, idValue);
-            
+
             // Add to history
             this.addToValidationHistory(tin, idType, idValue, result.isValid);
-            
+
             // Clear form on success
             if (result.isValid) {
                 // Don't clear the form immediately to allow user to see the result
                 // The form will be reset when the modal is closed
             }
-            
+
         } catch (error) {
             this.showErrorMessage(`TIN validation failed: ${error.message}`);
         } finally {
@@ -2278,33 +2278,33 @@ class InvoiceTableManager {
             validateButton.innerHTML = originalContent;
         }
     }
-    
+
     // Check if this TIN+ID combination was recently validated (anti-spam)
     checkRecentValidation(tin, idType, idValue) {
         try {
             // Get stored recent validations
             const recentValidations = localStorage.getItem('recent_validations');
             if (!recentValidations) return false;
-            
+
             const validations = JSON.parse(recentValidations);
-            
+
             // Create a unique key for this validation
             const validationKey = `${tin}-${idType}-${idValue}`.toLowerCase();
-            
+
             // Check if this combination was validated recently (within the last 30 seconds)
             const now = Date.now();
-            const recentValidation = validations.find(v => 
-                v.key === validationKey && 
+            const recentValidation = validations.find(v =>
+                v.key === validationKey &&
                 (now - v.timestamp) < 30000 // 30 seconds cooldown
             );
-            
+
             return !!recentValidation;
         } catch (e) {
             console.error('Error checking recent validations:', e);
             return false;
         }
     }
-    
+
     // Add TIN to recent validations to prevent spam
     addToRecentValidations(tin, idType, idValue) {
         try {
@@ -2314,27 +2314,27 @@ class InvoiceTableManager {
             if (stored) {
                 validations = JSON.parse(stored);
             }
-            
+
             // Create a unique key for this validation
             const validationKey = `${tin}-${idType}-${idValue}`.toLowerCase();
-            
+
             // Add this validation
             validations.push({
                 key: validationKey,
                 timestamp: Date.now()
             });
-            
+
             // Keep only validations from the last 5 minutes
             const now = Date.now();
             validations = validations.filter(v => (now - v.timestamp) < 300000); // 5 minutes
-            
+
             // Store updated list
             localStorage.setItem('recent_validations', JSON.stringify(validations));
         } catch (e) {
             console.error('Error updating recent validations:', e);
         }
     }
-    
+
     // Show warning message
     showWarningMessage(message) {
         Swal.fire({
@@ -2345,21 +2345,21 @@ class InvoiceTableManager {
             timerProgressBar: true
         });
     }
-    
+
     // Show validation result in the modal
     showValidationResultInModal(result, tin, idType, idValue) {
         const resultSection = document.getElementById('validationResultSection');
         const resultContent = document.getElementById('validationResultContent');
         const emptyState = document.getElementById('emptyResultState');
-        
+
         if (!resultSection || !resultContent || !emptyState) {
             console.error('Validation result elements not found');
             return;
         }
-        
+
         // Create result content
         let resultHtml = '';
-        
+
         if (result.isValid) {
             resultHtml = `
                 <div class="text-center mb-4">
@@ -2371,7 +2371,7 @@ class InvoiceTableManager {
                     <h4 class="mt-3 text-success">Valid TIN</h4>
                     <p class="text-success mt-2 small">This TIN is validated and ready to use in your invoices</p>
                 </div>
-                
+
                 <div class="card mb-4 border-0 shadow-sm">
                     <div class="card-header d-flex align-items-center">
                         <i class="bi bi-info-circle text-primary me-2"></i>
@@ -2414,7 +2414,7 @@ class InvoiceTableManager {
                         ` : ''}
                     </ul>
                 </div>
-                
+
             `;
         } else {
             resultHtml = `
@@ -2427,7 +2427,7 @@ class InvoiceTableManager {
                     <h4 class="mt-3 text-danger">Invalid TIN</h4>
                     <p class="text-muted">${result.message || 'The TIN and ID combination is invalid.'}</p>
                 </div>
-                
+
                 <div class="card mb-4 border-0 shadow-sm">
                     <div class="card-header d-flex align-items-center">
                         <i class="bi bi-info-circle text-primary me-2"></i>
@@ -2454,7 +2454,7 @@ class InvoiceTableManager {
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="alert alert-danger border-0 shadow-sm mb-0">
                     <div class="d-flex">
                         <div class="flex-shrink-0">
@@ -2468,24 +2468,24 @@ class InvoiceTableManager {
                 </div>
             `;
         }
-        
+
         // Set content and show result section
         resultContent.innerHTML = resultHtml;
-        
+
         // Hide empty state, show result content
         emptyState.classList.add('d-none');
         resultContent.classList.remove('d-none');
     }
-    
+
     // Call the validate API
     async callValidateAPI(tin, idType, idValue) {
         try {
             // Generate request ID for tracking
             const requestId = Math.random().toString(36).substring(2, 15);
-            
+
             // Get current date in ISO format for X-Date header
             const currentDate = new Date().toISOString();
-            
+
             // Build standard LHDN headers according to SDK specification
             const headers = {
                 'Accept': 'application/json',
@@ -2496,14 +2496,14 @@ class InvoiceTableManager {
                 'X-User-Agent': navigator.userAgent || '',
                 'X-Channel': 'Web'
             };
-            
+
             // Call the backend API endpoint - Update to the correct route path
             const response = await fetch(`/api/lhdn/taxpayer/validate/${tin}?idType=${idType}&idValue=${idValue}`, {
                 method: 'GET',
                 headers: headers,
                 credentials: 'same-origin' // Include cookies for session authentication
             });
-            
+
             // Check if response is JSON
             const contentType = response.headers.get('content-type');
             if (!contentType || !contentType.includes('application/json')) {
@@ -2516,9 +2516,9 @@ class InvoiceTableManager {
                     throw new Error('Unexpected server response. Please try again later.');
                 }
             }
-            
+
             const data = await response.json();
-            
+
             // Handle different response status codes
             if (!response.ok) {
                 if (response.status === 404) {
@@ -2540,7 +2540,7 @@ class InvoiceTableManager {
                     throw new Error(data.message || 'TIN validation failed');
                 }
             }
-            
+
             // Handle successful response
             if (data.success && data.result) {
                 return {
@@ -2561,17 +2561,17 @@ class InvoiceTableManager {
             };
         }
     }
-    
+
     // Show validation result in modal
     showValidationResultModal(result, tin, idType, idValue) {
         const modal = document.getElementById('validationResultsModal');
         const modalBody = document.getElementById('validationResults');
-        
+
         if (!modal || !modalBody) {
             console.error('Validation result modal elements not found');
             return;
         }
-        
+
         // Create result content
         let resultHtml = '';
         if (result.isValid) {
@@ -2610,7 +2610,7 @@ class InvoiceTableManager {
                 </div>
             `;
         }
-        
+
         // Add summary stats
         resultHtml += `
             <div class="summary-stats mt-3">
@@ -2623,25 +2623,25 @@ class InvoiceTableManager {
                 </div>
             </div>
         `;
-        
+
         // Set modal content
         modalBody.innerHTML = resultHtml;
-        
+
         // Show modal
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
     }
-    
+
     // Initialize validation history from localStorage
     initValidationHistory() {
         const historyContainer = document.getElementById('validationHistory');
         const searchInput = document.getElementById('historySearchInput');
-        
+
         if (!historyContainer) return;
-        
+
         // Initialize session counter for validations
         this.initValidationSessionCounter();
-        
+
         const history = this.getValidationHistory();
         if (history.length === 0) {
             historyContainer.innerHTML = `
@@ -2652,10 +2652,10 @@ class InvoiceTableManager {
             `;
             return;
         }
-        
+
         // Render history items
         this.renderValidationHistory(history);
-        
+
         // Add search functionality
         if (searchInput) {
             searchInput.addEventListener('input', () => {
@@ -2665,15 +2665,15 @@ class InvoiceTableManager {
                     this.renderValidationHistory(history);
                 } else {
                     // Filter history based on search term
-                    const filteredHistory = history.filter(item => 
-                        item.tin.toLowerCase().includes(searchTerm) || 
+                    const filteredHistory = history.filter(item =>
+                        item.tin.toLowerCase().includes(searchTerm) ||
                         item.idValue.toLowerCase().includes(searchTerm) ||
                         item.idType.toLowerCase().includes(searchTerm)
                     );
                     this.renderValidationHistory(filteredHistory, searchTerm);
                 }
             });
-            
+
             // Clear search when modal is hidden
             const modal = document.getElementById('tinValidationModal');
             if (modal) {
@@ -2683,46 +2683,46 @@ class InvoiceTableManager {
             }
         }
     }
-    
+
     // Render validation history items
     renderValidationHistory(history, searchTerm = '') {
         const historyContainer = document.getElementById('validationHistory');
         if (!historyContainer) return;
-        
+
         historyContainer.innerHTML = '';
-        
+
         if (history.length === 0) {
             historyContainer.innerHTML = `
                 <div class="text-center text-muted py-2">
-                    ${searchTerm ? 
+                    ${searchTerm ?
                     `<i class="bi bi-search mb-1 d-block" style="font-size: 1.2rem;"></i>
-                    <small>No matching results found</small>` : 
+                    <small>No matching results found</small>` :
                     `<i class="bi bi-shield-check mb-1 d-block" style="font-size: 1.2rem;"></i>
                     <small>No validation history yet</small>`}
                 </div>
             `;
             return;
         }
-        
+
         // Show the items (limit to most recent 10)
         history.slice(0, 10).forEach(item => {
             // Check if this item is on cooldown
             const onCooldown = this.isOnCooldown(item.tin, item.idType, item.idValue);
-            
+
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item' + (onCooldown ? ' on-cooldown' : '');
             historyItem.setAttribute('data-tin', item.tin);
             historyItem.setAttribute('data-id-type', item.idType);
             historyItem.setAttribute('data-id-value', item.idValue);
             historyItem.setAttribute('data-valid', item.isValid);
-            
+
             // Create a tooltip with time information
             const timestamp = new Date(item.timestamp);
             const timeStr = timestamp.toLocaleTimeString();
             const dateStr = timestamp.toLocaleDateString();
-            
+
             historyItem.setAttribute('title', `Validated on ${dateStr} at ${timeStr}`);
-            
+
             historyItem.innerHTML = `
                 <div class="tin-info">
                     <div class="tin-number">${item.tin}</div>
@@ -2735,7 +2735,7 @@ class InvoiceTableManager {
                     ${item.isValid ? 'Valid' : 'Invalid'}
                 </div>
             `;
-            
+
             // Add click functionality to reuse this validation
             if (!onCooldown) {
                 historyItem.style.cursor = 'pointer';
@@ -2743,10 +2743,10 @@ class InvoiceTableManager {
                     this.fillValidationForm(item.tin, item.idType, item.idValue);
                 });
             }
-            
+
             historyContainer.appendChild(historyItem);
         });
-        
+
         // Add CSS for cooldown items if not already added
         if (!document.getElementById('cooldown-styles')) {
             const cooldownStyles = document.createElement('style');
@@ -2763,19 +2763,19 @@ class InvoiceTableManager {
             document.head.appendChild(cooldownStyles);
         }
     }
-    
+
     // Check if a validation is on cooldown
     isOnCooldown(tin, idType, idValue) {
         try {
             const recentValidations = localStorage.getItem('recent_validations');
             if (!recentValidations) return false;
-            
+
             const validations = JSON.parse(recentValidations);
             const validationKey = `${tin}-${idType}-${idValue}`.toLowerCase();
-            
+
             const now = Date.now();
-            return validations.some(v => 
-                v.key === validationKey && 
+            return validations.some(v =>
+                v.key === validationKey &&
                 (now - v.timestamp) < 30000 // 30 seconds cooldown
             );
         } catch (e) {
@@ -2783,18 +2783,18 @@ class InvoiceTableManager {
             return false;
         }
     }
-    
+
     // Fill the validation form with data from history
     fillValidationForm(tin, idType, idValue) {
         const tinInput = document.getElementById('tinNumber');
         const idTypeInput = document.getElementById('idType');
         const idValueInput = document.getElementById('idValue');
-        
+
         if (tinInput && idTypeInput && idValueInput) {
             tinInput.value = tin;
             idTypeInput.value = idType;
             idValueInput.value = idValue;
-            
+
             // Show toast notification
             const toastEl = document.getElementById('validationToast');
             if (toastEl) {
@@ -2817,7 +2817,7 @@ class InvoiceTableManager {
                         </div>
                     `;
                 }
-                
+
                 // Initialize and show the toast
                 const toast = new bootstrap.Toast(toastEl, {
                     animation: true,
@@ -2826,18 +2826,18 @@ class InvoiceTableManager {
                 });
                 toast.show();
             }
-            
+
             // Focus on the validate button
             const validateButton = document.getElementById('validateSingleTin');
             if (validateButton) {
                 validateButton.focus();
-                
+
                 // Scroll to the form
                 validateButton.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         }
     }
-    
+
     // Get validation history from localStorage
     getValidationHistory() {
         try {
@@ -2848,12 +2848,12 @@ class InvoiceTableManager {
             return [];
         }
     }
-    
+
     // Add validation result to history
     addToValidationHistory(tin, idType, idValue, isValid) {
         try {
             const history = this.getValidationHistory();
-            
+
             // Add new entry at the beginning
             history.unshift({
                 tin,
@@ -2862,16 +2862,16 @@ class InvoiceTableManager {
                 isValid,
                 timestamp: new Date().toISOString()
             });
-            
+
             // Keep only the most recent 10 entries
             const trimmedHistory = history.slice(0, 10);
-            
+
             // Save to localStorage
             localStorage.setItem('tin_validation_history', JSON.stringify(trimmedHistory));
-            
+
             // Update UI - render the updated history
             this.renderValidationHistory(trimmedHistory);
-            
+
             // If search input has a value, clear it to show the updated list
             const searchInput = document.getElementById('historySearchInput');
             if (searchInput && searchInput.value) {
@@ -2881,19 +2881,19 @@ class InvoiceTableManager {
             console.error('Error saving validation history:', e);
         }
     }
-    
+
     // Clear validation history
     clearValidationHistory() {
         try {
             // Clear localStorage
             localStorage.removeItem('tin_validation_history');
-            
+
             // Clear search input if it exists
             const searchInput = document.getElementById('historySearchInput');
             if (searchInput) {
                 searchInput.value = '';
             }
-            
+
             // Show empty state
             const historyContainer = document.getElementById('validationHistory');
             if (historyContainer) {
@@ -2939,23 +2939,23 @@ class InvoiceTableManager {
             this.table?.ajax.reload(null, false);
         }
     }
-    
+
     /**
      * Update the table data after submission without making AJAX calls
      * @param {Array} results - Array of submission results from the API
      */
     updateTableAfterSubmission(results) {
         if (!this.table) return;
-        
+
         // Get current table data
         const currentData = this.table.data().toArray();
-        
+
         // Create a map of filenames to results for quick lookup
         const resultsMap = new Map();
         results.forEach(result => {
             resultsMap.set(result.fileName, result);
         });
-        
+
         // Update data in-place
         const updatedData = currentData.map(row => {
             const result = resultsMap.get(row.fileName);
@@ -2969,15 +2969,15 @@ class InvoiceTableManager {
             }
             return row;
         });
-        
+
         // Update the cache with the new data
         dataCache.updateCache(updatedData);
-        
+
         // Update table without AJAX
         this.table.clear();
         this.table.rows.add(updatedData);
         this.table.draw(false); // false to keep current paging
-        
+
         // Update card totals
         this.updateCardTotals();
     }
@@ -3121,13 +3121,13 @@ class InvoiceTableManager {
   <div class="empty-state">
   <div class="empty-state-content">
     <div class="icon-wrapper">
-      <div class="ring ring-1"></div>
-      <div class="ring ring-2"></div>
+      <div class="ring"></div>
+      <div class="ring-2 "></div>
       <div class="icon bounce">
         <i class="fas fa-file-excel"></i>
       </div>
     </div>
-    
+
     <div class="text-content">
       <h3 class="title">No Documents Available</h3>
       <p class="description">Upload an Excel file to start processing your invoices</p>
@@ -3338,7 +3338,7 @@ class InvoiceTableManager {
 
                     <div class="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
                         <h3 class="font-medium text-gray-700 mb-2">Still having issues?</h3>
-                        <p class="text-gray-600">Contact your system administrator or reach out to support at 
+                        <p class="text-gray-600">Contact your system administrator or reach out to support at
                             <a href="mailto:ask@pixelcareconsulting.com" class="text-blue-600 hover:text-blue-800">ask@pixelcareconsulting.com</a>
                         </p>
                     </div>
@@ -3381,7 +3381,7 @@ class InvoiceTableManager {
             sessionStorage.setItem('validation_session_count', sessionCount);
         }
     }
-    
+
 }
 
 async function validateExcelFile(fileName, type, company, date) {
@@ -3685,7 +3685,7 @@ async function validateExcelFile(fileName, type, company, date) {
                                 propertyPath: `Invoice.TaxTotal.TaxSubtotal[${index}].TaxableAmount`
                             });
                         }
-                        
+
                     });
                 }
             }
@@ -3729,25 +3729,25 @@ async function showVersionDialog() {
                         --text-muted: hsl(215 16% 47%);
                         font-family: system-ui, -apple-system, sans-serif;
                     }
-                    
+
                     .dialog-heading {
                         text-align: center;
                         margin-bottom: 1.5rem;
                     }
-                    
+
                     .dialog-title {
                         font-size: 1.125rem;
                         font-weight: 600;
                         color: var(--text-main);
                         margin-bottom: 0.25rem;
                     }
-                    
+
                     .dialog-subtitle {
                         font-size: 0.875rem;
                         color: var(--text-muted);
                         line-height: 1.4;
                     }
-                    
+
                     .version-card {
                         padding: 1rem;
                         border-radius: 8px;
@@ -3758,29 +3758,29 @@ async function showVersionDialog() {
                         position: relative;
                         background: white;
                     }
-                    
+
                     .version-card:hover:not(.disabled) {
                         transform: translateY(-2px);
                         box-shadow: 0 3px 6px rgba(0,0,0,0.05);
                     }
-                    
+
                     .version-card.selected {
                         border-color: var(--primary);
                         background: var(--primary-light);
                     }
-                    
+
                     .version-card.disabled {
                         background: hsl(220 33% 98%);
                         cursor: not-allowed;
                     }
-                    
+
                     .version-header {
                         display: flex;
                         align-items: center;
                         gap: 0.75rem;
                         margin-bottom: 0.5rem;
                     }
-                    
+
                     .version-badge {
                         width: 24px;
                         height: 24px;
@@ -3793,20 +3793,20 @@ async function showVersionDialog() {
                         font-size: 0.75rem;
                         font-weight: 600;
                     }
-                    
+
                     .version-title {
                         font-size: 0.9375rem;
                         font-weight: 500;
                         color: var(--text-main);
                     }
-                    
+
                     .version-desc {
                         font-size: 0.8125rem;
                         color: var(--text-muted);
                         line-height: 1.4;
                         margin-left: 0.5rem;
                     }
-                    
+
                     .status-indicator {
                         position: absolute;
                         top: 12px;
@@ -3815,12 +3815,12 @@ async function showVersionDialog() {
                         padding: 2px 8px;
                         border-radius: 4px;
                     }
-                    
+
                     .status-available {
                         background: hsl(142 71% 95%);
                         color: hsl(142 76% 24%);
                     }
-                    
+
                     .status-coming {
                         background: hsl(33 100% 96%);
                         color: hsl(27 90% 45%);
@@ -3849,7 +3849,7 @@ async function showVersionDialog() {
                         <span class="version-title">Secure Version</span>
                     </div>
                      <p class="version-desc">
-                        Enhanced encrypted format with digital signature capabilities, 
+                        Enhanced encrypted format with digital signature capabilities,
                         tailored for LHDN's advanced security requirements.
                     </p>
                     <span class="status-indicator status-coming">Coming Soon</span>
@@ -3915,25 +3915,25 @@ function createSemiMinimalDialog(options) {
                     --info-light: hsl(200 76% 97%);
                     font-family: system-ui, -apple-system, sans-serif;
                 }
-                
+
                 .dialog-heading {
                     text-align: center;
                     margin-bottom: 1.5rem;
                 }
-                
+
                 .dialog-title {
                     font-size: 1.125rem;
                     font-weight: 600;
                     color: var(--text-main);
                     margin-bottom: 0.25rem;
                 }
-                
+
                 .dialog-subtitle {
                     font-size: 0.875rem;
                     color: var(--text-muted);
                     line-height: 1.4;
                 }
-                
+
                 .content-card {
                     padding: 1rem;
                     border-radius: 8px;
@@ -3941,22 +3941,22 @@ function createSemiMinimalDialog(options) {
                     margin-bottom: 0.75rem;
                     background: white;
                 }
-                
+
                 .content-card:hover:not(.disabled) {
                     transform: translateY(-2px);
                     box-shadow: 0 3px 6px rgba(0,0,0,0.05);
                 }
-                
+
                 .content-card.selected {
                     border-color: var(--primary);
                     background: var(--primary-light);
                 }
-                
+
                 .content-card.disabled {
                     background: hsl(220 33% 98%);
                     cursor: not-allowed;
                 }
-                
+
   .content-header {
     display: flex !important;
     justify-content: center !important;
@@ -3973,7 +3973,7 @@ function createSemiMinimalDialog(options) {
     text-align: center !important;
     width: 100% !important;
 }
-                
+
                 .content-badge {
                     width: 24px;
                     height: 24px;
@@ -3986,35 +3986,35 @@ function createSemiMinimalDialog(options) {
                     font-size: 0.75rem;
                     font-weight: 600;
                 }
-                
+
                 .content-badge.error {
                     background: var(--error-light);
                     color: var(--error);
                 }
-                
+
                 .content-badge.success {
                     background: var(--success-light);
                     color: var(--success);
                 }
-                
+
                 .content-badge.warning {
                     background: var(--warning-light);
                     color: var(--warning);
                 }
-                
+
                 .content-badge.info {
                     background: var(--info-light);
                     color: var(--info);
                 }
-                
-                
+
+
                 .content-desc {
                     font-size: 0.8125rem;
                     color: var(--text-muted);
                     line-height: 1.4;
                     margin-left: 0.5rem;
                 }
-                
+
                 .status-indicator {
                     position: absolute;
                     top: 12px;
@@ -4023,26 +4023,26 @@ function createSemiMinimalDialog(options) {
                     padding: 2px 8px;
                     border-radius: 4px;
                 }
-                
+
                 .field-row {
                     display: flex;
                     align-items: center;
                     gap: 0.5rem;
                     margin-bottom: 0.5rem;
                 }
-                
+
                 .field-label {
                     font-size: 0.8125rem;
                     color: var(--text-muted);
                     min-width: 100px;
                 }
-                
+
                 .field-value {
                     font-size: 0.875rem;
                     color: var(--text-main);
                     font-weight: 500;
                 }
-                
+
                   .loading-steps {
                     display: flex;
                     flex-direction: column;
@@ -4250,6 +4250,134 @@ async function performStep1(fileName, type, company, date) {
 
 
 
+// Function to show notification about logging
+function showLoggingNotification() {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = 'logging-notification';
+    notification.innerHTML = `
+        <div class="logging-notification-content">
+            <div class="logging-notification-icon">
+                <i class="fas fa-clipboard-check"></i>
+            </div>
+            <div class="logging-notification-message">
+                <strong>Submission Logged</strong>
+                <p>Your submission has been logged for tracking and audit purposes.</p>
+            </div>
+            <button class="logging-notification-close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+
+    // Add styles
+    const style = document.createElement('style');
+    style.textContent = `
+        .logging-notification {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 16px;
+            max-width: 400px;
+            width: 100%;
+            animation: slideDown 0.3s ease-out forwards;
+        }
+
+        .logging-notification-content {
+            display: flex;
+            align-items: center;
+        }
+
+        .logging-notification-icon {
+            background-color: #4caf50;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 16px;
+            flex-shrink: 0;
+        }
+
+        .logging-notification-message {
+            flex-grow: 1;
+        }
+
+        .logging-notification-message strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #333;
+        }
+
+        .logging-notification-message p {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .logging-notification-close {
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            padding: 4px;
+            margin-left: 8px;
+        }
+
+        .logging-notification-close:hover {
+            color: #333;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -20px);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, 0);
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
+    `;
+
+    // Add to document
+    document.head.appendChild(style);
+    document.body.appendChild(notification);
+
+    // Add close button functionality
+    const closeButton = notification.querySelector('.logging-notification-close');
+    closeButton.addEventListener('click', () => {
+        notification.style.animation = 'fadeOut 0.3s forwards';
+        setTimeout(() => {
+            notification.remove();
+        }, 300);
+    });
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        notification.style.animation = 'fadeOut 0.3s forwards';
+        setTimeout(() => {
+            notification.remove();
+        }, 300);
+    }, 5000);
+}
+
 async function showSuccessMessage(fileName, version) {
     const content = `
         <div class="content-card">
@@ -4281,6 +4409,17 @@ async function showSuccessMessage(fileName, version) {
             </div>
             <div class="content-desc">
                 You can track the status of your submission in the table below. The document will be processed by LHDN within 72 hours.
+            </div>
+        </div>
+        <div class="content-card">
+            <div class="content-header">
+                <span class="content-badge info" style="background-color: #4caf50;">
+                    <i class="fas fa-clipboard-check"></i>
+                </span>
+                <span class="content-title">Logging</span>
+            </div>
+            <div class="content-desc">
+                Your submission has been logged for tracking and audit purposes. You can view the logs in the system logs section.
             </div>
         </div>
     `;
@@ -4358,7 +4497,7 @@ function getStepHtml(stepNumber, title) {
                 animation: spin 0.8s linear infinite;
                 display: block;
             }
-            
+
             @keyframes spin {
                 from { transform: rotate(0deg); }
                 to { transform: rotate(360deg); }
@@ -4445,27 +4584,27 @@ async function updateSingleDocumentStatus(fileName) {
     try {
         console.log('🔄 Updating status for document:', fileName);
         const tableManager = InvoiceTableManager.getInstance();
-        
+
         // Fetch the status of this specific document
         const response = await fetch(`/api/outbound-files/status/${fileName}`);
         if (!response.ok) {
             console.error('❌ Error fetching document status');
             return;
         }
-        
+
         const result = await response.json();
         if (!result.success) {
             console.error('❌ Error in status response:', result.error);
             return;
         }
-        
+
         if (result.exists) {
             // Update the specific row in the table
             const documentData = result.document;
-            
+
             // Get current table data
             const currentData = tableManager.table.data().toArray();
-            
+
             // Find and update the row for this document
             const updatedData = currentData.map(row => {
                 if (row.fileName === fileName) {
@@ -4481,20 +4620,20 @@ async function updateSingleDocumentStatus(fileName) {
                 }
                 return row;
             });
-            
+
             // Update the cache with the new data
             if (window.dataCache && typeof window.dataCache.updateCache === 'function') {
                 window.dataCache.updateCache(updatedData);
             }
-            
+
             // Update table without AJAX
             tableManager.table.clear();
             tableManager.table.rows.add(updatedData);
             tableManager.table.draw(false); // false to keep current paging
-            
+
             // Update card totals
             tableManager.updateCardTotals();
-            
+
             console.log('✅ Document status updated successfully');
         } else {
             console.warn('⚠️ Document not found in database, will perform full refresh');
@@ -4531,26 +4670,26 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     text-align: center;
                     flex-direction: column;
                 }
-                
+
                 .step-card.processing {
                     transform: translateY(0);
                     opacity: 1;
                     border-color: var(--primary);
                     background: var(--primary-light);
                 }
-                
+
                 .step-card.completed {
                     opacity: 1;
                     border-color: var(--success);
                     background: var(--success-light);
                 }
-                
+
                 .step-card.error {
                     opacity: 1;
                     border-color: var(--error);
                     background: var(--error-light);
                 }
-                
+
                 .step-badge {
                     width: 32px;
                     height: 32px;
@@ -4560,22 +4699,22 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     justify-content: center;
                     margin-bottom: 0.5rem;
                 }
-                
+
                 .step-card.processing .step-badge {
                     background: var(--primary-light);
                     color: var(--primary);
                 }
-                
+
                 .step-card.completed .step-badge {
                     background: var(--success-light);
                     color: var(--success);
                 }
-                
+
                 .step-card.error .step-badge {
                     background: var(--error-light);
                     color: var(--error);
                 }
-                
+
                 .step-badge.spinning::after {
                     content: '';
                     width: 20px;
@@ -4586,25 +4725,25 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     animation: spin 0.8s linear infinite;
                     display: block;
                 }
-                
+
                 @keyframes spin {
                     from { transform: rotate(0deg); }
                     to { transform: rotate(360deg); }
                 }
-                
+
                 .step-content {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                     gap: 0.25rem;
                 }
-                
+
                 .step-title {
                     font-weight: 500;
                     font-size: 1rem;
                     color: var(--text-main);
                 }
-                
+
                 .step-status {
                     font-size: 0.875rem;
                     color: var(--text-muted);
@@ -4786,6 +4925,10 @@ async function performStep2(data, version) {
 
         console.log('✅ [Step 2] Submission successful:', result);
         await updateStepStatus(2, 'completed', 'Submission completed');
+
+        // Show notification about logging
+        showLoggingNotification();
+
         return result;
 
     } catch (error) {
@@ -4875,7 +5018,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                     <i class="fas fa-exclamation-circle" style="color: #f8bb86; margin-right: 5px;"></i>
                     Cancellation Reason <span style="color: #dc3545;">*</span>
                 </label>
-                <textarea 
+                <textarea
                     id="cancellationReason"
                     class="swal2-textarea"
                     style="width: 80%; height: 30%; min-height: 70px; resize: none; border: 1px solid #d9d9d9; border-radius: 4px; padding: 8px; margin-top: 5px; transition: all 0.3s ease; font-size: 1rem;"
@@ -4968,7 +5111,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                             Invoice cancelled successfully
                         </div>
                     </div>
-        
+
                     <div style="text-align: left; padding: 8px; border-radius: 8px; background: rgba(40, 167, 69, 0.05);">
                         <div style="color: #595959; font-weight: 500; margin-bottom: 8px;">Document Details:</div>
                         <div style="margin-bottom: 4px;">
@@ -4985,19 +5128,19 @@ async function cancelDocument(uuid, fileName, submissionDate) {
                         </div>
                     </div>
                 </div>
-        
+
                 <style>
                     @keyframes pulseSuccess {
                         0% { transform: scale(1); }
                         50% { transform: scale(1.15); }
                         100% { transform: scale(1); }
                     }
-        
+
                     @keyframes slideIn {
                         from { transform: translateY(-10px); opacity: 0; }
                         to { transform: translateY(0); opacity: 1; }
                     }
-        
+
                     .success-icon {
                         animation: pulseSuccess 1.5s infinite;
                     }
@@ -5009,7 +5152,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
             }
         });
         console.log('Document cancelled successfully');
-        
+
         // Update just this document's status instead of refreshing the entire table
         try {
             console.log('Updating document status in table for:', fileName);
@@ -5047,7 +5190,7 @@ async function cancelDocument(uuid, fileName, submissionDate) {
 async function deleteDocument(fileName, type, company, date) {
     try {
         console.log('Deleting document:', fileName);
-        
+
         // First, confirm the deletion
         const result = await Swal.fire({
             title: 'Delete Document',
@@ -5086,7 +5229,7 @@ async function deleteDocument(fileName, type, company, date) {
         // Add a new function or modify existing to call with deleteByInvoice
         const url = `/api/outbound-files/${fileName}?type=${type}&company=${company}&date=${date}&deleteByInvoice=true`;
         console.log('Delete URL:', url);
-        
+
         const response = await fetch(url, {
             method: 'DELETE',
             headers: {
@@ -5100,15 +5243,15 @@ async function deleteDocument(fileName, type, company, date) {
         }
 
         const data = await response.json();
-        
+
         // Prepare success message based on the response
         let successMessage = `${fileName} has been deleted successfully`;
         let successDetails = 'The file has been permanently deleted from the system.';
-        
+
         if (data.deletedFiles && data.deletedFiles.length > 0) {
             successMessage = `Deleted ${data.deletedFiles.length} files successfully`;
             successDetails = `All files with the name "${fileName}" have been permanently deleted from the system.`;
-            
+
             if (data.failedFiles && data.failedFiles.length > 0) {
                 successDetails += `<br><br>Note: ${data.failedFiles.length} files could not be deleted.`;
             }
@@ -5147,7 +5290,7 @@ async function deleteDocument(fileName, type, company, date) {
             if (row.length) {
                 row.remove().draw(false);
                 console.log('Row removed from table:', fileName);
-                
+
                 // Update card totals after removing the row
                 tableManager.updateCardTotals();
             } else {
@@ -5483,7 +5626,7 @@ async function showLHDNErrorModal(error) {
 
     // Check if this is a TIN matching error and provide specific guidance
     const isTINMatchingError = mainError.message.includes("authenticated TIN and documents TIN is not matching");
-    
+
     // Check if this is a duplicate submission error
     const isDuplicateSubmission = mainError.code === 'DUPLICATE_SUBMISSION' || mainError.code === 'DS302';
 
@@ -5536,7 +5679,7 @@ async function showLHDNErrorModal(error) {
                         </div>
                     </div>
                 </div>
-    
+
                 <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                     <div style="margin-bottom: 8px; display: flex; align-items: center;">
                         <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Code:</span>
@@ -5549,7 +5692,7 @@ async function showLHDNErrorModal(error) {
                         <span style="color: #495057; background: rgba(0,0,0,0.03); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.target}</span>
                     </div>
                     ` : ''}
-                    
+
                     ${validationDetails.length > 0 ? `
                         <div>
                             <div style="color: #495057; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center;">
@@ -5565,13 +5708,13 @@ async function showLHDNErrorModal(error) {
                                 ${validationDetails.map(detail => `
                                     <div style="background: #fff; padding: 8px; border-radius: 0; margin-bottom: 1px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 12px;">
                                         <div style="margin-bottom: 4px; display: flex;">
-                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Path:</strong> 
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Path:</strong>
                                             <span style="color: #0d6efd; font-family: monospace; background: rgba(13, 110, 253, 0.05); padding: 0 3px; border-radius: 2px; font-size: 11px;">
                                                 ${detail.propertyPath || detail.target || 'Unknown'}
                                             </span>
                                         </div>
                                         <div style="display: flex;">
-                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Error:</strong> 
+                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Error:</strong>
                                             <span style="font-size: 11px;">${formatValidationMessage(detail.message)}</span>
                                         </div>
                                         ${detail.code ? `
@@ -5586,10 +5729,10 @@ async function showLHDNErrorModal(error) {
                         </div>
                     ` : ''}
                 </div>
-                
+
                 ${isTINMatchingError ? tinErrorGuidance : ''}
             </div>
-            
+
             <div class="next-steps-card" style="margin-top: 25px; padding: 15px; border-radius: 8px; background: rgba(255, 193, 7, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
                 <div style="display: flex; align-items: center; margin-bottom: 12px;">
                     <i class="fas fa-lightbulb" style="color: #ffc107; margin-right: 8px; font-size: 16px;"></i>
@@ -5599,7 +5742,7 @@ async function showLHDNErrorModal(error) {
                     ${getNextSteps(mainError.code)}
                 </ul>
             </div>
-            
+
             <style>
                 @keyframes pulseError {
                     0% { transform: scale(1); }
@@ -5618,7 +5761,7 @@ async function showLHDNErrorModal(error) {
             confirmButton: 'btn btn-primary'
         }
     });
-    
+
     // Refresh the table if this is a duplicate submission error
     // This ensures the table is updated even when a document is already submitted
     if (isDuplicateSubmission) {
@@ -5629,7 +5772,7 @@ async function showLHDNErrorModal(error) {
             // If target contains the document number, use that to help identify the file
             fileName = mainError.target;
         }
-        
+
         // Use the more efficient single document update instead of full refresh
         if (fileName) {
             await updateSingleDocumentStatus(fileName);
@@ -5646,7 +5789,7 @@ function formatValidationMessage(message) {
 
     // Enhance common LHDN error messages with more helpful information
     if (message.includes('authenticated TIN and documents TIN is not matching')) {
-        return `The TIN (Tax Identification Number) in your document doesn't match with the authenticated TIN. 
+        return `The TIN (Tax Identification Number) in your document doesn't match with the authenticated TIN.
                 Please ensure the supplier's TIN matches exactly with the one registered with LHDN.`;
     }
 
@@ -5839,11 +5982,11 @@ async function handleBulkSubmission(selectedDocs) {
     const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
     const progressDiv = document.getElementById('submissionProgress');
     const tableManager = InvoiceTableManager.getInstance();
-    
+
     try {
         // Show loading backdrop with specific message
         tableManager.showLoadingBackdrop('Submitting Documents to LHDN');
-        
+
         // Initialize progress UI
         if (!progressDiv) {
             throw new Error('Progress container not found');
@@ -5851,11 +5994,11 @@ async function handleBulkSubmission(selectedDocs) {
 
         progressDiv.innerHTML = `
             <div class="progress mb-3">
-                <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                     role="progressbar" 
-                     style="width: 0%" 
-                     aria-valuenow="0" 
-                     aria-valuemin="0" 
+                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar"
+                     style="width: 0%"
+                     aria-valuenow="0"
+                     aria-valuemin="0"
                      aria-valuemax="100">
                 </div>
             </div>
@@ -5877,7 +6020,7 @@ async function handleBulkSubmission(selectedDocs) {
         // Submit documents
         const response = await fetch('/api/outbound-files/bulk-submit', {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest' // Add AJAX header to prevent full page reload
             },
@@ -5912,10 +6055,10 @@ async function handleBulkSubmission(selectedDocs) {
 
         // Hide loading backdrop before updating the table
         tableManager.hideLoadingBackdrop();
-        
+
         // Update table data in-place without AJAX refresh
         tableManager.updateTableAfterSubmission(result.results);
-        
+
         const successCount = result.results.filter(r => r.success).length;
         const failureCount = result.results.filter(r => !r.success).length;
 
@@ -5941,10 +6084,10 @@ async function handleBulkSubmission(selectedDocs) {
 
     } catch (error) {
         console.error('Bulk submission error:', error);
-        
+
         // Hide loading backdrop
         tableManager.hideLoadingBackdrop();
-        
+
         if (progressDiv) {
             progressDiv.innerHTML = `
                 <div class="alert alert-danger">
@@ -5953,7 +6096,7 @@ async function handleBulkSubmission(selectedDocs) {
                 </div>
             `;
         }
-        
+
         await Swal.fire({
             icon: 'error',
             title: 'Submission Failed',
@@ -5970,10 +6113,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (submitConsolidatedBtn) {
         submitConsolidatedBtn.addEventListener('click', async function() {
             const tableManager = InvoiceTableManager.getInstance();
-            
+
             // Show loading backdrop during validation
             tableManager.showLoadingBackdrop();
-            
+
             const selectedRows = Array.from(document.querySelectorAll('input.outbound-checkbox:checked'))
                 .map(checkbox => {
                     const row = checkbox.closest('tr');

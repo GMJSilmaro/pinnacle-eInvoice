@@ -67,6 +67,15 @@ router.get('/company-profile', auth.isAdmin, (req, res) => {
   });
 });
 
+// System Logs page
+router.get('/logs', auth.middleware, (req, res) => {
+  res.render('dashboard/logs.html', {
+    title: 'System Logs',
+    user: req.session.user || null,
+    layout: 'layout'
+  });
+});
+
 // TIN Validator - Simple standalone page for validating TINs
 router.get('/tin-validator', auth.middleware, (req, res) => {
   res.render('tin-validator.html', {
@@ -76,4 +85,4 @@ router.get('/tin-validator', auth.middleware, (req, res) => {
   });
 });
 
-module.exports = router; 
+module.exports = router;

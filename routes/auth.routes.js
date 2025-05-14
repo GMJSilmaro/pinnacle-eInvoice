@@ -8,7 +8,7 @@ const { checkActiveSession, updateActiveSession, removeActiveSession, checkLogin
 const passport = require('passport');
 const { LoggingService } = require('../services/logging.service');
 const { getTokenAsTaxPayer } = require('../services/token.service');
-const { LOG_TYPES, ACTIONS, STATUS } = require('../services/logging.service');
+const { LOG_TYPES, ACTIONS, STATUS, MODULES } = require('../services/logging.service');
 const { updateUserActivity } = require('../middleware/auth.middleware');
 
 // Move constants to top
@@ -36,9 +36,9 @@ async function logAuthEvent(type, details, req) {
   if (!loggingConfig.auth[type]) return;
 
   const username = details.username || 'unknown';
-  const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
-                  req.headers['x-real-ip'] || 
-                  req.connection.remoteAddress || 
+  const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+                  req.headers['x-real-ip'] ||
+                  req.connection.remoteAddress ||
                   req.ip;
 
   const actionMap = {
@@ -83,7 +83,7 @@ router.get('/login', (req, res) => {
 
   // Check if there's an active session for this user from the URL parameter
   const hasExistingSession = req.query.sessionCheck === 'true';
-  
+
   res.render('auth/login', {
     title: 'Login',
     layout: 'auth/auth.layout',
@@ -93,27 +93,71 @@ router.get('/login', (req, res) => {
 
 // Login handler with Passport
 router.post('/login', async (req, res, next) => {
-  const { username } = req.body;
-  const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
-                  req.headers['x-real-ip'] || 
+  const { username, reconnect } = req.body;
+  const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+                  req.headers['x-real-ip'] ||
                   req.connection.remoteAddress;
   try {
+    // Check if there's an active session for this user
+    const hasActiveSession = checkActiveSession(username);
+
+    // Handle reconnection options
+    if (hasActiveSession) {
+      // If reconnect is 'force', we'll force logout the existing session
+      if (reconnect === 'force') {
+        // Force logout the existing session
+        removeActiveSession(username);
+
+        // Log the forced logout
+        await LoggingService.log({
+          description: `Forced logout of existing session for user: ${username}`,
+          username: username,
+          ipAddress: clientIP,
+          logType: LOG_TYPES.WARNING,
+          module: MODULES.AUTH,
+          action: ACTIONS.SESSION_REMOVED,
+          status: STATUS.SUCCESS,
+          details: {
+            reason: 'User requested new session',
+            forcedBy: 'User',
+            ipAddress: clientIP
+          }
+        });
+      }
+      // If reconnect is not 'true' and not 'force', we'll show the active session error
+      else if (reconnect !== 'true') {
+        // Check if this is an API request or form submission
+        const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
+        if (isApiRequest) {
+          return res.status(409).json({
+            success: false,
+            message: 'User already has an active session',
+            activeSession: true
+          });
+        } else {
+          // Form submission - redirect with error
+          return res.redirect('/auth/login?sessionCheck=true');
+        }
+      }
+      // If reconnect is 'true', we'll continue with the login process and update the existing session
+    }
+
     // Check login attempts
     const attemptCheck = checkLoginAttempts(username, clientIP);
     if (!attemptCheck.allowed) {
       // Check if this is an API request or form submission
       const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
       if (isApiRequest) {
-        return res.status(429).json({ 
-          success: false, 
-          message: attemptCheck.message 
+        return res.status(429).json({
+          success: false,
+          message: attemptCheck.message
         });
       } else {
         // Form submission - redirect with error
-        return res.redirect('/login?error=too-many-attempts');
+        return res.redirect('/auth/login?error=too-many-attempts');
       }
     }
-    
+
     // Use Passport authentication
     passport.authenticate('local', async (err, user, info) => {
       if (err) {
@@ -123,7 +167,7 @@ router.post('/login', async (req, res, next) => {
 
       if (!user) {
         await trackLoginAttempt(username, clientIP, false);
-        
+
         // Check if this is an API request or form submission
         const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
         if (isApiRequest) {
@@ -133,7 +177,7 @@ router.post('/login', async (req, res, next) => {
           });
         } else {
           // Form submission - redirect with error
-          return res.redirect('/login?error=invalid-credentials');
+          return res.redirect('/auth/login?error=invalid-credentials');
         }
       }
 
@@ -155,10 +199,7 @@ router.post('/login', async (req, res, next) => {
         }
 
         try {
-          // Get token from LHDN
-          const tokenData = await getTokenAsTaxPayer();
-          
-          // Set up session
+          // Set up session first to ensure user is logged in even if token acquisition fails
           req.session.user = {
             id: user.ID,
             username: user.Username,
@@ -167,42 +208,96 @@ router.post('/login', async (req, res, next) => {
             IDValue: user.IDValue,
             TIN: user.TIN,
             Email: user.Email,
+            fullName: user.FullName,
             lastLoginTime: new Date(),
             isActive: true
           };
 
-          // Store token separately in session
-          if (tokenData && tokenData.access_token) {
-            req.session.accessToken = tokenData.access_token;
-            req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
+          // Update active session tracking
+          updateActiveSession(user.Username, req);
+
+          // Try to get token from LHDN
+          let tokenData = null;
+          try {
+            tokenData = await getTokenAsTaxPayer();
+
+            // Store token separately in session
+            if (tokenData && tokenData.access_token) {
+              req.session.accessToken = tokenData.access_token;
+              req.session.tokenExpiryTime = Date.now() + (tokenData.expires_in * 1000);
+            }
+          } catch (tokenError) {
+            console.error('Token acquisition error:', tokenError);
+            // Log the token error but continue with login
+            await LoggingService.log({
+              description: `Token acquisition failed for user: ${user.Username}`,
+              username: user.Username,
+              userId: user.ID,
+              ipAddress: clientIP,
+              logType: LOG_TYPES.WARNING,
+              module: MODULES.AUTH,
+              action: ACTIONS.TOKEN_ACQUISITION,
+              status: STATUS.FAILED,
+              details: {
+                error: tokenError.message,
+                stack: tokenError.stack
+              }
+            });
           }
-          
+
+          // Log the login with reconnect info if applicable
+          await LoggingService.log({
+            description: reconnect === 'true' ?
+              `User reconnected to existing session: ${user.Username}` :
+              `User logged in: ${user.Username}`,
+            username: user.Username,
+            userId: user.ID,
+            ipAddress: clientIP,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.AUTH,
+            action: reconnect === 'true' ? ACTIONS.SESSION_EXTENDED : ACTIONS.LOGIN,
+            status: STATUS.SUCCESS,
+            details: {
+              reconnect: !!reconnect,
+              forceNewSession: reconnect === 'force',
+              userAgent: req.headers['user-agent'],
+              tokenAcquired: !!tokenData
+            }
+          });
+
           // Check if this is an API request or form submission
           const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
           if (isApiRequest) {
             return res.json({
               success: true,
               message: 'Login successful',
+              redirectUrl: '/dashboard',
               accessToken: tokenData?.access_token,
-              user: req.session.user
+              user: {
+                id: user.ID,
+                username: user.Username,
+                admin: user.Admin === 1,
+                fullName: user.FullName,
+                email: user.Email
+              }
             });
           } else {
             // Form submission - redirect to dashboard
             return res.redirect('/dashboard');
           }
         } catch (error) {
-          console.error('Token acquisition error:', error);
-          
+          console.error('Login session setup error:', error);
+
           // Check if this is an API request or form submission
           const isApiRequest = req.headers['accept'] && req.headers['accept'].includes('application/json');
           if (isApiRequest) {
             return res.status(500).json({
               success: false,
-              message: 'Login successful but failed to get access token'
+              message: 'Login failed due to session setup error'
             });
           } else {
-            // Form submission - redirect to dashboard anyway
-            return res.redirect('/dashboard');
+            // Form submission - redirect to login with error
+            return res.redirect('/login?error=session-error');
           }
         }
       });
@@ -210,6 +305,22 @@ router.post('/login', async (req, res, next) => {
 
   } catch (error) {
     console.error('Login error:', error);
+
+    // Log the error
+    await LoggingService.log({
+      description: `Login error for user: ${username}`,
+      username: username,
+      ipAddress: clientIP,
+      logType: LOG_TYPES.ERROR,
+      module: MODULES.AUTH,
+      action: ACTIONS.LOGIN,
+      status: STATUS.FAILED,
+      details: {
+        error: error.message,
+        stack: error.stack
+      }
+    });
+
     next(error);
   }
 });
@@ -299,10 +410,10 @@ router.get('/logout', async (req, res) => {
             if (username) {
                     // Update user's last activity time to null on logout
           await updateUserActivity(userId, false);
-          
+
           // Remove from active sessions
           removeActiveSession(username || req.session.user.username);
-          
+
           // Log the logout
           await LoggingService.log({
               description: 'User logged out',
@@ -313,21 +424,21 @@ router.get('/logout', async (req, res) => {
               action: ACTIONS.LOGOUT,
               status: STATUS.SUCCESS
           });
-                
+
                 await logAuthEvent('logouts', {
                     username,
                     userId,
                     description: `User ${username} signed out successfully`,
                     status: 'Success', // Changed from 'Unknown' to 'Success'
                     action: 'LOGOUT',
-                    sessionDuration: req.session.user?.lastLoginTime ? 
+                    sessionDuration: req.session.user?.lastLoginTime ?
                         moment().diff(moment(req.session.user.lastLoginTime), 'seconds') : null
                 }, req);
             }
 
             // Clear the session cookie first
             res.clearCookie('connect.sid');
-            
+
             // Then destroy the session
             req.session.destroy(err => {
                 if (err) {
@@ -368,4 +479,4 @@ router.use((req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

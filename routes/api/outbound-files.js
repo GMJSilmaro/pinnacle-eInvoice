@@ -18,6 +18,7 @@ const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../ser
 const { getActiveSAPConfig } = require('../../config/paths');
 const NodeCache = require('node-cache');
 const fileCache = new NodeCache({ stdTTL: 900 }); // 15 minutes cache instead of 1 minute
+const { OutboundLoggingService, LOG_TYPES, MODULES, ACTIONS, STATUSES } = require('../../services/outboundLogging.service');
 
 // Add os module to the beginning of the file
 const os = require('os');
@@ -51,7 +52,7 @@ function generateCacheKey(params = {}) {
 async function checkForNewOrUpdatedFiles(networkPath, lastCheckTime) {
     try {
         if (!lastCheckTime) return true;
-        
+
         const lastCheck = new Date(lastCheckTime);
         const checkResult = await checkForNewFiles(networkPath, lastCheck);
         return checkResult;
@@ -70,28 +71,25 @@ async function checkForNewOrUpdatedFiles(networkPath, lastCheckTime) {
 async function checkForStatusUpdates(timestamp) {
     try {
         if (!timestamp) return true;
-        
-        // Format the date properly for SQL Server
+
+        // Convert the date to a simple ISO string without timezone offset
         const date = new Date(timestamp);
         const formattedDate = date.toISOString().slice(0, 19).replace('T', ' ');
-        
-        const latestUpdate = await WP_OUTBOUND_STATUS.findOne({
-            attributes: ['updated_at'],
-            where: {
-                updated_at: {
-                    [Op.gt]: formattedDate
-                }
-            },
-            order: [['updated_at', 'DESC']],
-            raw: true
-        });
-        
+
+        // Use raw SQL query to avoid timezone issues
+        const [results] = await sequelize.query(`
+            SELECT TOP 1 updated_at
+            FROM WP_OUTBOUND_STATUS
+            WHERE updated_at > '${formattedDate}'
+            ORDER BY updated_at DESC
+        `);
+
         // Store global last update time if we found one
-        if (latestUpdate && latestUpdate.updated_at) {
-            lastStatusUpdateTime = latestUpdate.updated_at;
+        if (results && results.length > 0 && results[0].updated_at) {
+            lastStatusUpdateTime = results[0].updated_at;
         }
-        
-        return !!latestUpdate;
+
+        return results && results.length > 0;
     } catch (error) {
         console.error('Error checking for status updates:', error);
         return true; // Assume there are updates if there's an error
@@ -106,22 +104,22 @@ async function checkForStatusUpdates(timestamp) {
 async function getUpdatedStatuses(since) {
     try {
         if (!since) return [];
-        
-        const updatedStatuses = await WP_OUTBOUND_STATUS.findAll({
-            where: {
-                updated_at: {
-                    [Op.gt]: new Date(since)
-                }
-            },
-            attributes: [
-                'id', 'UUID', 'submissionUid', 'fileName', 'invoice_number', 
-                'status', 'date_submitted', 'date_cancelled', 'cancellation_reason',
-                'cancelled_by', 'updated_at'
-            ],
-            order: [['updated_at', 'DESC']],
-            raw: true
-        });
-        
+
+        // Convert the date to a simple ISO string without timezone offset
+        const date = new Date(since);
+        const formattedDate = date.toISOString().slice(0, 19).replace('T', ' ');
+
+        // Use raw SQL query to avoid timezone issues
+        const [updatedStatuses] = await sequelize.query(`
+            SELECT
+                id, UUID, submissionUid, fileName, invoice_number,
+                status, date_submitted, date_cancelled, cancellation_reason,
+                cancelled_by, updated_at
+            FROM WP_OUTBOUND_STATUS
+            WHERE updated_at > '${formattedDate}'
+            ORDER BY updated_at DESC
+        `);
+
         return updatedStatuses;
     } catch (error) {
         console.error('Error getting updated statuses:', error);
@@ -142,37 +140,13 @@ function invalidateFileCache(params = {}) {
         const cacheKey = generateCacheKey();
         fileCache.del(cacheKey);
     }
-    
+
     // Log cache invalidation
-    console.log('Cache invalidated:', params);
+   // ////console.log('Cache invalidated:', params);
 }
 
-/**
- * Check for status updates since the last check
- * @param {string} lastUpdateTime - ISO timestamp of the last update check
- * @returns {Promise<boolean>} - True if there are new updates
- */
-async function checkForStatusUpdates(lastUpdateTime) {
-    try {
-        if (!lastUpdateTime) return true;
-        
-        const latestUpdate = await WP_OUTBOUND_STATUS.findOne({
-            attributes: ['updated_at'],
-            where: {
-                updated_at: {
-                    [Op.gt]: new Date(lastUpdateTime)
-                }
-            },
-            order: [['updated_at', 'DESC']],
-            raw: true
-        });
-        
-        return !!latestUpdate;
-    } catch (error) {
-        console.error('Error checking for status updates:', error);
-        return false;
-    }
-}
+// This function is a duplicate and has been removed to avoid confusion.
+// The implementation at lines 70-98 is now used for all status update checks.
 
 // Add new function to check for new files
 async function checkForNewFiles(networkPath, lastCheck) {
@@ -184,7 +158,7 @@ async function checkForNewFiles(networkPath, lastCheck) {
         // Fast check for recent files
         for (const type of types) {
             const typeDir = path.join(networkPath, type);
-            
+
             // Skip if directory doesn't exist
             if (!fs.existsSync(typeDir)) continue;
 
@@ -200,12 +174,12 @@ async function checkForNewFiles(networkPath, lastCheck) {
             // Check each company directory
             for (const company of companies) {
                 const companyDir = path.join(typeDir, company);
-                
+
                 // Skip if not a directory
                 try {
                     const stat = await fsPromises.stat(companyDir);
                     if (!stat.isDirectory()) continue;
-                    
+
                     // If the company directory itself is newer than our last check
                     if (new Date(stat.mtime) > lastCheckDate) {
                         return true;
@@ -227,12 +201,12 @@ async function checkForNewFiles(networkPath, lastCheck) {
                 // Check each date directory
                 for (const date of dates) {
                     const dateDir = path.join(companyDir, date);
-                    
+
                     // Skip if not a directory
                     try {
                         const stat = await fsPromises.stat(dateDir);
                         if (!stat.isDirectory()) continue;
-                        
+
                         // If the date directory itself is newer than our last check
                         if (new Date(stat.mtime) > lastCheckDate) {
                             return true;
@@ -256,7 +230,7 @@ async function checkForNewFiles(networkPath, lastCheck) {
                         const filePath = path.join(dateDir, file);
                         try {
                             const stats = await fsPromises.stat(filePath);
-                            
+
                             // If any file is newer than our last check, return true
                             if (new Date(stats.mtime) > lastCheckDate) {
                                 return true;
@@ -269,7 +243,7 @@ async function checkForNewFiles(networkPath, lastCheck) {
                 }
             }
         }
-        
+
         return hasNewFiles;
     } catch (error) {
         console.error('Error checking for new files:', error);
@@ -291,7 +265,7 @@ async function getOutgoingConfig() {
     }
 
     let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
-    
+
     if (!settings.networkPath) {
         throw new Error('Outgoing network path not configured');
     }
@@ -325,7 +299,7 @@ async function readExcelWithLogging(filePath) {
         const dataAsObjects = XLSX.utils.sheet_to_json(worksheet);
         const dataWithHeaders = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        console.log(dataWithHeaders);
+        ////console.log(dataWithHeaders);
 
         return {
             dataWithHeaders,
@@ -344,9 +318,9 @@ async function readExcelWithLogging(filePath) {
 async function ensureDirectoryExists(dirPath) {
     try {
         await fsPromises.access(dirPath);
-        //console.log('Directory exists:', dirPath);
+        //////console.log('Directory exists:', dirPath);
     } catch (error) {
-        //console.log('Creating directory:', dirPath);
+        //////console.log('Creating directory:', dirPath);
         await fsPromises.mkdir(dirPath, { recursive: true });
     }
 }
@@ -372,7 +346,7 @@ async function logError(description, error, options = {}) {
         };
 
         await WP_LOGS.create(logEntry);
-        
+
         console.error('Error logged:', {
             description,
             error: error.message,
@@ -388,69 +362,69 @@ async function logError(description, error, options = {}) {
  * Optimized to fetch only the latest timestamp files and handle duplicates
  */
 router.get('/list-all', async (req, res) => {
-    console.log('Starting list-all endpoint');
-    
+    ////console.log('Starting list-all endpoint');
+
     const processLog = {
         details: [],
         summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
     };
 
     try {
-        console.log('Generating cache key');
+        ////console.log('Generating cache key');
         const cacheKey = generateCacheKey();
         const { polling, initialLoad } = req.query;
         const forceRefresh = req.query.forceRefresh === 'true';
         const manualRefresh = req.query.manualRefresh === 'true'; // New parameter for manual refresh button
         const realTime = req.query.realTime === 'true';
-        
+
         // Get the latest status update timestamp
-        console.log('Fetching latest status update');
+        ////console.log('Fetching latest status update');
         const latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
             attributes: ['updated_at'],
             order: [['updated_at', 'DESC']],
             raw: true
         });
-        console.log('Latest status update:', latestStatusUpdate);
+        ////console.log('Latest status update:', latestStatusUpdate);
 
         // If initialLoad=true is provided, force cache refresh
         // If forceRefresh=true is provided, force cache refresh
         // If manualRefresh=true is provided, force cache refresh (for the new refresh button)
         if (initialLoad === 'true' || forceRefresh || manualRefresh) {
-            console.log('Force refresh requested, bypassing cache');
+            ////console.log('Force refresh requested, bypassing cache');
             fileCache.del(cacheKey);
         }
         // Check cache first if not in real-time mode and not a manual refresh
         else if (!realTime && !manualRefresh) {
-            console.log('Checking cache');
+            ////console.log('Checking cache');
             const cachedData = fileCache.get(cacheKey);
             if (cachedData) {
-                console.log('Found cached data from:', cachedData.timestamp);
-                
+                ////console.log('Found cached data from:', cachedData.timestamp);
+
                 // For better performance: if we have cached data, check if there are any status changes
                 const hasStatusUpdates = await checkForStatusUpdates(cachedData.lastStatusUpdate);
                 let updatedFiles = [];
 
                 if (hasStatusUpdates) {
-                    console.log('Status updates detected, fetching only updated statuses');
+                    ////console.log('Status updates detected, fetching only updated statuses');
                     // Get only the updated statuses
                     const updatedStatuses = await getUpdatedStatuses(cachedData.lastStatusUpdate);
-                    
+
                     if (updatedStatuses.length > 0) {
-                        console.log(`Found ${updatedStatuses.length} status updates`);
-                        
+                        ////console.log(`Found ${updatedStatuses.length} status updates`);
+
                         // Create a map for easy lookup
                         const statusMap = new Map();
                         updatedStatuses.forEach(status => {
                             if (status.fileName) statusMap.set(status.fileName, status);
                             if (status.invoice_number) statusMap.set(status.invoice_number, status);
                         });
-                        
+
                         // Create a map for easy lookup of existing files
                         const existingFilesMap = new Map();
                         cachedData.files.forEach(file => {
                             existingFilesMap.set(file.fileName, file);
                         });
-                        
+
                         // Update the cached files with new status information
                         updatedFiles = cachedData.files.map(file => {
                             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
@@ -470,7 +444,7 @@ router.get('/list-all', async (req, res) => {
                             }
                             return file;
                         });
-                        
+
                         // Update the cache with the new data
                         const updatedCache = {
                             ...cachedData,
@@ -480,7 +454,7 @@ router.get('/list-all', async (req, res) => {
                             cacheUpdatedFromServer: true
                         };
                         fileCache.set(cacheKey, updatedCache);
-                        
+
                         // Return the incrementally updated data
                         return res.json({
                             success: true,
@@ -494,20 +468,20 @@ router.get('/list-all', async (req, res) => {
                         });
                     }
                 }
-                
+
                 // Check if we need to check for new files (less frequently)
                 const cacheAge = new Date() - new Date(cachedData.timestamp);
                 const CHECK_FILES_INTERVAL = 60 * 1000; // 1 minute
                 let hasNewFiles = false;
-                
+
                 if (cacheAge > CHECK_FILES_INTERVAL) {
                     // Only check if required - this is an expensive operation
                     hasNewFiles = await checkForNewOrUpdatedFiles(cachedData.networkPath, cachedData.timestamp);
                 }
-                
+
                 // If no changes needed, return cached data
                 if (!hasNewFiles && !hasStatusUpdates) {
-                    console.log('Returning cached data - no changes detected');
+                    ////console.log('Returning cached data - no changes detected');
                     return res.json({
                         success: true,
                         files: cachedData.files,
@@ -518,17 +492,17 @@ router.get('/list-all', async (req, res) => {
                         realTime: realTime
                     });
                 }
-                
+
                 // If only new files and no status changes
                 if (hasNewFiles && !hasStatusUpdates && updatedFiles.length === 0) {
-                    console.log('New files detected, proceeding with full refresh');
+                    ////console.log('New files detected, proceeding with full refresh');
                     // We'll continue with a full refresh below
                 }
             }
         }
 
         // Get active SAP configuration first since we need it for the network path
-        console.log('Fetching SAP configuration');
+        ////console.log('Fetching SAP configuration');
         const config = await WP_CONFIGURATION.findOne({
             where: {
                 Type: 'SAP',
@@ -553,7 +527,7 @@ router.get('/list-all', async (req, res) => {
             }
         }
         // Get inbound statuses for comparison
-        console.log('Fetching inbound statuses');
+        ////console.log('Fetching inbound statuses');
         const inboundStatuses = await WP_INBOUND_STATUS.findAll({
             attributes: ['internalId', 'status', 'updated_at'],
             where: {
@@ -573,7 +547,7 @@ router.get('/list-all', async (req, res) => {
         });
 
         // Fetch outbound statuses that might need updates
-        console.log('Fetching outbound statuses');
+        ////console.log('Fetching outbound statuses');
         let outboundStatusesToUpdate = [];
         if (inboundStatusMap.size > 0) {
             outboundStatusesToUpdate = await WP_OUTBOUND_STATUS.findAll({
@@ -585,17 +559,17 @@ router.get('/list-all', async (req, res) => {
                 raw: true
             });
         }
-        
+
         // Process status updates in batches
         if (outboundStatusesToUpdate.length > 0) {
-            console.log('Processing status updates');
+            ////console.log('Processing status updates');
             const batchSize = 100;
             const updatePromises = [];
-            
+
             for (let i = 0; i < outboundStatusesToUpdate.length; i += batchSize) {
                 const batch = outboundStatusesToUpdate.slice(i, i + batchSize);
                 const batchPromises = [];
-                
+
                 for (const outbound of batch) {
                     if (outbound.invoice_number && inboundStatusMap.has(outbound.invoice_number)) {
                         const inbound = inboundStatusMap.get(outbound.invoice_number);
@@ -614,20 +588,20 @@ router.get('/list-all', async (req, res) => {
                         }
                     }
                 }
-                
+
                 if (batchPromises.length > 0) {
                     updatePromises.push(Promise.all(batchPromises));
                 }
             }
-            
+
             if (updatePromises.length > 0) {
                 await Promise.all(updatePromises);
-                console.log('Updated outbound statuses');
+                ////console.log('Updated outbound statuses');
             }
         }
 
         // Get existing submission statuses
-        console.log('Fetching submission statuses');
+        ////console.log('Fetching submission statuses');
         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
             attributes: [
                 'id',
@@ -662,7 +636,7 @@ router.get('/list-all', async (req, res) => {
                 FileName: status.fileName,
                 DocNum: status.invoice_number
             };
-            
+
             if (status.fileName) statusMap.set(status.fileName, statusObj);
             if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
         });
@@ -671,7 +645,7 @@ router.get('/list-all', async (req, res) => {
         const types = ['Manual', 'Schedule'];
 
         // Process directories
-        console.log('Processing directories');
+        ////console.log('Processing directories');
         for (const type of types) {
             const typeDir = path.join(settings.networkPath, type);
             try {
@@ -683,7 +657,7 @@ router.get('/list-all', async (req, res) => {
         }
 
         // Create a map for latest documents
-        console.log('Processing latest documents');
+        ////console.log('Processing latest documents');
         const latestDocuments = new Map();
 
         files.forEach(file => {
@@ -699,7 +673,7 @@ router.get('/list-all', async (req, res) => {
         const mergedFiles = Array.from(latestDocuments.values()).map(file => {
             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
             const fileStatus = status?.SubmissionStatus || 'Pending';
-            
+
             return {
                 ...file,
                 status: fileStatus,
@@ -717,7 +691,7 @@ router.get('/list-all', async (req, res) => {
         mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
 
         // Update cache
-        console.log('Updating cache');
+        ////console.log('Updating cache');
         const cacheData = {
             files: mergedFiles,
             processLog,
@@ -725,7 +699,7 @@ router.get('/list-all', async (req, res) => {
             lastStatusUpdate: latestStatusUpdate?.updated_at,
             networkPath: settings.networkPath
         };
-        
+
         // Set shorter TTL for real-time mode
         if (realTime) {
             fileCache.set(cacheKey, cacheData, 15); // 15 seconds TTL for real-time mode
@@ -733,7 +707,7 @@ router.get('/list-all', async (req, res) => {
             fileCache.set(cacheKey, cacheData);
         }
 
-        console.log('Sending response');
+        ////console.log('Sending response');
         res.json({
             success: true,
             files: mergedFiles,
@@ -769,7 +743,7 @@ router.get('/list-all', async (req, res) => {
 router.get('/check-submission/:docNum', async (req, res) => {
     try {
         const { docNum } = req.params;
-       // console.log('Checking submission for document:', docNum);
+       // ////console.log('Checking submission for document:', docNum);
 
         const existingSubmission = await WP_OUTBOUND_STATUS.findOne({
             where: {
@@ -816,7 +790,7 @@ router.post('/:filename/open', async (req, res) => {
         // Construct file path using config
         const formattedDate = moment(date).format('YYYY-MM-DD');
         const filePath = path.join(config.networkPath, type, company, formattedDate, filename);
-        //console.log('Opening file from path:', filePath);
+        //////console.log('Opening file from path:', filePath);
 
         // Check if file exists
         if (!fs.existsSync(filePath)) {
@@ -874,7 +848,7 @@ router.post('/:filename/open', async (req, res) => {
             }
         });
     }
-}); 
+});
 /**
  * Process type directory
  */
@@ -898,7 +872,7 @@ async function processTypeDirectory(typeDir, type, files, processLog, statusMap)
         }
 
         if (!companies || companies.length === 0) {
-            console.log(`No companies found in directory: ${typeDir}`);
+            ////console.log(`No companies found in directory: ${typeDir}`);
             return;
         }
 
@@ -956,7 +930,7 @@ async function processCompanyDirectory(companyDir, company, type, files, process
         }
 
         if (!dates || dates.length === 0) {
-            console.log(`No dates found in company directory: ${companyDir}`);
+            ////console.log(`No dates found in company directory: ${companyDir}`);
             return;
         }
 
@@ -1009,15 +983,15 @@ async function processDateDirectory(dateDir, date, company, type, files, process
         }
 
         await ensureDirectoryExists(dateDir);
-    
+
         const dirFiles = await fsPromises.readdir(dateDir);
-        
+
         // Process files in batches to prevent memory overload
         const batchSize = 10;
         for (let i = 0; i < dirFiles.length; i += batchSize) {
             const batch = dirFiles.slice(i, i + batchSize);
             // Process batch of files in parallel
-            await Promise.all(batch.map(file => 
+            await Promise.all(batch.map(file =>
                 processFile(file, dateDir, normalizedDate, company, type, files, processLog, statusMap)
             ));
         }
@@ -1034,7 +1008,7 @@ async function processDateDirectory(dateDir, date, company, type, files, process
 /**
  * Validates file name format
  * Format: XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS
- * Examples: 
+ * Examples:
  * - 01_ARINV118965_eInvoice_20250127102244.xls (Main format)
  * - 01_IN-LABS-010001_eInvoice_20250128183637.xls (Alternative format)
  * XX - Document type (as per LHDN MyInvois SDK):
@@ -1054,20 +1028,20 @@ function isValidFileFormat(fileName) {
     try {
         // Remove file extension
         const baseName = path.parse(fileName).name;
-        
+
         // Define the regex pattern for both formats
         // Updated to be more flexible with invoice number format
         // Allows alphanumeric characters, hyphens, and underscores in the invoice number
         const pattern = /^(0[1-4]|1[1-4])_([A-Z0-9][A-Z0-9-]*[A-Z0-9])_eInvoice_(\d{14})$/;
         const match = baseName.match(pattern);
-        
+
         if (!match) {
             return false;
         }
-        
+
         // Extract components
         const [, docType, invoiceNumber, timestamp] = match;
-        
+
         // Validate document type (already enforced by regex (0[1-4]|1[1-4]))
         const docTypes = {
             '01': 'Invoice',
@@ -1081,18 +1055,18 @@ function isValidFileFormat(fileName) {
         };
 
         if (!docTypes[docType]) {
-            //console.log(`Invalid document type: ${docType}`);
-          //  console.log('Valid document types:');
+            //////console.log(`Invalid document type: ${docType}`);
+          //  ////console.log('Valid document types:');
             Object.entries(docTypes).forEach(([code, type]) => {
-              //  console.log(`- ${code}: ${type}`);
+              //  ////console.log(`- ${code}: ${type}`);
             });
             return false;
         }
-        
+
         if (!/^[A-Z0-9][A-Z0-9-]*[A-Z0-9]$/.test(invoiceNumber)) {
             return false;
         }
-        
+
         // Validate timestamp format
         const year = parseInt(timestamp.substring(0, 4));
         const month = parseInt(timestamp.substring(4, 6));
@@ -1100,9 +1074,9 @@ function isValidFileFormat(fileName) {
         const hour = parseInt(timestamp.substring(8, 10));
         const minute = parseInt(timestamp.substring(10, 12));
         const second = parseInt(timestamp.substring(12, 14));
-        
+
         const date = new Date(year, month - 1, day, hour, minute, second);
-        
+
         if (
             date.getFullYear() !== year ||
             date.getMonth() + 1 !== month ||
@@ -1114,7 +1088,7 @@ function isValidFileFormat(fileName) {
         ) {
             return false;
         }
-        
+
         return true;
     } catch (error) {
         console.error('Error validating file name:', error);
@@ -1129,7 +1103,7 @@ function extractTotalAmount(data) {
         if (footerRow) {
             // Looking at the raw data, LegalMonetaryTotal_PayableAmount is at index 108
             const payableAmount = footerRow[108];
-            
+
             // Format the amount with currency and handle number formatting
             if (payableAmount !== undefined && payableAmount !== null) {
                 const amount = Number(payableAmount);
@@ -1143,10 +1117,10 @@ function extractTotalAmount(data) {
         }
 
         // Alternative: Look for the amount in the header mapping
-        const headerRow = data.find(row => 
+        const headerRow = data.find(row =>
             row.includes('LegalMonetaryTotal_PayableAmount')
         );
-        
+
         if (headerRow) {
             const amountIndex = headerRow.indexOf('LegalMonetaryTotal_PayableAmount');
             // Get the value from the corresponding data row
@@ -1174,8 +1148,8 @@ function extractTotalAmount(data) {
  * Helper function to extract buyer information
  */
 function extractSupplierInfo(data) {
-    console.log('Data structure:', data);
-    console.log('Data structure:', data[3]);
+    ////console.log('Data structure:', data);
+    //console.log('Data structure:', data[3]);
     try {
         return {
             registrationName: data[3]?.[29] || null,
@@ -1209,7 +1183,7 @@ function extractDates(data) {
         // Look for date in the header row (usually row 3)
         let issueDate = null;
         let issueTime = null;
-        
+
         if (data && data.length > 0) {
             // Try to find the date in the data array
             for (const row of data) {
@@ -1224,13 +1198,56 @@ function extractDates(data) {
                 // Look for date in specific columns that might contain the date
                 const possibleDateFields = Object.entries(data[2]);
                 for (const [key, value] of possibleDateFields) {
-                    if (value && typeof value === 'string' || typeof value === 'number') {
-                        // Try to parse as date
-                        const parsed = moment(value);
-                        if (parsed.isValid()) {
-                            issueDate = parsed.format('YYYY-MM-DD');
-                            break;
+                    // Skip if value is not a string or number, or if it's a single character
+                    if (!value || (typeof value !== 'string' && typeof value !== 'number') ||
+                        (typeof value === 'string' && value.length <= 1)) {
+                        continue;
+                    }
+
+                    // Try to parse as date with explicit format detection
+                    let parsed;
+                    if (typeof value === 'string') {
+                        // Try common date formats
+                        if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                            // YYYY-MM-DD
+                            parsed = moment(value, 'YYYY-MM-DD');
+                        } else if (value.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+                            // MM/DD/YYYY
+                            parsed = moment(value, 'MM/DD/YYYY');
+                        } else if (value.match(/^\d{2}-\d{2}-\d{4}$/)) {
+                            // MM-DD-YYYY
+                            parsed = moment(value, 'MM-DD-YYYY');
+                        } else if (value.match(/^\d{8}$/)) {
+                            // YYYYMMDD
+                            parsed = moment(value, 'YYYYMMDD');
+                        } else if (value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/) || value.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/)) {
+                            // Only try to parse as ISO date if it looks like an ISO date
+                            parsed = moment(value);
                         }
+                        // Don't try to parse other string values as dates
+                    } else {
+                        // For numbers, try to convert to string first
+                        const strValue = String(value);
+
+                        // Only try to parse as date if it looks like a date
+                        // Check if it's a valid 8-digit date (YYYYMMDD)
+                        if (strValue.length === 8 && /^\d{8}$/.test(strValue)) {
+                            // Check if it's a plausible date (year between 1900 and 2100)
+                            const year = parseInt(strValue.substring(0, 4), 10);
+                            if (year >= 1900 && year <= 2100) {
+                                parsed = moment(strValue, 'YYYYMMDD');
+                            }
+                        }
+                        // Check if it's a Unix timestamp (10 or 13 digits)
+                        else if ((strValue.length === 10 || strValue.length === 13) && /^\d+$/.test(strValue)) {
+                            parsed = moment(parseInt(strValue, 10));
+                        }
+                        // Don't try to parse other numeric values as dates
+                    }
+
+                    if (parsed && parsed.isValid()) {
+                        issueDate = parsed.format('YYYY-MM-DD');
+                        break;
                     }
                 }
             }
@@ -1242,6 +1259,7 @@ function extractDates(data) {
             const match = fileName.match(/_(\d{8})/);
             if (match && match[1]) {
                 const dateStr = match[1];
+                // Use explicit format for date parsing
                 const parsed = moment(dateStr, 'YYYYMMDD');
                 if (parsed.isValid()) {
                     issueDate = parsed.format('YYYY-MM-DD');
@@ -1251,8 +1269,31 @@ function extractDates(data) {
 
         // If still no date, use the directory date
         if (!issueDate && data.date) {
-            const dirDate = moment(data.date);
-            if (dirDate.isValid()) {
+            // Try to parse the directory date with explicit format
+            let dirDate;
+            if (typeof data.date === 'string') {
+                if (data.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    dirDate = moment(data.date, 'YYYY-MM-DD');
+                } else if (data.date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+                    dirDate = moment(data.date, 'MM/DD/YYYY');
+                } else if (data.date.match(/^\d{2}-\d{2}-\d{4}$/)) {
+                    dirDate = moment(data.date, 'MM-DD-YYYY');
+                } else if (typeof data.date === 'string' && data.date.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/) ||
+                          typeof data.date === 'string' && data.date.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/)) {
+                    // Only try to parse as ISO date if it looks like an ISO date
+                    dirDate = moment(data.date);
+                } else if (data.date instanceof Date) {
+                    // If it's already a Date object
+                    dirDate = moment(data.date);
+                }
+                // Don't try to parse other values
+            } else if (data.date instanceof Date) {
+                // If it's already a Date object
+                dirDate = moment(data.date);
+            }
+            // Don't try to parse other values
+
+            if (dirDate && dirDate.isValid()) {
                 issueDate = dirDate.format('YYYY-MM-DD');
             }
         }
@@ -1271,7 +1312,7 @@ function extractDates(data) {
 }
 
 /**
- * 
+ *
  * Process individual file
  */
 async function processFile(file, dateDir, date, company, type, files, processLog, statusMap) {
@@ -1305,11 +1346,11 @@ async function processFile(file, dateDir, date, company, type, files, processLog
 
         const filePath = path.join(dateDir, file);
         const stats = await fsPromises.stat(filePath);
-        
+
         // Extract document type and invoice number from file name
         const baseName = path.parse(file).name;
         const [docType, invoiceNumber] = baseName.split('_');
-        
+
         // Map document types to their descriptions
         const docTypes = {
             '01': 'Invoice',
@@ -1321,7 +1362,7 @@ async function processFile(file, dateDir, date, company, type, files, processLog
             '13': 'Self-billed Debit Note',
             '14': 'Self-billed Refund Note'
         };
-        
+
         const submissionStatus = statusMap.get(file) || (invoiceNumber ? statusMap.get(invoiceNumber) : null);
 
         const excelData = await readExcelWithLogging(filePath);
@@ -1330,13 +1371,13 @@ async function processFile(file, dateDir, date, company, type, files, processLog
         const dates = extractDates(excelData.dataAsObjects);
         const totalAmount = extractTotalAmount(excelData.dataWithHeaders);
 
-        //console.log('Current Dates:', dates);
+        ////console.log('Current Dates:', dates);
         const issueDate = dates.issueDate;
         const issueTime = dates.issueTime;
 
-        //console.log('Issue Date:', issueDate);
-       // console.log('Issue Time:', issueTime);
-      
+        ////console.log('Issue Date:', issueDate);
+       // //console.log('Issue Time:', issueTime);
+
         files.push({
             type,
             company,
@@ -1382,12 +1423,32 @@ async function processFile(file, dateDir, date, company, type, files, processLog
  */
 router.post('/:fileName/submit-to-lhdn', async (req, res) => {
     try {
-
         const { fileName } = req.params;
         const { type, company, date, version } = req.body;
 
+        // Log submission start
+        await OutboundLoggingService.logSubmissionStart(req, {
+            fileName,
+            type,
+            company,
+            date,
+            version
+        });
+
         // Basic auth check
         if (!req.session?.accessToken) {
+            await OutboundLoggingService.createLog({
+                description: `Authentication failed for submission of file: ${fileName}`,
+                loggedUser: req.session?.user?.username || 'System',
+                ipAddress: req.ip,
+                logType: LOG_TYPES.ERROR,
+                module: MODULES.OUTBOUND,
+                action: ACTIONS.SUBMIT,
+                status: STATUSES.FAILED,
+                userId: req.session?.user?.id,
+                details: { fileName, error: 'Not authenticated' }
+            });
+
             return res.status(401).json({
                 success: false,
                 error: {
@@ -1437,7 +1498,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
         try {
             // Get and process document data
             const processedData = await submitter.getProcessedData(fileName, type, company, date);
-            
+
             // Ensure processedData is valid before mapping
             if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
                 return res.status(400).json({
@@ -1475,13 +1536,13 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
             // Submit to LHDN using the session token
             const result = await submitter.submitToLHDNDocument(payload.documents);
-            
+
             // Process result and update status
             if (result.status === 'failed') {
                 // Special handling for TIN mismatch error
                 if (result.error?.code === 'TIN_MISMATCH') {
-                    console.log('TIN mismatch detected in LHDN response:', JSON.stringify(result, null, 2));
-                    
+                    //console.log('TIN mismatch detected in LHDN response:', JSON.stringify(result, null, 2));
+
                     await submitter.updateSubmissionStatus({
                         invoice_number,
                         uuid: 'NA',
@@ -1508,7 +1569,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         docNum: invoice_number
                     });
                 }
-                
+
                 // Handle validation errors from LHDN
                 if (result.error?.error?.details) {
                     const errorDetails = result.error.error.details;
@@ -1533,7 +1594,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                 if (result.error?.response?.status === 500) {
                     const errorMessage = result.error.response.data?.message || 'Internal server error';
                     const activityId = result.error.response.data?.activityId;
-                    
+
                     await submitter.updateSubmissionStatus({
                         invoice_number,
                         uuid: 'NA',
@@ -1577,7 +1638,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         rejectedDocuments: [errorDetails]
                     });
                 }
-                
+
                 if (result.status === 'success' && result.data === undefined) {
                     // This is a special case where the result status is success but no data is present
                     return res.status(400).json({
@@ -1589,22 +1650,37 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         }
                     });
                 }
-                
+
                 throw new Error('Invalid response from LHDN server: No data received');
             }
 
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
-                // First update the submission status in database
-                await submitter.updateSubmissionStatus({
+                // Prepare status data
+                const statusData = {
                     invoice_number,
                     uuid: acceptedDoc.uuid,
                     submissionUid: result.data.submissionUid,
                     fileName,
                     filePath: processedData.filePath || fileName,
-                    status: 'Submitted',
+                    status: 'Submitted'
+                };
+
+                // First update the submission status in database
+                await submitter.updateSubmissionStatus(statusData);
+
+                // Log status update
+                await OutboundLoggingService.logStatusUpdate(req, statusData);
+
+                // Log successful submission
+                await OutboundLoggingService.logSubmissionSuccess(req, result, {
+                    fileName,
+                    type,
+                    company,
+                    date,
+                    invoiceNumber: invoice_number
                 });
-            
+
                 // Then update the Excel file
                 const excelUpdateResult = await submitter.updateExcelWithResponse(
                     fileName,
@@ -1614,7 +1690,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     acceptedDoc.uuid,
                     invoice_number
                 );
-                
+
                 if (!excelUpdateResult.success) {
                     console.error('Failed to update Excel file:', excelUpdateResult.error);
                     return res.status(500).json({
@@ -1626,7 +1702,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                         }
                     });
                 }
-            
+
                 const response = {
                     success: true,
                     submissionUID: result.data.submissionUid,
@@ -1634,10 +1710,10 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     docNum: invoice_number,
                     fileUpdates: {
                         success: excelUpdateResult.success,
-                        ...(excelUpdateResult.success ? 
-                            { 
+                        ...(excelUpdateResult.success ?
+                            {
                                 excelPath: excelUpdateResult.outgoingPath,
-                            } : 
+                            } :
                             { error: excelUpdateResult.error }
                         )
                     }
@@ -1652,7 +1728,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             // Handle rejected documents
             if (result.data?.rejectedDocuments?.length > 0) {
                 //('Rejected Documents:', JSON.stringify(result.data.rejectedDocuments, null, 2));
-                
+
                 const rejectedDoc = result.data.rejectedDocuments[0];
                 await submitter.updateSubmissionStatus({
                     invoice_number,
@@ -1674,7 +1750,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
             // Update the error handling section
             if (!result.data?.acceptedDocuments?.length && !result.data?.rejectedDocuments?.length) {
-                //console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
+                ////console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
                 throw new Error(`No documents were accepted or rejected by LHDN. Response: ${JSON.stringify(result.data)}`);
             }
 
@@ -1690,18 +1766,47 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             stack: error.stack
         });
 
+        // Log submission failure
+        await OutboundLoggingService.logSubmissionFailure(req, error, {
+            fileName,
+            type,
+            company,
+            date,
+            invoiceNumber: error.invoice_number || 'unknown'
+        });
+
         // Update status if possible
         if (error.invoice_number) {
             try {
-                await submitter.updateSubmissionStatus({
+                const statusData = {
                     invoice_number: error.invoice_number,
                     fileName,
                     filePath: error.filePath || fileName,
                     status: 'Failed',
                     error: error.message
-                });
+                };
+
+                await submitter.updateSubmissionStatus(statusData);
+
+                // Log status update
+                await OutboundLoggingService.logStatusUpdate(req, statusData);
             } catch (statusError) {
                 console.error('Failed to update status:', statusError);
+
+                // Log status update failure
+                await OutboundLoggingService.createLog({
+                    description: `Failed to update status for ${error.invoice_number}: ${statusError.message}`,
+                    logType: LOG_TYPES.ERROR,
+                    module: MODULES.OUTBOUND,
+                    action: ACTIONS.STATUS_UPDATE,
+                    status: STATUSES.FAILED,
+                    details: {
+                        invoice_number: error.invoice_number,
+                        fileName,
+                        originalError: error.message,
+                        statusError: statusError.message
+                    }
+                });
             }
         }
 
@@ -1753,9 +1858,9 @@ router.post('/:uuid/cancel', async (req, res) => {
             status: 'FAILED'
         });
 
-        return res.status(400).json({ 
-            success: false, 
-            message: 'Missing required parameters: uuid' 
+        return res.status(400).json({
+            success: false,
+            message: 'Missing required parameters: uuid'
         });
     }
 
@@ -1782,8 +1887,8 @@ router.post('/:uuid/cancel', async (req, res) => {
                         cancellation_reason: reason,
                         updated_at: sequelize.literal('GETDATE()'),
                     },
-                    { 
-                        where: { uuid: uuid } 
+                    {
+                        where: { uuid: uuid }
                     }
                 ),
                 WP_INBOUND_STATUS.update(
@@ -1791,8 +1896,8 @@ router.post('/:uuid/cancel', async (req, res) => {
                         status: 'Cancelled',
                         dateTimeReceived: sequelize.literal('GETDATE()'),
                     },
-                    { 
-                        where: { uuid } 
+                    {
+                        where: { uuid }
                     }
                 )
             ]);
@@ -1824,11 +1929,11 @@ router.post('/:uuid/cancel', async (req, res) => {
         // Handle specific error cases
         if (error.response) {
             const errorData = error.response.data;
-            
+
             // Check if document is already cancelled
-            if (errorData?.error?.code === 'ValidationError' && 
+            if (errorData?.error?.code === 'ValidationError' &&
                 errorData?.error?.details?.some(d => d.message?.includes('already cancelled'))) {
-                
+
                 // Update local status
                 await Promise.all([
                     WP_OUTBOUND_STATUS.update(
@@ -1890,7 +1995,7 @@ router.post('/:fileName/content-consolidated', async (req, res) => {
 
         // 1. Get and validate SAP configuration
         const config = await getActiveSAPConfig();
-  
+
         if (!config.success || !config.networkPath) {
             throw new Error('Invalid SAP configuration: ' + (config.error || 'No network path configured'));
         }
@@ -1901,7 +2006,7 @@ router.post('/:fileName/content-consolidated', async (req, res) => {
             serverUsername: config.username,
             serverPassword: config.password
         });
-        // console.log('\nNetwork Path Validation:', networkValid);
+        // //console.log('\nNetwork Path Validation:', networkValid);
 
         if (!networkValid.success) {
             throw new Error(`Network path not accessible: ${networkValid.error}`);
@@ -1909,7 +2014,7 @@ router.post('/:fileName/content-consolidated', async (req, res) => {
 
         // 3. Construct and validate file path
         const formattedDate = moment(date).format('YYYY-MM-DD');
-        
+
         // Use the provided filePath if it exists, otherwise construct it using the standard pattern
         let filePath;
         if (requestFilePath) {
@@ -1937,7 +2042,7 @@ router.post('/:fileName/content-consolidated', async (req, res) => {
                 company,
                 date: formattedDate
             });
-            
+
             // Try alternate path for consolidated files if standard path failed
             if (!requestFilePath) {
                 const consolidatedPath = path.join('C:\\SFTPRoot_Consolidation', 'Incoming', company, formattedDate, fileName);
@@ -1978,11 +2083,11 @@ router.post('/:fileName/content-consolidated', async (req, res) => {
         }
 
         // 6. Read Excel file
-        // console.log('\nReading Excel file...');
+        // //console.log('\nReading Excel file...');
         let workbook;
         try {
             workbook = XLSX.readFile(filePath);
-            console.log('Excel file read successfully');
+            //console.log('Excel file read successfully');
         } catch (readError) {
             console.error('Error reading Excel file:', readError);
             throw new Error(`Failed to read Excel file: ${readError.message}`);
@@ -1998,7 +2103,7 @@ router.post('/:fileName/content-consolidated', async (req, res) => {
 
         // 8. Process the data
         const processedData = processExcelData(data);
-       // console.log('\nExcel data processed successfully');
+       // //console.log('\nExcel data processed successfully');
 
         // 9. Create outgoing directory structure
         const outgoingConfig = await getOutgoingConfig();
@@ -2061,7 +2166,7 @@ router.post('/:fileName/content', async (req, res) => {
 
         // 1. Get and validate SAP configuration
         const config = await getActiveSAPConfig();
-  
+
         if (!config.success || !config.networkPath) {
             throw new Error('Invalid SAP configuration: ' + (config.error || 'No network path configured'));
         }
@@ -2072,7 +2177,7 @@ router.post('/:fileName/content', async (req, res) => {
             serverUsername: config.username,
             serverPassword: config.password
         });
-        // console.log('\nNetwork Path Validation:', networkValid);
+        // //console.log('\nNetwork Path Validation:', networkValid);
 
         if (!networkValid.success) {
             throw new Error(`Network path not accessible: ${networkValid.error}`);
@@ -2124,11 +2229,11 @@ router.post('/:fileName/content', async (req, res) => {
         }
 
         // 6. Read Excel file
-        // console.log('\nReading Excel file...');
+        // //console.log('\nReading Excel file...');
         let workbook;
         try {
             workbook = XLSX.readFile(filePath);
-            console.log('Excel file read successfully');
+            //console.log('Excel file read successfully');
         } catch (readError) {
             console.error('Error reading Excel file:', readError);
             throw new Error(`Failed to read Excel file: ${readError.message}`);
@@ -2144,7 +2249,7 @@ router.post('/:fileName/content', async (req, res) => {
 
         // 8. Process the data
         const processedData = processExcelData(data);
-        console.log('\nExcel data processed successfully');
+        //console.log('\nExcel data processed successfully');
 
         // 9. Create outgoing directory structure
         const outgoingConfig = await getOutgoingConfig();
@@ -2259,7 +2364,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
         try {
             // Get and process document data
             const processedData = await submitter.getProcessedDataConsolidated(fileName, type, company, date);
-            
+
             // Ensure processedData is valid before mapping
             if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
                 return res.status(400).json({
@@ -2297,13 +2402,13 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
 
             // Submit to LHDN using the session token
             const result = await submitter.submitToLHDNDocument(payload.documents);
-            
+
             // Process result and update status
             if (result.status === 'failed') {
                 // Special handling for TIN mismatch error
                 if (result.error?.code === 'TIN_MISMATCH') {
-                    console.log('TIN mismatch detected in LHDN response:', JSON.stringify(result, null, 2));
-                    
+                    //console.log('TIN mismatch detected in LHDN response:', JSON.stringify(result, null, 2));
+
                     await submitter.updateSubmissionStatus({
                         invoice_number,
                         uuid: 'NA',
@@ -2330,7 +2435,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                         docNum: invoice_number
                     });
                 }
-                
+
                 // Handle validation errors from LHDN
                 if (result.error?.error?.details) {
                     const errorDetails = result.error.error.details;
@@ -2355,7 +2460,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                 if (result.error?.response?.status === 500) {
                     const errorMessage = result.error.response.data?.message || 'Internal server error';
                     const activityId = result.error.response.data?.activityId;
-                    
+
                     await submitter.updateSubmissionStatus({
                         invoice_number,
                         uuid: 'NA',
@@ -2399,7 +2504,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                         rejectedDocuments: [errorDetails]
                     });
                 }
-                
+
                 if (result.status === 'success' && result.data === undefined) {
                     // This is a special case where the result status is success but no data is present
                     return res.status(400).json({
@@ -2411,7 +2516,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                         }
                     });
                 }
-                
+
                 throw new Error('Invalid response from LHDN server: No data received');
             }
 
@@ -2426,7 +2531,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                     filePath: processedData.filePath || fileName,
                     status: 'Submitted',
                 });
-            
+
                 // Then update the Excel file
                 const excelUpdateResult = await submitter.updateExcelWithResponseConsolidated(
                     fileName,
@@ -2437,7 +2542,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                     acceptedDoc.invoiceCodeNumber,
                     invoice_number
                 );
-                
+
                 if (!excelUpdateResult.success) {
                     console.error('Failed to update Excel file:', excelUpdateResult.error);
                     return res.status(500).json({
@@ -2449,7 +2554,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                         }
                     });
                 }
-            
+
                 const response = {
                     success: true,
                     submissionUID: result.data.submissionUid,
@@ -2457,10 +2562,10 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                     docNum: invoice_number,
                     fileUpdates: {
                         success: excelUpdateResult.success,
-                        ...(excelUpdateResult.success ? 
-                            { 
+                        ...(excelUpdateResult.success ?
+                            {
                                 excelPath: excelUpdateResult.outgoingPath,
-                            } : 
+                            } :
                             { error: excelUpdateResult.error }
                         )
                     }
@@ -2475,7 +2580,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
             // Handle rejected documents
             if (result.data?.rejectedDocuments?.length > 0) {
                 //('Rejected Documents:', JSON.stringify(result.data.rejectedDocuments, null, 2));
-                
+
                 const rejectedDoc = result.data.rejectedDocuments[0];
                 await submitter.updateSubmissionStatus({
                     invoice_number,
@@ -2497,7 +2602,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
 
             // Update the error handling section
             if (!result.data?.acceptedDocuments?.length && !result.data?.rejectedDocuments?.length) {
-                //console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
+                ////console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
                 throw new Error(`No documents were accepted or rejected by LHDN. Response: ${JSON.stringify(result.data)}`);
             }
 
@@ -2560,7 +2665,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
 router.get('/submission/:submissionUid', async (req, res) => {
     try {
         const { submissionUid } = req.params;
-        
+
         // Basic auth check
         if (!req.session?.accessToken) {
             return res.status(401).json({
@@ -2573,7 +2678,7 @@ router.get('/submission/:submissionUid', async (req, res) => {
         }
 
         const token = req.session.accessToken;
-        
+
         // Call LHDN API to get submission details
         const response = await axios.get(
             `https://preprod-api.myinvois.hasil.gov.my/api/v1.0/documentsubmissions/${submissionUid}?pageNo=1&pageSize=10`,
@@ -2586,7 +2691,7 @@ router.get('/submission/:submissionUid', async (req, res) => {
         );
 
         const submissionData = response.data;
-        
+
         // Extract longId from the response
         if (submissionData?.documents?.length > 0) {
             const document = submissionData.documents[0];
@@ -2595,8 +2700,8 @@ router.get('/submission/:submissionUid', async (req, res) => {
             // Update the database with the longId
             await WP_OUTBOUND_STATUS.update(
                 { longId },
-                { 
-                    where: { 
+                {
+                    where: {
                         submissionUid,
                         status: 'Submitted'
                     }
@@ -2642,21 +2747,21 @@ router.get('/submission/:submissionUid', async (req, res) => {
 async function findAllFilesWithName(fileName, networkPath) {
     const filePaths = [];
     const types = ['Manual', 'Schedule'];
-    
+
     for (const type of types) {
         const typeDir = path.join(networkPath, type);
-        
+
         // Skip if directory doesn't exist
         if (!fs.existsSync(typeDir)) continue;
-        
+
         try {
             // Get list of company directories
             const companies = await fsPromises.readdir(typeDir);
-            
+
             // Check each company directory
             for (const company of companies) {
                 const companyDir = path.join(typeDir, company);
-                
+
                 // Skip if not a directory
                 try {
                     const stat = await fsPromises.stat(companyDir);
@@ -2665,7 +2770,7 @@ async function findAllFilesWithName(fileName, networkPath) {
                     console.error(`Error checking company directory ${companyDir}:`, err);
                     continue;
                 }
-                
+
                 // Get list of date directories
                 let dates;
                 try {
@@ -2674,11 +2779,11 @@ async function findAllFilesWithName(fileName, networkPath) {
                     console.error(`Error reading company directory ${companyDir}:`, err);
                     continue;
                 }
-                
+
                 // Check each date directory
                 for (const date of dates) {
                     const dateDir = path.join(companyDir, date);
-                    
+
                     // Skip if not a directory
                     try {
                         const stat = await fsPromises.stat(dateDir);
@@ -2687,7 +2792,7 @@ async function findAllFilesWithName(fileName, networkPath) {
                         console.error(`Error checking date directory ${dateDir}:`, err);
                         continue;
                     }
-                    
+
                     // Get list of files
                     let files;
                     try {
@@ -2696,7 +2801,7 @@ async function findAllFilesWithName(fileName, networkPath) {
                         console.error(`Error reading date directory ${dateDir}:`, err);
                         continue;
                     }
-                    
+
                     // Check if any file matches our filename
                     for (const file of files) {
                         if (file === fileName) {
@@ -2715,7 +2820,7 @@ async function findAllFilesWithName(fileName, networkPath) {
             console.error(`Error processing ${type} directory:`, error);
         }
     }
-    
+
     return filePaths;
 }
 
@@ -2750,15 +2855,15 @@ router.delete('/:fileName', async (req, res) => {
         const { fileName } = req.params;
         const { type, company, date, deleteAll, deleteByInvoice } = req.query;
 
-        console.log('Delete request received:', { fileName, type, company, date, deleteAll, deleteByInvoice });
+        //console.log('Delete request received:', { fileName, type, company, date, deleteAll, deleteByInvoice });
 
         // Check if this is a consolidated file (special handling)
         if (type === 'consolidated') {
-            console.log('Processing consolidated file deletion');
-            
+            //console.log('Processing consolidated file deletion');
+
             // Find the file in the consolidated directory structure regardless of date folder
             const fileResult = await findConsolidatedFile(fileName);
-            
+
             if (!fileResult) {
                 return res.status(404).json({
                     success: false,
@@ -2768,19 +2873,19 @@ router.delete('/:fileName', async (req, res) => {
                     }
                 });
             }
-            
+
             // Delete the file
             try {
                 await fsPromises.unlink(fileResult.path);
-                console.log('Consolidated file deleted successfully:', fileResult.path);
-                
+                //console.log('Consolidated file deleted successfully:', fileResult.path);
+
                 // Log the deletion
                 await logDBOperation(req.app.get('models'), req, `Deleted consolidated file: ${fileName} from ${fileResult.path}`, {
                     module: 'OUTBOUND',
                     action: 'DELETE',
                     status: 'SUCCESS'
                 });
-                
+
                 return res.json({
                     success: true,
                     message: 'File deleted successfully',
@@ -2843,9 +2948,9 @@ router.delete('/:fileName', async (req, res) => {
 
         // If deleteAll is true, find and delete all files with the same name
         if (deleteAll === 'true') {
-            console.log(`Finding all files with name: ${fileName}`);
+            //console.log(`Finding all files with name: ${fileName}`);
             const allFiles = await findAllFilesWithName(fileName, config.networkPath);
-            
+
             if (allFiles.length === 0) {
                 return res.status(404).json({
                     success: false,
@@ -2855,11 +2960,11 @@ router.delete('/:fileName', async (req, res) => {
                     }
                 });
             }
-            
+
             // Delete all found files
             const deletedFiles = [];
             const failedFiles = [];
-            
+
             for (const file of allFiles) {
                 try {
                     await fsPromises.unlink(file.path);
@@ -2869,7 +2974,7 @@ router.delete('/:fileName', async (req, res) => {
                         company: file.company,
                         date: file.date
                     });
-                    
+
                     // Log each deletion
                     await logDBOperation(req.app.get('models'), req, `Deleted file: ${fileName} from ${file.path}`, {
                         module: 'OUTBOUND',
@@ -2884,7 +2989,7 @@ router.delete('/:fileName', async (req, res) => {
                     });
                 }
             }
-            
+
             return res.json({
                 success: true,
                 message: `Deleted ${deletedFiles.length} files successfully${failedFiles.length > 0 ? `, ${failedFiles.length} files failed to delete` : ''}`,
@@ -2892,16 +2997,16 @@ router.delete('/:fileName', async (req, res) => {
                 failedFiles
             });
         }
-        
+
         // Original behavior - delete a specific file
         // Construct file path
         const formattedDate = moment(date).format('YYYY-MM-DD');
         const filePath = path.join(config.networkPath, type, company, formattedDate, fileName);
-        console.log('Standard file path:', filePath);
+        //console.log('Standard file path:', filePath);
 
         // Check if file exists
         if (!fs.existsSync(filePath)) {
-            console.log('File not found at path:', filePath);
+            //console.log('File not found at path:', filePath);
             return res.status(404).json({
                 success: false,
                 error: {
@@ -2913,7 +3018,7 @@ router.delete('/:fileName', async (req, res) => {
 
         // Delete file
         await fsPromises.unlink(filePath);
-        console.log('Standard file deleted successfully:', filePath);
+        //console.log('Standard file deleted successfully:', filePath);
 
         // Log the deletion
         await logDBOperation(req.app.get('models'), req, `Deleted file: ${fileName}`, {
@@ -2929,7 +3034,7 @@ router.delete('/:fileName', async (req, res) => {
 
     } catch (error) {
         console.error('Error deleting file:', error);
-        
+
         await logDBOperation(req.app.get('models'), req, `Error deleting file: ${error.message}`, {
             module: 'OUTBOUND',
             action: 'DELETE',
@@ -2952,8 +3057,8 @@ router.delete('/:fileName', async (req, res) => {
  * Real-time updates endpoint - optimized for frequent polling
  */
 router.get('/real-time-updates', async (req, res) => {
-    console.log('Starting real-time-updates endpoint');
-    
+    //console.log('Starting real-time-updates endpoint');
+
     // Check authentication
     if (!req.session?.user) {
         return res.status(401).json({
@@ -2978,10 +3083,10 @@ router.get('/real-time-updates', async (req, res) => {
 
     try {
         const { lastUpdate, lastFileCheck } = req.query;
-        
+
         // Quick check for status updates
         const hasStatusUpdates = await checkForStatusUpdates(lastUpdate);
-        
+
         // Quick check for new files
         let hasNewFiles = false;
         if (!hasStatusUpdates && lastFileCheck) {
@@ -3047,11 +3152,11 @@ router.get('/real-time-updates', async (req, res) => {
  * List all files with fixed paths (optimized version using hardcoded paths)
  */
 router.get('/list-fixed-paths', async (req, res) => {
-    console.log('Starting list-fixed-paths endpoint');
-    
+    //console.log('Starting list-fixed-paths endpoint');
+
     // Check authentication
     if (!req.session?.user) {
-        console.log('Unauthorized access attempt - no session user');
+        //console.log('Unauthorized access attempt - no session user');
         return res.status(401).json({
             success: false,
             error: {
@@ -3063,7 +3168,7 @@ router.get('/list-fixed-paths', async (req, res) => {
 
     // Check if access token exists
     if (!req.session?.accessToken) {
-        console.log('Unauthorized access attempt - no access token');
+        //console.log('Unauthorized access attempt - no access token');
         return res.status(401).json({
             success: false,
             error: {
@@ -3083,21 +3188,21 @@ router.get('/list-fixed-paths', async (req, res) => {
         const incomingPath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
         const outgoingPath = 'C:\\SFTPRoot_Consolidation\\Outgoing\\LHDN\\PXC Branch';
 
-        console.log('Using fixed paths:');
-        console.log('- Incoming:', incomingPath);
-        console.log('- Outgoing:', outgoingPath);
+        //console.log('Using fixed paths:');
+        //console.log('- Incoming:', incomingPath);
+        //console.log('- Outgoing:', outgoingPath);
 
         // Get the latest status update timestamp
-        console.log('Fetching latest status update');
+        //console.log('Fetching latest status update');
         const latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
             attributes: ['updated_at'],
             order: [['updated_at', 'DESC']],
             raw: true
         });
-        console.log('Latest status update:', latestStatusUpdate);
+        //console.log('Latest status update:', latestStatusUpdate);
 
         // Get existing submission statuses
-        console.log('Fetching submission statuses');
+        //console.log('Fetching submission statuses');
         const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
             attributes: [
                 'id',
@@ -3132,7 +3237,7 @@ router.get('/list-fixed-paths', async (req, res) => {
                 FileName: status.fileName,
                 DocNum: status.invoice_number
             };
-            
+
             if (status.fileName) statusMap.set(status.fileName, statusObj);
             if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
         });
@@ -3140,7 +3245,7 @@ router.get('/list-fixed-paths', async (req, res) => {
         const files = [];
 
         // Process incoming directory directly
-        console.log('Processing incoming directory');
+        //console.log('Processing incoming directory');
         try {
             // For consolidated view, we don't need to process by type/company/date
             // Since files are directly in the Incoming directory
@@ -3151,7 +3256,7 @@ router.get('/list-fixed-paths', async (req, res) => {
         }
 
         // Create a map for latest documents
-        console.log('Processing latest documents');
+        //console.log('Processing latest documents');
         const latestDocuments = new Map();
 
         files.forEach(file => {
@@ -3167,7 +3272,7 @@ router.get('/list-fixed-paths', async (req, res) => {
         const mergedFiles = Array.from(latestDocuments.values()).map(file => {
             const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
             const fileStatus = status?.SubmissionStatus || 'Pending';
-            
+
             return {
                 ...file,
                 status: fileStatus,
@@ -3184,8 +3289,8 @@ router.get('/list-fixed-paths', async (req, res) => {
         // Sort by modified time
         mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
 
-        console.log(`Found ${mergedFiles.length} files`);
-        console.log('Sending response');
+        //console.log(`Found ${mergedFiles.length} files`);
+        //console.log('Sending response');
         res.json({
             success: true,
             files: mergedFiles,
@@ -3238,16 +3343,16 @@ async function processDirectoryFlat(directory, type, files, processLog, statusMa
         // Process each item
         for (const item of dirContents) {
             const itemPath = path.join(directory, item);
-            
+
             try {
                 const stats = await fsPromises.stat(itemPath);
-                
+
                 // If it's a directory, process recursively
                 if (stats.isDirectory()) {
                     await processDirectoryFlat(itemPath, type, files, processLog, statusMap);
                     continue;
                 }
-                
+
                 // If it's a file and Excel file, process it
                 if (stats.isFile() && item.match(/\.(xls|xlsx)$/i)) {
                     await processFile(item, directory, 'N/A', 'PXC Branch', type, files, processLog, statusMap);
@@ -3282,7 +3387,7 @@ async function processDirectoryFlat(directory, type, files, processLog, statusMa
 router.get('/status/:fileName', async (req, res) => {
     try {
         const { fileName } = req.params;
-        
+
         // Basic auth check
         if (!req.session?.accessToken) {
             return res.status(401).json({
@@ -3302,7 +3407,7 @@ router.get('/status/:fileName', async (req, res) => {
                 ]
             },
             attributes: [
-                'id', 'UUID', 'submissionUid', 'fileName', 'invoice_number', 
+                'id', 'UUID', 'submissionUid', 'fileName', 'invoice_number',
                 'status', 'date_submitted', 'date_cancelled', 'updated_at'
             ],
             raw: true
@@ -3351,7 +3456,7 @@ router.get('/status/:fileName', async (req, res) => {
 router.get('/status/:fileName', async (req, res) => {
     try {
         const { fileName } = req.params;
-        console.log('Fetching status for document:', fileName);
+        //console.log('Fetching status for document:', fileName);
 
         // Check authentication
         if (!req.session?.user) {
@@ -3374,8 +3479,8 @@ router.get('/status/:fileName', async (req, res) => {
                 ]
             },
             attributes: [
-                'id', 'UUID', 'submissionUid', 'fileName', 
-                'invoice_number', 'status', 'date_submitted', 
+                'id', 'UUID', 'submissionUid', 'fileName',
+                'invoice_number', 'status', 'date_submitted',
                 'date_cancelled', 'cancellation_reason',
                 'cancelled_by', 'updated_at'
             ],
@@ -3383,7 +3488,7 @@ router.get('/status/:fileName', async (req, res) => {
         });
 
         if (status) {
-            console.log('Document status found:', status.status);
+            //console.log('Document status found:', status.status);
             return res.json({
                 success: true,
                 exists: true,
@@ -3402,7 +3507,7 @@ router.get('/status/:fileName', async (req, res) => {
             });
         }
 
-        console.log('Document status not found for:', fileName);
+        //console.log('Document status not found for:', fileName);
         return res.json({
             success: true,
             exists: false
@@ -3433,43 +3538,43 @@ router.get('/status/:fileName', async (req, res) => {
         }
 
         const { fileName } = req.params;
-        
+
         if (!fileName) {
             return res.status(400).json({
                 success: false,
                 error: 'Missing required parameter: fileName'
             });
         }
-        
+
         // Log the request
-        console.log(`Fetching status for document: ${fileName}`);
-        
+        //console.log(`Fetching status for document: ${fileName}`);
+
         // Query the database for this document's status
         const document = await models.WP_OUTBOUND_STATUS.findOne({
             where: {
                 file_name: fileName
             },
             attributes: [
-                'id', 
-                'file_name', 
-                'status', 
-                'uuid', 
-                'date_submitted', 
-                'date_cancelled', 
-                'cancelled_by', 
+                'id',
+                'file_name',
+                'status',
+                'uuid',
+                'date_submitted',
+                'date_cancelled',
+                'cancelled_by',
                 'cancel_reason',
-                'created_at', 
+                'created_at',
                 'updated_at'
             ]
         });
-        
+
         if (!document) {
             return res.status(404).json({
                 success: false,
                 error: `Document with fileName '${fileName}' not found`
             });
         }
-        
+
         // Format the response
         const formattedDocument = {
             id: document.id,
@@ -3483,12 +3588,12 @@ router.get('/status/:fileName', async (req, res) => {
             createdAt: document.created_at,
             updatedAt: document.updated_at
         };
-        
+
         return res.json({
             success: true,
             document: formattedDocument
         });
-        
+
     } catch (error) {
         console.error(`Error fetching document status: ${error.message}`);
         return res.status(500).json({
@@ -3505,7 +3610,7 @@ const storage = multer.diskStorage({
             const { company, date } = req.body;
             const formattedDate = moment(date).format('YYYY-MM-DD');
             const uploadPath = path.join('C:\\SFTPRoot_Consolidation', 'Incoming', company, formattedDate);
-            
+
             // Ensure directory exists
             await ensureDirectoryExists(uploadPath);
             cb(null, uploadPath);
@@ -3519,7 +3624,7 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     fileFilter: function (req, file, cb) {
         // Check file type
@@ -3537,7 +3642,7 @@ const uploadFolder = path.join(process.cwd(), 'public/uploads');
 try {
     if (!fs.existsSync(uploadFolder)) {
         fs.mkdirSync(uploadFolder, { recursive: true });
-        console.log(`Created upload folder: ${uploadFolder}`);
+        //console.log(`Created upload folder: ${uploadFolder}`);
     }
 } catch (err) {
     console.error(`Failed to create upload folder: ${err.message}`);
@@ -3550,7 +3655,7 @@ const consolidatedBasePath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
 try {
     if (!fs.existsSync(consolidatedBasePath)) {
         fs.mkdirSync(consolidatedBasePath, { recursive: true });
-        console.log(`Created consolidated base path: ${consolidatedBasePath}`);
+        //console.log(`Created consolidated base path: ${consolidatedBasePath}`);
     }
 } catch (err) {
     console.error(`Failed to create consolidated base path: ${err.message}`);
@@ -3561,20 +3666,20 @@ const consolidatedStorage = multer.diskStorage({
         // Create today's folder with format YYYY-MM-DD
         const today = moment().format('YYYY-MM-DD');
         const uploadPath = path.join(consolidatedBasePath, today);
-        
+
         // Only create the directory if it doesn't exist
         if (!fs.existsSync(uploadPath)) {
             try {
                 fs.mkdirSync(uploadPath, { recursive: true });
-                console.log(`Created upload directory: ${uploadPath}`);
+                //console.log(`Created upload directory: ${uploadPath}`);
             } catch (err) {
                 console.error(`Failed to create upload directory: ${err.message}`);
                 return cb(err);
             }
         } else {
-            console.log(`Using existing upload directory: ${uploadPath}`);
+            //console.log(`Using existing upload directory: ${uploadPath}`);
         }
-        
+
         cb(null, uploadPath);
     },
     filename: function (req, file, cb) {
@@ -3641,7 +3746,7 @@ router.get('/check-upload-dirs', async (req, res) => {
                     fs.writeFileSync(testFile, 'test');
                     dirResult.writable = true;
                     dirResult.created_test_file = true;
-                    
+
                     // Clean up test file
                     try {
                         fs.unlinkSync(testFile);
@@ -3656,14 +3761,14 @@ router.get('/check-upload-dirs', async (req, res) => {
                 try {
                     fs.mkdirSync(dir.path, { recursive: true });
                     dirResult.exists = true;
-                    
+
                     // Check if newly created directory is writable
                     const testFile = path.join(dir.path, `.write-test-${Date.now()}.txt`);
                     try {
                         fs.writeFileSync(testFile, 'test');
                         dirResult.writable = true;
                         dirResult.created_test_file = true;
-                        
+
                         // Clean up test file
                         try {
                             fs.unlinkSync(testFile);
@@ -3682,7 +3787,7 @@ router.get('/check-upload-dirs', async (req, res) => {
         }
 
         results.directories.push(dirResult);
-        
+
         // If this is the upload folder we're using and it's not writable, mark overall test as failed
         if (dir.path === uploadFolder && !dirResult.writable) {
             results.success = false;
@@ -3706,7 +3811,7 @@ router.get('/ping', (req, res) => {
             platform: os.platform(),
             uploadFolderExists: fs.existsSync(path.join(process.cwd(), 'public/uploads'))
         };
-        
+
         return res.json(result);
     } catch (error) {
         return res.status(500).json({
@@ -3721,7 +3826,7 @@ router.get('/ping', (req, res) => {
  * Upload consolidated Excel file endpoint
  */
 router.post('/upload-consolidated', consolidatedUpload.single('file'), async (req, res) => {
-    console.log('Starting consolidated file upload...');
+    //console.log('Starting consolidated file upload...');
     try {
         // Basic check if file was uploaded
         if (!req.file) {
@@ -3731,20 +3836,12 @@ router.post('/upload-consolidated', consolidatedUpload.single('file'), async (re
                 message: 'No file uploaded'
             });
         }
-
-        console.log('File received:', {
-            originalname: req.file.originalname,
-            filename: req.file.filename,
-            path: req.file.path,
-            size: req.file.size
-        });
-        
-        console.log('Request body:', req.body);
+        //console.log('Request body:', req.body);
 
         // Skip validation for manual uploads (accept either 'manual' or 'manual_upload' parameters)
         if (req.body.manual === 'true' || req.body.manual_upload === 'true') {
-            console.log('Manual upload detected, skipping validation');
-            
+            //console.log('Manual upload detected, skipping validation');
+
             return res.json({
                 success: true,
                 file: {
@@ -3765,7 +3862,7 @@ router.post('/upload-consolidated', consolidatedUpload.single('file'), async (re
             } catch (unlinkErr) {
                 console.error('Error deleting invalid file:', unlinkErr);
             }
-            
+
             return res.status(400).json({
                 success: false,
                 message: 'Filename does not follow the required format: XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS'
@@ -3785,7 +3882,7 @@ router.post('/upload-consolidated', consolidatedUpload.single('file'), async (re
 
     } catch (error) {
         console.error('Error uploading file:', error);
-        
+
         // Clean up - delete file if it was uploaded
         if (req.file) {
             try {
@@ -3808,30 +3905,30 @@ router.post('/upload-consolidated', consolidatedUpload.single('file'), async (re
  */
 async function findConsolidatedFile(fileName) {
     const consolidatedBasePath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
-    
+
     if (!fs.existsSync(consolidatedBasePath)) {
-        console.log('Consolidated base path does not exist:', consolidatedBasePath);
+        //console.log('Consolidated base path does not exist:', consolidatedBasePath);
         return null;
     }
-    
+
     try {
         // Read all date directories in the base path
         const dateDirs = await fsPromises.readdir(consolidatedBasePath);
-        
+
         // Search each date directory for the file
         for (const dateDir of dateDirs) {
             const datePathStat = await fsPromises.stat(path.join(consolidatedBasePath, dateDir));
-            
+
             // Skip if not a directory
             if (!datePathStat.isDirectory()) continue;
-            
+
             const filePath = path.join(consolidatedBasePath, dateDir, fileName);
-            
+
             // Check if file exists
             try {
                 const fileStat = await fsPromises.stat(filePath);
                 if (fileStat.isFile()) {
-                    console.log('Found consolidated file:', filePath);
+                    //console.log('Found consolidated file:', filePath);
                     return {
                         path: filePath,
                         dateDir: dateDir
@@ -3844,8 +3941,8 @@ async function findConsolidatedFile(fileName) {
     } catch (error) {
         console.error('Error searching for consolidated file:', error);
     }
-    
-    console.log('Could not find consolidated file:', fileName);
+
+    //console.log('Could not find consolidated file:', fileName);
     return null;
 }
 

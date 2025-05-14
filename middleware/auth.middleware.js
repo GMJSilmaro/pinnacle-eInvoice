@@ -5,13 +5,39 @@ const authConfig = require('../config/auth.config');
 // Active sessions and login attempts tracking
 const activeSessions = new Map();
 const loginAttempts = new Map();
+const sessionActivity = new Map(); // Track detailed session activity
 
-// Cleanup old login attempts periodically
+// Cleanup old login attempts and inactive sessions periodically
 setInterval(() => {
   const now = Date.now();
+
+  // Clean up login attempts
   for (const [key, data] of loginAttempts.entries()) {
     if (data.cooldownUntil && data.cooldownUntil < now) {
       loginAttempts.delete(key);
+    }
+  }
+
+  // Clean up inactive sessions
+  for (const [username, session] of activeSessions.entries()) {
+    if (now - session.lastActivity > authConfig.session.timeout) {
+      console.log(`Auto-removing inactive session for user: ${username}`);
+      activeSessions.delete(username);
+
+      // Log session timeout
+      LoggingService.log({
+        description: `Session timed out due to inactivity: ${username}`,
+        username: username,
+        ipAddress: session.ipAddress || 'unknown',
+        logType: LOG_TYPES.INFO,
+        module: MODULES.AUTH,
+        action: ACTIONS.SESSION_TIMEOUT,
+        status: STATUS.SUCCESS,
+        details: {
+          lastActivity: new Date(session.lastActivity).toISOString(),
+          inactiveDuration: Math.floor((now - session.lastActivity) / 1000) + ' seconds'
+        }
+      }).catch(err => console.error('Error logging session timeout:', err));
     }
   }
 }, authConfig.login.cleanupInterval);
@@ -88,7 +114,7 @@ const trackLoginAttempt = async (username, ip, success) => {
   } else {
     attempts.count++;
     attempts.lastAttempt = now.getTime();
-    
+
     if (attempts.count >= authConfig.login.maxAttempts) {
       attempts.cooldownUntil = now.getTime() + authConfig.login.lockoutDuration;
     }
@@ -103,8 +129,8 @@ const trackLoginAttempt = async (username, ip, success) => {
     .split('.')[0]; // Remove milliseconds
 
   await LoggingService.log({
-    description: success ? 
-      `User login: ${username}` : 
+    description: success ?
+      `User login: ${username}` :
       `Login attempt for user ${username} - Failed (Attempt ${attempts.count})${attempts.cooldownUntil > now.getTime() ? ' - Account locked' : ''}`,
     username,
     ipAddress: ip,
@@ -127,11 +153,11 @@ const trackLoginAttempt = async (username, ip, success) => {
 const checkLoginAttempts = (username, ip) => {
   const key = `${username}:${ip}`;
   const attempts = loginAttempts.get(key);
-  
+
   if (!attempts) return { allowed: true };
 
   const now = Date.now();
-  
+
   if (now < attempts.cooldownUntil) {
     const remainingCooldown = Math.ceil((attempts.cooldownUntil - now) / 1000);
     return {
@@ -141,7 +167,7 @@ const checkLoginAttempts = (username, ip) => {
     };
   }
 
-  return { 
+  return {
     allowed: true,
     attemptsRemaining: authConfig.login.maxAttempts - attempts.count
   };
@@ -155,19 +181,95 @@ const checkActiveSession = (username) => {
     if (now - existingSession.lastActivity < authConfig.session.timeout) {
       return true;
     }
+    // Session has expired, remove it
     activeSessions.delete(username);
+
+    // Log session expiry
+    LoggingService.log({
+      description: `Session expired for user: ${username}`,
+      username: username,
+      ipAddress: existingSession.ipAddress || 'unknown',
+      logType: LOG_TYPES.INFO,
+      module: MODULES.AUTH,
+      action: ACTIONS.SESSION_EXPIRED,
+      status: STATUS.SUCCESS,
+      details: {
+        lastActivity: new Date(existingSession.lastActivity).toISOString(),
+        inactiveDuration: Math.floor((now - existingSession.lastActivity) / 1000) + ' seconds'
+      }
+    }).catch(err => console.error('Error logging session expiry:', err));
   }
   return false;
 };
 
-const updateActiveSession = (username) => {
+const updateActiveSession = (username, req = null) => {
+  const now = Date.now();
+  const existingSession = activeSessions.get(username);
+
+  // Get IP address if request object is provided
+  const ipAddress = req ?
+    (req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+     req.headers['x-real-ip'] ||
+     req.connection.remoteAddress ||
+     req.ip) :
+    (existingSession?.ipAddress || 'unknown');
+
+  // Update session with new activity time and additional info
   activeSessions.set(username, {
-    lastActivity: Date.now()
+    lastActivity: now,
+    ipAddress: ipAddress,
+    userAgent: req?.headers['user-agent'] || existingSession?.userAgent || 'unknown',
+    createdAt: existingSession?.createdAt || now
   });
+
+  // Track detailed session activity (limit to 100 entries per user)
+  const userActivity = sessionActivity.get(username) || [];
+  userActivity.push({
+    timestamp: now,
+    path: req?.path || 'api-call',
+    method: req?.method || 'UNKNOWN',
+    ipAddress: ipAddress
+  });
+
+  // Keep only the last 100 activities
+  if (userActivity.length > 100) {
+    userActivity.shift();
+  }
+
+  sessionActivity.set(username, userActivity);
 };
 
 const removeActiveSession = (username) => {
+  // Get session before removing for logging
+  const session = activeSessions.get(username);
+
+  // Remove session
   activeSessions.delete(username);
+
+  // Remove session activity
+  sessionActivity.delete(username);
+
+  // Log session removal if session existed
+  if (session) {
+    LoggingService.log({
+      description: `Session removed for user: ${username}`,
+      username: username,
+      ipAddress: session.ipAddress || 'unknown',
+      logType: LOG_TYPES.INFO,
+      module: MODULES.AUTH,
+      action: ACTIONS.SESSION_REMOVED,
+      status: STATUS.SUCCESS,
+      details: {
+        sessionDuration: Math.floor((Date.now() - session.createdAt) / 1000) + ' seconds',
+        lastActivity: new Date(session.lastActivity).toISOString()
+      }
+    }).catch(err => console.error('Error logging session removal:', err));
+  }
+};
+
+// Get session activity for a user
+const getSessionActivity = (username) => {
+  return sessionActivity.get(username) || [];
 };
 
 // Authentication middleware
@@ -177,29 +279,39 @@ const authMiddleware = (req, res, next) => {
     return next();
   }
 
-  if (req.isAuthenticated()) {
+  // Check if user is authenticated via session
+  if (req.session && req.session.user) {
     return next();
   }
-  
+
+  // For API requests, return 401
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.status(401).json({
       success: false,
       message: 'Authentication required'
     });
   }
-  
+
+  // For regular requests, redirect to login page
   res.redirect('/login');
 };
 
 const isAdmin = (req, res, next) => {
-  if (req.isAuthenticated() && req.user.Admin === 1) {
+  // Check if user is authenticated and is an admin
+  if (req.session && req.session.user && req.session.user.admin === 1) {
     return next();
   }
-  
-  res.status(403).json({
-    success: false,
-    message: 'Admin access required'
-  });
+
+  // For API requests, return 403
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.status(403).json({
+      success: false,
+      message: 'Admin access required'
+    });
+  }
+
+  // For regular requests, redirect to dashboard
+  res.redirect('/dashboard?error=admin-required');
 };
 
 // Update to handle cases where req object isn't available
@@ -212,9 +324,9 @@ async function updateUserActivity(userId, isActive = true, req = null) {
 
     // Only include IP address if req object is available
     if (req) {
-      const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() || 
-                      req.headers['x-real-ip'] || 
-                      req.connection.remoteAddress || 
+      const clientIP = req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+                      req.headers['x-real-ip'] ||
+                      req.connection.remoteAddress ||
                       req.ip;
       updateData.LastIPAddress = clientIP;
     }
@@ -236,17 +348,17 @@ const handleLogout = async (req, res) => {
             // Update user's active status to false on logout
             req.session.user.isActive = false;
             await updateUserActivity(req.session.user.id, false);
-            
+
             // Remove from active sessions
             removeActiveSession(req.session.user.username);
-            
+
             // Format timestamp consistently
             const now = new Date();
             const timestamp = now.toISOString()
                 .replace('T', ' ')
                 .replace('Z', '')
                 .split('.')[0];
-            
+
             // Log the logout
             await LoggingService.log({
                 description: 'User logged out',
@@ -279,16 +391,51 @@ const handleLogout = async (req, res) => {
 // Update the isApiAuthenticated middleware to pass the req object
 async function isApiAuthenticated(req, res, next) {
   try {
+    // Check if session exists
     if (!req.session?.user) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
+      // Don't force logout, just return 401 for API requests
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+        needsLogin: true
+      });
     }
 
-    // Pass the req object when updating activity
-    await updateUserActivity(req.session.user.id, true, req);
+    // Check if session is about to expire
+    if (req.session.cookie && req.session.cookie.expires) {
+      const sessionExpiryTime = req.session.cookie.expires;
+      const now = new Date();
+      const timeRemaining = sessionExpiryTime - now;
+
+      // If session is about to expire (less than 2 minutes), extend it
+      if (timeRemaining < 120000) {
+        req.session.cookie.maxAge = authConfig.session.timeout;
+        console.log(`Extended session for user ${req.session.user.username} - was about to expire in ${Math.floor(timeRemaining / 1000)} seconds`);
+      }
+    }
+
+    try {
+      // Update user activity in database - but don't block if it fails
+      await updateUserActivity(req.session.user.id, true, req);
+    } catch (activityError) {
+      console.error('Error updating user activity:', activityError);
+      // Continue despite error
+    }
+
+    try {
+      // Update active session tracking - but don't block if it fails
+      updateActiveSession(req.session.user.username, req);
+    } catch (sessionError) {
+      console.error('Error updating active session:', sessionError);
+      // Continue despite error
+    }
+
+    // Allow the request to proceed
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    // Don't block the request on error, just log it
+    next();
   }
 }
 
@@ -304,5 +451,6 @@ module.exports = {
   handleSessionExpiry,
   handleUnauthorized,
   handleLogout,
-  updateUserActivity
-}; 
+  updateUserActivity,
+  getSessionActivity
+};

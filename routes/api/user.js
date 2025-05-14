@@ -9,12 +9,15 @@ const path = require('path');
 const fs = require('fs').promises;
 const { Op } = require('sequelize');
 const { auth } = require('../../middleware');
+const { checkActiveSession, updateActiveSession, removeActiveSession } = require('../../middleware/auth.middleware');
+const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
+const authConfig = require('../../config/auth.config');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: async function (req, file, cb) {
-        const uploadDir = file.fieldname === 'avatar' ? 
-            'public/uploads/avatars' : 
+        const uploadDir = file.fieldname === 'avatar' ?
+            'public/uploads/avatars' :
             'public/uploads/signatures';
         try {
             await fs.mkdir(uploadDir, { recursive: true });
@@ -54,9 +57,9 @@ const upload = multer({
 // Middleware to check if user is authenticated and is admin
 const checkAdmin = (req, res, next) => {
     if (!req.session?.user?.admin) {
-        return res.status(403).json({ 
-            success: false, 
-            message: 'Admin access required' 
+        return res.status(403).json({
+            success: false,
+            message: 'Admin access required'
         });
     }
     next();
@@ -69,10 +72,10 @@ router.get('/users-list', checkAdmin, async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
-        
+
         // Get total count for pagination
         const totalCount = await WP_USER_REGISTRATION.count();
-        
+
         // Fetch users with pagination
         const users = await WP_USER_REGISTRATION.findAll({
             attributes: [
@@ -380,7 +383,7 @@ router.post('/upload-signature', checkAdmin, upload.single('signature'), async (
         }
 
         const signatureUrl = '/uploads/signatures/' + req.file.filename;
-        
+
         res.json({
             success: true,
             message: 'Signature uploaded successfully',
@@ -396,7 +399,7 @@ router.post('/upload-signature', checkAdmin, upload.single('signature'), async (
                 console.error('Error deleting uploaded file:', unlinkError);
             }
         }
-        
+
         console.error('Error uploading signature:', error);
         res.status(500).json({
             success: false,
@@ -455,7 +458,7 @@ router.post('/extend-session', async (req, res) => {
         // Update session timestamp and touch the session
         req.session.lastActivity = Date.now();
         req.session.touch(); // This explicitly tells the session store to refresh the session
-        
+
         // Log session extension
         await WP_LOGS.create({
             Description: `User ${req.session.user.username} extended their session`,
@@ -501,7 +504,7 @@ router.get('/check-session', async (req, res) => {
         return res.json({
             success: true,
             message: 'Session is valid',
-            username: req.session.user.username
+            username: req.session.user.username || req.session.user.Username
         });
     } catch (error) {
         console.error('Error checking session:', error);
@@ -511,6 +514,62 @@ router.get('/check-session', async (req, res) => {
         });
     }
 });
+
+// POST version of check-session for compatibility
+router.post('/check-session', async (req, res) => {
+    try {
+        const { username } = req.body || {};
+
+        // Check if user is authenticated
+        if (!req.session || !req.session.user) {
+            // Check if the username has an active session elsewhere
+            if (username) {
+                const hasActiveSession = await checkForActiveSession(username);
+                return res.json({
+                    success: false,
+                    message: 'Not authenticated',
+                    hasActiveSession
+                });
+            }
+
+            return res.json({
+                success: false,
+                message: 'Not authenticated',
+                hasActiveSession: false
+            });
+        }
+
+        // Simply return success if session exists
+        return res.json({
+            success: true,
+            message: 'Session is valid',
+            username: req.session.user.username || req.session.user.Username,
+            hasActiveSession: true
+        });
+    } catch (error) {
+        console.error('Error checking session:', error);
+        return res.json({
+            success: false,
+            message: 'Failed to check session',
+            hasActiveSession: false
+        });
+    }
+});
+
+// Helper function to check for active sessions
+async function checkForActiveSession(username) {
+    try {
+        if (!username) {
+            return false;
+        }
+
+        // Check if user has an active session
+        return await checkActiveSession(username);
+    } catch (error) {
+        console.error('Error checking active session:', error);
+        return false;
+    }
+}
 
 // Profile endpoint for session checking
 router.get('/profile', async (req, res) => {
@@ -525,7 +584,7 @@ router.get('/profile', async (req, res) => {
         const user = await WP_USER_REGISTRATION.findOne({
             where: { ID: req.session.user.id },
             attributes: [
-                'ID', 'FullName', 'Email', 'Phone', 'Username', 'Admin', 
+                'ID', 'FullName', 'Email', 'Phone', 'Username', 'Admin',
                 'TIN', 'IDType', 'IDValue', 'CreateTS', 'ValidStatus',
                 'LastLoginTime', 'ProfilePicture', 'TwoFactorEnabled',
                 'NotificationsEnabled', 'UpdateTS'
@@ -565,7 +624,7 @@ router.post('/update-profile', async (req, res) => {
 
         // Get user ID from session
         const userId = req.session.user.ID || req.session.user.id;
-        
+
         if (!userId) {
             return res.status(400).json({
                 success: false,
@@ -662,7 +721,7 @@ router.post('/update-avatar', upload.single('avatar'), async (req, res) => {
 
         // Get user ID from session (handle both upper and lowercase)
         const userId = req.session.user.ID || req.session.user.id;
-        
+
         if (!userId) {
             console.error('Session user ID not found:', req.session.user);
             return res.status(401).json({
@@ -694,10 +753,10 @@ router.post('/update-avatar', upload.single('avatar'), async (req, res) => {
 
         // Update user's profile picture path
         const avatarPath = '/uploads/avatars/' + req.file.filename;
-        
+
         // Format date to match MSSQL format without timezone
         const formattedDate = moment().utc().format('YYYY-MM-DD HH:mm:ss.SSS');
-        
+
         await WP_USER_REGISTRATION.update({
             ProfilePicture: avatarPath,
             UpdateTS: sequelize.literal(`CAST('${formattedDate}' AS DATETIME2)`)
@@ -851,15 +910,15 @@ router.post('/change-password', async (req, res) => {
 router.get('/security-settings', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
     // Use session user ID instead of req.user
     const userId = req.session.user.ID || req.session.user.id;
-    
+
     if (!userId) {
       return res.status(400).json({
         success: false,
@@ -868,7 +927,7 @@ router.get('/security-settings', async (req, res) => {
     }
 
     const config = await db.WP_CONFIGURATION.findActiveConfig('SECURITY', userId);
-    
+
     // Default security settings
     const defaultSettings = {
       ipRestriction: {
@@ -909,7 +968,7 @@ router.get('/security-settings', async (req, res) => {
     // Parse settings if it's a string
     let savedSettings = {};
     try {
-      savedSettings = typeof config.Settings === 'string' ? 
+      savedSettings = typeof config.Settings === 'string' ?
         JSON.parse(config.Settings) : config.Settings;
     } catch (e) {
       console.error('Error parsing saved settings:', e);
@@ -928,10 +987,10 @@ router.get('/security-settings', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching security settings:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to fetch security settings',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -940,9 +999,9 @@ router.get('/security-settings', async (req, res) => {
 router.post('/security-settings', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -973,10 +1032,10 @@ router.post('/security-settings', async (req, res) => {
 
   } catch (error) {
     console.error('Error saving security settings:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to save security settings',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -985,7 +1044,7 @@ router.post('/security-settings', async (req, res) => {
 router.get('/company/list', checkAdmin, async (req, res) => {
     try {
         const companies = await db.sequelize.query(`
-            SELECT 
+            SELECT
                 CompanyImage,
                 CompanyName,
                 Industry,
@@ -1029,6 +1088,14 @@ router.get('/profile', async (req, res) => {
             });
         }
 
+        // Calculate session expiry time
+        const sessionExpiryTime = req.session.cookie.expires;
+        const now = new Date();
+        const timeRemaining = sessionExpiryTime - now;
+
+        // Check if we should show timeout warning (60 seconds)
+        const showTimeoutWarning = timeRemaining <= (60 * 1000);
+
         // Get user from database to ensure they still exist and are valid
         const user = await WP_USER_REGISTRATION.findOne({
             where: {
@@ -1038,20 +1105,42 @@ router.get('/profile', async (req, res) => {
             attributes: [
                 'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
                 'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
-                'ProfilePicture'
+                'ProfilePicture', 'LastLoginTime'
             ]
         });
 
         if (!user) {
             // User no longer exists or is no longer valid
-            req.session.destroy();
+            req.session.destroy((err) => {
+                if (err) console.error('Error destroying invalid session:', err);
+            });
             return res.status(401).json({
                 success: false,
                 message: 'User account is no longer valid'
             });
         }
 
-        // Return user profile data
+        // Update last activity time in session
+        req.session.lastActivity = Date.now();
+
+        // Log the profile access (but only occasionally to avoid excessive logging)
+        if (!req.session.lastProfileLog || (Date.now() - req.session.lastProfileLog > 5 * 60 * 1000)) {
+            await LoggingService.log({
+                description: 'User profile accessed',
+                username: user.Username,
+                userId: user.ID,
+                ipAddress: req.ip,
+                logType: LOG_TYPES.INFO,
+                module: MODULES.USER,
+                action: ACTIONS.VIEW,
+                status: STATUS.SUCCESS
+            });
+
+            // Update last profile log time
+            req.session.lastProfileLog = Date.now();
+        }
+
+        // Return user profile data with session info
         return res.json({
             success: true,
             user: {
@@ -1064,7 +1153,13 @@ router.get('/profile', async (req, res) => {
                 admin: user.Admin === 1,
                 profilePicture: user.ProfilePicture,
                 twoFactorEnabled: user.TwoFactorEnabled === 1,
-                notificationsEnabled: user.NotificationsEnabled === 1
+                notificationsEnabled: user.NotificationsEnabled === 1,
+                lastLoginTime: user.LastLoginTime
+            },
+            sessionInfo: {
+                expiryTime: sessionExpiryTime,
+                lastActivity: req.session.lastActivity,
+                showTimeoutWarning: showTimeoutWarning
             }
         });
     } catch (error) {
@@ -1076,4 +1171,4 @@ router.get('/profile', async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;

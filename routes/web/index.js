@@ -42,7 +42,7 @@ router.get('/login', (req, res) => {
     });
 });
 
-router.post('/auth/login', async (req, res) => {
+router.post('/auth/logout', async (req, res) => {
     try {
         // Log the logout action if user is in session
         if (req.session?.user) {
@@ -80,8 +80,8 @@ router.get('/auth/logout', async (req, res) => {
 
         // Destroy the session
         req.session.destroy(() => {
-            const redirectUrl = req.query.expired ? 
-                `/login?expired=true&reason=${req.query.reason || 'timeout'}` : 
+            const redirectUrl = req.query.expired ?
+                `/login?expired=true&reason=${req.query.reason || 'timeout'}` :
                 '/login';
             res.redirect(redirectUrl);
         });

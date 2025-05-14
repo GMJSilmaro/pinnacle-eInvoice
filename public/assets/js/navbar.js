@@ -78,11 +78,11 @@
             const minutes = Math.floor(timeLeft / 60);
             const seconds = timeLeft % 60;
             countdownEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            
+
             if (timeLeft <= 60) { // Last minute
               countdownEl.classList.add('text-danger', 'fw-bold');
             }
-            
+
             if (timeLeft <= 0) {
               clearInterval(countdownInterval);
               handleSessionExpiry();
@@ -138,18 +138,18 @@
       }
 
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.message || 'Failed to extend session');
       }
-      
+
       // Reset warning state and timers
       isWarningShown = false;
       resetIdleTimer();
-      
+
       // Update session data in storage
       sessionStorage.setItem('lastSessionCheck', Date.now().toString());
-      
+
       // If we received session info, update the navbar data
       if (data.sessionInfo) {
         const navbarData = sessionStorage.getItem('navbarData');
@@ -167,7 +167,7 @@
           }
         }
       }
-      
+
       // Show success message with expiry time if available
       let successMessage = 'Your session has been successfully extended.';
       if (data.sessionInfo && data.sessionInfo.expiresAt) {
@@ -175,7 +175,7 @@
         const formattedTime = expiryTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         successMessage += `<br><span class="small text-muted">Valid until ${formattedTime}</span>`;
       }
-      
+
       Swal.fire({
         title: '<i class="bi bi-check-circle text-success"></i> Session Extended',
         html: successMessage,
@@ -191,7 +191,7 @@
       });
     } catch (error) {
       console.error('Error extending session:', error);
-      
+
       // Show error message
       Swal.fire({
         title: '<i class="bi bi-exclamation-circle text-danger"></i> Session Error',
@@ -246,8 +246,10 @@
   // Function to check session status with improved error handling - uses lightweight endpoint
   async function checkSession() {
     // Don't check session if we're on the login page or other public pages
-    if (window.location.pathname.includes('/auth/login') || 
+    if (window.location.pathname.includes('/auth/login') ||
+        window.location.pathname.includes('/login') ||
         window.location.pathname.includes('/auth/register') ||
+        window.location.pathname.includes('/register') ||
         window.location.pathname.includes('/auth/forgot-password')) {
       return true; // Consider session valid on public pages
     }
@@ -256,7 +258,7 @@
       if (isWarningShown) {
         return true;
       }
-      
+
       // Check if we've recently had a session error to avoid repeated failed requests
       const lastErrorTime = sessionStorage.getItem('lastSessionErrorTime');
       if (lastErrorTime && (Date.now() - parseInt(lastErrorTime) < 30000)) { // 30 seconds cooldown
@@ -273,7 +275,7 @@
           return true;
         }
       }
-      
+
       // Set a timeout to prevent hanging requests
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
@@ -282,7 +284,7 @@
           controller.abort();
         }
       }, 5000); // 5 second timeout
-      
+
       try {
         // Use the lightweight session check endpoint instead of the full profile endpoint
         const response = await fetch('/api/user/check-session', {
@@ -295,7 +297,7 @@
             'Expires': '0'
           }
         });
-        
+
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);
 
@@ -303,7 +305,7 @@
         if (response.status === 401 || response.status === 403) {
           // Only log and consider session expired if we're on a protected page
           // and we're not on a page that uses DataTables
-          if (!window.location.pathname.includes('/auth/') && 
+          if (!window.location.pathname.includes('/auth/') &&
               !window.location.pathname.includes('/dashboard/outbound')) {
             console.log('Session expired or unauthorized');
             return false;
@@ -318,7 +320,7 @@
         }
 
         const data = await response.json();
-        
+
         if (!data || !data.success) {
           console.log('Session check returned unsuccessful response');
           return false;
@@ -326,7 +328,7 @@
 
         // Update session timestamp on valid session
         sessionStorage.setItem('lastSessionCheck', Date.now().toString());
-        
+
         // If we need to update the UI with username, store it
         if (data.username) {
           const navbarData = sessionStorage.getItem('navbarData');
@@ -381,7 +383,7 @@
       `;
 
       // Perform logout
-      fetch('/auth/logout', {
+      fetch('/auth/auth/logout', {
         method: 'POST',
         credentials: 'same-origin'
       }).finally(() => {
@@ -401,11 +403,11 @@
               confirmButton: 'px-4'
             }
           }).then(() => {
-            window.location.href = '/auth/logout?expired=true&reason=idle';
+            window.location.href = '/auth/auth/logout?expired=true&reason=idle';
           });
         } else {
           alert('Your session has expired. Please log in again.');
-          window.location.href = '/auth/logout?expired=true&reason=idle';
+          window.location.href = '/auth/auth/logout?expired=true&reason=idle';
         }
       });
     }
@@ -454,9 +456,9 @@
 
   function updateUI(data) {
     const user = data.user || {};
-    
+
     console.log('Updating UI with:', { user });
-    
+
     try {
       // Hide loading placeholders
       document.querySelectorAll('.loading-placeholder').forEach(el => {
@@ -503,12 +505,12 @@
       if (logoElement) {
         const defaultImage = '/assets/img/default-avatar.png';
         const profilePicUrl = user.profilePicture || defaultImage;
-        
+
         // Add base URL if the path is relative
-        const fullPicUrl = profilePicUrl?.startsWith('http') ? 
-          profilePicUrl : 
+        const fullPicUrl = profilePicUrl?.startsWith('http') ?
+          profilePicUrl :
           (profilePicUrl ? `${window.location.origin}${profilePicUrl}` : defaultImage);
-        
+
         logoElement.src = fullPicUrl;
         logoElement.onerror = () => {
           console.log('Failed to load image:', fullPicUrl);
@@ -523,7 +525,7 @@
 
       // Setup dropdown functionality
       setupDropdown();
-      
+
       console.log('UI update complete');
     } catch (error) {
       console.error('Error updating UI:', error);
@@ -533,7 +535,7 @@
   // Enhanced navbar refresh function
   async function refreshNavbar() {
     console.log('Refreshing navbar...');
-    
+
     try {
       // Check session before refreshing
       const isValid = await checkSession();
@@ -544,10 +546,10 @@
 
       // Clear cached data
       sessionStorage.removeItem('navbarData');
-      
+
       // Reinitialize navbar
       await initializeNavbar();
-      
+
       console.log('Navbar refresh complete');
     } catch (error) {
       console.error('Error refreshing navbar:', error);
@@ -557,9 +559,9 @@
 
   async function initializeNavbar() {
     console.log('Initializing navbar...');
-    
+
     // Check if we're on the login page
-    if (window.location.pathname === '/auth/login') {
+    if (window.location.pathname === '/auth/login' || window.location.pathname === '/login') {
       console.log('On login page, skipping navbar init...');
       return;
     }
@@ -578,7 +580,7 @@
         setDefaultValues();
         return;
       }
-      
+
       const response = await fetch('/api/user/profile', {
         method: 'GET',
         headers: {
@@ -597,10 +599,10 @@
         }
         throw new Error(`Failed to fetch user details: ${response.status}`);
       }
-      
+
       const data = await response.json();
       console.log('Raw Navbar data:', data);
-      
+
       if (!data.success) {
         throw new Error(data.message || 'Failed to fetch user details');
       }
@@ -630,7 +632,7 @@
       if (sanitizedData.user.username || sanitizedData.user.email) {
         sessionStorage.setItem('navbarData', JSON.stringify(sanitizedData));
       }
-      
+
       updateUI(sanitizedData);
       setupNavHighlighting();
       startSessionCheck();
@@ -647,7 +649,7 @@
     const profileBtn = document.querySelector('.pinnacle-header__profile-btn');
     const dropdown = document.querySelector('.pinnacle-header__dropdown');
     const arrow = document.querySelector('.pinnacle-header__profile-arrow');
-   
+
     if (!profileBtn || !dropdown) return;
 
     let isOpen = false;

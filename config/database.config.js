@@ -1,10 +1,16 @@
 require('dotenv').config();
 
+// For debugging purposes
+console.log('Database config loaded with:');
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_NAME:', process.env.DB_NAME);
+
 const config = {
-  HOST: process.env.DB_HOST,
-  USER: process.env.DB_USER,
-  PASSWORD: process.env.DB_PASSWORD,
-  DB: process.env.DB_NAME,
+  HOST: "PXCSERVER",
+  USER: "sa",
+  PASSWORD: "pxc@sql1234",
+  DB: "PXC_TEKAUTO_E_INVOICE_DATABASE",
   dialect: "mssql",
   dialectOptions: {
     options: {
@@ -17,11 +23,11 @@ const config = {
     authentication: {
       type: 'default',
       options: {
-        userName: process.env.DB_USER,
-        password: process.env.DB_PASSWORD
+        userName: "sa",
+        password: "pxc@sql1234"
       }
     },
-    server: process.env.DB_HOST
+    server: "PXCSERVER"
   },
   define: {
     timestamps: false
