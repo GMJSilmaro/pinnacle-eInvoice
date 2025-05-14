@@ -3,7 +3,7 @@ const router = express.Router();
 const { auth } = require('../../middleware');
 const { LoggingService, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
 const excel = require('exceljs');
-const { WP_LOGS } = require('../../models');
+const db = require('../../models');
 
 /**
  * @route GET /api/logs/recent
@@ -12,12 +12,18 @@ const { WP_LOGS } = require('../../models');
  */
 router.get('/recent', async (req, res) => {
   try {
+    // Check if WP_LOGS model is available
+    if (!db.WP_LOGS) {
+      console.warn('WP_LOGS model not available');
+      return res.json([]);
+    }
+
     // Get the most recent 10 logs
-    const logs = await WP_LOGS.findAll({
+    const logs = await db.WP_LOGS.findAll({
       order: [['CreateTS', 'DESC']],
       limit: 10
     });
-    
+
     res.json(logs);
   } catch (error) {
     console.error('Error fetching recent logs:', error);
@@ -67,7 +73,7 @@ router.get('/audit', auth.isAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching audit logs:', error);
-    
+
     await LoggingService.log({
       description: 'Failed to view audit logs',
       username: req.session?.user?.username || 'Unknown',
@@ -154,7 +160,7 @@ router.get('/audit/export', auth.isAdmin, async (req, res) => {
       module: MODULES.AUDIT,
       action: ACTIONS.EXPORT,
       status: STATUS.SUCCESS,
-      details: { 
+      details: {
         filters: { startDate, endDate, username, module, action, status },
         recordCount: logs.length
       }
@@ -176,7 +182,7 @@ router.get('/audit/export', auth.isAdmin, async (req, res) => {
 
   } catch (error) {
     console.error('Error exporting audit logs:', error);
-    
+
     await LoggingService.log({
       description: 'Failed to export audit logs',
       username: req.session?.user?.username || 'Unknown',
@@ -200,19 +206,19 @@ router.get('/audit/stats', auth.isAdmin, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const stats = {
       todayCount: await LoggingService.getAuditLogs({
         startDate: today,
         endDate: new Date()
       }).then(result => result.total),
-      
+
       totalCount: await LoggingService.getAuditLogs({}).then(result => result.total),
-      
+
       errorCount: await LoggingService.getAuditLogs({
         status: STATUS.ERROR
       }).then(result => result.total),
-      
+
       warningCount: await LoggingService.getAuditLogs({
         status: STATUS.WARNING
       }).then(result => result.total)
@@ -231,4 +237,4 @@ router.get('/audit/stats', auth.isAdmin, async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

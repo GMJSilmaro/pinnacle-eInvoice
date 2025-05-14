@@ -1,6 +1,8 @@
-// Session monitoring and timeout alerts
+// Session monitoring and timeout alerts - DISABLED
+// This file has been disabled to reduce excessive session checking and logging
 (function() {
-    const CHECK_INTERVAL = 30000; // Check every 30 seconds
+    // Configuration - not used since monitoring is disabled
+    const CHECK_INTERVAL = 300000; // 5 minutes (increased from 30 seconds)
     const WARNING_THRESHOLD = 60; // Show warning when 60 seconds remain
     const ACTIVITY_EVENTS = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart']; // Events that count as user activity
 
@@ -329,7 +331,8 @@
         }
     }
 
-    // Start monitoring
-    checkSession(); // Initial check
-    setInterval(checkSession, CHECK_INTERVAL);
+    // Session monitoring disabled
+    // checkSession(); // Initial check disabled
+    // setInterval(checkSession, CHECK_INTERVAL); // Interval check disabled
+    console.log('Session monitoring disabled to reduce excessive logging');
 })();

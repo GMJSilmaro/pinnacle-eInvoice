@@ -222,22 +222,46 @@ const updateActiveSession = (username, req = null) => {
     createdAt: existingSession?.createdAt || now
   });
 
-  // Track detailed session activity (limit to 100 entries per user)
-  const userActivity = sessionActivity.get(username) || [];
-  userActivity.push({
-    timestamp: now,
-    path: req?.path || 'api-call',
-    method: req?.method || 'UNKNOWN',
-    ipAddress: ipAddress
-  });
+  // Only track activity for important paths to reduce logging
+  if (req && isImportantPath(req.path)) {
+    // Track detailed session activity (limit to 20 entries per user)
+    const userActivity = sessionActivity.get(username) || [];
+    userActivity.push({
+      timestamp: now,
+      path: req.path || 'api-call',
+      method: req.method || 'UNKNOWN',
+      ipAddress: ipAddress
+    });
 
-  // Keep only the last 100 activities
-  if (userActivity.length > 100) {
-    userActivity.shift();
+    // Keep only the last 20 activities instead of 100
+    if (userActivity.length > 20) {
+      userActivity.shift();
+    }
+
+    sessionActivity.set(username, userActivity);
   }
-
-  sessionActivity.set(username, userActivity);
 };
+
+// Helper function to determine if a path is important enough to log
+function isImportantPath(path) {
+  if (!path) return false;
+
+  // Only log important paths like login, logout, admin actions
+  const importantPaths = [
+    '/auth/login',
+    '/auth/logout',
+    '/api/admin',
+    '/api/user/profile',
+    '/api/user/session-info',
+    '/settings',
+    '/users',
+    '/company/profile',
+    '/api/company',
+    '/api/user/users-list'
+  ];
+
+  return importantPaths.some(p => path.includes(p));
+}
 
 const removeActiveSession = (username) => {
   // Get session before removing for logging
@@ -281,6 +305,34 @@ const authMiddleware = (req, res, next) => {
 
   // Check if user is authenticated via session
   if (req.session && req.session.user) {
+    // Log session user data for debugging
+    if (isImportantPath(req.path)) {
+      console.log('=== SESSION USER DATA ===');
+      console.log('Path:', req.path);
+      console.log('User ID:', req.session.user.id);
+      console.log('Username:', req.session.user.username);
+      console.log('Admin Status:', req.session.user.admin);
+      console.log('=== END SESSION USER DATA ===');
+    }
+
+    // Check if session is about to expire
+    if (req.session.cookie && req.session.cookie.expires) {
+      const sessionExpiryTime = req.session.cookie.expires;
+      const now = new Date();
+      const timeRemaining = sessionExpiryTime - now;
+
+      // If session is about to expire (less than 2 minutes), extend it
+      if (timeRemaining < 120000) {
+        req.session.cookie.maxAge = authConfig.session.timeout;
+        if (isImportantPath(req.path)) {
+          console.log(`Extended session for user ${req.session.user.username} - was about to expire in ${Math.floor(timeRemaining / 1000)} seconds`);
+        }
+      }
+    }
+
+    // Update active session tracking
+    updateActiveSession(req.session.user.username, req);
+
     return next();
   }
 
@@ -293,14 +345,17 @@ const authMiddleware = (req, res, next) => {
   }
 
   // For regular requests, redirect to login page
-  res.redirect('/login');
+  res.redirect('/auth/login?redirect=' + encodeURIComponent(req.originalUrl));
 };
 
 const isAdmin = (req, res, next) => {
   // Check if user is authenticated and is an admin
-  if (req.session && req.session.user && req.session.user.admin === 1) {
+  if (req.session && req.session.user && (req.session.user.admin === 1 || req.session.user.admin === true)) {
+    console.log('Admin access granted for user:', req.session.user.username);
     return next();
   }
+
+  console.log('Admin access denied for user:', req.session?.user?.username, 'Admin value:', req.session?.user?.admin);
 
   // For API requests, return 403
   if (req.xhr || req.headers.accept?.includes('application/json')) {
@@ -388,7 +443,7 @@ const handleLogout = async (req, res) => {
     }
 };
 
-// Update the isApiAuthenticated middleware to pass the req object
+// Update the isApiAuthenticated middleware to pass the req object - optimized to reduce logging
 async function isApiAuthenticated(req, res, next) {
   try {
     // Check if session exists
@@ -410,20 +465,26 @@ async function isApiAuthenticated(req, res, next) {
       // If session is about to expire (less than 2 minutes), extend it
       if (timeRemaining < 120000) {
         req.session.cookie.maxAge = authConfig.session.timeout;
-        console.log(`Extended session for user ${req.session.user.username} - was about to expire in ${Math.floor(timeRemaining / 1000)} seconds`);
+        // Only log session extensions for important paths
+        if (isImportantPath(req.path)) {
+          console.log(`Extended session for user ${req.session.user.username} - was about to expire in ${Math.floor(timeRemaining / 1000)} seconds`);
+        }
       }
     }
 
-    try {
-      // Update user activity in database - but don't block if it fails
-      await updateUserActivity(req.session.user.id, true, req);
-    } catch (activityError) {
-      console.error('Error updating user activity:', activityError);
-      // Continue despite error
+    // Only update user activity for important paths to reduce database load
+    if (isImportantPath(req.path)) {
+      try {
+        // Update user activity in database - but don't block if it fails
+        await updateUserActivity(req.session.user.id, true, req);
+      } catch (activityError) {
+        console.error('Error updating user activity:', activityError);
+        // Continue despite error
+      }
     }
 
+    // Always update active session tracking but with reduced logging
     try {
-      // Update active session tracking - but don't block if it fails
       updateActiveSession(req.session.user.username, req);
     } catch (sessionError) {
       console.error('Error updating active session:', sessionError);
@@ -440,6 +501,7 @@ async function isApiAuthenticated(req, res, next) {
 }
 
 module.exports = {
+  middleware: authMiddleware, // Export as middleware for backward compatibility
   authMiddleware,
   isAdmin,
   isApiAuthenticated,

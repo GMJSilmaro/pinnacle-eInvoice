@@ -3,15 +3,6 @@ const router = express.Router();
 const db = require('../../models');
 const excel = require('exceljs');
 const { auth } = require('../../middleware');
-const { 
-  WP_INBOUND_STATUS, 
-  WP_USER_REGISTRATION, 
-  WP_COMPANY_SETTINGS,
-  WP_LOGS,
-  WP_OUTBOUND_STATUS,
-  sequelize,
-  Op
-} = require('../../models');
 const axios = require('axios');
 const multer = require('multer');
 const path = require('path');
@@ -97,9 +88,9 @@ const upload = multer({
 router.get('/getUserAndCompanyDetails', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -109,9 +100,9 @@ router.get('/getUserAndCompanyDetails', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -144,9 +135,9 @@ router.get('/getUserAndCompanyDetails', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching user and company details:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch user and company details' 
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user and company details'
     });
   }
 });
@@ -257,7 +248,7 @@ router.get('/inbound-status/count', async (req, res) => {
   try {
     const { period } = req.query;
     let whereClause = {};
-    
+
     if (period) {
       const now = new Date();
       switch (period) {
@@ -388,8 +379,8 @@ router.get('/user-details', async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       user: {
         ...req.session.user,
         id: user.ID // Add the database ID
@@ -463,52 +454,87 @@ router.get('/graph-data', async (req, res) => {
 router.get('/dashboard/stats', async (req, res) => {
     try {
         // Get outbound count
-        const outboundCount = await WP_OUTBOUND_STATUS.count();
+        let outboundCount = 0;
+        if (db.WP_OUTBOUND_STATUS) {
+            try {
+                outboundCount = await db.WP_OUTBOUND_STATUS.count();
+            } catch (error) {
+                console.error('Error counting outbound status:', error);
+            }
+        }
 
         // Get inbound count
-        const inboundCount = await WP_INBOUND_STATUS.count();
+        let inboundCount = 0;
+        if (db.WP_INBOUND_STATUS) {
+            try {
+                inboundCount = await db.WP_INBOUND_STATUS.count();
+            } catch (error) {
+                console.error('Error counting inbound status:', error);
+            }
+        }
 
         // Get company count
-        const companyCount = await WP_COMPANY_SETTINGS.count();
+        let companyCount = 0;
+        if (db.WP_COMPANY_SETTINGS) {
+            try {
+                companyCount = await db.WP_COMPANY_SETTINGS.count();
+            } catch (error) {
+                console.error('Error counting company settings:', error);
+            }
+        }
 
         // Get outbound stats for the chart (last 7 days)
-        const outboundStats = await WP_OUTBOUND_STATUS.findAll({
-            attributes: [
-                [sequelize.literal('CONVERT(DATE, date_submitted)'), 'date'],
-                'status',
-                [sequelize.fn('COUNT', sequelize.col('*')), 'count']
-            ],
-            where: {
-                date_submitted: {
-                    [Op.gte]: sequelize.literal("DATEADD(day, -7, GETDATE())")
-                }
-            },
-            group: [
-                sequelize.literal('CONVERT(DATE, date_submitted)'),
-                'status'
-            ],
-            raw: true
-        });
+        let outboundStats = [];
+        if (db.WP_OUTBOUND_STATUS && db.sequelize && db.Op) {
+            try {
+                outboundStats = await db.WP_OUTBOUND_STATUS.findAll({
+                    attributes: [
+                        [db.sequelize.literal('CONVERT(DATE, date_submitted)'), 'date'],
+                        'status',
+                        [db.sequelize.fn('COUNT', db.sequelize.col('*')), 'count']
+                    ],
+                    where: {
+                        date_submitted: {
+                            [db.Op.gte]: db.sequelize.literal("DATEADD(day, -7, GETDATE())")
+                        }
+                    },
+                    group: [
+                        db.sequelize.literal('CONVERT(DATE, date_submitted)'),
+                        'status'
+                    ],
+                    raw: true
+                });
+            } catch (error) {
+                console.error('Error getting outbound stats:', error);
+            }
+        }
 
         // Get inbound stats for the chart (last 7 days)
-        const inboundStats = await WP_INBOUND_STATUS.findAll({
-            attributes: [
-                [sequelize.fn('TRY_CONVERT', sequelize.literal('DATE'), sequelize.col('dateTimeReceived')), 'date'],
-                'status',
-                [sequelize.fn('COUNT', sequelize.col('*')), 'count']
-            ],
-            where: sequelize.where(
-                sequelize.fn('TRY_CONVERT', sequelize.literal('DATE'), sequelize.col('dateTimeReceived')),
-                {
-                    [Op.gte]: sequelize.literal("DATEADD(day, -7, GETDATE())")
-                }
-            ),
-            group: [
-                sequelize.fn('TRY_CONVERT', sequelize.literal('DATE'), sequelize.col('dateTimeReceived')),
-                'status'
-            ],
-            raw: true
-        });
+        let inboundStats = [];
+        if (db.WP_INBOUND_STATUS && db.sequelize && db.Op) {
+            try {
+                inboundStats = await db.WP_INBOUND_STATUS.findAll({
+                    attributes: [
+                        [db.sequelize.fn('TRY_CONVERT', db.sequelize.literal('DATE'), db.sequelize.col('dateTimeReceived')), 'date'],
+                        'status',
+                        [db.sequelize.fn('COUNT', db.sequelize.col('*')), 'count']
+                    ],
+                    where: db.sequelize.where(
+                        db.sequelize.fn('TRY_CONVERT', db.sequelize.literal('DATE'), db.sequelize.col('dateTimeReceived')),
+                        {
+                            [db.Op.gte]: db.sequelize.literal("DATEADD(day, -7, GETDATE())")
+                        }
+                    ),
+                    group: [
+                        db.sequelize.fn('TRY_CONVERT', db.sequelize.literal('DATE'), db.sequelize.col('dateTimeReceived')),
+                        'status'
+                    ],
+                    raw: true
+                });
+            } catch (error) {
+                console.error('Error getting inbound stats:', error);
+            }
+        }
 
         res.json({
             success: true,
@@ -522,19 +548,24 @@ router.get('/dashboard/stats', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching dashboard stats:', error);
-        
-        // Log the error
-        await WP_LOGS.create({
-            Description: `Error fetching dashboard stats: ${error.message}`,
-            CreateTS: sequelize.literal('GETDATE()'),
-            LoggedUser: req.session?.user?.username || 'System',
-            LogType: 'ERROR',
-            Module: 'Dashboard',
-            Action: 'VIEW',
-            Status: 'FAILED',
-            UserID: req.session?.user?.id || null,
-            Details: JSON.stringify(error)
-        }).catch(console.error);
+
+        // Log the error using LoggingService
+        try {
+            const { LoggingService, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
+            await LoggingService.log({
+                description: `Error fetching dashboard stats: ${error.message}`,
+                username: req.session?.user?.username || 'System',
+                userId: req.session?.user?.id || null,
+                ipAddress: req.ip,
+                logType: 'ERROR',
+                module: MODULES.DASHBOARD || 'Dashboard',
+                action: ACTIONS.VIEW || 'VIEW',
+                status: STATUS.ERROR || 'FAILED',
+                details: error
+            });
+        } catch (logError) {
+            console.error('Error logging dashboard stats error:', logError);
+        }
 
         res.status(500).json({
             success: false,
@@ -548,9 +579,9 @@ router.get('/dashboard/stats', async (req, res) => {
 router.post('/updateCompanyDetails', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -559,9 +590,9 @@ router.post('/updateCompanyDetails', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -570,9 +601,9 @@ router.post('/updateCompanyDetails', async (req, res) => {
     });
 
     if (!company) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Company not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Company not found'
       });
     }
 
@@ -603,9 +634,9 @@ router.post('/updateCompanyDetails', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating company details:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to update company details' 
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update company details'
     });
   }
 });
@@ -690,7 +721,7 @@ router.post('/updateCompanyLogo', upload.single('companyLogo'), async (req, res)
     });
   } catch (error) {
     console.error('Error updating company logo:', error);
-    
+
     // Log the error
     await logDBOperation(
       { WP_LOGS },
@@ -721,9 +752,9 @@ router.get('/getProfileDetails', async (req, res) => {
   try {
     if (!req.session?.user) {
       console.log('No user session found');
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -749,9 +780,9 @@ router.get('/getProfileDetails', async (req, res) => {
 
     if (!user) {
       console.log('User not found in database');
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -815,10 +846,10 @@ router.get('/getProfileDetails', async (req, res) => {
   } catch (error) {
     console.error('Error fetching profile details:', error);
     console.error('Error stack:', error.stack);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to fetch profile details',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -827,9 +858,9 @@ router.get('/getProfileDetails', async (req, res) => {
 router.post('/updateAuthDetails', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -838,9 +869,9 @@ router.post('/updateAuthDetails', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -858,9 +889,9 @@ router.post('/updateAuthDetails', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating authentication details:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to update authentication details' 
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update authentication details'
     });
   }
 });
@@ -869,9 +900,9 @@ router.post('/updateAuthDetails', async (req, res) => {
 router.post('/updateUserDetails', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -880,9 +911,9 @@ router.post('/updateUserDetails', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -899,9 +930,9 @@ router.post('/updateUserDetails', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating user details:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to update user details' 
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update user details'
     });
   }
 });
@@ -910,9 +941,9 @@ router.post('/updateUserDetails', async (req, res) => {
 router.post('/addBranch', upload.single('branchLogo'), async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -929,7 +960,7 @@ router.post('/addBranch', upload.single('branchLogo'), async (req, res) => {
 
     // Convert userId to number and validate
     const numericUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    
+
     if (isNaN(numericUserId)) {
       return res.status(400).json({
         success: false,
@@ -971,10 +1002,10 @@ router.post('/addBranch', upload.single('branchLogo'), async (req, res) => {
     });
   } catch (error) {
     console.error('Error adding branch:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to add branch company',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -982,9 +1013,9 @@ router.post('/addBranch', upload.single('branchLogo'), async (req, res) => {
 router.get('/getBranchCompanies', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -994,9 +1025,9 @@ router.get('/getBranchCompanies', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -1036,10 +1067,10 @@ router.get('/getBranchCompanies', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching branches:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to fetch branch companies',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -1047,9 +1078,9 @@ router.get('/getBranchCompanies', async (req, res) => {
 router.put('/updateBranch/:id', upload.single('branchLogo'), async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -1059,9 +1090,9 @@ router.put('/updateBranch/:id', upload.single('branchLogo'), async (req, res) =>
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -1130,10 +1161,10 @@ router.put('/updateBranch/:id', upload.single('branchLogo'), async (req, res) =>
     });
   } catch (error) {
     console.error('Error updating branch:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to update branch company',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -1141,9 +1172,9 @@ router.put('/updateBranch/:id', upload.single('branchLogo'), async (req, res) =>
 router.delete('/deleteBranch/:id', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -1153,9 +1184,9 @@ router.delete('/deleteBranch/:id', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -1180,10 +1211,10 @@ router.delete('/deleteBranch/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error deleting branch:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to delete branch company',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -1212,7 +1243,7 @@ router.get('/audit-logs', auth.isAdmin, async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = 10; // Items per page
     const offset = (page - 1) * limit;
-    
+
     const startDate = req.query.startDate ? new Date(req.query.startDate) : null;
     const endDate = req.query.endDate ? new Date(req.query.endDate) : null;
     const actionType = req.query.actionType;
@@ -1250,7 +1281,7 @@ router.get('/audit-logs', auth.isAdmin, async (req, res) => {
     // Get statistics
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const todayActivities = await WP_LOGS.count({
       where: {
         CreateTS: {
@@ -1391,9 +1422,9 @@ function getActionPattern(actionType) {
 router.get('/getPortalSettings', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -1402,9 +1433,9 @@ router.get('/getPortalSettings', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -1449,9 +1480,9 @@ router.get('/getPortalSettings', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching portal settings:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch portal settings' 
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch portal settings'
     });
   }
 });
@@ -1459,9 +1490,9 @@ router.get('/getPortalSettings', async (req, res) => {
 router.post('/savePortalSettings', async (req, res) => {
   try {
     if (!req.session?.user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated' 
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
       });
     }
 
@@ -1470,9 +1501,9 @@ router.post('/savePortalSettings', async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
       });
     }
 
@@ -1496,9 +1527,9 @@ router.post('/savePortalSettings', async (req, res) => {
     });
   } catch (error) {
     console.error('Error saving portal settings:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to save portal settings' 
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save portal settings'
     });
   }
 });
@@ -1508,7 +1539,7 @@ router.post('/savePortalSettings', async (req, res) => {
 router.post('/company-settings/create', async (req, res) => {
     try {
         const { UserID, CompanyName, Industry, Country, Email, ValidStatus, About } = req.body;
-        
+
         if (!UserID) {
             return res.status(400).json({
                 success: false,
@@ -1589,4 +1620,4 @@ router.get('/admin-company-profile', async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;

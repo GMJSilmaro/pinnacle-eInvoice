@@ -15,7 +15,10 @@ passport.use(new LocalStrategy({
   async (req, username, password, done) => {
     try {
       console.log(`Authentication attempt for user: ${username}`);
-      
+      console.log('=== LOGIN ATTEMPT DETAILS ===');
+      console.log('Username/Email:', username);
+      console.log('IP Address:', req.ip || 'unknown');
+
       // Find user - allow login with username or email
       const user = await WP_USER_REGISTRATION.findOne({
         where: {
@@ -29,6 +32,7 @@ passport.use(new LocalStrategy({
 
       if (!user) {
         console.log(`User not found: ${username}`);
+        console.log('=== LOGIN FAILED: USER NOT FOUND ===');
         return done(null, false, { message: 'Invalid credentials' });
       }
 
@@ -36,17 +40,24 @@ passport.use(new LocalStrategy({
       const isValid = await bcrypt.compare(password, user.Password);
       if (!isValid) {
         console.log(`Invalid password for user: ${username}`);
+        console.log('=== LOGIN FAILED: INVALID PASSWORD ===');
         return done(null, false, { message: 'Invalid credentials' });
       }
 
       console.log(`Authentication successful for user: ${username}`);
-      
+      console.log('=== LOGIN SUCCESSFUL ===');
+      console.log('User ID:', user.ID);
+      console.log('Username:', user.Username);
+      console.log('Email:', user.Email);
+      console.log('Admin Status:', user.Admin === 1 ? 'Yes' : 'No');
+      console.log('Admin Value:', user.Admin);
+
       // Update last login time
       await WP_USER_REGISTRATION.update(
         { LastLoginTime: sequelize.literal("CONVERT(datetime, GETDATE(), 120)") },
         { where: { ID: user.ID } }
       );
-      
+
       // Log successful login
       try {
         await WP_LOGS.create({
@@ -67,9 +78,10 @@ passport.use(new LocalStrategy({
       // Get LHDN token if needed
       try {
         if (typeof getTokenAsTaxPayer === 'function') {
+          console.log('Generating LHDN access token...');
           const accessToken = await getTokenAsTaxPayer(req, parseInt(user.ID, 10));
           user.accessToken = accessToken;
-          console.log('Access token generated successfully');
+          console.log('Access Token Generated:', !!accessToken);
         }
       } catch (tokenError) {
         console.error('Token generation error:', tokenError);
@@ -79,6 +91,7 @@ passport.use(new LocalStrategy({
       return done(null, user);
     } catch (error) {
       console.error('Authentication error:', error);
+      console.log('=== LOGIN FAILED: SERVER ERROR ===');
       return done(error);
     }
   }
@@ -101,6 +114,16 @@ passport.serializeUser((user, done) => {
       lastLoginTime: new Date(),
       isActive: true
     };
+
+    // Log only essential authentication information
+    console.log('=== AUTHENTICATION DETAILS ===');
+    console.log('User ID:', user.ID);
+    console.log('Username:', user.Username);
+    console.log('Is Admin:', user.Admin === 1 ? 'Yes' : 'No');
+    console.log('Admin Value:', user.Admin);
+    console.log('Access Token:', user.accessToken ? 'Present' : 'Not present');
+    console.log('=== END AUTHENTICATION DETAILS ===');
+
     done(null, sessionUser);
   } catch (error) {
     console.error('Error serializing user:', error);
@@ -115,29 +138,27 @@ passport.deserializeUser(async (sessionUser, done) => {
       console.log('Invalid session user data');
       return done(null, false);
     }
-    
-    console.log(`Deserializing user ID: ${sessionUser.id}`);
-    
+
     // Try to find the user
     const user = await WP_USER_REGISTRATION.findOne({
-      where: { 
+      where: {
         ID: sessionUser.id,
         ValidStatus: '1'
       },
       attributes: authConfig.passport.sessionFields
     });
-    
+
     if (!user) {
       console.log(`User not found for ID: ${sessionUser.id}`);
       return done(null, false);
     }
-    
+
     // Merge session data with fresh user data
     const userData = {
       ...sessionUser,
       ...user.toJSON()
     };
-    
+
     done(null, userData);
   } catch (error) {
     console.error('Error deserializing user:', error);
@@ -145,4 +166,4 @@ passport.deserializeUser(async (sessionUser, done) => {
   }
 });
 
-module.exports = passport; 
+module.exports = passport;

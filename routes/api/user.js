@@ -1171,4 +1171,76 @@ router.get('/profile', async (req, res) => {
     }
 });
 
+/**
+ * Get detailed session information for debugging
+ */
+router.get('/session-info', async (req, res) => {
+    try {
+        // Check if user is authenticated
+        if (!req.session || !req.session.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Not authenticated'
+            });
+        }
+
+        // Get user from database to ensure they still exist and are valid
+        const user = await WP_USER_REGISTRATION.findOne({
+            where: {
+                ID: req.session.user.id,
+                ValidStatus: 1
+            },
+            attributes: [
+                'ID', 'FullName', 'Email', 'Username', 'Phone', 'UserType',
+                'Admin', 'ValidStatus', 'TwoFactorEnabled', 'NotificationsEnabled',
+                'ProfilePicture', 'LastLoginTime', 'TIN', 'IDType', 'IDValue'
+            ]
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Get session information
+        const sessionInfo = {
+            id: req.sessionID,
+            cookie: req.session.cookie,
+            expiresAt: req.session.cookie.expires,
+            maxAge: req.session.cookie.maxAge,
+            lastActivity: req.session.lastActivity || null
+        };
+
+        // Return detailed session information
+        return res.json({
+            success: true,
+            user: {
+                id: user.ID,
+                username: user.Username,
+                fullName: user.FullName,
+                email: user.Email,
+                isAdmin: user.Admin === 1,
+                adminValue: user.Admin,
+                tin: user.TIN,
+                idType: user.IDType,
+                idValue: user.IDValue,
+                lastLoginTime: user.LastLoginTime
+            },
+            sessionUser: req.session.user,
+            sessionId: req.sessionID,
+            token: req.session.user.accessToken || null,
+            sessionInfo: sessionInfo
+        });
+    } catch (error) {
+        console.error('Error fetching session info:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch session information',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;

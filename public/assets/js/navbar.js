@@ -413,38 +413,23 @@
     }
   }
 
-  // Enhanced periodic session check
+  // Session check disabled to reduce excessive logging
   function startSessionCheck() {
     if (window.sessionCheckInterval) {
       clearInterval(window.sessionCheckInterval);
     }
 
-    // Check session every 5 minutes
-    window.sessionCheckInterval = setInterval(async () => {
-      // Skip session check if a DataTables request is in progress
-      if (window.location.pathname.includes('/auth/logout') || isWarningShown || window._dataTablesRequestInProgress) {
-        return;
-      }
+    console.log('Periodic session checking disabled to reduce excessive logging');
 
-      try {
-        const isValid = await checkSession();
-        if (!isValid) {
-          handleSessionExpiry();
-        }
-      } catch (error) {
-        console.warn('Session check error (non-critical):', error);
-        // Don't expire the session on check errors
-      }
-    }, 300000); // 5 minutes
-
-    // Check session on tab focus
+    // Session check disabled - only check on tab focus after long inactivity
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible' && !isWarningShown) {
         const lastCheck = parseInt(sessionStorage.getItem('lastSessionCheck') || '0');
         const timeSinceLastCheck = Date.now() - lastCheck;
 
-        // Only check if more than 1 minute has passed since last check
-        if (timeSinceLastCheck > 60000) {
+        // Only check if more than 10 minutes have passed since last check
+        if (timeSinceLastCheck > 600000) { // 10 minutes instead of 1 minute
+          console.log('Tab focus after long inactivity, checking session...');
           const isValid = await checkSession();
           if (!isValid) {
             handleSessionExpiry();

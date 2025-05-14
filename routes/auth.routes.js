@@ -455,7 +455,7 @@ router.get('/logout', async (req, res) => {
                 }
 
                 // For GET requests, redirect to login page
-                res.redirect('/login');
+                res.redirect('/auth/login');
             });
         } catch (error) {
             console.error('Logout error:', error);
@@ -466,7 +466,7 @@ router.get('/logout', async (req, res) => {
         }
     } else {
         res.clearCookie('connect.sid');
-        res.redirect('/login');
+        res.redirect('/auth/login');
     }
 });
 
