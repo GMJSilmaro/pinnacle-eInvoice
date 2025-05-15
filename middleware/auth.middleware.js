@@ -1,6 +1,7 @@
 const { WP_USER_REGISTRATION, sequelize } = require('../models');
 const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../services/logging.service');
 const authConfig = require('../config/auth.config');
+const { getTokenSession } = require('../services/token.service'); // Import getTokenSession
 
 // Active sessions and login attempts tracking
 const activeSessions = new Map();
@@ -454,6 +455,20 @@ async function isApiAuthenticated(req, res, next) {
         message: 'Unauthorized',
         needsLogin: true
       });
+    }
+
+    // Get LHDN access token and attach to headers
+    try {
+      const lhdnToken = await getTokenSession();
+      if (lhdnToken) {
+        req.headers['Authorization'] = `Bearer ${lhdnToken}`;
+        console.log('Attached LHDN token to request headers.');
+      } else {
+        console.warn('LHDN token not available. Proceeding without token.');
+      }
+    } catch (tokenError) {
+      console.error('Error getting LHDN token in middleware:', tokenError);
+      // Continue even if token acquisition fails, but log the error
     }
 
     // Check if session is about to expire

@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { WP_CONFIGURATION, WP_USER_REGISTRATION } = require('../models');
+const { WP_CONFIGURATION, WP_USER_REGISTRATION, LHDN_TOKENS } = require('../models');
 
 async function getConfig() {
   try {
@@ -159,44 +159,87 @@ async function getTokenAsTaxPayer() {
 // Global token cache with expiry time
 let globalTokenCache = {
   token: null,
-  expiryTime: 0
+  expiryTime: 0,
+  safeExpiryTime: 0 // Add safe expiry time for proactive refresh
 };
 
 async function getTokenSession() {
   try {
     const now = Date.now();
-    
-    // Check if we have a valid token in the global cache
-    if (globalTokenCache.token && globalTokenCache.expiryTime > now) {
-      console.log('Using existing token from global cache (expires in', 
+    const bufferTime = 5 * 60 * 1000; // 5 minutes buffer
+
+    // 1. Check in-memory cache first
+    if (globalTokenCache.token && globalTokenCache.safeExpiryTime > now) {
+      console.log('[Backend] Using existing token from in-memory cache (expires in',
         Math.round((globalTokenCache.expiryTime - now) / 1000), 'seconds)');
       return globalTokenCache.token;
     }
-    
-    console.log('No valid token in global cache, generating a new one');
-    
-    // Get a new token if needed
+
+    console.log('[Backend] In-memory cache expired or empty. Checking database...');
+
+    // 2. Check database for the latest valid token
+    const latestToken = await LHDN_TOKENS.findOne({
+      order: [['expiry_time', 'DESC']],
+      where: {
+        expiry_time: {
+          [Sequelize.Op.gt]: new Date(now + bufferTime)
+        }
+      }
+    });
+
+    if (latestToken) {
+      console.log('[Backend] Using existing token from database (expires in',
+        Math.round((latestToken.expiry_time.getTime() - now) / 1000), 'seconds)');
+      // Populate in-memory cache from database
+      globalTokenCache.token = latestToken.access_token;
+      globalTokenCache.expiryTime = latestToken.expiry_time.getTime();
+      globalTokenCache.safeExpiryTime = globalTokenCache.expiryTime - bufferTime;
+      return globalTokenCache.token;
+    }
+
+    console.log('[Backend] No valid token in cache or database. Generating a new one...');
+
+    // 3. Get a new token if needed
     const tokenData = await getTokenAsTaxPayer();
-    
+
     if (!tokenData || !tokenData.access_token) {
+      console.error('[Backend] Failed to obtain access token: Empty response or missing access_token');
       throw new Error('Failed to obtain access token');
     }
 
-    // Store in global cache with expiry time
-    globalTokenCache.token = tokenData.access_token;
-    globalTokenCache.expiryTime = now + (tokenData.expires_in * 1000);
-    
-    // Add a buffer to avoid edge cases (5 minutes before actual expiry)
-    const bufferTime = 5 * 60 * 1000;
-    globalTokenCache.safeExpiryTime = globalTokenCache.expiryTime - bufferTime;
-    
-    console.log('New token generated and stored in global cache (expires in', 
+    const newToken = tokenData.access_token;
+    const newExpiryTime = now + (tokenData.expires_in * 1000);
+
+    // 4. Store in in-memory cache
+    globalTokenCache.token = newToken;
+    globalTokenCache.expiryTime = newExpiryTime;
+    globalTokenCache.safeExpiryTime = newExpiryTime - bufferTime;
+    console.log('[Backend] New token stored in in-memory cache.');
+
+    // 5. Save to database
+    try {
+      await LHDN_TOKENS.create({
+        access_token: newToken,
+        // Assuming refresh_token is not provided by getTokenAsTaxPayer based on the code
+        // refresh_token: tokenData.refresh_token,
+        expiry_time: new Date(newExpiryTime)
+      });
+      console.log('[Backend] New token successfully saved to database.');
+    } catch (dbError) {
+      console.error('[Backend] Error saving new token to database:', dbError);
+      // Decide how to handle database save failure - for now, log and continue
+    }
+
+
+    console.log('[Backend] New token generated and stored (expires in',
       Math.round(tokenData.expires_in), 'seconds)');
 
-    return tokenData.access_token;
+    return newToken;
   } catch (error) {
-    console.error('Error getting token session:', error);
-    throw error;
+    console.error('[Backend] Error getting token session:', error);
+    // If token acquisition fails, clear any potentially invalid cached token
+    globalTokenCache = { token: null, expiryTime: 0, safeExpiryTime: 0 };
+    throw error; // Re-throwing to indicate failure
   }
 }
 

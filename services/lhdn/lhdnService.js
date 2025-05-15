@@ -94,7 +94,15 @@ async function submitDocument(docs, token) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          // Standard LHDN API Headers (assuming these are required based on documentation)
+          // Note: Accurate values for these headers might require passing the 'req' object from the routes.
+          'X-Request-ID': 'placeholder-request-id', // Replace with actual request ID
+          'X-Date': new Date().toISOString(),
+          'X-Client-ID': 'eInvoice-WebApp', // Replace with actual client ID
+          'X-Forwarded-For': 'placeholder-ip-address', // Replace with actual IP address
+          'X-User-Agent': 'placeholder-user-agent', // Replace with actual user agent
+          'X-Channel': 'Web' // Replace with actual channel
         }
       }
     );
@@ -131,110 +139,106 @@ async function submitDocument(docs, token) {
     }
 
     // Enhanced error handling with human-readable messages
-    const getHumanReadableError = (errorData) => {
-      const errorCode = errorData?.code || 'UNKNOWN_ERROR';
-      
-      // Map of LHDN error codes to user-friendly messages
-      const errorMessages = {
-        'DS302': 'This document has already been submitted to LHDN. Please check the document status in LHDN portal.',
-        'CF321': 'Document issue date is invalid. Documents must be submitted within 7 days of issuance.',
-        'CF364': 'Invalid item classification code. Please ensure all items have valid classification codes.',
-        'CF401': 'Tax calculation error. Please verify all tax amounts and calculations in your document.',
-        'CF402': 'Currency error. Please check that all monetary values use the correct currency code.',
-        'CF403': 'Invalid tax code. Please verify the tax codes used in your document.',
-        'CF404': 'Invalid identification. Please check all party identification numbers (TIN, BRN, etc.).',
-        'CF405': 'Invalid party information. Please verify supplier/customer details are complete and valid.',
-        'AUTH001': 'Authentication failure. Your session may have expired, please try logging in again.',
-        'AUTH003': 'Unauthorized access. Your account does not have permission to submit this document.',
-        'VALIDATION_ERROR': 'Document validation failed. Please review the document and correct all errors.',
-        'DUPLICATE_SUBMISSION': 'This document has already been submitted or is being processed.',
-        'E-INVOICE-TIN-VALIDATION-PARTY-VALIDATION': 'TIN validation failed. The document TIN doesn\'t match with your authenticated TIN.',
-        'INVALID_PARAMETER': 'Invalid parameters provided. Please check your document formatting.',
-        'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again or contact support.',
-        'TIN_MISMATCH': 'The Tax Identification Number (TIN) in the document does not match the TIN of the authenticated user.'
+    const getHumanReadableError = (errorData, defaultMessage = 'Failed to submit document to LHDN. Please check your document and try again.') => {
+      const errorCode = errorData?.code || errorData?.error?.code || 'UNKNOWN_ERROR';
+      const errorMessage = errorData?.message || errorData?.error?.message || defaultMessage;
+      const errorDetails = errorData?.details || errorData?.error?.details || [];
+
+      // Map of LHDN error codes to user-friendly messages and potential details
+      const errorMap = {
+        'DS302': { message: 'This document has already been submitted to LHDN. Please check the document status in LHDN portal.' },
+        'CF321': { message: 'Document issue date is invalid. Documents must be submitted within 7 days of issuance.' },
+        'CF364': { message: 'Invalid item classification code. Please ensure all items have valid classification codes.' },
+        'CF401': { message: 'Tax calculation error. Please verify all tax amounts and calculations in your document.' },
+        'CF402': { message: 'Currency error. Please check that all monetary values use the correct currency code.' },
+        'CF403': { message: 'Invalid tax code. Please verify the tax codes used in your document.' },
+        'CF404': { message: 'Invalid identification. Please check all party identification numbers (TIN, BRN, etc.).' },
+        'CF405': { message: 'Invalid party information. Please verify supplier/customer details are complete and valid.' },
+        'AUTH001': { message: 'Authentication failure. Your session may have expired, please try logging in again.' },
+        'AUTH003': { message: 'Unauthorized access. Your account does not have permission to submit this document.' },
+        'VALIDATION_ERROR': { message: 'Document validation failed. Please review the document and correct all errors.' },
+        'DUPLICATE_SUBMISSION': { message: 'This document has already been submitted or is being processed.' },
+        'E-INVOICE-TIN-VALIDATION-PARTY-VALIDATION': { message: 'TIN validation failed. The document TIN doesn\'t match with your authenticated TIN.' },
+        'INVALID_PARAMETER': { message: 'Invalid parameters provided. Please check your document formatting.' },
+        'TIN_MISMATCH': { message: 'The Tax Identification Number (TIN) in the document does not match the TIN of the authenticated user.' },
+        'SYSTEM_ERROR': { message: 'LHDN system is currently experiencing technical issues. Please try again later or contact LHDN support.' }
       };
-      
+
+      const mappedError = errorMap[errorCode];
+
       return {
         code: errorCode,
-        message: errorMessages[errorCode] || errorData?.message || 'Failed to submit document to LHDN. Please check your document and try again.',
-        details: errorData?.details || errorData?.error?.details || [{
+        message: mappedError?.message || errorMessage,
+        details: errorDetails.length > 0 ? errorDetails : [{
           code: errorCode,
-          message: errorData?.message || 'Unknown error occurred',
-          target: docs[0]?.codeNumber || 'Unknown'
+          message: errorMessage,
+          target: docs[0]?.codeNumber || 'Unknown' // Assuming docs is available and has codeNumber
         }]
       };
     };
 
-    // Handle other errors
-    if (err.response?.status === 500) {
+    // Handle specific HTTP status codes
+    if (err.response) {
+      const { status, data } = err.response;
+
+      switch (status) {
+        case 400: // Bad Request
+          return {
+            status: 'failed',
+            error: getHumanReadableError(data, 'Invalid document data provided.')
+          };
+        case 401: // Unauthorized
+        case 403: // Forbidden
+          return {
+            status: 'failed',
+            error: getHumanReadableError(data, 'Authentication failed or unauthorized access.')
+          };
+        case 404: // Not Found
+          return {
+            status: 'failed',
+            error: getHumanReadableError(data, 'The requested resource was not found.')
+          };
+        case 500: // Internal Server Error
+          return {
+            status: 'failed',
+            error: getHumanReadableError(data, 'LHDN internal server error.')
+          };
+        default:
+          // Handle other HTTP errors
+          return {
+            status: 'failed',
+            error: {
+              code: `HTTP_ERROR_${status}`,
+              message: `LHDN API returned HTTP status ${status}`,
+              details: data?.message || err.message
+            }
+          };
+      }
+    } else if (err.request) {
+      // The request was made but no response was received
+      console.error('LHDN Submission Error: No response received', err.request);
       return {
         status: 'failed',
         error: {
-          code: 'SYSTEM_ERROR',
-          message: 'LHDN system is currently experiencing technical issues. Please try again later or contact LHDN support.',
-          details: [{
-            code: 'SYSTEM_ERROR',
-            message: 'External LHDN SubmitDocument API hitting 500 (Internal Server Error). Please try again later.',
-            target: docs[0]?.codeNumber || 'Unknown'
-          }]
+          code: 'NO_RESPONSE',
+          message: 'No response received from LHDN API. Please check your network connection or try again later.',
+          details: err.message
+        }
+      };
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error('LHDN Submission Error: Request setup error', err.message);
+      return {
+        status: 'failed',
+        error: {
+          code: 'REQUEST_ERROR',
+          message: 'Error setting up request to LHDN API.',
+          details: err.message
         }
       };
     }
-    
-    if (err.response?.status === 400) {
-      const errorData = err.response.data;
-      
-      // Special handling for TIN mismatch error
-      if (errorData?.error?.details && errorData.error.details.some(d => 
-          d.message && d.message.includes('authenticated TIN and documents TIN is not matching'))) {
-        return {
-          status: 'failed',
-          error: {
-            code: 'TIN_MISMATCH',
-            message: 'The Tax Identification Number (TIN) in the document does not match the TIN of the authenticated user.',
-            details: errorData.error.details
-          }
-        };
-      }
-      
-      // Special handling for duplicate document submission
-      if (errorData?.code === 'DS302' || (errorData?.details && errorData.details.some(d => d.code === 'DS302'))) {
-        return {
-          status: 'failed',
-          error: {
-            code: 'DS302',
-            message: 'This document has already been submitted to LHDN',
-            details: [{
-              code: 'DS302',
-              message: 'Document already exists in LHDN system. Please check the document status in LHDN portal.',
-              target: docs[0]?.codeNumber || 'Unknown'
-            }]
-          }
-        };
-      }
-      
-      // Return enhanced error with human-readable message
-      return { 
-        status: 'failed', 
-        error: getHumanReadableError(errorData) 
-      };
-    }
-    
-    // Default error handler for other status codes
-    return {
-      status: 'failed',
-      error: {
-        code: 'SUBMISSION_ERROR',
-        message: 'Failed to submit document to LHDN',
-        details: [{
-          code: err.response?.status?.toString() || 'UNKNOWN',
-          message: err.message || 'Unknown error occurred',
-          target: docs[0]?.codeNumber || 'Unknown'
-        }]
-      }
-    };
   }
-} 
+}
 
 async function getDocumentDetails(irb_uuid, token) {
   try {
@@ -246,7 +250,15 @@ async function getDocumentDetails(irb_uuid, token) {
       `${baseUrl}/api/v1.0/documents/${irb_uuid}/details`, 
       {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          // Standard LHDN API Headers (assuming these are required based on documentation)
+          // Note: Accurate values for these headers might require passing the 'req' object from the routes.
+          'X-Request-ID': 'placeholder-request-id', // Replace with actual request ID
+          'X-Date': new Date().toISOString(),
+          'X-Client-ID': 'eInvoice-WebApp', // Replace with actual client ID
+          'X-Forwarded-For': 'placeholder-ip-address', // Replace with actual IP address
+          'X-User-Agent': 'placeholder-user-agent', // Replace with actual user agent
+          'X-Channel': 'Web' // Replace with actual channel
         }
       }
     );
@@ -294,7 +306,15 @@ async function cancelValidDocumentBySupplier(irb_uuid, cancellation_reason, toke
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          // Standard LHDN API Headers (assuming these are required based on documentation)
+          // Note: Accurate values for these headers might require passing the 'req' object from the routes.
+          'X-Request-ID': 'placeholder-request-id', // Replace with actual request ID
+          'X-Date': new Date().toISOString(),
+          'X-Client-ID': 'eInvoice-WebApp', // Replace with actual client ID
+          'X-Forwarded-For': 'placeholder-ip-address', // Replace with actual IP address
+          'X-User-Agent': 'placeholder-user-agent', // Replace with actual user agent
+          'X-Channel': 'Web' // Replace with actual channel
         }
       }
     );
@@ -733,4 +753,3 @@ module.exports = {
     getCertificatesHashedParams,
     testIRBCall
 };
-

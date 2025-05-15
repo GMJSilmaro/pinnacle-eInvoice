@@ -2,7 +2,7 @@ const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const { WP_USER_REGISTRATION, WP_LOGS, sequelize } = require('../models');
 const bcrypt = require('bcryptjs');
-const { getTokenAsTaxPayer } = require('../services/token.service');
+const { getTokenSession } = require('../services/token.service');
 const authConfig = require('./auth.config');
 const { LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../services/logging.service');
 
@@ -77,15 +77,14 @@ passport.use(new LocalStrategy({
 
       // Get LHDN token if needed
       try {
-        if (typeof getTokenAsTaxPayer === 'function') {
-          console.log('Generating LHDN access token...');
-          const accessToken = await getTokenAsTaxPayer(req, parseInt(user.ID, 10));
-          user.accessToken = accessToken;
-          console.log('Access Token Generated:', !!accessToken);
-        }
+        // Use getTokenSession to utilize caching and file storage
+        const accessToken = await getTokenSession();
+        user.accessToken = accessToken; // Attach token to user object for session serialization
+        console.log('LHDN Access Token obtained:', !!accessToken);
       } catch (tokenError) {
-        console.error('Token generation error:', tokenError);
-        // Continue login even if token generation fails
+        console.error('LHDN Token acquisition error during login:', tokenError);
+        // Continue login even if token acquisition fails, but log the warning
+        // The user object will not have the accessToken in this case
       }
 
       return done(null, user);

@@ -979,14 +979,32 @@ router.get('/documents/recent', async (req, res) => {
         console.log('User from session:', req.session.user);
         
         try {
-            // Directly query the database instead of using API
-            console.log('Querying database directly for recent documents');
-            const dbDocuments = await WP_INBOUND_STATUS.findAll({
-                order: [['dateTimeReceived', 'DESC']],
-                limit: 1000
-            });
+            // Fetch documents using the enhanced fetch function
+            console.log('Fetching recent documents using fetchRecentDocuments...');
+            const fetchResult = await fetchRecentDocuments(req);
             
-            console.log('Got documents from database, count:', dbDocuments.length);
+            if (!fetchResult.success && fetchResult.error) {
+                 // If fetch failed and no fallback data, return error
+                 if (!fetchResult.result || fetchResult.result.length === 0) {
+                    const statusCode = fetchResult.error.response?.status || 500;
+                     return res.status(statusCode).json({
+                         success: false,
+                         error: {
+                             code: fetchResult.error.code || 'FETCH_ERROR',
+                             message: fetchResult.error.message || 'Failed to fetch documents',
+                             details: fetchResult.error.details || fetchResult.error.stack
+                         },
+                         metadata: {
+                             timestamp: new Date().toISOString()
+                         }
+                     });
+                 }
+                 // If fetch failed but fallback data is available, log warning and proceed
+                 console.warn('Fetch from API failed, but using database fallback:', fetchResult.error.message);
+            }
+
+            const documents = fetchResult.result || [];
+            console.log('Got documents from fetchResult, count:', documents.length);
             
             // Helper function to format dates for display
             const formatDateForDisplay = (dateString) => {
@@ -1023,62 +1041,7 @@ router.get('/documents/recent', async (req, res) => {
                 }
             };
             
-            // Check for documents with missing issuerName
-            const docsWithMissingData = dbDocuments.filter(doc => 
-                !doc.issuerName || doc.issuerName === 'NULL' || doc.issuerName === '');
-            
-            // If we have documents with missing data, fetch from API
-            if (docsWithMissingData.length > 0) {
-                console.log(`Found ${docsWithMissingData.length} documents with missing issuerName`);
-                
-                try {
-                    // Get LHDN config for API calls
-                    const config = await getLHDNConfig();
-                    if (!config) {
-                        throw new Error('Could not get LHDN config');
-                    }
-                    
-                    // Get auth token
-                    const accessToken = req.session.lhdn?.accessToken;
-                    if (!accessToken) {
-                        throw new Error('No LHDN access token available');
-                    }
-                    
-                    // Process documents with missing data
-                    for (const doc of docsWithMissingData) {
-                        if (!doc.uuid) continue;
-                        
-                        console.log(`Fetching document details for UUID: ${doc.uuid}`);
-                        
-                        // Call API to get document details
-                        const apiEndpoint = `${config.baseUrl}/documents/${doc.uuid}`;
-                        const apiResponse = await axios.get(apiEndpoint, {
-                            headers: {
-                                'Authorization': `Bearer ${accessToken}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        
-                        if (apiResponse.data && apiResponse.data.issuerName) {
-                            // Update document in memory
-                            doc.issuerName = apiResponse.data.issuerName;
-                            
-                            // Update the database record
-                            await WP_INBOUND_STATUS.update(
-                                { issuerName: apiResponse.data.issuerName },
-                                { where: { uuid: doc.uuid } }
-                            );
-                            
-                            console.log(`Updated issuerName for UUID: ${doc.uuid}`);
-                        }
-                    }
-                } catch (apiError) {
-                    console.error('Error fetching missing data from API:', apiError);
-                    // Continue with the data we have
-                }
-            }
-            
-            const documents = dbDocuments.map(doc => {
+            const formattedDocuments = documents.map(doc => {
                 // Get submission and validation dates
                 const receivedDate = doc.dateTimeReceived || doc.created_at;
                 const validatedDate = doc.dateTimeValidated;
@@ -1132,29 +1095,31 @@ router.get('/documents/recent', async (req, res) => {
                 };
             });
 
-            console.log('Sending response with documents:', documents.length);
+            console.log('Sending response with formatted documents:', formattedDocuments.length);
 
             res.json({
                 success: true,
-                result: documents,
+                result: formattedDocuments,
                 metadata: {
-                    total: documents.length,
-                    cached: true,
-                    directDb: true,
-                    missingDataFetched: docsWithMissingData.length > 0,
+                    total: formattedDocuments.length,
+                    cached: fetchResult.cached,
+                    fromDatabase: fetchResult.fromDatabase,
+                    fromApi: fetchResult.fromApi,
+                    fallback: fetchResult.fallback,
+                    error: fetchResult.error ? { message: fetchResult.error.message } : undefined,
                     timestamp: new Date().toISOString()
                 }
             });
         } catch (error) {
-            console.error('Error querying database:', error);
+            console.error('Error in documents/recent route processing:', error);
             
             const statusCode = error.response?.status || 500;
             res.status(statusCode).json({ 
                 success: false, 
                 error: {
-                    code: error.code || 'DATABASE_ERROR',
-                    message: error.message || 'An error occurred while querying the database',
-                    details: error.original?.message || null,
+                    code: error.code || 'INTERNAL_SERVER_ERROR',
+                    message: error.message || 'An unexpected error occurred',
+                    details: error.response?.data?.error || error.original?.message || null,
                     timestamp: new Date().toISOString()
                 }
             });
