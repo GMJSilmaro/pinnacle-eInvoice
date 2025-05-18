@@ -1569,6 +1569,115 @@ async function processFile(file, dateDir, date, company, type, files, processLog
 }
 
 /**
+ * Generate JSON preview for document before submission
+ */
+router.post('/:fileName/generate-preview', async (req, res) => {
+    try {
+        const { fileName } = req.params;
+        const { type, company, date, version } = req.body;
+
+        // Validate all required parameters with more context
+        const paramValidation = [
+            { name: 'fileName', value: fileName, description: 'Excel file name' },
+            { name: 'type', value: type, description: 'Document type (e.g., Manual)' },
+            { name: 'company', value: company, description: 'Company identifier' },
+            { name: 'date', value: date, description: 'Document date' },
+            { name: 'version', value: version, description: 'LHDN version (e.g., 1.0, 1.1)' }
+        ];
+
+        const missingParams = paramValidation
+            .filter(param => !param.value)
+            .map(param => ({
+                name: param.name,
+                description: param.description
+            }));
+
+        if (missingParams.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: `Missing required parameters: ${missingParams.map(p => p.name).join(', ')}`,
+                    details: missingParams,
+                    help: 'Please ensure all required parameters are provided in the request body'
+                }
+            });
+        }
+
+        // Initialize LHDNSubmitter
+        const submitter = new LHDNSubmitter(req);
+
+        // Get and process document data
+        const processedData = await submitter.getProcessedData(fileName, type, company, date);
+
+        // Ensure processedData is valid before mapping
+        if (!processedData || !Array.isArray(processedData) || processedData.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'PROCESSING_ERROR',
+                    message: 'Failed to process Excel data - no valid documents found'
+                }
+            });
+        }
+
+        // Map to LHDN format
+        const lhdnJson = mapToLHDNFormat(processedData, version);
+        if (!lhdnJson) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'MAPPING_ERROR',
+                    message: 'Failed to map data to LHDN format'
+                }
+            });
+        }
+
+        // Extract invoice number from processed data
+        const invoice_number = processedData[0]?.header?.invoiceNo || 'Unknown';
+
+        // Extract summary information
+        const summary = {
+            invoiceNumber: invoice_number,
+            documentType: processedData[0]?.header?.invoiceType || 'Unknown',
+            issueDate: processedData[0]?.header?.issueDate?.[0]?._ || 'Unknown',
+            supplier: {
+                name: processedData[0]?.supplier?.name || 'Unknown',
+                id: processedData[0]?.supplier?.id || 'Unknown',
+                address: processedData[0]?.supplier?.address?.line || 'Unknown'
+            },
+            buyer: {
+                name: processedData[0]?.buyer?.name || 'Unknown',
+                id: processedData[0]?.buyer?.id || 'Unknown',
+                address: processedData[0]?.buyer?.address?.line || 'Unknown'
+            },
+            totalAmount: processedData[0]?.summary?.amounts?.payableAmount || 'Unknown',
+            currency: processedData[0]?.header?.documentCurrencyCode || 'MYR',
+            itemCount: processedData[0]?.items?.length || 0
+        };
+
+        // Return both the summary and the full JSON
+        return res.json({
+            success: true,
+            summary,
+            lhdnJson,
+            docNum: invoice_number
+        });
+
+    } catch (error) {
+        console.error('Error generating preview:', error);
+        return res.status(500).json({
+            success: false,
+            error: {
+                code: 'PREVIEW_ERROR',
+                message: error.message || 'An unexpected error occurred while generating preview',
+                details: error.stack
+            }
+        });
+    }
+});
+
+/**
  * Submit document to LHDN
  */
 router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, res) => {

@@ -1,8 +1,17 @@
 // Wrap everything in an IIFE to avoid global namespace pollution
 (function() {
+  // Reset DataTables request flags on page load to prevent conflicts
+  window._dataTablesRequestInProgress = false;
+  window._dataTablesRequestStartTime = null;
+
   // Initialize on DOMContentLoaded
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeNavbar);
+    document.addEventListener('DOMContentLoaded', function() {
+      // Reset DataTables request flags again on DOM content loaded
+      window._dataTablesRequestInProgress = false;
+      window._dataTablesRequestStartTime = null;
+      initializeNavbar();
+    });
   } else {
     initializeNavbar();
   }
