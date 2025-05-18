@@ -121,7 +121,7 @@ const wrapNumericValue = (value) => {
 
 const formatDateTime = (date) => {
   if (!date) return undefined;
-  
+
   // If date is already a string in correct format, return it
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(date)) {
     return date;
@@ -143,7 +143,7 @@ const formatDateTime = (date) => {
 
 const mapAddressLines = (line) => {
   if (!line) return undefined;
-  
+
   // Convert to string and handle special cases
   const addressStr = String(line);
   if (addressStr.toLowerCase() === 'na' || addressStr.trim() === '') {
@@ -151,10 +151,10 @@ const mapAddressLines = (line) => {
       "Line": [{ "_": "NA" }]
     }];
   }
-  
+
   // Split the address line by commas or line breaks
   const lines = addressStr.split(/[,\n]/).map(l => l.trim()).filter(l => l);
-  
+
   return lines.map(l => ({
     "Line": [{ "_": l }]
   }));
@@ -164,7 +164,7 @@ const mapAllowanceCharges = (charges) => {
   if (!charges || !Array.isArray(charges)) {
     charges = [charges];
   }
-  
+
   return charges.map(charge => ({
     "ChargeIndicator": wrapBoolean(charge.indicator),
     "AllowanceChargeReason": wrapValue(charge.reason || 'NA'),
@@ -177,7 +177,7 @@ const mapAllowanceCharges = (charges) => {
 
 const mapCommodityClassifications = (item) => {
   const classifications = [];
-  
+
   if (item.classification?.code) {
     // Special handling for consolidated invoices (code 004)
     if (item.classification.code === '004') {
@@ -197,7 +197,7 @@ const mapCommodityClassifications = (item) => {
       });
     }
   }
-  
+
   // Add PTC classification if exists
   if (item.ptcCode) {
     classifications.push({
@@ -207,13 +207,13 @@ const mapCommodityClassifications = (item) => {
       }]
     });
   }
-  
+
   return classifications;
 };
 
 const mapPartyIdentifications = (identifications = []) => {
   const requiredTypes = ['TIN', 'BRN' || 'NRIC' || 'PASSPORT' || 'ARMY', 'SST', 'TTX'];
-  
+
   const idMap = identifications.reduce((acc, id) => {
     if (id && id.schemeId) {
       acc[id.schemeId] = id.id || "";
@@ -290,7 +290,7 @@ const mapTaxTotal = (taxTotal, documentCurrencyCode, taxCurrencyCode, exchangeRa
                   "_": subtotal.taxCategory?.id || DEFAULT_VALUES.TAX_CATEGORY.id
               }],
               "Percent": wrapNumericValue(subtotal.taxCategory?.percent || 0),
-              "TaxExemptionReason": subtotal.taxCategory?.exemptionReason ? 
+              "TaxExemptionReason": subtotal.taxCategory?.exemptionReason ?
                   wrapValue(subtotal.taxCategory.exemptionReason) : undefined,
               "TaxScheme": [{
                   "ID": [{
@@ -309,8 +309,8 @@ const mapLineItem = (item, documentCurrencyCode, taxCurrencyCode, exchangeRate) 
 
   // Special handling for consolidated receipts
   const isConsolidatedReceipt = item.item?.classification?.code === '004';
-  const description = isConsolidatedReceipt ? 
-    `Receipt ${item.item.description}` : 
+  const description = isConsolidatedReceipt ?
+    `Receipt ${item.item.description}` :
     item.item.description;
 
   return {
@@ -371,7 +371,7 @@ const mapDocumentReference = (reference) => {
 
 const mapToLHDNFormat = (excelData, version) => {
   const logger = createLogger();
-  
+
   if (!excelData || !Array.isArray(excelData) || excelData.length === 0) {
     const error = new Error('No document data provided');
     logger.logError(error, { excelData });
@@ -379,7 +379,7 @@ const mapToLHDNFormat = (excelData, version) => {
   }
 
   const doc = excelData[0];
-  
+
   if (!doc || !doc.header || !doc.header.invoiceNo) {
     const error = new Error('Invalid document structure');
     logger.logError(error, { doc });
@@ -457,6 +457,18 @@ const mapToLHDNFormat = (excelData, version) => {
                 "schemeID": id.schemeId
               }]
             })),
+            "PartyTaxScheme": [{
+              "CompanyID": [{
+                "_": "C5847470505" // Hardcoded TIN from AuthorizeToken.ini
+              }],
+              "TaxScheme": [{
+                "ID": [{
+                  "_": "GST",
+                  "schemeID": "UN/ECE 5153",
+                  "schemeAgencyID": "6"
+                }]
+              }]
+            }],
             "PostalAddress": [mapPartyAddress(doc.supplier.address)],
             "PartyLegalEntity": [{
               "RegistrationName": wrapValue(doc.supplier.name)
@@ -604,7 +616,7 @@ const mapToLHDNFormat = (excelData, version) => {
         }]
       }]
     };
-    
+
     lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...supplierParty };
     logger.logMapping('Supplier', doc.supplier, supplierParty);
 
@@ -657,9 +669,9 @@ const mapToLHDNFormat = (excelData, version) => {
     // Only include delivery in final format if it has content
     if (Object.keys(taxAndTotals).length > 0) {
         lhdnFormat.Invoice[0] = { ...lhdnFormat.Invoice[0], ...taxAndTotals };
-        logger.logMapping('TaxAndTotals', { 
-            taxTotal: doc.summary?.taxTotal, 
-            amounts: doc.summary?.amounts 
+        logger.logMapping('TaxAndTotals', {
+            taxTotal: doc.summary?.taxTotal,
+            amounts: doc.summary?.amounts
         }, taxAndTotals);
     }
 
@@ -667,14 +679,14 @@ const mapToLHDNFormat = (excelData, version) => {
     if (version === '1.1') {
       try {
         logger.logStep('Adding Digital Signature', { version });
-        const { certificateJsonPortion_Signature, certificateJsonPortion_UBLExtensions } = 
+        const { certificateJsonPortion_Signature, certificateJsonPortion_UBLExtensions } =
           getCertificatesHashedParams(lhdnFormat);
 
         lhdnFormat.Invoice[0].UBLExtensions = certificateJsonPortion_UBLExtensions;
         lhdnFormat.Invoice[0].Signature = certificateJsonPortion_Signature;
-        
-        logger.logMapping('DigitalSignature', 
-          { version, hasSignature: true }, 
+
+        logger.logMapping('DigitalSignature',
+          { version, hasSignature: true },
           { UBLExtensions: lhdnFormat.Invoice[0].UBLExtensions, Signature: lhdnFormat.Invoice[0].Signature }
         );
       } catch (error) {
@@ -713,4 +725,4 @@ const mapToLHDNFormat = (excelData, version) => {
   }
 };
 
-module.exports = { mapToLHDNFormat }; 
+module.exports = { mapToLHDNFormat };

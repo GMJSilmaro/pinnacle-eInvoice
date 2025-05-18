@@ -1,19 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const { WP_USER_REGISTRATION, WP_LOGS, sequelize } = require('../models');
+const prisma = require('../src/lib/prisma');
 const bcrypt = require('bcryptjs');
 const moment = require('moment');
 const loggingConfig = require('../config/logging.config');
-const { checkActiveSession, updateActiveSession, removeActiveSession, checkLoginAttempts, trackLoginAttempt } = require('../middleware/auth.middleware');
+const { checkActiveSession, updateActiveSession, removeActiveSession, checkLoginAttempts, trackLoginAttempt } = require('../middleware/auth-prisma.middleware');
 const passport = require('passport');
-const { LoggingService } = require('../services/logging.service');
-const { getTokenAsTaxPayer } = require('../services/token.service');
-const { LOG_TYPES, ACTIONS, STATUS, MODULES } = require('../services/logging.service');
-const { updateUserActivity } = require('../middleware/auth.middleware');
+const { LoggingService } = require('../services/logging-prisma.service');
+const { getTokenSession } = require('../services/token-prisma.service');
+const { LOG_TYPES, ACTIONS, STATUS, MODULES } = require('../services/logging-prisma.service');
+const { updateUserActivity } = require('../middleware/auth-prisma.middleware');
 
 // Move constants to top
 const LOGIN_CONSTANTS = {
-  MAX_ATTEMPTS: 3,
+  MAX_ATTEMPTS: 5,
   BLOCK_DURATION: 5 * 60 * 1000, // 5 minutes
   CLEANUP_INTERVAL: 60000 // 1 minute
 };
@@ -51,24 +51,26 @@ async function logAuthEvent(type, details, req) {
   };
 
   try {
-    await WP_LOGS.create({
-      CreateTS: new Date(),
-      LoggedUser: username,
-      IPAddress: clientIP || '-1',
-      Module: 'Authentication',
-      Action: actionMap[type] || 'Unknown',
-      Status: details.status || 'Unknown',
-      Description: details.description || `Auth event: ${type}`,
-      Details: JSON.stringify({
-        eventType: type,
-        timestamp: new Date().toISOString(),
-        ...details,
-        ...(loggingConfig.auth.ipTracking && { ip: clientIP }),
-        ...(loggingConfig.auth.userAgentTracking && { userAgent: req.headers['user-agent'] }),
-        sessionId: req.session?.id,
-        requestPath: req.path,
-        requestMethod: req.method
-      })
+    await prisma.wP_LOGS.create({
+      data: {
+        CreateTS: new Date(),
+        LoggedUser: username,
+        IPAddress: clientIP || '-1',
+        Module: 'Authentication',
+        Action: actionMap[type] || 'Unknown',
+        Status: details.status || 'Unknown',
+        Description: details.description || `Auth event: ${type}`,
+        Details: JSON.stringify({
+          eventType: type,
+          timestamp: new Date().toISOString(),
+          ...details,
+          ...(loggingConfig.auth.ipTracking && { ip: clientIP }),
+          ...(loggingConfig.auth.userAgentTracking && { userAgent: req.headers['user-agent'] }),
+          sessionId: req.session?.id,
+          requestPath: req.path,
+          requestMethod: req.method
+        })
+      }
     });
   } catch (error) {
     console.error('Error logging auth event:', error);
@@ -185,11 +187,9 @@ router.post('/login', async (req, res, next) => {
       await trackLoginAttempt(username, clientIP, true);
 
       // Update last login time
-      await WP_USER_REGISTRATION.update({
-        LastLoginTime: sequelize.literal('GETDATE()'),
-        ValidStatus: '1'
-      }, {
-        where: { ID: user.ID }
+      await prisma.wP_USER_REGISTRATION.update({
+        where: { ID: user.ID },
+        data: { LastLoginTime: new Date() }
       });
 
       // Login with Passport
@@ -219,7 +219,7 @@ router.post('/login', async (req, res, next) => {
           // Try to get token from LHDN
           let tokenData = null;
           try {
-            tokenData = await getTokenAsTaxPayer();
+            tokenData = await getTokenSession();
 
             // Store token separately in session
             if (tokenData && tokenData.access_token) {
@@ -341,7 +341,7 @@ router.post('/register', async (req, res) => {
 
   try {
     // Check if username already exists
-    const existingUser = await WP_USER_REGISTRATION.findOne({
+    const existingUser = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: username }
     });
 
@@ -356,17 +356,19 @@ router.post('/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create new user
-    const newUser = await WP_USER_REGISTRATION.create({
-      Username: username,
-      Password: hashedPassword,
-      Email: email,
-      TIN: tin,
-      IDType: idType,
-      IDValue: idValue,
-      Admin: '0', // Default to non-admin
-      ValidStatus: '1', // Set as active
-      CreateTS: new Date(),
-      LastLoginTime: null
+    const newUser = await prisma.wP_USER_REGISTRATION.create({
+      data: {
+        Username: username,
+        Password: hashedPassword,
+        Email: email,
+        TIN: tin,
+        IDType: idType,
+        IDValue: idValue,
+        Admin: 0, // Default to non-admin
+        ValidStatus: '1', // Set as active
+        CreateTS: new Date(),
+        LastLoginTime: null
+      }
     });
 
     // Log registration event
@@ -399,75 +401,74 @@ router.post('/register', async (req, res) => {
   }
 });
 
-
 // Enhanced logout endpoint
 router.get('/logout', async (req, res) => {
-    const username = req.session?.user?.username;
-    const userId = req.session?.user?.id;
+  const username = req.session?.user?.username;
+  const userId = req.session?.user?.id;
 
-    if (req.session) {
-        try {
-            if (username) {
-                    // Update user's last activity time to null on logout
-          await updateUserActivity(userId, false);
+  if (req.session) {
+    try {
+      if (username) {
+        // Update user's last activity time to null on logout
+        await updateUserActivity(userId, false);
 
-          // Remove from active sessions
-          removeActiveSession(username || req.session.user.username);
+        // Remove from active sessions
+        removeActiveSession(username || req.session.user.username);
 
-          // Log the logout
-          await LoggingService.log({
-              description: 'User logged out',
-              username: req.session.user.username,
-              userId: req.session.user.id,
-              ipAddress: req.ip,
-              logType: LOG_TYPES.INFO,
-              action: ACTIONS.LOGOUT,
-              status: STATUS.SUCCESS
+        // Log the logout
+        await LoggingService.log({
+          description: 'User logged out',
+          username: req.session.user.username,
+          userId: req.session.user.id,
+          ipAddress: req.ip,
+          logType: LOG_TYPES.INFO,
+          action: ACTIONS.LOGOUT,
+          status: STATUS.SUCCESS
+        });
+
+        await logAuthEvent('logouts', {
+          username,
+          userId,
+          description: `User ${username} signed out successfully`,
+          status: 'Success',
+          action: 'LOGOUT',
+          sessionDuration: req.session.user?.lastLoginTime ?
+            moment().diff(moment(req.session.user.lastLoginTime), 'seconds') : null
+        }, req);
+      }
+
+      // Clear the session cookie first
+      res.clearCookie('connect.sid');
+
+      // Then destroy the session
+      req.session.destroy(err => {
+        if (err) {
+          console.error('Session destruction error:', err);
+          logAuthEvent('errors', {
+            username,
+            description: `Logout error for user ${username}`,
+            error: err.message
+          }, req);
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to logout'
           });
-
-                await logAuthEvent('logouts', {
-                    username,
-                    userId,
-                    description: `User ${username} signed out successfully`,
-                    status: 'Success', // Changed from 'Unknown' to 'Success'
-                    action: 'LOGOUT',
-                    sessionDuration: req.session.user?.lastLoginTime ?
-                        moment().diff(moment(req.session.user.lastLoginTime), 'seconds') : null
-                }, req);
-            }
-
-            // Clear the session cookie first
-            res.clearCookie('connect.sid');
-
-            // Then destroy the session
-            req.session.destroy(err => {
-                if (err) {
-                    console.error('Session destruction error:', err);
-                    logAuthEvent('errors', {
-                        username,
-                        description: `Logout error for user ${username}`,
-                        error: err.message
-                    }, req);
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Failed to logout'
-                    });
-                }
-
-                // For GET requests, redirect to login page
-                res.redirect('/auth/login');
-            });
-        } catch (error) {
-            console.error('Logout error:', error);
-            res.status(500).json({
-                success: false,
-                message: 'An error occurred during logout'
-            });
         }
-    } else {
-        res.clearCookie('connect.sid');
+
+        // For GET requests, redirect to login page
         res.redirect('/auth/login');
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'An error occurred during logout'
+      });
     }
+  } else {
+    res.clearCookie('connect.sid');
+    res.redirect('/auth/login');
+  }
 });
 
 // Add a catch-all route for /auth/* to handle 404s

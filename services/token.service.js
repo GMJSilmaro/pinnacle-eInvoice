@@ -1,14 +1,32 @@
 const axios = require('axios');
-const { WP_CONFIGURATION, WP_USER_REGISTRATION, LHDN_TOKENS } = require('../models');
+const prisma = require('../src/lib/prisma');
+const fs = require('fs');
+const path = require('path');
+const ini = require('ini');
 
+// Global token cache with expiry time
+let globalTokenCache = {
+  token: null,
+  expiryTime: 0,
+  safeExpiryTime: 0 // Add safe expiry time for proactive refresh
+};
+
+// Path to the AuthorizeToken.ini file
+const AUTH_TOKEN_PATH = path.join(__dirname, '..', 'config', 'AuthorizeToken.ini');
+
+/**
+ * Get LHDN configuration from database
+ */
 async function getConfig() {
   try {
-    const config = await WP_CONFIGURATION.findOne({
+    const config = await prisma.wP_CONFIGURATION.findFirst({
       where: {
         Type: 'LHDN',
-        IsActive: 1
+        IsActive: true
       },
-      order: [['CreateTS', 'DESC']]
+      orderBy: {
+        CreateTS: 'desc'
+      }
     });
 
     if (!config) {
@@ -33,23 +51,21 @@ async function getConfig() {
     // Validate required fields
     const requiredFields = ['clientId', 'clientSecret', 'middlewareUrl'];
     const missingFields = requiredFields.filter(field => !settings[field]);
-    
+
     if (missingFields.length > 0) {
       console.warn(`LHDN configuration missing required fields: ${missingFields.join(', ')}`);
     }
 
     return settings;
   } catch (error) {
-    if (error.name === 'SequelizeConnectionError' || error.name === 'SequelizeConnectionRefusedError') {
-      console.error('Database connection error while fetching LHDN config:', error);
-      throw new Error('Database connection error: ' + error.message);
-    }
-    
     console.error('Error getting LHDN configuration:', error);
     throw error;
   }
 }
 
+/**
+ * Get token as taxpayer from LHDN
+ */
 async function getTokenAsTaxPayer() {
   try {
     // Get LHDN configuration
@@ -63,9 +79,9 @@ async function getTokenAsTaxPayer() {
       console.error('Configuration error:', configError);
       throw new Error(`Failed to get LHDN configuration: ${configError.message}`);
     }
-    
+
     // Validate and construct base URL
-    const baseUrl = settings.environment === 'production' ? 
+    const baseUrl = settings.environment === 'production' ?
       settings.middlewareUrl : settings.middlewareUrl;
 
     if (!baseUrl) {
@@ -92,11 +108,11 @@ async function getTokenAsTaxPayer() {
     });
 
     console.log(`Requesting token from: ${formattedBaseUrl}/connect/token`);
-    
+
     try {
       const response = await axios.post(
-        `${formattedBaseUrl}/connect/token`, 
-        httpOptions, 
+        `${formattedBaseUrl}/connect/token`,
+        httpOptions,
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
@@ -106,43 +122,17 @@ async function getTokenAsTaxPayer() {
         }
       );
 
-      if(response.status === 200) return response.data;
-      
+      if(response.status === 200) {
+        // Save token to AuthorizeToken.ini file
+        saveTokenToFile(response.data);
+        return response.data;
+      }
+
       throw new Error(`Unexpected response: ${response.status}`);
     } catch (apiError) {
-      // Check if this is an axios error with a response
-      if (apiError.response) {
-        console.error('API response error:', {
-          status: apiError.response.status,
-          data: apiError.response.data,
-          headers: apiError.response.headers
-        });
-        
-        // Rate limit handling
-        if (apiError.response.status === 429) {
-          const rateLimitReset = apiError.response.headers["x-rate-limit-reset"];
-          if (rateLimitReset) {
-            const resetTime = new Date(rateLimitReset).getTime();
-            const currentTime = Date.now();
-            const waitTime = resetTime - currentTime;
-
-            if (waitTime > 0) {
-              console.log('=======================================================================================');
-              console.log('              LHDN Taxpayer Token API hitting rate limit HTTP 429                  ');
-              console.log(`              Refetching................. (Waiting time: ${waitTime} ms)                  `);
-              console.log('=======================================================================================');
-              await new Promise(resolve => setTimeout(resolve, waitTime));
-              return await getTokenAsTaxPayer();
-            }            
-          }
-        }
-        
-        throw new Error(`API error (${apiError.response.status}): ${apiError.response.data?.error_description || apiError.response.data?.error || 'Unknown error'}`);
-      }
-      
-      // Network or other error
-      console.error('Network or request error:', apiError.message);
-      throw new Error(`Network error: ${apiError.message}`);
+      // Handle API errors
+      console.error('API error:', apiError.message);
+      throw apiError;
     }
   } catch (err) {
     // Enhanced error message
@@ -151,435 +141,202 @@ async function getTokenAsTaxPayer() {
       message: errorMessage,
       stack: err.stack
     });
-    
+
     throw new Error(`Failed to get token: ${errorMessage}`);
   }
 }
 
-// Global token cache with expiry time
-let globalTokenCache = {
-  token: null,
-  expiryTime: 0,
-  safeExpiryTime: 0 // Add safe expiry time for proactive refresh
-};
+/**
+ * Save token to AuthorizeToken.ini file
+ */
+function saveTokenToFile(tokenData) {
+  try {
+    const config = {
+      Token: {
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type,
+        expires_in: tokenData.expires_in,
+        scope: tokenData.scope,
+        timestamp: new Date().toISOString(),
+        expiry_time: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString()
+      }
+    };
 
+    // Ensure directory exists
+    const dir = path.dirname(AUTH_TOKEN_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Write to file
+    fs.writeFileSync(AUTH_TOKEN_PATH, ini.stringify(config));
+    console.log('Token saved to AuthorizeToken.ini');
+  } catch (error) {
+    console.error('Error saving token to file:', error);
+  }
+}
+
+/**
+ * Read token from AuthorizeToken.ini file
+ */
+function readTokenFromFile() {
+  try {
+    console.log('[Token Service] Reading token from file:', AUTH_TOKEN_PATH);
+
+    if (!fs.existsSync(AUTH_TOKEN_PATH)) {
+      console.error('[Token Service] AuthorizeToken.ini file does not exist at path:', AUTH_TOKEN_PATH);
+      return null;
+    }
+
+    const fileContent = fs.readFileSync(AUTH_TOKEN_PATH, 'utf-8');
+    console.log('[Token Service] File content length:', fileContent.length);
+
+    const config = ini.parse(fileContent);
+    console.log('[Token Service] Parsed config:', Object.keys(config));
+
+    if (!config.Token) {
+      console.error('[Token Service] No Token section found in AuthorizeToken.ini');
+      return null;
+    }
+
+    if (!config.Token.access_token) {
+      console.error('[Token Service] No access_token found in Token section');
+      return null;
+    }
+
+    if (!config.Token.expiry_time) {
+      console.error('[Token Service] No expiry_time found in Token section');
+      return null;
+    }
+
+    const expiryTime = new Date(config.Token.expiry_time).getTime();
+    const now = Date.now();
+    console.log('[Token Service] Token expiry time:', new Date(expiryTime).toISOString());
+    console.log('[Token Service] Current time:', new Date(now).toISOString());
+    console.log('[Token Service] Time until expiry:', Math.round((expiryTime - now) / 1000), 'seconds');
+
+    if (expiryTime <= now) {
+      console.error('[Token Service] Token has expired');
+      return null; // Token expired
+    }
+
+    console.log('[Token Service] Valid token found in file');
+    return {
+      access_token: config.Token.access_token,
+      token_type: config.Token.token_type,
+      expires_in: config.Token.expires_in,
+      scope: config.Token.scope,
+      expiry_time: expiryTime
+    };
+  } catch (error) {
+    console.error('[Token Service] Error reading token from file:', error);
+    return null;
+  }
+}
+
+/**
+ * Get token session - uses caching and file storage
+ */
 async function getTokenSession() {
   try {
+    console.log('[Token Service] getTokenSession called');
     const now = Date.now();
     const bufferTime = 5 * 60 * 1000; // 5 minutes buffer
 
     // 1. Check in-memory cache first
     if (globalTokenCache.token && globalTokenCache.safeExpiryTime > now) {
-      console.log('[Backend] Using existing token from in-memory cache (expires in',
+      console.log('[Token Service] Using existing token from in-memory cache (expires in',
         Math.round((globalTokenCache.expiryTime - now) / 1000), 'seconds)');
       return globalTokenCache.token;
     }
 
-    console.log('[Backend] In-memory cache expired or empty. Checking database...');
+    console.log('[Token Service] In-memory cache expired or empty. Checking file...');
 
-    // 2. Check database for the latest valid token
-    const latestToken = await LHDN_TOKENS.findOne({
-      order: [['expiry_time', 'DESC']],
-      where: {
-        expiry_time: {
-          [Sequelize.Op.gt]: new Date(now + bufferTime)
-        }
+    // 2. Check file for the latest valid token
+    const fileToken = readTokenFromFile();
+    console.log('[Token Service] File token result:', fileToken ? 'Token found' : 'No token found');
+
+    if (fileToken) {
+      const fileTokenExpiryTime = new Date(fileToken.expiry_time).getTime();
+      const timeUntilExpiry = Math.round((fileTokenExpiryTime - now) / 1000);
+      const timeUntilSafeExpiry = Math.round((fileTokenExpiryTime - (now + bufferTime)) / 1000);
+
+      console.log('[Token Service] File token expiry details:');
+      console.log('  - Expiry time:', new Date(fileTokenExpiryTime).toISOString());
+      console.log('  - Time until expiry:', timeUntilExpiry, 'seconds');
+      console.log('  - Time until safe expiry:', timeUntilSafeExpiry, 'seconds');
+      console.log('  - Is valid for use:', (fileTokenExpiryTime > (now + bufferTime)) ? 'Yes' : 'No');
+
+      if (fileTokenExpiryTime > (now + bufferTime)) {
+        console.log('[Token Service] Using existing token from file (expires in', timeUntilExpiry, 'seconds)');
+
+        // Populate in-memory cache from file
+        globalTokenCache.token = fileToken.access_token;
+        globalTokenCache.expiryTime = fileTokenExpiryTime;
+        globalTokenCache.safeExpiryTime = globalTokenCache.expiryTime - bufferTime;
+
+        // Log token details (first 10 chars only for security)
+        const tokenPreview = fileToken.access_token.substring(0, 10) + '...';
+        console.log('[Token Service] Token from file (preview):', tokenPreview);
+
+        return globalTokenCache.token;
       }
-    });
-
-    if (latestToken) {
-      console.log('[Backend] Using existing token from database (expires in',
-        Math.round((latestToken.expiry_time.getTime() - now) / 1000), 'seconds)');
-      // Populate in-memory cache from database
-      globalTokenCache.token = latestToken.access_token;
-      globalTokenCache.expiryTime = latestToken.expiry_time.getTime();
-      globalTokenCache.safeExpiryTime = globalTokenCache.expiryTime - bufferTime;
-      return globalTokenCache.token;
     }
 
-    console.log('[Backend] No valid token in cache or database. Generating a new one...');
+    console.log('[Token Service] No valid token in cache or file. Generating a new one...');
 
     // 3. Get a new token if needed
     const tokenData = await getTokenAsTaxPayer();
+    console.log('[Token Service] Token generation result:', tokenData ? 'Success' : 'Failed');
 
     if (!tokenData || !tokenData.access_token) {
-      console.error('[Backend] Failed to obtain access token: Empty response or missing access_token');
+      console.error('[Token Service] Failed to obtain access token: Empty response or missing access_token');
       throw new Error('Failed to obtain access token');
     }
 
     const newToken = tokenData.access_token;
     const newExpiryTime = now + (tokenData.expires_in * 1000);
 
+    // Log token details (first 10 chars only for security)
+    const tokenPreview = newToken.substring(0, 10) + '...';
+    console.log('[Token Service] New token generated (preview):', tokenPreview);
+    console.log('[Token Service] New token expiry:', new Date(newExpiryTime).toISOString());
+
     // 4. Store in in-memory cache
     globalTokenCache.token = newToken;
     globalTokenCache.expiryTime = newExpiryTime;
     globalTokenCache.safeExpiryTime = newExpiryTime - bufferTime;
-    console.log('[Backend] New token stored in in-memory cache.');
+    console.log('[Token Service] New token stored in in-memory cache.');
 
-    // 5. Save to database
+    // 5. Save to database for historical purposes
     try {
-      await LHDN_TOKENS.create({
-        access_token: newToken,
-        // Assuming refresh_token is not provided by getTokenAsTaxPayer based on the code
-        // refresh_token: tokenData.refresh_token,
-        expiry_time: new Date(newExpiryTime)
+      await prisma.lHDN_TOKENS.create({
+        data: {
+          access_token: newToken,
+          expiry_time: new Date(newExpiryTime)
+        }
       });
-      console.log('[Backend] New token successfully saved to database.');
+      console.log('[Token Service] New token successfully saved to database.');
     } catch (dbError) {
-      console.error('[Backend] Error saving new token to database:', dbError);
-      // Decide how to handle database save failure - for now, log and continue
+      console.error('[Token Service] Error saving new token to database:', dbError);
+      // Continue even if database save fails
     }
 
-
-    console.log('[Backend] New token generated and stored (expires in',
+    console.log('[Token Service] New token generated and stored (expires in',
       Math.round(tokenData.expires_in), 'seconds)');
 
     return newToken;
   } catch (error) {
-    console.error('[Backend] Error getting token session:', error);
+    console.error('[Token Service] Error getting token session:', error);
     // If token acquisition fails, clear any potentially invalid cached token
     globalTokenCache = { token: null, expiryTime: 0, safeExpiryTime: 0 };
     throw error; // Re-throwing to indicate failure
   }
 }
 
-// Token cache to store tokens and their expiry times
-const tokenCache = new Map();
-
-// Refresh threshold (5 minutes before expiry)
-const REFRESH_THRESHOLD = 5 * 60 * 1000;
-
-// Rate limiting configuration as per LHDN docs (12 RPM)
-const RATE_LIMIT = {
-  maxRequests: 12,
-  windowMs: 60 * 1000, // 1 minute
-  requests: new Map()
-};
-
-// Check rate limit
-function checkRateLimit(clientId) {
-  const now = Date.now();
-  const windowStart = now - RATE_LIMIT.windowMs;
-  
-  // Get or initialize requests for this client
-  let clientRequests = RATE_LIMIT.requests.get(clientId) || [];
-  
-  // Remove old requests outside the current window
-  clientRequests = clientRequests.filter(timestamp => timestamp > windowStart);
-  
-  // Check if we're over the limit
-  if (clientRequests.length >= RATE_LIMIT.maxRequests) {
-    const oldestRequest = clientRequests[0];
-    const resetTime = oldestRequest + RATE_LIMIT.windowMs;
-    return { allowed: false, resetTime };
-  }
-  
-  // Add new request
-  clientRequests.push(now);
-  RATE_LIMIT.requests.set(clientId, clientRequests);
-  
-  return { allowed: true };
-}
-
-// async function getTokenAsTaxPayer(req, userID = null) {
-//   try {
-//     const userId = userID ? parseInt(userID, 10) : null;
-//     const settings = await getLHDNConfig(userId);
-//     const baseUrl = settings.baseUrl.trim().replace(/\/$/, '');
-//     const clientId = settings.clientId.trim();
-
-//     // Check cache first
-//     const cachedToken = tokenCache.get(clientId);
-//     if (cachedToken) {
-//       const now = Date.now();
-//       // Return cached token if it's not close to expiry
-//       if (cachedToken.expiryTime > (now + REFRESH_THRESHOLD)) {
-//         return cachedToken.token;
-//       }
-//     }
-
-//     // Check rate limit
-//     const rateLimitCheck = checkRateLimit(clientId);
-//     if (!rateLimitCheck.allowed) {
-//       const waitTime = rateLimitCheck.resetTime - Date.now();
-//       console.log(`Rate limit reached. Waiting ${waitTime}ms before retry`);
-//       await new Promise(resolve => setTimeout(resolve, waitTime));
-//       return getTokenAsTaxPayer(req, userID);
-//     }
-
-//     // Format request according to LHDN API spec
-//     const formData = new URLSearchParams();
-//     formData.append('client_id', clientId);
-//     formData.append('client_secret', settings.clientSecret.trim());
-//     formData.append('grant_type', 'client_credentials');
-//     formData.append('scope', 'InvoicingAPI');
-
-//     const response = await axios({
-//       method: 'POST',
-//       url: `${baseUrl}/connect/token`,
-//       data: formData,
-//       headers: {
-//         'Content-Type': 'application/x-www-form-urlencoded',
-//         'Accept': 'application/json',
-//         'Cache-Control': 'no-cache',
-//         'User-Agent': 'PXCEInvoice/1.0'
-//       },
-//       maxRedirects: 5,
-//       timeout: 10000, // 10 second timeout
-//       validateStatus: null
-//     });
-
-//     if (response.status === 200 && response.data?.access_token) {
-//       const token = {
-//         access_token: response.data.access_token,
-//         token_type: response.data.token_type,
-//         expires_in: response.data.expires_in,
-//         scope: response.data.scope
-//       };
-
-//       // Cache the token with expiry time
-//       tokenCache.set(clientId, {
-//         token,
-//         expiryTime: Date.now() + (response.data.expires_in * 1000)
-//       });
-
-//       return token;
-//     } else {
-//       const errorMessage = response.data?.error_description || 
-//                          response.data?.error || 
-//                          'Authentication failed';
-//       throw new Error(errorMessage);
-//     }
-
-//   } catch (err) {
-//     if (err.response?.status === 429) {
-//       // Implement exponential backoff for rate limiting
-//       const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 60000);
-//       await new Promise(resolve => setTimeout(resolve, backoffTime));
-//       return getTokenAsTaxPayer(req, userID);
-//     }
-
-//     console.error('Token request error:', {
-//       message: err.message,
-//       response: {
-//         status: err.response?.status,
-//         data: err.response?.data
-//       }
-//     });
-
-//     throw new Error(err.response?.data?.error_description || 
-//                    err.response?.data?.error || 
-//                    err.message);
-//   }
-// }
-
-// Cleanup old rate limit entries periodically
-setInterval(() => {
-  const now = Date.now();
-  const windowStart = now - RATE_LIMIT.windowMs;
-  
-  for (const [clientId, requests] of RATE_LIMIT.requests.entries()) {
-    const validRequests = requests.filter(timestamp => timestamp > windowStart);
-    if (validRequests.length === 0) {
-      RATE_LIMIT.requests.delete(clientId);
-    } else {
-      RATE_LIMIT.requests.set(clientId, validRequests);
-    }
-  }
-}, RATE_LIMIT.windowMs);
-
-async function validateCustomerTin(settings, tin, idType, idValue, token) {
-  try {
-    if (!['NRIC', 'BRN', 'PASSPORT', 'ARMY'].includes(idType)) {
-      throw new Error(`Invalid ID type. Only 'NRIC', 'BRN', 'PASSPORT', 'ARMY' are allowed`);
-    }
-
-    const baseUrl = settings.environment === 'production' ? 
-      settings.middlewareUrl : settings.middlewareUrl;
-
-    const response = await axios.get(
-      `${baseUrl}/api/v1.0/taxpayer/validate/${tin}?idType=${idType}&idValue=${idValue}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      }
-    );
-
-    if (response.status === 200) {
-      return { status: 'success' };
-    }
-  } catch (err) {
-    if (err.response?.status === 429) {
-      const rateLimitReset = err.response.headers["x-rate-limit-reset"];
-      if (rateLimitReset) {
-        const resetTime = new Date(rateLimitReset).getTime();
-        const currentTime = Date.now();
-        const waitTime = resetTime - currentTime;
-
-        if (waitTime > 0) {
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          return await validateCustomerTin(settings, tin, idType, idValue, token);
-        }
-      }
-    }
-    throw err;
-  }
-}
-
-function checkTokenExpiry(req) {
-  const { accessToken, tokenExpiryTime } = req.session || {};
-  return accessToken && tokenExpiryTime && Date.now() <= tokenExpiryTime;
-}
-
-// Function to validate LHDN credentials without generating a token
-const validateCredentials = async (settings) => {
-  try {
-    const params = new URLSearchParams();
-    params.append('grant_type', 'client_credentials');
-    params.append('client_id', settings.clientId);
-    params.append('client_secret', settings.clientSecret);
-    params.append('scope', 'InvoicingAPI');
-
-    // Ensure proper URL construction
-    let baseUrl = settings.baseUrl;
-    baseUrl = baseUrl.replace(/\/+$/, '');
-    if (!baseUrl.startsWith('https://')) {
-      baseUrl = 'https://' + baseUrl;
-    }
-    
-    console.log('Validating credentials with base URL:', baseUrl);
-    
-    // Only validate credentials without storing the token
-    const response = await axios.post(`${baseUrl}/connect/token`, params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      validateStatus: status => status === 200 // Only consider 200 as success
-    });
-
-    return {
-      success: true,
-      expiresIn: response.data.expires_in / 60 // Convert seconds to minutes
-    };
-  } catch (error) {
-    console.error('Credential validation error:', {
-      error: error.message,
-      response: error.response?.data,
-      config: error.config
-    });
-    return {
-      success: false,
-      error: error.response?.data?.error_description || error.message
-    };
-  }
-};
-
-async function getAccessToken(user) {
-  try {
-    console.log('Getting access token for user:', user ? user.username : 'unknown');
-    
-    // Get LHDN configuration
-    let settings;
-    try {
-      settings = await getConfig();
-      if (!settings) {
-        console.error('LHDN configuration is empty or invalid');
-        // Return a success response with empty token to allow login
-        return {
-          success: true,
-          token: null,
-          expiry: Date.now() + (3600 * 1000), // 1 hour temporary
-          expiresIn: 3600,
-          warning: 'Missing or invalid LHDN configuration'
-        };
-      }
-    } catch (configError) {
-      console.error('Configuration error:', configError);
-      // Return a success response with empty token to allow login
-      return {
-        success: true,
-        token: null,
-        expiry: Date.now() + (3600 * 1000), // 1 hour temporary
-        expiresIn: 3600,
-        warning: `Failed to get LHDN configuration: ${configError.message}`
-      };
-    }
-    
-    // Additional validation and logging for credentials
-    if (!settings.clientId || !settings.clientSecret) {
-      console.error('Missing client credentials in LHDN configuration. Check your configuration in the database.');
-      // Return a success response with empty token to allow login
-      return {
-        success: true,
-        token: null,
-        expiry: Date.now() + (3600 * 1000), // 1 hour temporary
-        expiresIn: 3600,
-        warning: 'Missing client credentials in LHDN configuration'
-      };
-    }
-
-    // Log masked credentials for debugging
-    console.log('Using client credentials:', {
-      clientId: settings.clientId,
-      clientSecret: settings.clientSecret ? '****' + settings.clientSecret.substring(settings.clientSecret.length - 4) : 'null',
-      environment: settings.environment || 'default',
-      middlewareUrl: settings.middlewareUrl || 'not configured'
-    });
-    
-    // Try to get a token
-    try {
-      const tokenData = await getTokenAsTaxPayer();
-      
-      if (!tokenData || !tokenData.access_token) {
-        console.error('Failed to obtain access token - empty response');
-        // Return a success response with empty token to allow login
-        return {
-          success: true,
-          token: null,
-          expiry: Date.now() + (3600 * 1000), // 1 hour temporary
-          expiresIn: 3600,
-          warning: 'Empty response from token service'
-        };
-      }
-      
-      // Return success with token info
-      return {
-        success: true,
-        token: tokenData.access_token,
-        expiry: Date.now() + (tokenData.expires_in * 1000),
-        expiresIn: tokenData.expires_in
-      };
-    } catch (tokenError) {
-      console.error('Token acquisition error:', tokenError);
-      
-      // Return a success response with empty token to allow login regardless of error
-      return {
-        success: true,
-        token: null,
-        expiry: Date.now() + (3600 * 1000), // 1 hour temporary
-        expiresIn: 3600,
-        warning: tokenError.message || 'Unknown error acquiring token'
-      };
-    }
-  } catch (error) {
-    console.error('Unexpected error in getAccessToken:', error);
-    // Return a success response with empty token to allow login
-    return {
-      success: true,
-      token: null,
-      expiry: Date.now() + (3600 * 1000), // 1 hour temporary
-      expiresIn: 3600,
-      warning: 'Unexpected error acquiring token: ' + (error.message || 'Unknown error')
-    };
-  }
-}
-
 module.exports = {
   getTokenAsTaxPayer,
-  getAccessToken,
-  checkTokenExpiry,
-  validateCredentials,
-  validateCustomerTin,
-  getTokenSession
+  getTokenSession,
+  readTokenFromFile,
+  saveTokenToFile
 };

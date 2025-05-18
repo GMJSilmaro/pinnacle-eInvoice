@@ -1,6 +1,5 @@
 const Client = require('ssh2-sftp-client');
-const db = require('../models');
-const { WP_SFTP_CONFIG } = db;
+const prisma = require('../src/lib/prisma');
 const moment = require('moment');
 
 class SFTPService {
@@ -31,7 +30,7 @@ class SFTPService {
       };
 
       console.log('Attempting SFTP connection...');
-      
+
       await sftp.connect(connectionConfig);
       console.log('SFTP connection established successfully');
 
@@ -90,7 +89,7 @@ class SFTPService {
   async saveConfig(config) {
     try {
       console.log('Saving SFTP config to database...');
-      
+
       // First, deactivate ALL existing configs
       await WP_SFTP_CONFIG.update(
         { is_active: false },
@@ -147,12 +146,12 @@ class SFTPService {
         where: { is_active: true },
         attributes: [
           'id', 'host', 'port', 'username', 'password',
-          'root_path', 'incoming_manual_template', 
-          'incoming_schedule_template', 'outgoing_manual_template', 
+          'root_path', 'incoming_manual_template',
+          'incoming_schedule_template', 'outgoing_manual_template',
           'outgoing_schedule_template', 'is_active'
         ]
       });
-      
+
       if (!config) {
         console.log('No existing SFTP config found');
         return {};
@@ -247,13 +246,13 @@ class SFTPService {
         });
 
         console.log(`Listing directory: ${path}`);
-        
+
         try {
             // Normalize path and remove SFTP_DATA prefix if present
             path = path.replace(/^\/SFTP_DATA/, '');
             path = path.replace(/\/+/g, '/');
             if (path === '') path = '/';
-            
+
             // List directory contents
             const list = await this.sftp.list(path);
             console.log(`Found ${list.length} items in directory`);

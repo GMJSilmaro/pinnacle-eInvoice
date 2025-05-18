@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
         // Initialize invoice table using singleton
         const invoiceManager = InvoiceTableManager.getInstance();
-     
+
         // Initialize date/time display
         DateTimeManager.updateDateTime();
 
@@ -139,43 +139,163 @@ class InvoiceTableManager {
             this.table.destroy();
         }
         const self = this;
+
+        // Show loading indicator with more detailed message
+        $('#invoiceTable').closest('.card').addClass('loading');
+        $('#invoiceTable').closest('.card').append('<div class="loading-overlay"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><div class="mt-2" id="loadingMessage">Initializing and checking authentication...</div><div class="small text-muted mt-1" id="loadingDetail"></div></div>');
+
+        // Update loading message
+        const updateLoadingMessage = (message, detail = '') => {
+            $('#loadingMessage').text(message);
+            if (detail) {
+                $('#loadingDetail').text(detail);
+            }
+        };
+
+        // Check authentication status first with timeout
+        const checkAuth = async () => {
+            try {
+                updateLoadingMessage('Checking authentication status...');
+
+                // Set a timeout for auth check to prevent hanging
+                const authCheckPromise = window.waitForAuth ? window.waitForAuth() : Promise.resolve();
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Authentication check timed out')), 10000)
+                );
+
+                try {
+                    await Promise.race([authCheckPromise, timeoutPromise]);
+                    updateLoadingMessage('Authentication verified, loading data...', 'Connecting to server');
+                } catch (authError) {
+                    console.warn('Auth check issue, proceeding anyway:', authError);
+                    updateLoadingMessage('Proceeding with data load...', 'Authentication status uncertain');
+                }
+
+                // Initialize the table with retry logic
+                this.initializeTableWithRetry();
+            } catch (error) {
+                console.error('Error in authentication check:', error);
+                updateLoadingMessage('Authentication check failed, attempting to load data anyway...');
+                this.initializeTableWithRetry();
+            }
+        };
+
+        // Call the authentication check
+        checkAuth();
+    }
+
+    // New method with retry logic
+    async initializeTableWithRetry(retryCount = 0) {
+        const maxRetries = 3;
+        const retryDelay = 3000; // 3 seconds
+
+        try {
+            // Update loading message
+            $('#loadingMessage').text(`Loading invoice data... (Attempt ${retryCount + 1}/${maxRetries + 1})`);
+
+            // Initialize the table
+            await this.initializeTableWithData();
+        } catch (error) {
+            console.error(`Error initializing table (attempt ${retryCount + 1}):`, error);
+
+            if (retryCount < maxRetries) {
+                // Show retry message
+                $('#loadingMessage').text(`Connection issue, retrying in ${retryDelay/1000} seconds...`);
+                $('#loadingDetail').text(`Attempt ${retryCount + 1} of ${maxRetries + 1}`);
+
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+
+                // Retry with incremented count
+                return this.initializeTableWithRetry(retryCount + 1);
+            } else {
+                // All retries failed, show neutral message and try to load from database only
+                console.error('All retries failed, attempting database-only fallback');
+                $('#loadingMessage').text('Loading invoice data from system...');
+
+                try {
+                    await this.loadFromDatabaseOnly();
+                } catch (fallbackError) {
+                    console.error('Database fallback also failed:', fallbackError);
+                    // Show a more neutral message
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Loading Invoice Data',
+                        text: 'We\'re having trouble loading your invoice data. Would you like to try again?',
+                        confirmButtonText: 'Retry',
+                        showCancelButton: true,
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            // Remove loading overlay first
+                            $('#invoiceTable').closest('.card').removeClass('loading');
+                            $('#invoiceTable').closest('.card').find('.loading-overlay').remove();
+                            // Retry from the beginning
+                            this.initializeTable();
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // New method to load from database only as last resort
+    async loadFromDatabaseOnly() {
+        try {
+            // Remove existing loading indicator
+            $('#invoiceTable').closest('.card').removeClass('loading');
+            $('#invoiceTable').closest('.card').find('.loading-overlay').remove();
+
+            // Show loading indicator with neutral message
+            $('#invoiceTable').closest('.card').addClass('loading');
+            $('#invoiceTable').closest('.card').append('<div class="loading-overlay"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><div class="mt-2">Loading invoice data...</div></div>');
+
+            // Fetch data from database endpoint
+            const response = await fetch('/api/lhdn/documents/recent?useDatabase=true&fallbackOnly=true');
+
+            if (!response.ok) {
+                throw new Error(`Database fetch failed with status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!data || !data.result || data.result.length === 0) {
+                throw new Error('No data available in database');
+            }
+
+            // Remove loading indicator
+            $('#invoiceTable').closest('.card').removeClass('loading');
+            $('#invoiceTable').closest('.card').find('.loading-overlay').remove();
+
+            // Initialize table with the database data
+            this.initializeTableWithLocalData(data.result);
+
+            // Don't show any warning toast to users
+            // Just log to console for debugging purposes
+            console.log('Using data from local database. LHDN API connection may be unavailable.');
+
+            return true;
+        } catch (error) {
+            console.error('Database-only load failed:', error);
+            throw error;
+        }
+    }
+
+    // Initialize table with local data
+    initializeTableWithLocalData(localData) {
+        // Similar to initializeTableWithData but uses provided data instead of AJAX
+        const self = this;
+
+        // Remove loading indicator
+        $('#invoiceTable').closest('.card').removeClass('loading');
+        $('#invoiceTable').closest('.card').find('.loading-overlay').remove();
+
         this.table = $('#invoiceTable').DataTable({
+            // Same configuration as in initializeTableWithData but without AJAX
             processing: false,
             serverSide: false,
-            ajax: {
-                url: '/api/lhdn/documents/recent',
-                method: 'GET',
-                data: function (d) {
-                    // Always include forceRefresh parameter
-                    d.forceRefresh = window.forceRefreshLHDN || false;
-                    return d;
-                },
-                dataSrc: function(json) {
-                    const result = json && json.result ? json.result : [];
-                    
-                    // Only update timestamp if this wasn't a forced refresh
-                    if (!window.forceRefreshLHDN) {
-                        localStorage.setItem('lastDataUpdate', new Date().getTime());
-                    }
-                    
-                    console.log("Current Inbound Results: ", result);
-                    // Reset the force refresh flag
-                    window.forceRefreshLHDN = false;
-                    
-                    // Update totals and charts after data load
-                    setTimeout(() => {
-                        self.updateCardTotals();
-                        updateCharts();
-                    }, 100);
-                    
-                    return result;
-                },
-                error: function(xhr, error, thrown) {
-                    console.error('Ajax error:', error);
-                    ToastManager.show('Error fetching data from server', 'error');
-                }
-            },
+            data: localData, // Use local data instead of AJAX
             columns: [
+                // Same columns configuration as in initializeTableWithData
                 {
                     data: null,
                     orderable: false,
@@ -202,10 +322,10 @@ class InvoiceTableManager {
                         return `
                             <div class="flex flex-col">
                                 <div class="overflow-hidden text-ellipsis  flex items-center gap-2">
-                                    <a href="#" class="inbound-badge-status copy-uuid" 
-                                       data-bs-toggle="tooltip" 
-                                       data-bs-placement="top" 
-                                       title="${data}" 
+                                    <a href="#" class="inbound-badge-status copy-uuid"
+                                       data-bs-toggle="tooltip"
+                                       data-bs-placement="top"
+                                       title="${data}"
                                        data-uuid="${data}"
                                          style="
                                             max-width: 100px;
@@ -249,11 +369,11 @@ class InvoiceTableManager {
                         return `
                             <div class="flex flex-col">
                                 <div class="overflow-hidden text-ellipsis flex gap-2">
-                                    <a href="#" 
-                                       class="inbound-badge-status copy-longId" 
-                                       data-bs-toggle="tooltip" 
-                                       data-bs-placement="top" 
-                                       title="${data || 'N/A'}" 
+                                    <a href="#"
+                                       class="inbound-badge-status copy-longId"
+                                       data-bs-toggle="tooltip"
+                                       data-bs-placement="top"
+                                       title="${data || 'N/A'}"
                                        data-longId="${data || ''}"
                                        style="
                                             max-width: 100px;
@@ -319,7 +439,7 @@ class InvoiceTableManager {
                     render: function (data) {
 
                         const statusClass = data.toLowerCase();
-                    
+
                         const icons = {
                             valid: 'check-circle-fill',
                             invalid: 'x-circle-fill',
@@ -342,19 +462,19 @@ class InvoiceTableManager {
                         const color = statusColors[statusClass];
 
                         if (statusClass === 'submitted' || statusClass === 'pending') {
-                            return `<span class="inbound-status ${statusClass}" 
-                                  style="display: inline-flex; align-items: center; gap: 6px; 
-                                         padding: 6px 12px; border-radius: 6px; 
-                                         background: ${color}15; color: ${color}; 
+                            return `<span class="inbound-status ${statusClass}"
+                                  style="display: inline-flex; align-items: center; gap: 6px;
+                                         padding: 6px 12px; border-radius: 6px;
+                                         background: ${color}15; color: ${color};
                                          font-weight: 500; transition: all 0.2s ease;">
                                 <i class="bi bi-${icon}"></i>Queued
                             </span>`;
                         }
                         return `
-                            <span class="inbound-status ${statusClass}" 
-                                  style="display: inline-flex; align-items: center; gap: 6px; 
-                                         padding: 6px 12px; border-radius: 6px; 
-                                         background: ${color}15; color: ${color}; 
+                            <span class="inbound-status ${statusClass}"
+                                  style="display: inline-flex; align-items: center; gap: 6px;
+                                         padding: 6px 12px; border-radius: 6px;
+                                         background: ${color}15; color: ${color};
                                          font-weight: 500; transition: all 0.2s ease;">
                                 <i class="bi bi-${icon}"></i>${data}
                             </span>`;
@@ -372,7 +492,7 @@ class InvoiceTableManager {
                     title: 'TOTAL SALES',
                     render: data => {
                         if (!data) return '<span class="text-muted">N/A</span>';
-                        
+
                         return `
                             <div class="total-amount-wrapper" style="
                                 display: flex;
@@ -405,7 +525,7 @@ class InvoiceTableManager {
                     orderable: false,
                     render: function (row) {
                         return `
-                            <button class="outbound-action-btn submit" 
+                            <button class="outbound-action-btn submit"
                                     onclick="viewInvoiceDetails('${row.uuid}')"
                                     data-uuid="${row.uuid}">
                                 <i class="bi bi-eye me-1"></i>View
@@ -451,7 +571,7 @@ class InvoiceTableManager {
                     self.updateCardTotals();
                     updateCharts(); // Update charts when table is redrawn
                 }
-                
+
                 // Update row indexes
                 const table = $(this).DataTable();
                 $(table.table().node()).find('tbody tr').each(function(index) {
@@ -540,10 +660,535 @@ class InvoiceTableManager {
 
                 // Force a fresh fetch from the API
                 window.forceRefreshLHDN = true;
-                
+
                 // Clear the cache timestamp to force a fresh fetch
                 localStorage.removeItem('lastDataUpdate');
-                
+
+                // Reload the table data
+                await this.table.ajax.reload(null, false);
+
+                progressBar.style.width = '100%';
+                statusText.textContent = 'Success! Your data is now up to date.';
+
+                setTimeout(() => {
+                    loadingModal.classList.remove('show');
+                    loadingModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                    backdrop.remove();
+                    progressBar.style.width = '0%';
+                    detailsText.textContent = '';
+                    ToastManager.show('Successfully fetched fresh data from LHDN', 'success');
+                    this.startRefreshTimer();
+                }, 1000);
+
+            } catch (error) {
+                console.error('Error refreshing LHDN data:', error);
+                ToastManager.show(error.message || 'Unable to fetch fresh data from LHDN. Please try again.', 'error');
+            } finally {
+                $('#refreshLHDNData').prop('disabled', false);
+            }
+        });
+
+        this.startRefreshTimer();
+    }
+
+    initializeTableWithData() {
+        const self = this;
+
+        // Remove loading indicator
+        $('#invoiceTable').closest('.card').removeClass('loading');
+        $('#invoiceTable').closest('.card').find('.loading-overlay').remove();
+
+        this.table = $('#invoiceTable').DataTable({
+            processing: false,
+            serverSide: false,
+            ajax: {
+                url: '/api/lhdn/documents/recent',
+                method: 'GET',
+                data: function (d) {
+                    // Always include forceRefresh parameter
+                    d.forceRefresh = window.forceRefreshLHDN || false;
+                    // Add useDatabase parameter to ensure we get data even if API fails
+                    d.useDatabase = true;
+                    return d;
+                },
+                dataSrc: function(json) {
+                    const result = json && json.result ? json.result : [];
+
+                    // Only update timestamp if this wasn't a forced refresh
+                    if (!window.forceRefreshLHDN) {
+                        localStorage.setItem('lastDataUpdate', new Date().getTime());
+                    }
+
+                    console.log("Current Inbound Results: ", result);
+                    // Reset the force refresh flag
+                    window.forceRefreshLHDN = false;
+
+                    // Update totals and charts after data load
+                    setTimeout(() => {
+                        self.updateCardTotals();
+                        updateCharts();
+                    }, 100);
+
+                    // Show warning if data is from database and not API
+                    if (json.metadata && json.metadata.fromDatabase && !json.metadata.fromApi) {
+                        ToastManager.show('Showing data from database. LHDN API connection may be unavailable.', 'warning', 5000);
+                    }
+
+                    return result;
+                },
+                error: function(xhr, error, thrown) {
+                    console.error('Ajax error:', error, thrown);
+
+                    // Check for specific error types
+                    let errorMessage = 'Error fetching data from server.';
+                    let errorType = 'error';
+                    let errorDuration = 5000;
+
+                    // Handle different error types
+                    if (xhr.status === 401 || xhr.status === 403) {
+                        errorMessage = 'Authentication error. Please refresh the page to log in again.';
+                        // Show a more detailed error modal for auth issues
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Session Expired',
+                            text: 'Your session has expired or you are not authenticated. Please refresh the page to log in again.',
+                            confirmButtonText: 'Refresh Page',
+                            showCancelButton: true,
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                window.location.reload();
+                            }
+                        });
+                    } else if (xhr.status === 404) {
+                        errorMessage = 'Data endpoint not found. Please contact support.';
+                    } else if (xhr.status === 429) {
+                        errorMessage = 'Too many requests. Please wait a moment and try again.';
+                    } else if (xhr.status === 0) {
+                        errorMessage = 'Network connection issue. Please check your internet connection.';
+                    } else if (xhr.status >= 500) {
+                        errorMessage = 'Server error. The system is currently unavailable.';
+                    }
+
+                    // Don't show error toast to users, just log to console
+                    console.log(errorMessage + ' Attempting to load from local database...');
+
+                    // Update loading message with neutral text
+                    $('#loadingMessage').text('Loading invoice data...');
+                    $('#loadingDetail').text('Please wait while we retrieve your data');
+
+                    // Try to load data from database as fallback with improved error handling
+                    fetch('/api/lhdn/documents/recent?useDatabase=true&fallbackOnly=true')
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Database fetch failed with status: ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data && data.result && data.result.length > 0) {
+                                // Manually update the table with database data
+                                self.table.clear().rows.add(data.result).draw();
+                                // Don't show warning toast to users
+                                console.log('Using data from local database. LHDN API connection may be unavailable.');
+
+                                // Update card totals and charts with the new data
+                                setTimeout(() => {
+                                    self.updateCardTotals();
+                                    updateCharts();
+                                }, 100);
+                            } else {
+                                throw new Error('No data available in database');
+                            }
+                        })
+                        .catch(fallbackError => {
+                            console.error('Error fetching fallback data:', fallbackError);
+                            // Don't show error toast to users
+                            console.error('Could not load any data. Please try again later or refresh the page.');
+
+                            // Show a more user-friendly error message
+                            $('#invoiceTable').closest('.card').find('.dataTables_empty').html(`
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle-fill me-2"></i>
+                                    <strong>No invoice data available.</strong>
+                                    <p class="mb-0 mt-2">We couldn't retrieve your invoice data at this time.</p>
+                                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="window.location.reload()">
+                                        <i class="bi bi-arrow-clockwise me-1"></i>Refresh Page
+                                    </button>
+                                </div>
+                            `);
+                        });
+                }
+            },
+            columns: [
+                {
+                    data: null,
+                    orderable: false,
+                    defaultContent: `
+                        <div class="outbound-checkbox-header">
+                            <input type="checkbox" class="outbound-checkbox row-checkbox">
+                        </div>`
+                },
+                {
+                    data: null,
+                    orderable: false,
+                    searchable: false,
+                    className: 'text-center',
+                    render: function (data, type, row, meta) {
+                        // Calculate the correct index based on the current page and page length
+                        const pageInfo = meta.settings._iDisplayStart;
+                        const index = pageInfo + meta.row + 1;
+                        return `<span class="row-index">${index}</span>`;
+                    }
+                },
+                {
+                    data: 'uuid',
+                    render: function (data) {
+                        return `
+                            <div class="flex flex-col">
+                                <div class="overflow-hidden text-ellipsis  flex items-center gap-2">
+                                    <a href="#" class="inbound-badge-status copy-uuid"
+                                       data-bs-toggle="tooltip"
+                                       data-bs-placement="top"
+                                       title="${data}"
+                                       data-uuid="${data}"
+                                         style="
+                                            max-width: 100px;
+                                            line-height: 1.2;
+                                            display: inline-flex;
+                                            align-items: center;
+                                            gap: 6px;
+                                            padding: 6px 10px;
+                                            border-radius: 6px;
+                                            font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                                            font-size: 0.813rem;
+                                            background: rgba(13, 110, 253, 0.08);
+                                            color: #0d6efd;
+                                            border: 1px solid rgba(13, 110, 253, 0.1);
+                                            transition: all 0.2s ease;
+                                            cursor: pointer;
+                                            white-space: nowrap;
+                                            text-decoration: none;
+                                            ">
+                                        <i class="bi bi-fingerprint" style="font-size: 0.875rem;"></i>
+                                        <span style="
+                                            max-width: 80px;
+                                            overflow: hidden;
+                                            text-overflow: ellipsis;
+                                            display: inline-block;
+                                        ">${data}</span>
+                                        <i class="bi bi-clipboard" style="
+                                            font-size: 0.875rem;
+                                            opacity: 0.6;
+                                            margin-left: auto;
+                                            transition: opacity 0.2s ease;
+                                        "></i>
+                                    </a>
+                                </div>
+                            </div>`;
+                    }
+                },
+                {
+                    data: 'longId',
+                    render: function (data) {
+                        return `
+                            <div class="flex flex-col">
+                                <div class="overflow-hidden text-ellipsis flex gap-2">
+                                    <a href="#"
+                                       class="inbound-badge-status copy-longId"
+                                       data-bs-toggle="tooltip"
+                                       data-bs-placement="top"
+                                       title="${data || 'N/A'}"
+                                       data-longId="${data || ''}"
+                                       style="
+                                            max-width: 100px;
+                                            line-height: 1.2;
+                                            display: inline-flex;
+                                            align-items: center;
+                                            gap: 6px;
+                                            padding: 6px 10px;
+                                            border-radius: 6px;
+                                            font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                                            font-size: 0.813rem;
+                                            background: rgba(25, 135, 84, 0.08);
+                                            color: #198754;
+                                            border: 1px solid rgba(25, 135, 84, 0.1);
+                                            transition: all 0.2s ease;
+                                            cursor: pointer;
+                                            white-space: nowrap;
+                                            text-decoration: none;
+                                            ">
+                                        <i class="bi bi-hash" style="font-size: 0.875rem;"></i>
+                                        <span style="
+                                            max-width: 160px;
+                                            overflow: hidden;
+                                            text-overflow: ellipsis;
+                                            display: inline-block;
+                                        ">${data || 'N/A'}</span>
+                                        <i class="bi bi-clipboard" style="
+                                            font-size: 0.875rem;
+                                            opacity: 0.6;
+                                            margin-left: auto;
+                                            transition: opacity 0.2s ease;
+                                        "></i>
+                                    </a>
+                                </div>
+                            </div>`;
+                    }
+                },
+                {
+                    data: 'internalId',
+                    title: 'INTERNAL ID',
+                    className: 'text-nowrap',
+                    render: (data, type, row) => this.renderInvoiceNumber(data, type, row)
+                },
+                {
+                    data: 'supplierName',
+                    title: 'SUPPLIER',
+                    render: (data, type, row) => this.renderCompanyInfo(data, type, row)
+                },
+                {
+                    data: 'receiverName',
+                    title: 'RECEIVER',
+                    render: (data, type, row) => this.renderCompanyInfo(data, type, row)
+                },
+                {
+                    data: null,
+                    className: 'text-nowrap',
+                    title: 'DATE INFO',
+                    render: (data, type, row) => this.renderDateInfo(row.dateTimeValidated, row)
+                },
+                {
+                    data: 'status',
+                    title: 'STATUS',
+                    render: function (data) {
+
+                        const statusClass = data.toLowerCase();
+
+                        const icons = {
+                            valid: 'check-circle-fill',
+                            invalid: 'x-circle-fill',
+                            pending: 'hourglass-split',
+                            submitted: 'hourglass-split',
+                            queued: 'hourglass-split',
+                            rejected: 'x-circle-fill',
+                            cancelled: 'x-circle-fill'
+                        };
+                        const statusColors = {
+                            valid: '#198754',
+                            invalid: '#dc3545',
+                            pending: '#ff8307',
+                            submitted: 'gray',
+                            queued: '#0d6efd',
+                            rejected: '#dc3545',
+                            cancelled: '#ffc107'
+                        };
+                        const icon = icons[statusClass] || 'question-circle';
+                        const color = statusColors[statusClass];
+
+                        if (statusClass === 'submitted' || statusClass === 'pending') {
+                            return `<span class="inbound-status ${statusClass}"
+                                  style="display: inline-flex; align-items: center; gap: 6px;
+                                         padding: 6px 12px; border-radius: 6px;
+                                         background: ${color}15; color: ${color};
+                                         font-weight: 500; transition: all 0.2s ease;">
+                                <i class="bi bi-${icon}"></i>Queued
+                            </span>`;
+                        }
+                        return `
+                            <span class="inbound-status ${statusClass}"
+                                  style="display: inline-flex; align-items: center; gap: 6px;
+                                         padding: 6px 12px; border-radius: 6px;
+                                         background: ${color}15; color: ${color};
+                                         font-weight: 500; transition: all 0.2s ease;">
+                                <i class="bi bi-${icon}"></i>${data}
+                            </span>`;
+                    }
+                },
+                {
+                    data: 'source',
+                    title: 'SOURCE',
+                    render: function (data) {
+                        return this.renderSource(data);
+                    }.bind(this)
+                },
+                {
+                    data: 'totalSales',
+                    title: 'TOTAL SALES',
+                    render: data => {
+                        if (!data) return '<span class="text-muted">N/A</span>';
+
+                        return `
+                            <div class="total-amount-wrapper" style="
+                                display: flex;
+                                align-items: center;
+                                justify-content: flex-end;
+                            ">
+                                <span class="total-amount" style="
+                                    font-weight: 500;
+                                    color: #1e40af;
+                                    font-family: 'SF Mono', SFMono-Regular, ui-monospace, monospace;
+                                    background: rgba(30, 64, 175, 0.1);
+                                    padding: 4px 8px;
+                                    border-radius: 4px;
+                                    display: inline-block;
+                                    letter-spacing: 0.5px;
+                                    white-space: nowrap;
+                                    transition: all 0.2s ease;
+                                ">
+                                    MYR ${parseFloat(data || 0).toLocaleString('en-MY', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    })}
+                                </span>
+                            </div>
+                        `;
+                    }
+                },
+                {
+                    data: null,
+                    orderable: false,
+                    render: function (row) {
+                        return `
+                            <button class="outbound-action-btn submit"
+                                    onclick="viewInvoiceDetails('${row.uuid}')"
+                                    data-uuid="${row.uuid}">
+                                <i class="bi bi-eye me-1"></i>View
+                            </button>`;
+                    }
+                }
+            ],
+            scrollX: true,
+            scrollCollapse: true,
+            autoWidth: false,
+            pageLength: 10,
+            "order": [[ 6, 'desc' ]], // The 6 should be the index of your date column
+            "columnDefs": [
+                {
+                    "targets": 6, // The DATE INFO column index
+                    "type": "date"
+                },
+            ],
+            dom: '<"outbound-controls"<"outbound-length-control"l>>rt<"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
+            language: {
+                //search: '',
+                //searchPlaceholder: 'Search in records...',
+                lengthMenu: '<i class="bi bi-list"></i> _MENU_',
+                info: 'Showing _START_ to _END_ of _TOTAL_ entries',
+                infoEmpty: 'No records available',
+                infoFiltered: '(filtered from _MAX_ total records)',
+                paginate: {
+                    first: '<i class="bi bi-chevron-double-left"></i>',
+                    previous: '<i class="bi bi-chevron-left"></i>',
+                    next: '<i class="bi bi-chevron-right"></i>',
+                    last: '<i class="bi bi-chevron-double-right"></i>'
+                },
+                select: {
+                    rows: {
+                        _: 'Selected %d rows',
+                        0: 'Click a row to select it',
+                        1: 'Selected 1 row'
+                    }
+                }
+            },
+            drawCallback: function(settings) {
+                if (settings._iDisplayLength !== undefined) {
+                    self.updateCardTotals();
+                    updateCharts(); // Update charts when table is redrawn
+                }
+
+                // Update row indexes
+                const table = $(this).DataTable();
+                $(table.table().node()).find('tbody tr').each(function(index) {
+                    const pageInfo = settings._iDisplayStart;
+                    $(this).find('.row-index').text(pageInfo + index + 1);
+                });
+            },
+            initComplete: function() {
+                self.updateCardTotals();
+                self.initializeFilters();
+                updateCharts(); // Update charts when table is first initialized
+            }
+        });
+
+        window.inboundDataTable = this.table;
+
+        this.initializeTableStyles();
+        this.initializeEventListeners();
+        this.initializeSelectAll();
+        this.addExportButton();
+        this.initializeTooltipsAndCopy();
+
+        // Add refresh button
+        const refreshButton = $(`
+            <button id="refreshLHDNData" class="outbound-action-btn submit btn-sm ms-2">
+                <i class="bi bi-arrow-clockwise me-1"></i>Refresh LHDN Data
+                <small class="text-muted ms-1 refresh-timer" style="display: none;"></small>
+            </button>
+        `);
+
+        $('.dataTables_length').append(refreshButton);
+
+        // Handle refresh button click
+        $('#refreshLHDNData').on('click', async () => {
+            try {
+                const button = $('#refreshLHDNData');
+                const loadingModal = document.getElementById('loadingModal');
+                const progressBar = document.querySelector('#loadingModal .progress-bar');
+                const statusText = document.getElementById('loadingStatus');
+                const detailsText = document.getElementById('loadingDetails');
+
+                if (this.checkDataFreshness() && !window.forceRefreshLHDN) {
+                    const result = await Swal.fire({
+                        title: 'Data is up to date',
+                        text: 'The data was updated less than 15 minutes ago. Do you still want to refresh?',
+                        icon: 'info',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, refresh anyway',
+                        cancelButtonText: 'No, keep current data',
+                        confirmButtonColor: '#1e40af',
+                        cancelButtonColor: '#dc3545'
+                    });
+
+                    if (!result.isConfirmed) {
+                        return;
+                    }
+                }
+
+                button.prop('disabled', true);
+                loadingModal.classList.add('show');
+                loadingModal.style.display = 'block';
+                document.body.classList.add('modal-open');
+
+                const backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                document.body.appendChild(backdrop);
+
+                progressBar.style.width = '10%';
+                statusText.textContent = 'Connecting to LHDN server...';
+
+                // Call the new refresh endpoint
+                const response = await fetch('/api/lhdn/documents/refresh', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error?.message || 'Failed to refresh data');
+                }
+
+                progressBar.style.width = '50%';
+                statusText.textContent = 'Refreshing data...';
+
+                // Force a fresh fetch from the API
+                window.forceRefreshLHDN = true;
+
+                // Clear the cache timestamp to force a fresh fetch
+                localStorage.removeItem('lastDataUpdate');
+
                 // Reload the table data
                 await this.table.ajax.reload(null, false);
 
@@ -584,21 +1229,21 @@ class InvoiceTableManager {
         $('.quick-filters .btn[data-filter]').on('click', function() {
             $('.quick-filters .btn').removeClass('active');
             $(this).addClass('active');
-            
+
             const filter = $(this).data('filter');
             const statusColumn = self.table.column(8); // Status column
-            
+
             if (filter === 'all') {
                 statusColumn.search('').draw();
             } else {
                 // Convert filter value to match the actual status text
                 let searchValue = filter.charAt(0).toUpperCase() + filter.slice(1).toLowerCase();
-                
+
                 // Special handling for 'queue' status
                 if (filter === 'queue') {
                     searchValue = 'Queued|Submitted|Pending';
                 }
-                
+
                 statusColumn.search(searchValue, true, false, true).draw();
             }
         });
@@ -607,7 +1252,7 @@ class InvoiceTableManager {
         $('#tableStartDate, #tableEndDate').on('change', function() {
             const startDate = $('#tableStartDate').val();
             const endDate = $('#tableEndDate').val();
-            
+
             // Validate date range
             if (startDate && endDate) {
                 const start = new Date(startDate);
@@ -617,7 +1262,7 @@ class InvoiceTableManager {
                     return;
                 }
             }
-            
+
             self.applyFilters();
         });
 
@@ -646,19 +1291,19 @@ class InvoiceTableManager {
             // Reset all inputs
             $('#tableStartDate, #tableEndDate, #minAmount, #maxAmount, #companyFilter').val('');
             $('#documentTypeFilter, #sourceFilter').val('');
-            
+
             // Reset quick filters
             $('.quick-filters .btn[data-filter="all"]').addClass('active').siblings().removeClass('active');
-            
+
             // Clear DataTable filters
             self.table.search('').columns().search('');
-            
+
             // Clear global search
             $('#globalSearch').val('');
-            
+
             // Reset and redraw table
             self.applyFilters();
-            
+
             // Show success message
             ToastManager.show('All filters have been cleared', 'success');
         });
@@ -667,7 +1312,7 @@ class InvoiceTableManager {
         $(document).on('click', '.filter-tag .btn-close', function() {
             const filterText = $(this).siblings('.filter-text').text();
             const filterType = filterText.split(':')[0].trim().toLowerCase();
-            
+
             // Clear the corresponding filter input
             switch(filterType) {
                 case 'date':
@@ -686,10 +1331,10 @@ class InvoiceTableManager {
                     $('#sourceFilter').val('');
                     break;
             }
-            
+
             // Reapply filters
             self.applyFilters();
-            
+
             // Show success message
             ToastManager.show('Filter removed', 'success');
         });
@@ -722,27 +1367,27 @@ class InvoiceTableManager {
         return this.createSourceBadge(data);
     }
 
-    
+
     renderDateInfo(validatedDate, row) {
         console.log(validatedDate);
         const validatedFormatted = validatedDate ? this.formatDate(validatedDate) : null;
-     
+
         return `
             <div class="date-info" style="position: relative;">
                 ${validatedFormatted ? `
-                    <div class="date-row validated" 
+                    <div class="date-row validated"
                          data-bs-toggle="tooltip"
                          data-bs-placement="top"
                          title="LHDN validation completed on ${validatedFormatted}"
                          style="position: relative; padding-left: 28px;">
-                        <i class="bi bi-shield-check text-success" 
+                        <i class="bi bi-shield-check text-success"
                            style="position: absolute; left: 0; top: 3px; font-size: 1.1rem;"></i>
                         <div class="date-content">
                             <div class="d-flex align-items-center gap-2">
                                 <span class="date-value text-dark fw-medium">
                                     ${validatedFormatted}
                                 </span>
-                                <span class="badge bg-success bg-opacity-10 text-success py-1 px-2" 
+                                <span class="badge bg-success bg-opacity-10 text-success py-1 px-2"
                                       style="font-size: 0.55rem; border: 1px solid rgba(25, 135, 84, 0.15);">
                                     Validated
                                 </span>
@@ -797,7 +1442,7 @@ class InvoiceTableManager {
         return `
             <div class="invoice-info-wrapper" style="display: flex; flex-direction: column; gap: 8px; text-align: left;">
                 <div class="invoice-main" style="display: flex; align-items: center; gap: 12px;">
-                    
+
                 </div>
                 <div class="invoice-number" style="
                     display: flex;
@@ -828,16 +1473,16 @@ class InvoiceTableManager {
                             color: ${docTypeColor};
                         ">
                             <i class="bi bi-${docTypeIcon}"></i>
-                            ${docType  + ' ' + row.typeVersionName} 
+                            ${docType  + ' ' + row.typeVersionName}
                         </span>
                     </div>
             </div>`;
     }
 
-    
+
     renderTotalAmount(data) {
         if (!data) return '<span class="text-muted">N/A</span>';
-        
+
         return `
             <div class="total-amount-wrapper" style="
                 display: flex;
@@ -927,7 +1572,7 @@ class InvoiceTableManager {
         let iconClass = 'bi-building';
         let tooltipText = 'Document from external system';
         let customStyle = '';
-        
+
         switch(source) {
             case 'PixelCare':
                 badgeClass = 'bg-primary';
@@ -949,15 +1594,15 @@ class InvoiceTableManager {
                 badgeClass = 'bg-info';
                 iconClass = 'bi-building';
         }
-        
-        return `<span class="badge ${badgeClass}" 
+
+        return `<span class="badge ${badgeClass}"
             data-bs-toggle="tooltip"
             data-bs-placement="top"
             title="${tooltipText}"
             style="
                 display: inline-flex;
                 align-items: center;
-                gap: 6px; 
+                gap: 6px;
                 padding: 8px 12px;
                 border-radius: 6px;
                 font-size: 0.85rem;
@@ -1247,7 +1892,7 @@ class InvoiceTableManager {
                         clipboardIcon.style.color = '';
                         clipboardIcon.style.opacity = '0.6';
                     }
-                    
+
                     const currentTooltip = bootstrap.Tooltip.getInstance(element);
                     if (currentTooltip) {
                         currentTooltip.dispose();
@@ -1330,23 +1975,23 @@ class InvoiceTableManager {
         this.refreshTimerInterval = setInterval(updateTimer, 60000);
     }
 
-    
-    
+
+
     getUniqueColumnValues(columnName, columnIndex, dataType = 'text') {
         const table = this.table;
-        
+
         // For HTML columns, we need to get both the rendered data and the raw data
         let processedData = [];
-        
+
         // Use DataTables API to get column data
         if (dataType === 'html') {
             // Get the rendered data (HTML) from the column
             const columnData = table.column(columnIndex).nodes().to$();
-            
+
             // Extract text content from HTML
             columnData.each(function() {
                 let text = '';
-                
+
                 // For source column
                 if (columnName === 'source') {
                     // Extract the source name from the badge
@@ -1357,7 +2002,7 @@ class InvoiceTableManager {
                         // Fallback to any text in the cell
                         text = $(this).text().trim();
                     }
-                } 
+                }
                 // For status column
                 else if (columnName === 'status') {
                     const statusBadge = $(this).find('.inbound-status');
@@ -1380,7 +2025,7 @@ class InvoiceTableManager {
                 else {
                     text = $(this).text().trim();
                 }
-                
+
                 if (text) {
                     processedData.push(text);
                 }
@@ -1399,16 +2044,16 @@ class InvoiceTableManager {
                 })
                 .filter(Boolean); // Remove empty values
         }
-        
+
         // Get unique values
         const uniqueValues = [...new Set(processedData)];
         return uniqueValues.sort();
     }
-    
+
     applyFilters() {
         const self = this;
         const table = this.table;
-        
+
         // Remove any existing custom filter
         $.fn.dataTable.ext.search = $.fn.dataTable.ext.search.filter(fn => fn.name !== 'customInboundFilter');
 
@@ -1418,7 +2063,7 @@ class InvoiceTableManager {
         // Date Range Filter
         const startDate = $('#tableStartDate').val();
         const endDate = $('#tableEndDate').val();
-        
+
         if (startDate || endDate) {
             if (startDate && endDate) {
                 activeFilters.push(`Date: ${startDate} to ${endDate}`);
@@ -1477,17 +2122,17 @@ class InvoiceTableManager {
                         const [datePart, timePart] = dateStr.split(',').map(s => s.trim());
                         const [month, day, year] = datePart.split(' ');
                         const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(month);
-                        
+
                         if (monthIndex !== -1) {
                             const rowDate = new Date(year, monthIndex, parseInt(day));
                             rowDate.setHours(0, 0, 0, 0); // Set to start of day for comparison
-                            
+
                             if (startDate) {
                                 const startDateTime = new Date(startDate);
                                 startDateTime.setHours(0, 0, 0, 0);
                                 if (rowDate < startDateTime) showRow = false;
                             }
-                            
+
                             if (endDate) {
                                 const endDateTime = new Date(endDate);
                                 endDateTime.setHours(23, 59, 59, 999);
@@ -1506,7 +2151,7 @@ class InvoiceTableManager {
                 if (companyFilter) {
                     const supplierName = searchData[5].toLowerCase(); // SUPPLIER column
                     const receiverName = searchData[6].toLowerCase(); // RECEIVER column
-                    if (!supplierName.includes(companyFilter.toLowerCase()) && 
+                    if (!supplierName.includes(companyFilter.toLowerCase()) &&
                         !receiverName.includes(companyFilter.toLowerCase())) {
                         showRow = false;
                     }
@@ -1561,20 +2206,20 @@ class InvoiceTableManager {
             container.append(clearAllBtn);
         }
     }
-    
+
     resetFilters() {
         // Reset all dropdown filters
         $('.filter-select').val('');
-        
+
         // Reset date filters
         $('#start-date-filter').val('');
         $('#end-date-filter').val('');
-        
+
         // Redraw the table with no filters
         this.table.draw();
     }
 
- 
+
     refresh() {
         if (this.table) {
             this.table.ajax.reload(() => {
@@ -1583,14 +2228,14 @@ class InvoiceTableManager {
             }, false);
         }
     }
-  
+
     cleanup() {
         if (this.table) {
             this.table.destroy();
             this.table = null;
         }
     }
-  
+
 }
 
 
@@ -1820,8 +2465,8 @@ function createPaymentContent(paymentInfo) {
 
     return `
         <style>
-          
-         
+
+
             .info-row {
                 display: block; /* Maintain stacked layout */
                 margin-bottom: 1rem;
@@ -1927,10 +2572,10 @@ function createPaymentContent(paymentInfo) {
             <div class="info-row highlight-row">
                 <div class="label">IRBM UNIQUE IDENTIFIER NO</div>
                 <div class="value text-align-left">
-                    <span 
+                    <span
                         id="${uuid}"
                         class="badge bg-light text-dark border"
-                        data-bs-toggle="tooltip" 
+                        data-bs-toggle="tooltip"
                         data-bs-placement="top"
                         title="Click to copy"
                         onclick="copyToClipboard('${uuid}', '${uuid}') disabled"
@@ -1943,7 +2588,7 @@ function createPaymentContent(paymentInfo) {
                     </span>
                 </div>
             </div>
-            
+
 
 
         </div>
@@ -1979,55 +2624,55 @@ function copyToClipboard(text, elementId) {
         // Create temporary textarea
         const textarea = document.createElement('textarea');
         textarea.value = text;
-        
+
         // Make it readonly to avoid focus and virtual keyboard on mobile
         textarea.setAttribute('readonly', '');
-        
+
         // Hide the textarea
         textarea.style.position = 'absolute';
         textarea.style.left = '-9999px';
-        
+
         // Append to body
         document.body.appendChild(textarea);
-        
+
         // Check if the device is iOS
         const isIOS = navigator.userAgent.match(/ipad|iphone/i);
-        
+
         if (isIOS) {
             // Save current scroll position
             const scrollY = window.scrollY;
-            
+
             // Create selection range
             const range = document.createRange();
             range.selectNodeContents(textarea);
-            
+
             const selection = window.getSelection();
             selection.removeAllRanges();
             selection.addRange(range);
-            
+
             // Special handling for iOS
             textarea.setSelectionRange(0, textarea.value.length);
-            
+
             // Restore scroll position
             window.scrollTo(0, scrollY);
         } else {
             // Select the text
             textarea.select();
         }
-        
+
         // Copy the text
         const successful = document.execCommand('copy');
-        
+
         // Remove the temporary textarea
         document.body.removeChild(textarea);
-        
+
         if (successful) {
             // Show success message
-            const customMessage = text.length > 20 ? 
-                `Copied ${text.substring(0, 20)}... to clipboard!` : 
+            const customMessage = text.length > 20 ?
+                `Copied ${text.substring(0, 20)}... to clipboard!` :
                 `Copied ${text} to clipboard!`;
             ToastManager.show(customMessage, 'success');
-            
+
             // Update visual feedback if elementId is provided
             if (elementId) {
                 const element = document.getElementById(elementId);
@@ -2037,17 +2682,17 @@ function copyToClipboard(text, elementId) {
                     if (icon) {
                         const originalHTML = icon.innerHTML;
                         icon.innerHTML = '<i class="bi bi-check-lg"></i>';
-                        
+
                         // Add animation class
                         element.classList.add('copy-animation');
-                        
+
                         // Reset after animation
                         setTimeout(() => {
                             element.classList.remove('copy-animation');
                             icon.innerHTML = originalHTML;
                         }, 2000);
                     }
-                    
+
                     // Update tooltip
                     const tooltip = bootstrap.Tooltip.getInstance(element);
                     if (tooltip) {
@@ -2055,7 +2700,7 @@ function copyToClipboard(text, elementId) {
                         element.setAttribute('data-bs-original-title', 'Copied!');
                         const newTooltip = new bootstrap.Tooltip(element);
                         newTooltip.show();
-                        
+
                         // Reset tooltip after delay
                         setTimeout(() => {
                             newTooltip.dispose();
@@ -2261,15 +2906,15 @@ async function openValidationResultsModal(uuid) {
                                     ${allInnerErrors.map((err, i) => `
                                         ${i > 0 ? '<div class="lhdn-inner-error mt-3">' : ''}
                                      <div class="lhdn-error-location">
-                                        <strong class="lhdn-step-error">Field:</strong> 
+                                        <strong class="lhdn-step-error">Field:</strong>
                                         <span class="lhdn-step-error">${ValidationTranslations.getFieldName(err.propertyPath)}</span>
                                     </div>
                                     <div class="lhdn-error-message">
-                                        <strong class="lhdn-step-error">Issue:</strong> 
+                                        <strong class="lhdn-step-error">Issue:</strong>
                                         <span class="lhdn-step-error">${ValidationTranslations.getErrorMessage(err.error)}</span>
                                     </div>
                                     <div class="lhdn-error-code">
-                                        <strong class="lhdn-step-error">Error Type:</strong> 
+                                        <strong class="lhdn-step-error">Error Type:</strong>
                                         <span class="lhdn-step-error">${ValidationTranslations.getErrorType(err.errorCode)}</span>
                                     </div>
                                         ${i > 0 ? '</div>' : ''}
@@ -2292,11 +2937,11 @@ async function openValidationResultsModal(uuid) {
                                         <strong>Validation Error:</strong> Please fix the following issue to proceed.
                                     </div>
                                     <div class="lhdn-error-message">
-                                        <strong>Issue:</strong> 
+                                        <strong>Issue:</strong>
                                         <span class="text-break lhdn-step-error">${ValidationTranslations.getErrorMessage(step.error?.error)}</span>
                                     </div>
                                     <div class="lhdn-error-code">
-                                        <strong>Error Type:</strong> 
+                                        <strong>Error Type:</strong>
                                         <span class="lhdn-step-error">${ValidationTranslations.getErrorType(step.error?.errorCode)}</span>
                                     </div>
                                 </div>
@@ -2551,7 +3196,7 @@ function initializeQuickActions() {
 // Helper function to handle settings actions
 function handleSettingsAction(action) {
     const table = $('#invoiceTable').DataTable();
-    
+
     switch(action) {
         case 'Column Visibility':
             // Implement column visibility toggle
@@ -2645,7 +3290,7 @@ function initializeEnhancedFilters() {
 // Document Preview Functionality
 function initializeDocumentPreview() {
     const previewSection = document.querySelector('.document-preview-section');
-    
+
     // Show preview when clicking on a table row
     $('#invoiceTable tbody').on('click', 'tr', function() {
         const table = $('#invoiceTable').DataTable();
@@ -2685,10 +3330,10 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing enhanced features...');
     try {
         const charts = initializeCharts();
-        
+
         // Initialize invoice table using singleton
         const invoiceManager = InvoiceTableManager.getInstance();
-        
+
         // Initialize date/time display
         DateTimeManager.updateDateTime();
 
@@ -2719,7 +3364,7 @@ function updateCharts() {
 
         // Get all data from the table
         const allData = table.rows().data().toArray();
-        
+
         // Status Distribution Chart Update
         const statusCounts = {
             Valid: 0,
@@ -2751,7 +3396,7 @@ function updateCharts() {
         // Daily Submissions Chart Update
         const dailySubmissions = new Map();
         const last7Days = [];
-        
+
         // Generate last 7 days dates
         for (let i = 6; i >= 0; i--) {
             const date = new Date();
@@ -2814,6 +3459,3 @@ function updateCharts() {
         console.error('Error updating charts:', error);
     }
 }
-
-
-

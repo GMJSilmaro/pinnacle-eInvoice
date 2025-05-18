@@ -4,9 +4,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { auth } = require('../../middleware');
-const { WP_COMPANY_SETTINGS, WP_USER_REGISTRATION, WP_LOGS, WP_CONFIGURATION } = require('../../models');
+const prisma = require('../../src/lib/prisma');
 const bcrypt = require('bcryptjs');
-const { sequelize } = require('../../models');
 
 // Configure multer for image upload
 const storage = multer.diskStorage({
@@ -83,7 +82,7 @@ router.get('/profile', auth.isAdmin, async (req, res) => {
     let lhdnSettings = {};
     if (lhdnConfig?.Settings) {
       try {
-        lhdnSettings = typeof lhdnConfig.Settings === 'string' ? 
+        lhdnSettings = typeof lhdnConfig.Settings === 'string' ?
           JSON.parse(lhdnConfig.Settings) : lhdnConfig.Settings;
       } catch (error) {
         console.error('Error parsing LHDN settings:', error);
@@ -230,7 +229,7 @@ router.put('/profile', auth.isAdmin, async (req, res) => {
       let lhdnSettings = {};
       if (lhdnConfig?.Settings) {
         try {
-          lhdnSettings = typeof lhdnConfig.Settings === 'string' ? 
+          lhdnSettings = typeof lhdnConfig.Settings === 'string' ?
             JSON.parse(lhdnConfig.Settings) : lhdnConfig.Settings;
         } catch (error) {
           console.error('Error parsing LHDN settings:', error);
@@ -313,7 +312,7 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
 
     // Validate password
     const isValidPassword = await bcrypt.compare(password, user.Password);
-    
+
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
@@ -328,7 +327,7 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
       // Update user's TIN
       await WP_USER_REGISTRATION.update(
         { TIN: tin },
-        { 
+        {
           where: { ID: user.ID },
           transaction
         }
@@ -351,7 +350,7 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
 
       if (company) {
         await company.update(
-          { 
+          {
             TIN: tin,
             UpdateTS: sequelize.literal('GETDATE()')
 
@@ -439,7 +438,7 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
 
     // Validate password
     const isValidPassword = await bcrypt.compare(password, user.Password);
-    
+
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
@@ -454,7 +453,7 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
       // Update user's BRN (IDValue)
       await WP_USER_REGISTRATION.update(
         { IDValue: brn },
-        { 
+        {
           where: { ID: user.ID },
           transaction
         }
@@ -477,7 +476,7 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
 
       if (company) {
         await company.update(
-          { 
+          {
             BRN: brn,
             UpdateTS: sequelize.literal('GETDATE()')
 
@@ -559,7 +558,7 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
 
     // Validate password
     const isValidPassword = await bcrypt.compare(password, user.Password);
-    
+
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
@@ -619,7 +618,7 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating LHDN credentials:', error);
-    
+
     // Log the error
     if (req.session?.user) {
       await WP_LOGS.create({

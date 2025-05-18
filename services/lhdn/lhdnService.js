@@ -1,22 +1,23 @@
 const path = require('path')
 const axios = require('axios');
 const CryptoJS = require('crypto-js');
-const env = process.env.NODE_ENV || 'dev';
 const fs = require('fs');
 const forge = require('node-forge');
 const jsonminify = require('jsonminify');
 const crypto = require('crypto');
 require('dotenv').config();
-const { WP_CONFIGURATION } = require('../../models');
-const { getTokenSession } = require('../token.service');
+const prisma = require('../../src/lib/prisma');
+const { getTokenSession } = require('../token-prisma.service');
 
 async function getConfig() {
-  const config = await WP_CONFIGURATION.findOne({
+  const config = await prisma.wP_CONFIGURATION.findFirst({
     where: {
       Type: 'LHDN',
-      IsActive: 1
+      IsActive: true
     },
-    order: [['CreateTS', 'DESC']]
+    orderBy: {
+      CreateTS: 'desc'
+    }
   });
 
   if (!config) {
@@ -25,7 +26,12 @@ async function getConfig() {
 
   let settings = config.Settings;
   if (typeof settings === 'string') {
-    settings = JSON.parse(settings);
+    try {
+      settings = JSON.parse(settings);
+    } catch (parseError) {
+      console.error('Error parsing LHDN settings JSON:', parseError);
+      throw new Error('Invalid LHDN configuration format');
+    }
   }
 
   return settings;
@@ -34,7 +40,7 @@ async function getConfig() {
 async function getTokenAsIntermediary() {
   try {
     const settings = await getConfig();
-    const baseUrl = settings.environment === 'production' ? 
+    const baseUrl = settings.environment === 'production' ?
       settings.middlewareUrl : settings.middlewareUrl;
 
     const httpOptions = {
@@ -45,8 +51,8 @@ async function getTokenAsIntermediary() {
     };
 
     const response = await axios.post(
-      `${baseUrl}/connect/token`, 
-      httpOptions, 
+      `${baseUrl}/connect/token`,
+      httpOptions,
       {
         headers: {
           'onbehalfof': settings.tin,
@@ -71,7 +77,7 @@ async function getTokenAsIntermediary() {
           console.log('=======================================================================================');
           await new Promise(resolve => setTimeout(resolve, waitTime));
           return await getTokenAsIntermediary();
-        }            
+        }
       }
     }
     throw new Error(`Failed to get token: ${err.message}`);
@@ -80,33 +86,75 @@ async function getTokenAsIntermediary() {
 
 async function submitDocument(docs, token) {
   try {
+    console.log('[LHDN Service] submitDocument called');
+
     if (!token) {
-      throw new Error('Authentication token is required');
+      console.error('[LHDN Service] Authentication token is missing in submitDocument call');
+      return {
+        status: 'failed',
+        error: {
+          code: 'AUTH_ERROR',
+          message: 'Authentication token is required',
+          details: 'No token was provided for LHDN API authentication. Please try logging out and logging in again.'
+        }
+      };
+    }
+
+    if (!docs || !Array.isArray(docs) || docs.length === 0) {
+      console.error('[LHDN Service] Invalid or empty documents array provided to submitDocument');
+      return {
+        status: 'failed',
+        error: {
+          code: 'INVALID_DOCUMENT',
+          message: 'No valid documents provided for submission',
+          details: 'The document data is missing or invalid. Please check the document format.'
+        }
+      };
     }
 
     const settings = await getConfig();
-    const baseUrl = settings.environment === 'production' ? 
+    const baseUrl = settings.environment === 'production' ?
       settings.middlewareUrl : settings.middlewareUrl;
 
+    console.log('[LHDN Service] LHDN API URL:', `${baseUrl}/api/v1.0/documentsubmissions`);
+    console.log('[LHDN Service] Token present:', !!token);
+    console.log('[LHDN Service] Token length:', token ? token.length : 0);
+    console.log('[LHDN Service] Documents count:', docs.length);
+
+    // Log token preview (first 10 chars only for security)
+    if (token) {
+      const tokenPreview = token.substring(0, 10) + '...';
+      console.log('[LHDN Service] Token preview:', tokenPreview);
+    }
+
+    console.log('[LHDN Service] Making API request to LHDN...');
+
+    // Add timeout to prevent hanging requests
     const response = await axios.post(
-      `${baseUrl}/api/v1.0/documentsubmissions`, 
-      { documents: docs }, 
+      `${baseUrl}/api/v1.0/documentsubmissions`,
+      { documents: docs },
       {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
-          // Standard LHDN API Headers (assuming these are required based on documentation)
-          // Note: Accurate values for these headers might require passing the 'req' object from the routes.
-          'X-Request-ID': 'placeholder-request-id', // Replace with actual request ID
-          'X-Date': new Date().toISOString(),
-          'X-Client-ID': 'eInvoice-WebApp', // Replace with actual client ID
-          'X-Forwarded-For': 'placeholder-ip-address', // Replace with actual IP address
-          'X-User-Agent': 'placeholder-user-agent', // Replace with actual user agent
-          'X-Channel': 'Web' // Replace with actual channel
-        }
+        },
+        timeout: 30000 // 30 seconds timeout
       }
     );
 
+    if (!response.data) {
+      console.error('Empty response data from LHDN API');
+      return {
+        status: 'failed',
+        error: {
+          code: 'EMPTY_RESPONSE',
+          message: 'LHDN API returned an empty response',
+          details: 'The server returned a successful status but with no data. Please try again.'
+        }
+      };
+    }
+
+    console.log('LHDN API Response:', JSON.stringify(response.data, null, 2));
     return { status: 'success', data: response.data };
   } catch (err) {
     // Improved error logging
@@ -124,7 +172,7 @@ async function submitDocument(docs, token) {
         const resetTime = new Date(rateLimitReset).getTime();
         const currentTime = Date.now();
         const waitTime = resetTime - currentTime;
-        
+
         console.log('=======================================================================================');
         console.log('              LHDN SubmitDocument API hitting rate limit HTTP 429                      ');
         console.log('                 Retrying for current iteration.................                       ');
@@ -134,7 +182,7 @@ async function submitDocument(docs, token) {
         if (waitTime > 0) {
           await new Promise(resolve => setTimeout(resolve, waitTime));
           return await submitDocument(docs, token);
-        }            
+        }
       }
     }
 
@@ -243,22 +291,14 @@ async function submitDocument(docs, token) {
 async function getDocumentDetails(irb_uuid, token) {
   try {
     const settings = await getConfig();
-    const baseUrl = settings.environment === 'production' ? 
+    const baseUrl = settings.environment === 'production' ?
       settings.middlewareUrl : settings.middlewareUrl;
 
     const response = await axios.get(
-      `${baseUrl}/api/v1.0/documents/${irb_uuid}/details`, 
+      `${baseUrl}/api/v1.0/documents/${irb_uuid}/details`,
       {
         headers: {
           'Authorization': `Bearer ${token}`,
-          // Standard LHDN API Headers (assuming these are required based on documentation)
-          // Note: Accurate values for these headers might require passing the 'req' object from the routes.
-          'X-Request-ID': 'placeholder-request-id', // Replace with actual request ID
-          'X-Date': new Date().toISOString(),
-          'X-Client-ID': 'eInvoice-WebApp', // Replace with actual client ID
-          'X-Forwarded-For': 'placeholder-ip-address', // Replace with actual IP address
-          'X-User-Agent': 'placeholder-user-agent', // Replace with actual user agent
-          'X-Channel': 'Web' // Replace with actual channel
         }
       }
     );
@@ -271,7 +311,7 @@ async function getDocumentDetails(irb_uuid, token) {
         const resetTime = new Date(rateLimitReset).getTime();
         const currentTime = Date.now();
         const waitTime = resetTime - currentTime;
-        
+
         console.log('=======================================================================================');
         console.log('              LHDN DocumentDetails API hitting rate limit HTTP 429                      ');
         console.log('                 Retrying for current iteration.................                       ');
@@ -281,7 +321,7 @@ async function getDocumentDetails(irb_uuid, token) {
         if (waitTime > 0) {
           await new Promise(resolve => setTimeout(resolve, waitTime));
           return await getDocumentDetails(irb_uuid, token);
-        }            
+        }
       }
     }
     console.error(`Failed to get IRB document details for document UUID ${irb_uuid}:`, err.message);
@@ -292,7 +332,7 @@ async function getDocumentDetails(irb_uuid, token) {
 async function cancelValidDocumentBySupplier(irb_uuid, cancellation_reason, token) {
   try {
     const settings = await getConfig();
-    const baseUrl = settings.environment === 'production' ? 
+    const baseUrl = settings.environment === 'production' ?
       settings.middlewareUrl : settings.middlewareUrl;
 
     const payload = {
@@ -302,19 +342,11 @@ async function cancelValidDocumentBySupplier(irb_uuid, cancellation_reason, toke
 
     const response = await axios.put(
       `${baseUrl}/api/v1.0/documents/state/${irb_uuid}/state`,
-      payload, 
+      payload,
       {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
-          // Standard LHDN API Headers (assuming these are required based on documentation)
-          // Note: Accurate values for these headers might require passing the 'req' object from the routes.
-          'X-Request-ID': 'placeholder-request-id', // Replace with actual request ID
-          'X-Date': new Date().toISOString(),
-          'X-Client-ID': 'eInvoice-WebApp', // Replace with actual client ID
-          'X-Forwarded-For': 'placeholder-ip-address', // Replace with actual IP address
-          'X-User-Agent': 'placeholder-user-agent', // Replace with actual user agent
-          'X-Channel': 'Web' // Replace with actual channel
         }
       }
     );
@@ -327,7 +359,7 @@ async function cancelValidDocumentBySupplier(irb_uuid, cancellation_reason, toke
         const resetTime = new Date(rateLimitReset).getTime();
         const currentTime = Date.now();
         const waitTime = resetTime - currentTime;
-        
+
         console.log('=======================================================================================');
         console.log('              LHDN Cancel Document API hitting rate limit HTTP 429                      ');
         console.log('                 Retrying for current iteration.................                       ');
@@ -337,7 +369,7 @@ async function cancelValidDocumentBySupplier(irb_uuid, cancellation_reason, toke
         if (waitTime > 0) {
           await new Promise(resolve => setTimeout(resolve, waitTime));
           return await cancelValidDocumentBySupplier(irb_uuid, cancellation_reason, token);
-        }            
+        }
       }
     }
     console.error(`Failed to cancel document for IRB UUID ${irb_uuid}:`, err.message);
@@ -369,7 +401,7 @@ function getCertificatesHashedParams(documentJson) {
   const certificatePath = path.join(__dirname, 'eInvoiceCertificates', process.env.PRIVATE_CERT_FILE_PATH);
 
   const privateKeyPem = fs.readFileSync(privateKeyPath, 'utf8');
-  const certificatePem = fs.readFileSync(certificatePath, 'utf8'); 
+  const certificatePem = fs.readFileSync(certificatePath, 'utf8');
 
   const privateKey = forge.pki.privateKeyFromPem(privateKeyPem);
 
@@ -393,12 +425,12 @@ function getCertificatesHashedParams(documentJson) {
   // Calculate the signed properties section digest
   // =============================================================
   let signingTime = new Date().toISOString()
-  let signedProperties = 
+  let signedProperties =
   {
     "Target": "signature",
     "SignedProperties": [
       {
-        "Id": "id-xades-signed-props",  
+        "Id": "id-xades-signed-props",
         "SignedSignatureProperties": [
             {
               "SigningTime": [
@@ -448,7 +480,7 @@ function getCertificatesHashedParams(documentJson) {
       }
     ]
   }
-  
+
   const signedpropsString = JSON.stringify(signedProperties);
   const signedpropsHash = crypto.createHash('sha256').update(signedpropsString, 'utf8').digest('base64');
 
@@ -654,7 +686,7 @@ function getCertificatesHashedParams(documentJson) {
         }
       ]
     }
-  ] 
+  ]
 
   //Use this return value to inject back into your raw JSON Invoice[0] without Signature/UBLExtension earlier
   //Then, encode back to SHA256 and Base64 respectively for object value inside Submission Document payload.
@@ -663,7 +695,7 @@ function getCertificatesHashedParams(documentJson) {
     certificateJsonPortion_UBLExtensions
   })
 
-} 
+}
 
 async function testIRBCall(data) {
   try {
@@ -691,7 +723,7 @@ async function testIRBCall(data) {
           console.log('=======================================================================================');
           await new Promise(resolve => setTimeout(resolve, waitTime));
           return await getTokenAsTaxPayer();
-        }            
+        }
       }
     } else {
       throw new Error(`Failed to get token: ${err.message}`);
@@ -708,8 +740,8 @@ async function validateCustomerTin(settings, tin, idType, idValue, token) {
     if (!settings) {
       settings = await getConfig();
     }
-    
-    const baseUrl = settings.environment === 'production' ? 
+
+    const baseUrl = settings.environment === 'production' ?
       settings.middlewareUrl : settings.middlewareUrl;
 
     const response = await axios.get(
@@ -742,7 +774,7 @@ async function validateCustomerTin(settings, tin, idType, idValue, token) {
   }
 }
 
-module.exports = { 
+module.exports = {
     submitDocument,
     validateCustomerTin,
     getTokenAsIntermediary,

@@ -1,7 +1,7 @@
-const { WP_USER_REGISTRATION, sequelize } = require('../models');
-const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../services/logging.service');
+const prisma = require('../src/lib/prisma');
+const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../services/logging-prisma.service');
 const authConfig = require('../config/auth.config');
-const { getTokenSession } = require('../services/token.service'); // Import getTokenSession
+const { getTokenSession } = require('../services/token-prisma.service'); // Import getTokenSession
 
 // Active sessions and login attempts tracking
 const activeSessions = new Map();
@@ -459,10 +459,61 @@ async function isApiAuthenticated(req, res, next) {
 
     // Get LHDN access token and attach to headers
     try {
-      const lhdnToken = await getTokenSession();
+      // First try to get token from file
+      const fs = require('fs');
+      const path = require('path');
+      const tokenFilePath = path.join(__dirname, '../config/AuthorizeToken.ini');
+      let lhdnToken = null;
+
+      if (fs.existsSync(tokenFilePath)) {
+        try {
+          const tokenData = fs.readFileSync(tokenFilePath, 'utf8');
+
+          // Try different possible token formats in the file
+          let tokenMatch = tokenData.match(/AccessToken=(.+)/i) ||
+                          tokenData.match(/access_token=(.+)/i) ||
+                          tokenData.match(/token=(.+)/i);
+
+          if (tokenMatch && tokenMatch[1]) {
+            lhdnToken = tokenMatch[1].trim();
+            console.log('Using token from AuthorizeToken.ini file');
+          } else {
+            // Try to parse as JSON if no match found
+            try {
+              const jsonData = JSON.parse(tokenData);
+              if (jsonData.access_token) {
+                lhdnToken = jsonData.access_token;
+                console.log('Using token from JSON format in AuthorizeToken.ini file');
+              }
+            } catch (jsonError) {
+              // Not JSON format, continue
+            }
+          }
+        } catch (fileError) {
+          console.error('Error reading token from file:', fileError);
+        }
+      }
+
+      // If no token from file, try to get from session
+      if (!lhdnToken && req.session.accessToken) {
+        lhdnToken = req.session.accessToken;
+        console.log('Using token from session');
+      }
+
+      // If still no token, try to get a fresh one
+      if (!lhdnToken) {
+        lhdnToken = await getTokenSession();
+        console.log('Generated fresh token');
+
+        // Save the token to session for future use
+        if (lhdnToken) {
+          req.session.accessToken = lhdnToken;
+        }
+      }
+
       if (lhdnToken) {
         req.headers['Authorization'] = `Bearer ${lhdnToken}`;
-        console.log('Attached LHDN token to request headers.');
+        console.log('Attached LHDN token to request headers');
       } else {
         console.warn('LHDN token not available. Proceeding without token.');
       }

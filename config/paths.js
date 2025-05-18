@@ -1,7 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs').promises;
-const db = require('../models');
-const WP_CONFIGURATION = db.WP_CONFIGURATION;
+const path = require('path');
+const prisma = require('../src/lib/prisma');
 
 // Initialize SERVER_CONFIG with default values
 const SERVER_CONFIG = {
@@ -16,12 +16,14 @@ const SERVER_CONFIG = {
 // Function to get active SAP configuration from database
 async function getActiveSAPConfig() {
   try {
-    const config = await WP_CONFIGURATION.findOne({
+    const config = await prisma.wP_CONFIGURATION.findFirst({
       where: {
         Type: 'SAP',
-        IsActive: 1
+        IsActive: true
       },
-      order: [['CreateTS', 'DESC']]
+      orderBy: {
+        CreateTS: 'desc'
+      }
     });
 
     if (!config) {
@@ -55,7 +57,7 @@ async function getActiveSAPConfig() {
 
     // Format the network path
     let formattedPath = settings.networkPath;
-    
+
     // If it's a drive letter path, ensure proper format
     if (/^[a-zA-Z]:/.test(formattedPath)) {
       formattedPath = formattedPath.replace(/\//g, '\\');
@@ -102,15 +104,15 @@ async function getActiveSAPConfig() {
  */
 async function executeCommand(command, options = {}) {
   try {
-    const output = execSync(command, { 
+    const output = execSync(command, {
       encoding: 'utf8',
       windowsHide: true,
-      ...options 
+      ...options
     });
     return { success: true, output };
   } catch (error) {
-    return { 
-      success: false, 
+    return {
+      success: false,
       error: {
         message: error.message,
         stdout: error.stdout,
@@ -127,13 +129,13 @@ async function executeCommand(command, options = {}) {
 async function listConnections() {
   console.log('Checking current network connections...');
   const result = await executeCommand('net use');
-  
+
   if (result.success) {
     console.log('Current connections:', result.output);
   } else {
     console.log('Failed to list connections:', result.error.message);
   }
-  
+
   return result;
 }
 
@@ -143,7 +145,7 @@ async function listConnections() {
  */
 async function cleanupConnections() {
   console.log('Cleaning up network connections...');
-  
+
   // Just delete all connections
   const deleteAll = await executeCommand('net use * /delete /y');
   if (!deleteAll.success) {
@@ -162,7 +164,7 @@ async function testDirectoryAccess(path) {
   console.log('Testing directory access:', path);
   try {
     await fs.access(path);
-    
+
     // If access successful, try to list directory
     const dirResult = await executeCommand(`dir "${path}"`);
     if (dirResult.success) {
@@ -183,18 +185,18 @@ async function testDirectoryAccess(path) {
  */
 async function establishConnection() {
   const connectCommand = `net use "${SERVER_CONFIG.networkPath}" /USER:${SERVER_CONFIG.credentials.domain}\\${SERVER_CONFIG.credentials.username} "${SERVER_CONFIG.credentials.password}" /PERSISTENT:NO`;
-  
+
   console.log('Attempting to establish connection...');
   const result = await executeCommand(connectCommand);
-  
+
   if (result.success) {
     console.log('Connection established successfully');
     return { success: true };
   } else {
     console.error('Connection failed:', result.error);
-    return { 
-      success: false, 
-      error: result.error 
+    return {
+      success: false,
+      error: result.error
     };
   }
 }
@@ -205,44 +207,56 @@ async function establishConnection() {
  */
 async function validateNetworkPath() {
   console.log('\n=== Starting Network Path Validation ===\n');
-  
+
   try {
     // Get active configuration from database
-    const SERVER_CONFIG = await getActiveSAPConfig();
-    
+    const config = await getActiveSAPConfig();
+
+    if (!config.success) {
+      throw new Error(`Failed to get SAP configuration: ${config.error}`);
+    }
+
+    // Update SERVER_CONFIG with the retrieved configuration
+    SERVER_CONFIG.networkPath = config.networkPath;
+    SERVER_CONFIG.credentials = {
+      domain: config.domain || '',
+      username: config.username,
+      password: config.password
+    };
+
     // Step 1: List current connections
     await listConnections();
-    
+
     // Step 2: Clean up existing connections
     await cleanupConnections();
-    
+
     // Step 3: Wait briefly for cleanup to complete
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Step 4: Establish new connection using database config
     const connectCommand = `net use "${SERVER_CONFIG.networkPath}" /USER:${SERVER_CONFIG.credentials.domain}\\${SERVER_CONFIG.credentials.username} "${SERVER_CONFIG.credentials.password}" /PERSISTENT:NO`;
     const connectionResult = await executeCommand(connectCommand);
-    
+
     if (!connectionResult.success) {
       throw new Error(`Connection failed: ${connectionResult.error.message}`);
     }
-    
+
     // Step 5: Test directory access
     const accessResult = await testDirectoryAccess(SERVER_CONFIG.networkPath);
     if (!accessResult.success) {
       throw new Error(`Access test failed: ${accessResult.error}`);
     }
-    
-    return { 
-      success: true, 
-      message: 'Network path validation completed successfully' 
+
+    return {
+      success: true,
+      message: 'Network path validation completed successfully'
     };
-    
+
   } catch (error) {
     console.error('Validation failed:', error.message);
-    return { 
-      success: false, 
-      error: error.message 
+    return {
+      success: false,
+      error: error.message
     };
   } finally {
     // Always try to cleanup at the end
@@ -258,10 +272,10 @@ async function validateNetworkPath() {
 async function validateAndFormatNetworkPath(path) {
   // Replace forward slashes with backslashes
   path = path.replace(/\//g, '\\');
-  
+
   // Remove any trailing slashes
   path = path.replace(/\\+$/, '');
-  
+
   // Only format as UNC path if it's a network path
   if (path.startsWith('\\\\')) {
     // Ensure no double backslashes in the middle of the path
@@ -270,7 +284,7 @@ async function validateAndFormatNetworkPath(path) {
     // For local paths, ensure proper format
     path = path.replace(/\\{2,}/g, '\\');
   }
-  
+
   return path;
 }
 
@@ -283,7 +297,7 @@ async function testNetworkPathAccessibility(path, credentials) {
           // Handle network path with credentials
           const connectCommand = `net use "${path}" /USER:${credentials.serverName}\\${credentials.serverUsername} "${credentials.serverPassword}" /PERSISTENT:NO`;
           const connectResult = await executeCommand(connectCommand);
-          
+
           if (!connectResult.success) {
               const errorMsg = connectResult.error.stderr || connectResult.error.message;
               if (errorMsg.includes('System error 53')) {
@@ -309,11 +323,11 @@ async function testNetworkPathAccessibility(path, credentials) {
           throw new Error(`Cannot access directory: ${error.message}`);
       }
 
-      return { 
+      return {
           success: true,
           formattedPath: path
       };
-      
+
   } catch (error) {
       return {
           success: false,

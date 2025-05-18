@@ -128,7 +128,9 @@
         credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       });
 
@@ -243,117 +245,11 @@
     resetIdleTimer();
   }
 
-  // Function to check session status with improved error handling - uses lightweight endpoint
+  // Function to check session status - DISABLED, now relying on server middleware
   async function checkSession() {
-    // Don't check session if we're on the login page or other public pages
-    if (window.location.pathname.includes('/auth/login') ||
-        window.location.pathname.includes('/login') ||
-        window.location.pathname.includes('/auth/register') ||
-        window.location.pathname.includes('/register') ||
-        window.location.pathname.includes('/auth/forgot-password')) {
-      return true; // Consider session valid on public pages
-    }
-    try {
-      // Don't check session if warning is shown
-      if (isWarningShown) {
-        return true;
-      }
-
-      // Check if we've recently had a session error to avoid repeated failed requests
-      const lastErrorTime = sessionStorage.getItem('lastSessionErrorTime');
-      if (lastErrorTime && (Date.now() - parseInt(lastErrorTime) < 30000)) { // 30 seconds cooldown
-        console.log('Session check skipped due to recent error');
-        return false;
-      }
-
-      // Use cached session data if available and recent (within last 5 minutes)
-      const lastCheck = sessionStorage.getItem('lastSessionCheck');
-      if (lastCheck) {
-        const timeSinceLastCheck = Date.now() - parseInt(lastCheck);
-        if (timeSinceLastCheck < 5 * 60 * 1000) { // 5 minutes
-          console.log('Using cached session timestamp');
-          return true;
-        }
-      }
-
-      // Set a timeout to prevent hanging requests
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        // Only abort if we're not in the middle of a DataTables request
-        if (!window._dataTablesRequestInProgress) {
-          controller.abort();
-        }
-      }, 5000); // 5 second timeout
-
-      try {
-        // Use the lightweight session check endpoint instead of the full profile endpoint
-        const response = await fetch('/api/user/check-session', {
-          method: 'GET',
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        });
-
-        // Clear the timeout since we got a response
-        clearTimeout(timeoutId);
-
-        // Handle various response statuses
-        if (response.status === 401 || response.status === 403) {
-          // Only log and consider session expired if we're on a protected page
-          // and we're not on a page that uses DataTables
-          if (!window.location.pathname.includes('/auth/') &&
-              !window.location.pathname.includes('/dashboard/outbound')) {
-            console.log('Session expired or unauthorized');
-            return false;
-          } else {
-            // On auth pages or DataTables pages, 401 is handled separately
-            return true;
-          }
-        }
-
-        if (!response.ok) {
-          throw new Error(`Session check failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (!data || !data.success) {
-          console.log('Session check returned unsuccessful response');
-          return false;
-        }
-
-        // Update session timestamp on valid session
-        sessionStorage.setItem('lastSessionCheck', Date.now().toString());
-
-        // If we need to update the UI with username, store it
-        if (data.username) {
-          const navbarData = sessionStorage.getItem('navbarData');
-          if (navbarData) {
-            // Update just the username in the existing data
-            const parsedData = JSON.parse(navbarData);
-            if (parsedData.user) {
-              parsedData.user.username = data.username;
-              sessionStorage.setItem('navbarData', JSON.stringify(parsedData));
-            }
-          }
-        }
-
-        return true;
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        throw fetchError; // Re-throw to be caught by outer catch
-      }
-    } catch (error) {
-      console.error('Session check error:', error);
-      // Record the time of the error to implement cooldown
-      sessionStorage.setItem('lastSessionErrorTime', Date.now().toString());
-      // Don't set sessionError to avoid UI disruption
-      return false;
-    }
+    // Session checking is now handled by server middleware
+    console.log('Frontend session checking disabled - using server middleware');
+    return true; // Always return true as session is checked by middleware
   }
 
   // Improved session expiry handler
@@ -383,7 +279,7 @@
       `;
 
       // Perform logout
-      fetch('/auth/auth/logout', {
+      fetch('/auth/logout', {
         method: 'POST',
         credentials: 'same-origin'
       }).finally(() => {
@@ -403,40 +299,25 @@
               confirmButton: 'px-4'
             }
           }).then(() => {
-            window.location.href = '/auth/auth/logout?expired=true&reason=idle';
+            window.location.href = '/auth/logout?expired=true&reason=idle';
           });
         } else {
           alert('Your session has expired. Please log in again.');
-          window.location.href = '/auth/auth/logout?expired=true&reason=idle';
+          window.location.href = '/auth/logout?expired=true&reason=idle';
         }
       });
     }
   }
 
-  // Session check disabled to reduce excessive logging
+  // Session check completely disabled - relying on server middleware
   function startSessionCheck() {
     if (window.sessionCheckInterval) {
       clearInterval(window.sessionCheckInterval);
     }
 
-    console.log('Periodic session checking disabled to reduce excessive logging');
+    console.log('Frontend session checking completely disabled - using server middleware');
 
-    // Session check disabled - only check on tab focus after long inactivity
-    document.addEventListener('visibilitychange', async () => {
-      if (document.visibilityState === 'visible' && !isWarningShown) {
-        const lastCheck = parseInt(sessionStorage.getItem('lastSessionCheck') || '0');
-        const timeSinceLastCheck = Date.now() - lastCheck;
-
-        // Only check if more than 10 minutes have passed since last check
-        if (timeSinceLastCheck > 600000) { // 10 minutes instead of 1 minute
-          console.log('Tab focus after long inactivity, checking session...');
-          const isValid = await checkSession();
-          if (!isValid) {
-            handleSessionExpiry();
-          }
-        }
-      }
-    });
+    // No event listeners needed as session is checked by middleware
   }
 
   function updateUI(data) {
@@ -517,17 +398,12 @@
     }
   }
 
-  // Enhanced navbar refresh function
+  // Enhanced navbar refresh function - no session check
   async function refreshNavbar() {
     console.log('Refreshing navbar...');
 
     try {
-      // Check session before refreshing
-      const isValid = await checkSession();
-      if (!isValid) {
-        handleSessionExpiry();
-        return;
-      }
+      // No session check needed - middleware handles it
 
       // Clear cached data
       sessionStorage.removeItem('navbarData');
@@ -538,7 +414,7 @@
       console.log('Navbar refresh complete');
     } catch (error) {
       console.error('Error refreshing navbar:', error);
-      handleSessionExpiry();
+      // If there's an error, let the middleware handle session issues
     }
   }
 
@@ -569,8 +445,10 @@
       const response = await fetch('/api/user/profile', {
         method: 'GET',
         headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         },
         credentials: 'same-origin'
       });
@@ -695,12 +573,9 @@
     });
   }
 
-  // Make refreshNavbar available globally with session check
+  // Make refreshNavbar available globally without session check
   window.refreshNavbar = async function() {
-    const isValid = await checkSession();
-    if (isValid) {
-      return refreshNavbar();
-    }
-    handleSessionExpiry();
+    // No session check needed - middleware handles it
+    return refreshNavbar();
   };
 })();

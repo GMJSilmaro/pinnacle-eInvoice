@@ -1,34 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../../middleware');
-const { WP_USER_REGISTRATION, WP_LOGS, sequelize } = require('../../models');
-
-// Session checking middleware
-const checkSession = async (req, res, next) => {
-    try {
-        // If no user in session, redirect to login
-        if (!req.session?.user) {
-            return res.redirect('/login');
-        }
-
-        // Check if user exists in database
-        const user = await WP_USER_REGISTRATION.findOne({
-            where: { Username: req.session.user.username }
-        });
-
-        if (!user) {
-            req.session.destroy();
-            return res.redirect('/login?error=invalid-session');
-        }
-
-        // Update session timestamp
-        req.session.lastActivity = Date.now();
-        next();
-    } catch (error) {
-        console.error('Session check error:', error);
-        return res.redirect('/login?error=server-error');
-    }
-};
+const prisma = require('../../src/lib/prisma');
 
 // Auth routes
 router.get('/login', (req, res) => {
@@ -92,7 +65,7 @@ router.get('/auth/logout', async (req, res) => {
 });
 
 // Dashboard routes with session checking
-router.get('/', checkSession, (req, res) => {
+router.get('/', (req, res) => {
     res.render('dashboard/index.html', {
         title: 'Dashboard',
         user: req.session.user || null,
@@ -100,7 +73,7 @@ router.get('/', checkSession, (req, res) => {
     });
 });
 
-router.get('/dashboard', checkSession, (req, res) => {
+router.get('/dashboard', (req, res) => {
     res.render('dashboard/index.html', {
         title: 'Dashboard',
         user: req.session.user || null,
@@ -109,7 +82,7 @@ router.get('/dashboard', checkSession, (req, res) => {
 });
 
 // Inbound redirect
-router.get('/inbound', checkSession, (req, res) => {
+router.get('/inbound', auth.middleware, (req, res) => {
     res.render('dashboard/inbound.html', {
         title: 'Inbound',
         user: req.session.user || null,
@@ -118,7 +91,7 @@ router.get('/inbound', checkSession, (req, res) => {
 });
 
 // Outbound redirect
-router.get('/outbound', checkSession, (req, res) => {
+router.get('/outbound', auth.middleware, (req, res) => {
     res.render('dashboard/outbound.html', {
         title: 'Outbound',
         user: req.session.user || null,
@@ -127,7 +100,7 @@ router.get('/outbound', checkSession, (req, res) => {
 });
 
 // Consolidated redirect
-router.get('/consolidated', checkSession, (req, res) => {
+router.get('/consolidated', auth.middleware, (req, res) => {
     res.render('dashboard/consolidated.html', {
         title: 'Outbound Consolidation',
         user: req.session.user || null,
@@ -136,7 +109,7 @@ router.get('/consolidated', checkSession, (req, res) => {
 });
 
 // Help & Support route
-router.get('/help', checkSession, (req, res) => {
+router.get('/help', auth.middleware, (req, res) => {
     res.render('dashboard/help.html', {
         title: 'Help & Support',
         user: req.session.user || null,
@@ -145,7 +118,7 @@ router.get('/help', checkSession, (req, res) => {
 });
 
 // Changelog route
-router.get('/changelog', checkSession, (req, res) => {
+router.get('/changelog', auth.middleware, (req, res) => {
     res.render('dashboard/changelog.html', {
         title: 'Changelog',
         user: req.session.user || null,
@@ -154,7 +127,7 @@ router.get('/changelog', checkSession, (req, res) => {
 });
 
 // Profile redirect
-router.get('/profile', checkSession, (req, res) => {
+router.get('/profile', auth.middleware, (req, res) => {
     res.render('dashboard/profile.html', {
         title: 'Profile',
         user: req.session.user || null,
@@ -163,7 +136,7 @@ router.get('/profile', checkSession, (req, res) => {
 });
 
 // User settings redirect for normal users
-router.get('/settings/user/profile/:id', checkSession, auth.isAdmin, (req, res) => {
+router.get('/settings/user/profile/:id', auth.middleware, auth.isAdmin, (req, res) => {
     res.render('dashboard/user-settings-page.html', {
         title: 'User Settings',
         user: req.session.user || null,
@@ -172,7 +145,7 @@ router.get('/settings/user/profile/:id', checkSession, auth.isAdmin, (req, res) 
 });
 
 // Company profile route
-router.get('/company/profile/:name', checkSession, auth.isAdmin, (req, res) => {
+router.get('/company/profile/:name', auth.middleware, auth.isAdmin, (req, res) => {
     res.render('dashboard/company-profile.html', {
         title: 'Company Profile',
         companyName: req.params.companyName,
@@ -182,7 +155,7 @@ router.get('/company/profile/:name', checkSession, auth.isAdmin, (req, res) => {
 });
 
 // Admin settings route
-router.get('/settings/user/admin/profile/:id', checkSession, auth.isAdmin, (req, res) => {
+router.get('/settings/user/admin/profile/:id', auth.middleware, auth.isAdmin, (req, res) => {
     res.render('dashboard/admin-settings.html', {
         title: 'User Management',
         id: req.session.user.id,
@@ -192,7 +165,7 @@ router.get('/settings/user/admin/profile/:id', checkSession, auth.isAdmin, (req,
 });
 
 // Users management route
-router.get('/users', checkSession, auth.isAdmin, (req, res) => {
+router.get('/users', auth.middleware, auth.isAdmin, (req, res) => {
     res.render('dashboard/user-management.html', {
         title: 'Users Management',
         user: req.session.user || null,

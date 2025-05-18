@@ -1,4 +1,4 @@
-const { WP_LOGS } = require('../models');
+const prisma = require('../src/lib/prisma');
 const moment = require('moment');
 
 // Error handling middleware
@@ -13,19 +13,17 @@ const errorMiddleware = async (err, req, res, next) => {
 
   try {
     // Log error to database
-    await WP_LOGS.create({
-      Description: `Error - ${err.message || 'Unknown error'}`,
-      CreateTS: moment().format('YYYY-MM-DD HH:mm:ss'),
-      LoggedUser: username,
-      Details: JSON.stringify({
-        action: 'error',
-        error: err.message,
-        stack: err.stack,
-        path: req.path,
-        method: req.method,
-        userIP: clientIP,
-        userAgent: userAgent
-      })
+    await prisma.wP_LOGS.create({
+      data: {
+        Description: `Error - ${err.message || 'Unknown error'}`,
+        CreateTS: moment().format('YYYY-MM-DD HH:mm:ss'),
+        LoggedUser: username || 'System',
+        LogType: 'ERROR',
+        Module: 'SYSTEM',
+        Action: 'ERROR',
+        Status: 'ERROR',
+        IPAddress: clientIP
+      }
     });
   } catch (logError) {
     console.error('Error logging to database:', logError);
@@ -46,11 +44,11 @@ const errorMiddleware = async (err, req, res, next) => {
   // Default error response
   res.status(err.status || 500).json({
     success: false,
-    message: process.env.NODE_ENV === 'production' 
-      ? 'Internal server error' 
+    message: process.env.NODE_ENV === 'production'
+      ? 'Internal server error'
       : err.message || 'Internal server error',
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 };
 
-module.exports = errorMiddleware; 
+module.exports = errorMiddleware;

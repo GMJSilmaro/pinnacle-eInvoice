@@ -6,19 +6,19 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const csv = require('csv-parser');
 const XLSX = require('xlsx');
-const database = require('../../models');
-const { auth }  = require('../../middleware');
+const prisma = require('../../src/lib/prisma');
+const { auth }  = require('../../middleware/index-prisma');
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const uploadDir = path.join(__dirname, '../../public/uploads/consolidation');
-        
+
         // Create directory if it doesn't exist
         if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
         }
-        
+
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
@@ -36,25 +36,25 @@ const upload = multer({
         const filetypes = /csv|txt/;
         const mimetype = filetypes.test(file.mimetype);
         const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-        
+
         if (mimetype && extname) {
             return cb(null, true);
         }
-        
+
         cb(new Error('Error: File upload only supports CSV and TXT files!'));
     }
 });
 
 // API endpoint for uploading flat files
-router.post('/upload-flat-file', [auth.middleware, upload.single('file')], async (req, res) => {
+router.post('/upload-flat-file', [auth.isApiAuthenticated, upload.single('file')], async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
-        
+
         const filePath = req.file.path;
         const results = [];
-        
+
         // Parse CSV file
         fs.createReadStream(filePath)
             .pipe(csv())
@@ -63,7 +63,7 @@ router.post('/upload-flat-file', [auth.middleware, upload.single('file')], async
                 try {
                     // Store data in database
                     const processedRecords = await storeDataInDatabase(results, req.user.id);
-                    
+
                     // Return success response
                     res.json({
                         success: true,
@@ -91,13 +91,13 @@ router.post('/upload-flat-file', [auth.middleware, upload.single('file')], async
 });
 
 // API endpoint to get flat file data
-router.get('/flat-file-data', [auth.middleware], async (req, res) => {
+router.get('/flat-file-data', [auth.isApiAuthenticated], async (req, res) => {
     try {
         const flatFiles = await database.WP_FLATFILE.findAll({
             order: [['upload_date', 'DESC']],
             limit: 1000
         });
-        
+
         res.json({
             success: true,
             data: flatFiles
@@ -113,11 +113,11 @@ router.get('/flat-file-data', [auth.middleware], async (req, res) => {
 });
 
 // API endpoint to map flat file record to LHDN format
-router.post('/map-flat-file/:id', [auth.middleware], async (req, res) => {
+router.post('/map-flat-file/:id', [auth.isApiAuthenticated], async (req, res) => {
     try {
         const { id } = req.params;
         const mappingDetails = req.body;
-        
+
         const updated = await database.WP_FLATFILE.update({
             is_mapped: true,
             mapping_details: JSON.stringify(mappingDetails),
@@ -126,14 +126,14 @@ router.post('/map-flat-file/:id', [auth.middleware], async (req, res) => {
         }, {
             where: { id }
         });
-        
+
         if (updated[0] === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Record not found'
             });
         }
-        
+
         res.json({
             success: true,
             message: 'Record mapped successfully'
@@ -149,37 +149,37 @@ router.post('/map-flat-file/:id', [auth.middleware], async (req, res) => {
 });
 
 // API endpoint to submit mapped flat file to LHDN
-router.post('/submit-mapped-file/:id', [auth.middleware], async (req, res) => {
+router.post('/submit-mapped-file/:id', [auth.isApiAuthenticated], async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         const record = await database.WP_FLATFILE.findOne({
             where: {
                 id,
                 is_mapped: true
             }
         });
-        
+
         if (!record) {
             return res.status(404).json({
                 success: false,
                 message: 'Mapped record not found'
             });
         }
-        
+
         const mappingDetails = JSON.parse(record.mapping_details || '{}');
-        
+
         // TODO: Call LHDN submission API with mapped data
-        // This would typically call the existing LHDN submission logic 
+        // This would typically call the existing LHDN submission logic
         // with the transformed data
-        
+
         // Update record status
         await record.update({
             status: 'Submitted',
             submission_id: uuidv4(),
             lhdn_response: JSON.stringify({ status: 'success', timestamp: new Date() })
         });
-        
+
         res.json({
             success: true,
             message: 'Record submitted to LHDN successfully'
@@ -195,7 +195,7 @@ router.post('/submit-mapped-file/:id', [auth.middleware], async (req, res) => {
 });
 
 // API endpoint to create manual consolidated invoice
-router.post('/create-manual', [auth.middleware], async (req, res) => {
+router.post('/create-manual', [auth.isApiAuthenticated], async (req, res) => {
     try {
         const {
             invoice_no,
@@ -217,14 +217,14 @@ router.post('/create-manual', [auth.middleware], async (req, res) => {
         } = req.body;
 
         // Validate required fields
-        if (!invoice_no || !start_date || !end_date || 
+        if (!invoice_no || !start_date || !end_date ||
             !total_excl_tax || !total_incl_tax) {
             return res.status(400).json({
                 success: false,
                 message: 'Missing required fields'
             });
         }
-        
+
         // Validate that we have at least one line item
         if (!line_items || line_items.length === 0) {
             return res.status(400).json({
@@ -284,8 +284,8 @@ router.post('/create-manual', [auth.middleware], async (req, res) => {
             is_mapped: true,
             mapping_details: JSON.stringify({
                 consolidationType: 'manual',
-                classificationCode: classification === 'G4' ? '004' : 
-                                   classification === 'S1' ? '005' : 
+                classificationCode: classification === 'G4' ? '004' :
+                                   classification === 'S1' ? '005' :
                                    classification === 'S2' ? '006' : '007',
                 startDate: start_date,
                 endDate: end_date,
@@ -299,8 +299,8 @@ router.post('/create-manual', [auth.middleware], async (req, res) => {
         // Log line items info
         if (line_items && line_items.length > 0) {
             console.log(`Saved ${line_items.length} line item(s) for invoice ${invoice_no}`);
-            
-            // You could log each line item for detailed information 
+
+            // You could log each line item for detailed information
             if (line_items.length === 1) {
                 console.log(`Single line item: ${line_items[0].description}, Amount: ${line_items[0].amount}`);
             } else {
@@ -329,17 +329,17 @@ router.post('/create-manual', [auth.middleware], async (req, res) => {
 });
 
 // API endpoint to download CSV template
-router.get('/download-template', [auth.middleware], (req, res) => {
+router.get('/download-template', [auth.isApiAuthenticated], (req, res) => {
     try {
         const templatePath = path.join(__dirname, '../../public/assets/templates/consolidation_template.csv');
-        
+
         if (!fs.existsSync(templatePath)) {
             return res.status(404).json({
                 success: false,
                 message: 'Template file not found'
             });
         }
-        
+
         res.download(templatePath, 'consolidation_template.csv');
     } catch (error) {
         console.error('Error downloading template:', error);
@@ -352,7 +352,7 @@ router.get('/download-template', [auth.middleware], (req, res) => {
 });
 
 // API endpoint to export consolidation data to Excel template
-router.post('/export-template', [auth.middleware], async (req, res) => {
+router.post('/export-template', [auth.isApiAuthenticated], async (req, res) => {
     try {
         const {
             invoice_details,
@@ -417,7 +417,7 @@ router.post('/export-template', [auth.middleware], async (req, res) => {
             TaxType: item.taxType,
             TaxRate: tax_info.tax_rate,
             TaxAmount: item.taxAmount,
-            TaxExemptionReason: item.taxType === '06' ? 'Out of scope of SST' : 
+            TaxExemptionReason: item.taxType === '06' ? 'Out of scope of SST' :
                                item.taxType === 'E' ? 'SST Exempted' : '',
             TaxExemptionCode: '',
             DiscountAmount: '0.00',
@@ -440,7 +440,7 @@ router.post('/export-template', [auth.middleware], async (req, res) => {
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="consolidated_invoice_${invoice_details.invoice_no}.xlsx"`);
         res.setHeader('Content-Length', excelBuffer.length);
-        
+
         // Send the file
         res.send(excelBuffer);
 
@@ -459,7 +459,7 @@ async function storeDataInDatabase(records, userId) {
     try {
         const processedRecords = [];
         const validationErrors = [];
-        
+
         // Mandatory field groups according to MyInvois
         const mandatoryFields = {
             supplier: ['SupplierName', 'SupplierTIN', 'SupplierBRN', 'SupplierAddress', 'SupplierCity', 'SupplierState', 'SupplierCountry', 'SupplierContact'],
@@ -467,18 +467,18 @@ async function storeDataInDatabase(records, userId) {
             invoice: ['InvoiceNo', 'InvoiceDate', 'InvoiceTime', 'CurrencyCode', 'eInvoiceVersion', 'eInvoiceType'],
             items: ['ItemDescription', 'Classification', 'TaxType', 'TaxRate', 'TaxAmount', 'TotalExclTax', 'TotalInclTax']
         };
-        
+
         for (let i = 0; i < records.length; i++) {
             const record = records[i];
             const errors = [];
-            
+
             // Validate supplier fields
             for (const field of mandatoryFields.supplier) {
                 if (!record[field] && field !== 'SupplierSST') {
                     errors.push(`Missing ${field} in record ${i + 1}`);
                 }
             }
-            
+
             // Validate buyer fields
             for (const field of mandatoryFields.buyer) {
                 if (!record[field] && field !== 'BuyerSST') {
@@ -486,40 +486,40 @@ async function storeDataInDatabase(records, userId) {
                     if (field === 'BuyerContact' && record[field] === 'NA') {
                         continue;
                     }
-                    
+
                     // Special handling for consolidated invoices to General Public
-                    if (record.BuyerName === 'General Public' && 
-                        (field === 'BuyerBRN' || field === 'BuyerAddress' || 
-                         field === 'BuyerCity' || field === 'BuyerState' || 
+                    if (record.BuyerName === 'General Public' &&
+                        (field === 'BuyerBRN' || field === 'BuyerAddress' ||
+                         field === 'BuyerCity' || field === 'BuyerState' ||
                          field === 'BuyerCountry' || field === 'BuyerContact')) {
                         if (record[field] === 'NA') {
                             continue;
                         }
                     }
-                    
+
                     errors.push(`Missing ${field} in record ${i + 1}`);
                 }
             }
-            
+
             // Validate invoice fields
             for (const field of mandatoryFields.invoice) {
                 if (!record[field]) {
                     errors.push(`Missing ${field} in record ${i + 1}`);
                 }
             }
-            
+
             // Validate item fields
             for (const field of mandatoryFields.items) {
                 if (!record[field]) {
                     errors.push(`Missing ${field} in record ${i + 1}`);
                 }
             }
-            
+
             // Handle currency exchange rate validation
             if (record.CurrencyCode && record.CurrencyCode !== 'MYR' && !record.ExchangeRate) {
                 errors.push(`Exchange rate is required for currency ${record.CurrencyCode} in record ${i + 1}`);
             }
-            
+
             if (errors.length > 0) {
                 validationErrors.push({
                     recordIndex: i + 1,
@@ -527,7 +527,7 @@ async function storeDataInDatabase(records, userId) {
                 });
                 continue;
             }
-            
+
             // Set default values for optional fields or missing fields
             record.SupplierSST = record.SupplierSST || 'NA';
             record.BuyerSST = record.BuyerSST || 'NA';
@@ -535,7 +535,7 @@ async function storeDataInDatabase(records, userId) {
             record.ExchangeRate = record.ExchangeRate || (record.CurrencyCode === 'MYR' ? '1.0' : null);
             record.InvoiceTime = record.InvoiceTime || '00:00:00Z';
             record.eInvoiceType = record.eInvoiceType || '01';
-            
+
             // Special handling for consolidated invoices
             if (record.BuyerName === 'General Public') {
                 // Ensure all required fields for consolidated invoices are properly set
@@ -548,14 +548,14 @@ async function storeDataInDatabase(records, userId) {
                 record.BuyerCountry = 'NA';
                 record.BuyerContact = 'NA';
             }
-            
+
             // Extract billing period information if available
             const billingPeriodStart = record.BillingPeriodStart || null;
             const billingPeriodEnd = record.BillingPeriodEnd || null;
-            
+
             // Generate UUID for the record
             const uuid = uuidv4();
-            
+
             try {
                 // Insert record into database using Sequelize model
                 const newRecord = await database.WP_FLATFILE.create({
@@ -601,7 +601,7 @@ async function storeDataInDatabase(records, userId) {
                     uuid: uuid,
                     upload_date: new Date()
                 });
-                
+
                 processedRecords.push({
                     id: newRecord.id,
                     uuid: uuid,
@@ -614,15 +614,15 @@ async function storeDataInDatabase(records, userId) {
                 });
             }
         }
-        
+
         if (validationErrors.length > 0) {
             throw new Error(`Validation errors: ${JSON.stringify(validationErrors)}`);
         }
-        
+
         return processedRecords;
     } catch (error) {
         throw error;
     }
 }
 
-module.exports = router; 
+module.exports = router;

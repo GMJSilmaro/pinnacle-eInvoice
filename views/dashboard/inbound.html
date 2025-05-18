@@ -17,6 +17,7 @@
 <link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
 <!-- Template Main CSS Files -->
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
+<link href="/assets/css/loading-overlay.css" rel="stylesheet">
 
 <script src="/assets/js/config/validation-translations.js"></script>
 
@@ -134,12 +135,12 @@
     .statistics-section .card {
         margin-bottom: 1rem;
     }
-    
+
     .quick-actions-section .btn {
         width: 100%;
         margin-bottom: 0.5rem;
     }
-    
+
     .enhanced-filter-section .form-floating {
         margin-bottom: 1rem;
     }
@@ -314,18 +315,18 @@
     .quick-filters {
         flex-wrap: wrap;
     }
-    
+
     .quick-filters .btn {
         flex: 1 1 auto;
     }
-    
+
     .quick-filters .ms-auto {
         width: 100%;
         margin-top: 0.5rem;
         display: flex;
         gap: 0.5rem;
     }
-    
+
     .quick-filters .ms-auto .btn {
         flex: 1;
     }
@@ -346,7 +347,7 @@
                 <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">
                     Inbound
                 </h3>
-                        <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" 
+                        <p class="mb-0 cursor-pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true"
                         title="<div class='tooltip-content'>
                                     <div class='tooltip-row'>
                                     <i class='bi bi-info-circle'></i>
@@ -360,7 +361,7 @@
                                     <i class='bi bi-2-circle'></i>
                                     <span>Check validation results</span>
                                     </div>
-                                    <div class='tooltip-row'> 
+                                    <div class='tooltip-row'>
                                     <i class='bi bi-3-circle'></i>
                                     <span>Review any error messages</span>
                                     </div>
@@ -493,7 +494,7 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Daily Submissions Chart -->
           <div class="col-md-4">
             <div class="card shadow-sm">
@@ -521,8 +522,8 @@
           </div>
         </div>
       </div>
-     
-     
+
+
    <!-- Table Section -->
    <div class="table-container-wrapper">
     <div class="table-card">
@@ -569,7 +570,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="table-controls">
             <div class="d-flex align-items-center gap-3">
                 <div class="modern-length">
@@ -580,7 +581,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="table-body-container">
             <div class="responsive-table-container">
                 <div class="table-section">
@@ -593,11 +594,11 @@
                                 <div class="col-md-4">
                                     <div class="search-wrapper position-relative">
                                         <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-                                        <input type="text" class="form-control form-control-lg ps-5" id="globalSearch" 
+                                        <input type="text" class="form-control form-control-lg ps-5" id="globalSearch"
                                             placeholder="Search documents...">
                                     </div>
                                 </div>
-                                
+
                                 <!-- Quick Filters -->
                                 <div class="col-md-8">
                                     <div class="quick-filters d-flex gap-2">
@@ -610,7 +611,7 @@
                                         <button class="btn outbound-action-btn submit" data-filter="invalid">
                                             <i class="bi bi-x-circle me-1 text-danger"></i>Invalid
                                         </button>
-                                        
+
                                         <button class="btn outbound-action-btn submit" data-filter="cancelled">
                                             <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Cancelled
                                         </button>
@@ -628,7 +629,7 @@
                                     </div>
                                 </div>
                             </div>
-        
+
                             <!-- Advanced Filters (Collapsible) -->
                             <div class="collapse" id="advancedFilters">
                                 <div class="advanced-filters-content border-top pt-3">
@@ -644,7 +645,7 @@
                                                 <input type="date" class="form-control" id="tableEndDate">
                                             </div>
                                         </div>
-        
+
                                         <!-- Amount Range -->
                                         <div class="col-md-6">
                                             <label class="form-label d-flex align-items-center">
@@ -656,7 +657,7 @@
                                                 <input type="number" class="form-control" id="maxAmount" placeholder="Max">
                                             </div>
                                         </div>
-        
+
                                         <!-- Company Filter -->
                                         <div class="col-md-4">
                                             <label class="form-label d-flex align-items-center">
@@ -664,7 +665,7 @@
                                             </label>
                                             <input type="text" class="form-control" id="companyFilter" placeholder="Filter by company name">
                                         </div>
-        
+
                                         <!-- Document Type -->
                                         <div class="col-md-4">
                                             <label class="form-label d-flex align-items-center">
@@ -677,12 +678,12 @@
                                                 <option value="Debit Note">Debit Note</option>
                                             </select>
                                         </div>
-        
+
                                         <!-- Source -->
                                         <div class="col-md-4">
                                             <label class="form-label d-flex align-items-center">
                                                 <i class="bi bi-diagram-2 me-2"></i>Source
-                                                <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
+                                                <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true"
                                                 title="<div class='tooltip-content'>
                                                         <div class='tooltip-row'>
                                                             <i class='bi bi-info-circle'></i>
@@ -704,7 +705,7 @@
                                             </label>
                                             <select class="form-select" id="sourceFilter">
                                                 <option value="">LHDN</option>
-                                                
+
                                             </select>
                                             <small class="text-muted mt-1 d-block">
                                                 <i class="bi bi-info-circle-fill me-1"></i>
@@ -712,8 +713,8 @@
                                             </small>
                                         </div>
                                     </div>
-        
-                                
+
+
                                     <!-- Filter Note -->
                                     <div class="filter-note alert alert-info mt-3" role="alert">
                                         <i class="bi bi-info-circle me-2"></i>
@@ -721,7 +722,7 @@
                                             Use the filters above to narrow down your results. Active filters will appear below as tags that you can easily remove. Click the 'x' on any tag to remove that filter, or use 'Clear all filters' to reset.
                                         </small>
                                     </div>
-        
+
                                     <!-- Active Filters Display -->
                                     <div class="active-filters mt-3 pt-3 border-top">
                                         <div class="d-flex align-items-center">
@@ -763,7 +764,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <!-- Loading Overlay -->
             <div id="tableLoadingOverlay" class="table-loading-overlay d-none">
                 <div class="spinner-border text-primary" role="status">
@@ -772,8 +773,8 @@
                 <p class="mt-2">Fetching documents...</p>
             </div>
         </div>
-        
-        
+
+
 
         <div class="table-footer">
             <div class="pagination-container">
@@ -786,7 +787,7 @@
     </div>
 
     </div>
-        
+
 </div>
 <!-- View Details Modal -->
 <div class="modal fade lhdn-inbound-modal" id="documentDetailsModal" tabindex="-1">
@@ -804,7 +805,7 @@
                 </div>
                 <div class="d-flex align-items-center">
                     <span class="badge-status me-3"></span>
-                    
+
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
             </div>
@@ -899,7 +900,184 @@
     </div>
 </div>
 
-{% endblock %} 
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" aria-labelledby="loadingModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body p-4">
+                <div class="text-center mb-4">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="modal-title" id="loadingStatus">Loading data from LHDN...</h5>
+                    <p class="text-muted" id="loadingDetails">Please wait while we fetch your invoice data</p>
+                </div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Connection Status Modal -->
+<div class="modal fade" id="connectionStatusModal" tabindex="-1" aria-labelledby="connectionStatusModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="connectionStatusTitle">System Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="connection-status-content">
+                    <div class="text-center mb-3">
+                        <i id="connectionStatusIcon" class="bi bi-info-circle fs-1"></i>
+                    </div>
+                    <h5 id="connectionStatusMessage" class="text-center mb-3">Checking system status...</h5>
+                    <div class="connection-details">
+                        <div class="row mb-2">
+                            <div class="col-5 fw-bold">LHDN System:</div>
+                            <div class="col-7" id="lhdnApiStatus">Checking...</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-5 fw-bold">Local System:</div>
+                            <div class="col-7" id="databaseStatus">Checking...</div>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-5 fw-bold">Last Updated:</div>
+                            <div class="col-7" id="lastUpdatedStatus">Unknown</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="retryConnection">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Retry
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
 {% block scripts %}
+<!-- Authentication and Fetch Utilities -->
+<script src="/assets/js/utils/auth-status-global.js"></script>
+<script src="/assets/js/utils/fetch-wrapper-global.js"></script>
+
+<!-- Original Inbound Excel Module (for backward compatibility) -->
 <script src="/assets/js/modules/excel/inbound-excel.js"></script>
-{% endblock %} 
+
+<!-- Connection Status Checker -->
+<script>
+    // Initialize connection status checker
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add connection status button to the page
+        const connectionButton = document.createElement('button');
+        connectionButton.className = 'btn btn-sm btn-outline-secondary ms-2';
+        connectionButton.innerHTML = '<i class="bi bi-info-circle me-1"></i>System Status';
+        connectionButton.id = 'checkConnectionBtn';
+
+        // Add it after the table is initialized
+        setTimeout(() => {
+            const lengthControl = document.querySelector('.outbound-length-control');
+            if (lengthControl) {
+                lengthControl.appendChild(connectionButton);
+            }
+        }, 2000);
+
+        // Connection status modal functionality
+        document.getElementById('checkConnectionBtn')?.addEventListener('click', async function() {
+            const modal = new bootstrap.Modal(document.getElementById('connectionStatusModal'));
+            modal.show();
+
+            // Reset status
+            document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-primary';
+            document.getElementById('connectionStatusMessage').textContent = 'Checking system status...';
+            document.getElementById('lhdnApiStatus').innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Checking...';
+            document.getElementById('databaseStatus').innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Checking...';
+
+            // Check LHDN API connection
+            try {
+                const apiResponse = await fetch('/api/lhdn/status', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (apiResponse.ok) {
+                    const apiData = await apiResponse.json();
+                    document.getElementById('lhdnApiStatus').innerHTML =
+                        '<span class="badge bg-success me-1">Connected</span>' +
+                        (apiData.message || 'API is available');
+                } else {
+                    document.getElementById('lhdnApiStatus').innerHTML =
+                        '<span class="badge bg-secondary me-1">Unavailable</span>' +
+                        'LHDN API status check complete';
+                }
+            } catch (error) {
+                document.getElementById('lhdnApiStatus').innerHTML =
+                    '<span class="badge bg-secondary me-1">Unavailable</span>' +
+                    'LHDN API status check complete';
+            }
+
+            // Check database connection
+            try {
+                const dbResponse = await fetch('/api/lhdn/documents/recent?useDatabase=true&checkOnly=true', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (dbResponse.ok) {
+                    document.getElementById('databaseStatus').innerHTML =
+                        '<span class="badge bg-success me-1">Connected</span>' +
+                        'Database is available';
+
+                    // Update last updated time
+                    const lastUpdate = localStorage.getItem('lastDataUpdate');
+                    if (lastUpdate) {
+                        const lastUpdateDate = new Date(parseInt(lastUpdate));
+                        document.getElementById('lastUpdatedStatus').textContent =
+                            lastUpdateDate.toLocaleString();
+                    } else {
+                        document.getElementById('lastUpdatedStatus').textContent = 'Never updated';
+                    }
+                } else {
+                    document.getElementById('databaseStatus').innerHTML =
+                        '<span class="badge bg-secondary me-1">Unavailable</span>' +
+                        'Database status check complete';
+                }
+            } catch (error) {
+                document.getElementById('databaseStatus').innerHTML =
+                    '<span class="badge bg-secondary me-1">Unavailable</span>' +
+                    'Database status check complete';
+            }
+
+            // Update overall status
+            setTimeout(() => {
+                const lhdnStatus = document.getElementById('lhdnApiStatus').textContent.includes('Connected');
+                const dbStatus = document.getElementById('databaseStatus').textContent.includes('Connected');
+
+                if (lhdnStatus && dbStatus) {
+                    document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-success';
+                    document.getElementById('connectionStatusMessage').textContent = 'System status check complete';
+                    document.getElementById('connectionStatusTitle').textContent = 'System Status';
+                } else if (!lhdnStatus && !dbStatus) {
+                    document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-info';
+                    document.getElementById('connectionStatusMessage').textContent = 'System status check complete';
+                    document.getElementById('connectionStatusTitle').textContent = 'System Status';
+                } else {
+                    document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-info';
+                    document.getElementById('connectionStatusMessage').textContent = 'System status check complete';
+                    document.getElementById('connectionStatusTitle').textContent = 'System Status';
+                }
+            }, 1000);
+        });
+
+        // Retry connection button
+        document.getElementById('retryConnection')?.addEventListener('click', function() {
+            document.getElementById('checkConnectionBtn').click();
+        });
+    });
+</script>
+{% endblock %}

@@ -11,20 +11,22 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const os = require('os');  // Added os module which was missing
 const helmet = require('helmet');  // Added for security headers
+const PrismaSessionStore = require('./src/lib/prisma-session-store');
 
 // 2. Local Dependencies
 const serverConfig = require('./config/server.config');
 const authConfig = require('./config/auth.config');
-const { auth, error, maintenance, validation, CONFIG } = require('./middleware');
+const { auth, error, maintenance, validation } = require('./middleware/index-prisma');
 const versionHeader = require('./utils/versionHeader');
 const appVersion = require('./config/version');
 const { initJsReport } = require('./services/jsreport.service');
-const authRoutes = require('./routes/auth.routes');
+const authRoutes = require('./routes/auth-prisma.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const apiRoutes = require('./routes/api/index');
 const webRoutes = require('./routes/web/index');
 const dashboardAnalyticsRouter = require('./routes/api/dashboard-analytics');
-const passport = require('./config/passport.config');
+const dashboardStatsRouter = require('./routes/api/dashboard-stats');
+const passport = require('./config/passport-prisma.config');
 
 // 3. Initialize Express
 const app = express();
@@ -67,7 +69,7 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Configure Swig
-swig.setDefaults({ 
+swig.setDefaults({
   cache: process.env.NODE_ENV === 'production' ? 'memory' : false,
   loader: swig.loaders.fs(path.join(__dirname, 'views')),
   locals: {
@@ -104,12 +106,12 @@ const staticFileMiddleware = (req, res, next) => {
 
 // Static file routes
 app.use('/assets', staticFileMiddleware, express.static(path.join(__dirname, 'public/assets')));
-app.use('/temp', express.static(path.join(__dirname, 'public/temp'))); 
+app.use('/temp', express.static(path.join(__dirname, 'public/temp')));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/reports', express.static(path.join(__dirname, 'src/reports')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session configuration with secure cookies
+// Session configuration with secure cookies and Prisma store
 app.use(session({
   ...serverConfig.sessionConfig,
   cookie: {
@@ -121,7 +123,11 @@ app.use(session({
     httpOnly: true   // Ensure cookies are HTTP only
   },
   resave: true,
-  saveUninitialized: true
+  saveUninitialized: true,
+  store: new PrismaSessionStore({
+    ttl: authConfig.session.timeout / 1000, // Convert from ms to seconds
+    tableName: 'Session'
+  })
 }));
 
 // Add after session middleware and before routes
@@ -151,20 +157,26 @@ app.use((req, res, next) => {
     '/auth/',
     '/vendor/'
   ];
-  
+
   if (publicPaths.some(path => req.path.startsWith(path))) {
     return next();
   }
-  
+
   auth.middleware(req, res, next);
 });
 
 // Protected routes
 app.use('/dashboard', dashboardRoutes);
+
+// API routes - ensure all API routes are registered before the catch-all /api route
+// Dashboard analytics and stats routes
+app.use('/api/dashboard-analytics', auth.isApiAuthenticated, dashboardAnalyticsRouter);
+app.use('/api/dashboard', auth.isApiAuthenticated, dashboardStatsRouter);
+
+// Main API routes - this should be registered last to avoid overriding specific API routes
 app.use('/api', auth.isApiAuthenticated, apiRoutes);
-app.use('/api/dashboard-analytics', auth.isApiAuthenticated, dashboardAnalyticsRouter); 
-app.use('/api/dashboard-analytics', require('./routes/api/dashboard-analytics'));
-app.use('/api/logs', auth.isApiAuthenticated, require('./routes/api/logs.routes'));
+
+// Web routes
 app.use('/', webRoutes);
 
 // 6. Error Handling
@@ -173,9 +185,9 @@ app.use((req, res) => {
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     res.status(404).json({ success: false, message: 'Not Found' });
   } else {
-    res.status(404).render('error', { 
+    res.status(404).render('error', {
       title: 'Not Found',
-      message: 'The page you are looking for does not exist.' 
+      message: 'The page you are looking for does not exist.'
     });
   }
 });
@@ -190,7 +202,7 @@ async function ensureDirectories() {
     path.join(process.env.TEMP || os.tmpdir(), 'jsreport'), // Add jsreport temp directory
     path.join(__dirname, 'ssl')  // Ensure SSL directory exists
   ];
-  
+
   for (const dir of dirs) {
     try {
       await fsPromises.access(dir);

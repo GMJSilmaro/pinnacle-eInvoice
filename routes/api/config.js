@@ -4,27 +4,13 @@ const { validateAndFormatNetworkPath, SERVER_CONFIG, testNetworkPathAccessibilit
 const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
-const db = require('../../models');
-const { WP_CONFIGURATION, WP_USER_REGISTRATION, sequelize } = db;
-const tokenService = require('../../services/token.service');
+const prisma = require('../../src/lib/prisma');
+const tokenService = require('../../services/token-prisma.service');
 const multer = require('multer');
 const crypto = require('crypto');
 const forge = require('node-forge');
 
-// Middleware to check if user is authenticated
-const checkAuth = (req, res, next) => {
-    if (!req.session || !req.session.user) {
-        return res.status(401).json({ 
-            success: false, 
-            error: 'Authentication required' 
-        });
-    }
-    req.user = req.session.user;
-    next();
-};
-
-// Apply authentication check to all routes
-router.use(checkAuth);
+// Note: Authentication is handled by auth.isApiAuthenticated middleware in server.js
 
 // Get SAP configuration
 router.get('/sap/get-config', async (req, res) => {
@@ -40,12 +26,14 @@ router.get('/sap/get-config', async (req, res) => {
 
         // Get configuration from database
         console.log('Fetching config for user:', req.user.id);
-        const config = await WP_CONFIGURATION.findOne({
+        const config = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'SAP',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']]
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         console.log('Found config:', config);
@@ -75,8 +63,8 @@ router.get('/sap/get-config', async (req, res) => {
     } catch (error) {
         console.error('Error getting SAP config:', error);
         res.setHeader('Content-Type', 'application/json');
-        return res.status(500).json({ 
-            success: false, 
+        return res.status(500).json({
+            success: false,
             error: error.message || 'Failed to load SAP configuration'
         });
     }
@@ -142,7 +130,41 @@ router.post('/sap/save-config', async (req, res) => {
             password
         };
 
-        await WP_CONFIGURATION.updateConfig('SAP', req.user.id, settings);
+        // Find current active configuration
+        const currentConfig = await prisma.wP_CONFIGURATION.findFirst({
+            where: {
+                Type: 'SAP',
+                IsActive: true
+            },
+            orderBy: {
+                CreateTS: 'desc'
+            }
+        });
+
+        if (currentConfig) {
+            // Update existing configuration
+            await prisma.wP_CONFIGURATION.update({
+                where: {
+                    ID: currentConfig.ID
+                },
+                data: {
+                    Settings: JSON.stringify(settings),
+                    UpdateTS: new Date()
+                }
+            });
+        } else {
+            // Create new configuration
+            await prisma.wP_CONFIGURATION.create({
+                data: {
+                    Type: 'SAP',
+                    Settings: JSON.stringify(settings),
+                    IsActive: true,
+                    UserID: String(req.user.id),
+                    CreateTS: new Date(),
+                    UpdateTS: new Date()
+                }
+            });
+        }
 
         // Update SERVER_CONFIG for current session
         SERVER_CONFIG.networkPath = formattedPath;
@@ -152,7 +174,7 @@ router.post('/sap/save-config', async (req, res) => {
             password
         };
 
-        res.json({ 
+        res.json({
             success: true,
             message: 'SAP configuration saved successfully',
             config: {
@@ -164,9 +186,9 @@ router.post('/sap/save-config', async (req, res) => {
         });
     } catch (error) {
         console.error('Error saving SAP config:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: error.message 
+            error: error.message
         });
     }
 });
@@ -183,12 +205,14 @@ router.get('/lhdn/get-config', async (req, res) => {
         }
 
         // First try to get global configuration
-        const config = await WP_CONFIGURATION.findOne({
+        const config = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'LHDN',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']]
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         // Parse settings if it's a string
@@ -204,9 +228,12 @@ router.get('/lhdn/get-config', async (req, res) => {
 
         // Add last modified info if available
         if (config && config.UserID) {
-            const lastModifiedUser = await db.WP_USER_REGISTRATION.findOne({
-                where: { ID: config.UserID },
-                attributes: ['FullName', 'Username']
+            const lastModifiedUser = await prisma.wP_USER_REGISTRATION.findFirst({
+                where: { ID: parseInt(config.UserID) },
+                select: {
+                    FullName: true,
+                    Username: true
+                }
             });
             if (lastModifiedUser) {
                 settings.lastModifiedBy = {
@@ -233,7 +260,7 @@ router.get('/lhdn/get-config', async (req, res) => {
 // Save LHDN configuration
 router.post('/lhdn/save-config', async (req, res) => {
     const t = await sequelize.transaction();
-    
+
     try {
         const { environment, middlewareUrl, clientId, clientSecret, timeout, retryEnabled } = req.body;
 
@@ -251,12 +278,14 @@ router.post('/lhdn/save-config', async (req, res) => {
         }
 
         // Find current active configuration
-        const currentConfig = await WP_CONFIGURATION.findOne({
+        const currentConfig = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'LHDN',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']]
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         // Save configuration
@@ -271,23 +300,26 @@ router.post('/lhdn/save-config', async (req, res) => {
 
         if (currentConfig) {
             // Update existing configuration
-            await currentConfig.update({
-                Settings: settings,
-                UpdateTS: sequelize.literal('GETDATE()')
-            }, {
-                transaction: t
+            await prisma.wP_CONFIGURATION.update({
+                where: {
+                    ID: currentConfig.ID
+                },
+                data: {
+                    Settings: JSON.stringify(settings),
+                    UpdateTS: new Date()
+                }
             });
         } else {
             // Create new configuration if none exists
-            await WP_CONFIGURATION.create({
-                Type: 'LHDN',
-                Settings: settings,
-                IsActive: 1,
-                UserID: req.user.id,
-                CreateTS: sequelize.literal('GETDATE()'),
-                UpdateTS: sequelize.literal('GETDATE()')
-            }, {
-                transaction: t
+            await prisma.wP_CONFIGURATION.create({
+                data: {
+                    Type: 'LHDN',
+                    Settings: JSON.stringify(settings),
+                    IsActive: true,
+                    UserID: String(req.user.id),
+                    CreateTS: new Date(),
+                    UpdateTS: new Date()
+                }
             });
         }
 
@@ -312,7 +344,7 @@ router.post('/lhdn/save-config', async (req, res) => {
 
         await t.commit();
 
-        res.json({ 
+        res.json({
             success: true,
             message: `LHDN configuration ${currentConfig ? 'updated' : 'created'} successfully`,
             config: {
@@ -327,9 +359,9 @@ router.post('/lhdn/save-config', async (req, res) => {
     } catch (error) {
         await t.rollback();
         console.error('Error saving LHDN config:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: error.message 
+            error: error.message
         });
     }
 });
@@ -369,7 +401,7 @@ router.post('/lhdn/test-connection', async (req, res) => {
         });
     } catch (error) {
         console.error('Error testing LHDN connection:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
             error: error.message || 'Internal server error'
         });
@@ -380,7 +412,7 @@ router.post('/lhdn/test-connection', async (req, res) => {
 router.get('/lhdn/access-token', async (req, res) => {
     try {
         const accessToken = await tokenService.getAccessToken(req);
-        
+
         res.json({
             success: true,
             accessToken,
@@ -391,209 +423,6 @@ router.get('/lhdn/access-token', async (req, res) => {
         res.status(500).json({
             success: false,
             error: error.message
-        });
-    }
-});
-
-// Get XML configuration
-router.get('/xml/get-config', async (req, res) => {
-    try {
-        // Check if user is authenticated
-        if (!req.user || !req.user.id) {
-            return res.status(401).json({
-                success: false,
-                error: 'User not authenticated'
-            });
-        }
-
-        // Get configuration from database
-        const config = await WP_CONFIGURATION.findOne({
-            where: {
-                Type: 'XML',
-                IsActive: 1
-            },
-            order: [['CreateTS', 'DESC']]
-        });
-
-        // Parse settings if it's a string
-        let settings = config?.Settings;
-        if (typeof settings === 'string') {
-            try {
-                settings = JSON.parse(settings);
-            } catch (error) {
-                console.error('Error parsing settings:', error);
-                settings = {};
-            }
-        }
-
-        // Add last modified info if available
-        if (config && config.UserID) {
-            const lastModifiedUser = await db.WP_USER_REGISTRATION.findOne({
-                where: { ID: config.UserID },
-                attributes: ['FullName', 'Username']
-            });
-            if (lastModifiedUser) {
-                settings.lastModifiedBy = {
-                    name: lastModifiedUser.FullName,
-                    username: lastModifiedUser.Username,
-                    timestamp: config.UpdateTS
-                };
-            }
-        }
-
-        res.json({
-            success: true,
-            networkPath: settings?.networkPath || '',
-            settings: settings || {
-                networkPath: '',
-                domain: '',
-                username: ''
-            }
-        });
-    } catch (error) {
-        console.error('Error getting XML config:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Validate XML network path
-router.post('/xml/validate-path', async (req, res) => {
-    try {
-        const { networkPath, domain, username, password } = req.body;
-
-        // Input validation
-        if (!networkPath || !username || !password) {
-            throw new Error('Network path, username and password are required');
-        }
-
-        // Format and validate the network path
-        const formattedPath = await validateAndFormatNetworkPath(networkPath);
-
-        // Test network path accessibility
-        const accessResult = await testNetworkPathAccessibility(formattedPath, {
-            serverName: domain || '',
-            serverUsername: username,
-            serverPassword: password
-        });
-
-        if (!accessResult.success) {
-            throw new Error(accessResult.error || 'Network path validation failed');
-        }
-
-        res.json({
-            success: true,
-            message: 'Network path validation successful',
-            formattedPath: accessResult.formattedPath
-        });
-
-    } catch (error) {
-        console.error('Error validating XML path:', error);
-        res.status(400).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Save XML configuration
-router.post('/xml/save-config', async (req, res) => {
-    const t = await sequelize.transaction();
-    
-    try {
-        const { networkPath, domain, username, password } = req.body;
-
-        // Input validation
-        if (!networkPath || !username || !password) {
-            throw new Error('Network path, username and password are required');
-        }
-
-        // Format the network path
-        const formattedPath = await validateAndFormatNetworkPath(networkPath);
-
-        // Find current active configuration
-        const currentConfig = await WP_CONFIGURATION.findOne({
-            where: {
-                Type: 'XML',
-                IsActive: 1
-            },
-            order: [['CreateTS', 'DESC']]
-        });
-
-        // Save new configuration
-        const settings = {
-            networkPath: formattedPath,
-            domain: domain || '',
-            username,
-            password
-        };
-
-        if (currentConfig) {
-            // Update existing configuration
-            await currentConfig.update({
-                Settings: settings,
-                UpdateTS: sequelize.literal('GETDATE()')
-            }, {
-                transaction: t
-            });
-        } else {
-            // Create new configuration if none exists
-            await WP_CONFIGURATION.create({
-                Type: 'XML',
-                Settings: settings,
-                IsActive: 1,
-                UserID: req.user.id,
-                CreateTS: sequelize.literal('GETDATE()'),
-                UpdateTS: sequelize.literal('GETDATE()')
-            }, {
-                transaction: t
-            });
-        }
-
-        // Log the configuration change
-        await db.WP_LOGS.create({
-            Description: `XML configuration ${currentConfig ? 'updated' : 'created'} by ${req.user.username}`,
-            CreateTS: sequelize.literal('GETDATE()'),
-            LoggedUser: req.user.username,
-            LogType: 'CONFIG',
-            Module: 'XML',
-            Action: 'UPDATE',
-            Status: 'SUCCESS',
-            UserID: req.user.id,
-            Details: JSON.stringify({
-                configId: currentConfig?.ID,
-                networkPath: formattedPath,
-                domain: domain || ''
-            })
-        }, {
-            transaction: t
-        });
-
-        await t.commit();
-
-        // Clear any cached configuration
-        if (req.app.get('xml_config')) {
-            req.app.set('xml_config', null);
-        }
-
-        res.json({ 
-            success: true,
-            message: `XML configuration ${currentConfig ? 'updated' : 'created'} successfully`,
-            config: {
-                networkPath: formattedPath,
-                domain: domain || '',
-                username
-                // Don't send password back
-            }
-        });
-    } catch (error) {
-        await t.rollback();
-        console.error('Error saving XML config:', error);
-        res.status(500).json({ 
-            success: false,
-            error: error.message 
         });
     }
 });
@@ -628,12 +457,14 @@ const upload = multer({
 // Get certificate configuration
 router.get('/certificate/get-config', async (req, res) => {
     try {
-        const config = await WP_CONFIGURATION.findOne({
+        const config = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'CERTIFICATE',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']]
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         if (!config) {
@@ -648,11 +479,14 @@ router.get('/certificate/get-config', async (req, res) => {
 
         // Add last modified info
         if (config.UserID) {
-            const lastModifiedUser = await WP_USER_REGISTRATION.findOne({
-                where: { ID: config.UserID },
-                attributes: ['FullName', 'Username']
+            const lastModifiedUser = await prisma.wP_USER_REGISTRATION.findFirst({
+                where: { ID: parseInt(config.UserID) },
+                select: {
+                    FullName: true,
+                    Username: true
+                }
             });
-            
+
             if (lastModifiedUser) {
                 settings.lastModifiedBy = {
                     name: lastModifiedUser.FullName,
@@ -698,9 +532,9 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
             if (!certBags || certBags.length === 0) {
                 throw new Error('No certificate found in file');
             }
-            
+
             const cert = certBags[0].cert;
-            
+
             console.log('Certificate subject attributes:', JSON.stringify(cert.subject.attributes, null, 2));
 
             // Map LHDN required fields to certificate subject attributes
@@ -716,7 +550,7 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
             let subjectString = '';
             cert.subject.attributes.forEach(attr => {
                 console.log('Processing attribute:', JSON.stringify(attr));
-                
+
                 // Build subject string for debugging and additional parsing
                 if (attr.shortName) {
                     subjectString += `${attr.shortName}=${attr.value},`;
@@ -726,14 +560,14 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                     // Handle attributes without shortName or name
                     subjectString += `undefined=${attr.value},`;
                     console.log('Found attribute without shortName or name:', attr.value);
-                    
+
                     // Check if this undefined attribute contains the OID
                     if (attr.value && (attr.value.match(/^C[0-9]+O$/) || attr.value.match(/^C[0-9]+0$/))) {
                         console.log('Found OID in undefined attribute:', attr.value);
                         subjectMap.OID = attr.value;
                     }
                 }
-                
+
                 // Standard attribute mapping
                 if (attr.shortName === 'organizationIdentifier' || attr.shortName === 'OID' || attr.shortName === 'ORG_ID') {
                     console.log('Found standard OID attribute:', attr.shortName, attr.value);
@@ -742,15 +576,15 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                     subjectMap[attr.shortName] = attr.value;
                 }
             });
-            
+
             console.log('Subject string after parsing:', subjectString);
             console.log('Initial subject map:', subjectMap);
-            
+
             // Additional parsing for OID and SERIALNUMBER from subject string if not found directly
             if (!subjectMap.OID || !subjectMap.SERIALNUMBER) {
                 // Try to extract from subject string
                 const subjectParts = subjectString.split(',');
-                
+
                 for (const part of subjectParts) {
                     if (part.includes('ORG_ID=') && !subjectMap.OID) {
                         subjectMap.OID = part.split('=')[1];
@@ -767,7 +601,7 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                         }
                     }
                 }
-                
+
                 // Check if serial number is in the beginning of the subject
                 const serialMatch = subjectString.match(/^(\d+)\s+O=/);
                 if (serialMatch && !subjectMap.SERIALNUMBER) {
@@ -775,7 +609,7 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                     subjectMap.SERIALNUMBER = serialMatch[1];
                 }
             }
-            
+
             // Extract from certificate extensions if available
             if (cert.extensions) {
                 console.log('Checking certificate extensions');
@@ -798,14 +632,14 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                     }
                 });
             }
-            
+
             // Last resort: try to extract from the full subject string
             if (!subjectMap.OID) {
                 console.log('Trying last resort OID extraction');
                 // Try to find OID in C58474705050 format (with zero) or C5847470505O format (with letter O)
                 const allValues = cert.subject.attributes.map(attr => attr.value).join(' ');
                 console.log('All subject values joined:', allValues);
-                
+
                 // Match both patterns
                 const oidMatch = allValues.match(/(C[0-9]+O)/) || allValues.match(/(C[0-9]+0)/);
                 if (oidMatch && oidMatch[1]) {
@@ -813,12 +647,12 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                     subjectMap.OID = oidMatch[1];
                 }
             }
-            
+
             if (!subjectMap.SERIALNUMBER) {
                 // Try to use the certificate serial number as a fallback
                 subjectMap.SERIALNUMBER = cert.serialNumber;
                 console.log('Using certificate serial number as fallback:', subjectMap.SERIALNUMBER);
-                
+
                 // Or try to extract from the subject string
                 const allValues = cert.subject.attributes.map(attr => attr.value).join(' ');
                 const serialMatch = allValues.match(/(\d{12})/);
@@ -827,7 +661,7 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
                     subjectMap.SERIALNUMBER = serialMatch[1];
                 }
             }
-            
+
             console.log('Final subject map after all extraction attempts:', subjectMap);
 
             // Extract key usage and extended key usage
@@ -931,12 +765,12 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
 
             // Check if all requirements are met
             const missingRequirements = [];
-            
+
             // Check subject fields
             const missingFields = requirements.subject
                 .filter(field => !field.present)
                 .map(field => field.field);
-            
+
             if (missingFields.length > 0) {
                 missingRequirements.push(`Missing required fields: ${missingFields.join(', ')}`);
             }
@@ -977,7 +811,7 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
 // Update certificate save endpoint
 router.post('/certificate/save', upload.single('certificate'), async (req, res) => {
     const t = await sequelize.transaction();
-    
+
     try {
         if (!req.file) {
             throw new Error('No certificate file uploaded');
@@ -994,12 +828,12 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
             const p12Der = forge.util.createBuffer(certBuffer.toString('binary'));
             const p12Asn1 = forge.asn1.fromDer(p12Der);
             const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
-            
+
             const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag];
             if (!certBags || certBags.length === 0) {
                 throw new Error('No certificate found in file');
             }
-            
+
             const cert = certBags[0].cert;
 
             // Extract certificate information using the same logic as validation
@@ -1022,13 +856,13 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
                 } else {
                     // Handle attributes without shortName or name
                     subjectString += `undefined=${attr.value},`;
-                    
+
                     // Check if this undefined attribute contains the OID
                     if (attr.value && (attr.value.match(/^C[0-9]+O$/) || attr.value.match(/^C[0-9]+0$/))) {
                         subjectMap.OID = attr.value;
                     }
                 }
-                
+
                 // Standard attribute mapping
                 if (attr.shortName === 'organizationIdentifier' || attr.shortName === 'OID' || attr.shortName === 'ORG_ID') {
                     subjectMap.OID = attr.value;
@@ -1036,12 +870,12 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
                     subjectMap[attr.shortName] = attr.value;
                 }
             });
-            
+
             // Additional parsing for OID and SERIALNUMBER from subject string if not found directly
             if (!subjectMap.OID || !subjectMap.SERIALNUMBER) {
                 // Try to extract from subject string
                 const subjectParts = subjectString.split(',');
-                
+
                 for (const part of subjectParts) {
                     if (part.includes('ORG_ID=') && !subjectMap.OID) {
                         subjectMap.OID = part.split('=')[1];
@@ -1055,14 +889,14 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
                         }
                     }
                 }
-                
+
                 // Check if serial number is in the beginning of the subject
                 const serialMatch = subjectString.match(/^(\d+)\s+O=/);
                 if (serialMatch && !subjectMap.SERIALNUMBER) {
                     subjectMap.SERIALNUMBER = serialMatch[1];
                 }
             }
-            
+
             // Extract from certificate extensions if available
             if (cert.extensions) {
                 cert.extensions.forEach(ext => {
@@ -1081,13 +915,13 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
                     }
                 });
             }
-            
+
             // Last resort: try to extract from the full subject string
             if (!subjectMap.OID) {
                 // Try to find OID in C58474705050 format (with zero) or C5847470505O format (with letter O)
                 const allValues = cert.subject.attributes.map(attr => attr.value).join(' ');
                 console.log('All subject values joined:', allValues);
-                
+
                 // Match both patterns
                 const oidMatch = allValues.match(/(C[0-9]+O)/) || allValues.match(/(C[0-9]+0)/);
                 if (oidMatch && oidMatch[1]) {
@@ -1095,11 +929,11 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
                     subjectMap.OID = oidMatch[1];
                 }
             }
-            
+
             if (!subjectMap.SERIALNUMBER) {
                 // Try to use the certificate serial number as a fallback
                 subjectMap.SERIALNUMBER = cert.serialNumber;
-                
+
                 // Or try to extract from the subject string
                 const serialMatch = cert.subject.attributes.map(attr => attr.value).join(' ').match(/(\d{12})/);
                 if (serialMatch) {
@@ -1144,33 +978,35 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
             // Deactivate any existing certificates
             await WP_CONFIGURATION.update(
                 { IsActive: 0 },
-                { 
+                {
                     where: { Type: 'CERTIFICATE' },
                     transaction: t
                 }
             );
 
             // Create new certificate configuration
-            const newConfig = await WP_CONFIGURATION.create({
-                Type: 'CERTIFICATE',
-                Settings: {
-                    certificatePath: req.file.filename,
-                    password: password, // Consider encrypting this in a production environment
-                    certInfo
-                },
-                IsActive: 1,
-                UserID: req.user.id,
-                CreateTS: sequelize.literal('GETDATE()'),
-                UpdateTS: sequelize.literal('GETDATE()')
-            }, {
-                transaction: t
+            await prisma.wP_CONFIGURATION.create({
+                data: {
+                    Type: 'CERTIFICATE',
+                    Settings: JSON.stringify({
+                        certificatePath: req.file.filename,
+                        password: password, // Consider encrypting this in a production environment
+                        certInfo
+                    }),
+                    IsActive: true,
+                    UserID: req.user.id ? String(req.user.id) : null,
+                    CreateTS: new Date(),
+                    UpdateTS: new Date()
+                }
             });
 
             // Get user info for last modified by
-            const user = await WP_USER_REGISTRATION.findOne({
+            const user = await prisma.wP_USER_REGISTRATION.findFirst({
                 where: { ID: req.user.id },
-                attributes: ['FullName', 'Username'],
-                transaction: t
+                select: {
+                    FullName: true,
+                    Username: true
+                }
             });
 
             await t.commit();
@@ -1207,16 +1043,17 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
 // Add certificate disable endpoint
 router.post('/certificate/disable', async (req, res) => {
     const t = await sequelize.transaction();
-    
+
     try {
         // Deactivate any existing certificates
-        await WP_CONFIGURATION.update(
-            { IsActive: 0 },
-            { 
-                where: { Type: 'CERTIFICATE' },
-                transaction: t
+        await prisma.wP_CONFIGURATION.updateMany({
+            where: {
+                Type: 'CERTIFICATE'
+            },
+            data: {
+                IsActive: false
             }
-        );
+        });
 
         // Log the configuration change
         await db.WP_LOGS.create({
@@ -1256,7 +1093,7 @@ router.post('/certificate/disable', async (req, res) => {
 // Add this new route to handle outgoing path configuration
 router.post('/outgoing/save-config', async (req, res) => {
     const t = await sequelize.transaction();
-    
+
     try {
         const { networkPath, domain, username, password } = req.body;
 
@@ -1280,12 +1117,14 @@ router.post('/outgoing/save-config', async (req, res) => {
         }
 
         // Find current active configuration
-        const currentConfig = await WP_CONFIGURATION.findOne({
+        const currentConfig = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'OUTGOING',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']]
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         // Save configuration
@@ -1297,28 +1136,31 @@ router.post('/outgoing/save-config', async (req, res) => {
         };
 
         if (currentConfig) {
-            await currentConfig.update({
-                Settings: settings,
-                UpdateTS: sequelize.literal('GETDATE()')
-            }, {
-                transaction: t
+            await prisma.wP_CONFIGURATION.update({
+                where: {
+                    ID: currentConfig.ID
+                },
+                data: {
+                    Settings: JSON.stringify(settings),
+                    UpdateTS: new Date()
+                }
             });
         } else {
-            await WP_CONFIGURATION.create({
-                Type: 'OUTGOING',
-                Settings: settings,
-                IsActive: 1,
-                UserID: req.user.id,
-                CreateTS: sequelize.literal('GETDATE()'),
-                UpdateTS: sequelize.literal('GETDATE()')
-            }, {
-                transaction: t
+            await prisma.wP_CONFIGURATION.create({
+                data: {
+                    Type: 'OUTGOING',
+                    Settings: JSON.stringify(settings),
+                    IsActive: true,
+                    UserID: String(req.user.id),
+                    CreateTS: new Date(),
+                    UpdateTS: new Date()
+                }
             });
         }
 
         await t.commit();
 
-        res.json({ 
+        res.json({
             success: true,
             message: 'Outgoing path configuration saved successfully',
             config: {
@@ -1331,9 +1173,9 @@ router.post('/outgoing/save-config', async (req, res) => {
     } catch (error) {
         await t.rollback();
         console.error('Error saving outgoing path config:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: error.message 
+            error: error.message
         });
     }
 });
@@ -1341,12 +1183,14 @@ router.post('/outgoing/save-config', async (req, res) => {
 // Add this route to get outgoing path configuration
 router.get('/outgoing/get-config', async (req, res) => {
     try {
-        const config = await WP_CONFIGURATION.findOne({
+        const config = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'OUTGOING',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']]
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         let settings = config?.Settings;
@@ -1372,4 +1216,4 @@ router.get('/outgoing/get-config', async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;

@@ -13,14 +13,14 @@ const { getUnitType } = require('../../utils/UOM');
 const { getInvoiceTypes } = require('../../utils/EInvoiceTypes');
 const axiosRetry = require('axios-retry');
 const moment = require('moment');
-const { Op } = require('sequelize');
+// Removed Sequelize import as we're using Prisma
 
 // Initialize cache with 5 minutes standard TTL
 const cache = new NodeCache({ stdTTL: 300 }); // 5 minutes in seconds
 
 // Database models
-const { WP_INBOUND_STATUS, WP_USER_REGISTRATION, WP_COMPANY_SETTINGS, WP_CONFIGURATION, WP_OUTBOUND_STATUS, WP_LOGS } = require('../../models');
-const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
+const prisma = require('../../src/lib/prisma');
+const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging-prisma.service');
 
 // Helper function for delays
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -93,11 +93,11 @@ const limiter = rateLimit({
 });
 
 
-axiosRetry.default(axios, { 
+axiosRetry.default(axios, {
     retries: 3,
     retryDelay: axiosRetry.exponentialDelay,
     retryCondition: (error) => {
-        return axiosRetry.isNetworkOrIdempotentRequestError(error) || 
+        return axiosRetry.isNetworkOrIdempotentRequestError(error) ||
                error.response?.status === 429;
     }
 });
@@ -120,12 +120,14 @@ const getDocumentRetrievalLimits = () => {
 
 // Helper function to get LHDN config
 async function getLHDNConfig() {
-    const config = await WP_CONFIGURATION.findOne({
+    const config = await prisma.wP_CONFIGURATION.findFirst({
         where: {
             Type: 'LHDN',
-            IsActive: 1
+            IsActive: true
         },
-        order: [['CreateTS', 'DESC']]
+        orderBy: {
+            CreateTS: 'desc'
+        }
     });
 
     if (!config || !config.Settings) {
@@ -133,9 +135,9 @@ async function getLHDNConfig() {
     }
 
     let settings = typeof config.Settings === 'string' ? JSON.parse(config.Settings) : config.Settings;
-    
-    const baseUrl = settings.environment === 'production' 
-        ? settings.productionUrl || settings.middlewareUrl 
+
+    const baseUrl = settings.environment === 'production'
+        ? settings.productionUrl || settings.middlewareUrl
         : settings.sandboxUrl || settings.middlewareUrl;
 
     if (!baseUrl) {
@@ -146,7 +148,7 @@ async function getLHDNConfig() {
     const defaultTimeout = 60000; // 60 seconds default
     const minTimeout = 30000;    // 30 seconds minimum
     const maxTimeout = 300000;   // 5 minutes maximum
-    
+
     let timeout = parseInt(settings.timeout) || defaultTimeout;
     timeout = Math.min(Math.max(timeout, minTimeout), maxTimeout);
 
@@ -167,15 +169,15 @@ function getPortalUrl(environment) {
         production: 'myinvois.hasil.gov.my',
         sandbox: 'preprod.myinvois.hasil.gov.my'
     };
-    
+
     return portalUrls[environment] || portalUrls.sandbox; // Default to sandbox if environment not specified
 }
 
 // Enhanced document fetching function with smart caching
 const fetchRecentDocuments = async (req) => {
     console.log('Starting enhanced document fetch process...');
-    
-    try {  
+
+    try {
         // Get LHDN configuration
         const lhdnConfig = await getLHDNConfig();
         console.log('Using LHDN configuration:', {
@@ -185,25 +187,31 @@ const fetchRecentDocuments = async (req) => {
         });
 
         // First, check if we have data in the database
-        const dbDocuments = await WP_INBOUND_STATUS.findAll({
-            order: [['dateTimeReceived', 'DESC']],
-            limit: 1000 // Limit to latest 1000 records
+        const dbDocuments = await prisma.wP_INBOUND_STATUS.findMany({
+            orderBy: {
+                dateTimeReceived: 'desc'
+            },
+            take: 1000 // Limit to latest 1000 records
         });
 
         // If we have database records, use them as the initial data source
         if (dbDocuments && dbDocuments.length > 0) {
             console.log(`Found ${dbDocuments.length} documents in database`);
-            
+
             // Check if we need to refresh from API
-            const lastSyncedDocument = await WP_INBOUND_STATUS.findOne({
-                order: [['last_sync_date', 'DESC']],
-                attributes: ['last_sync_date']
+            const lastSyncedDocument = await prisma.wP_INBOUND_STATUS.findFirst({
+                orderBy: {
+                    last_sync_date: 'desc'
+                },
+                select: {
+                    last_sync_date: true
+                }
             });
-            
+
             const currentTime = new Date();
             const syncThreshold = 15 * 60 * 1000; // 15 minutes in milliseconds
             const forceRefresh = req.query.forceRefresh === 'true';
-            
+
             // Only fetch from API if forced or if last sync is older than threshold
             if (!forceRefresh && lastSyncedDocument && lastSyncedDocument.last_sync_date) {
                 const timeSinceLastSync = currentTime - new Date(lastSyncedDocument.last_sync_date);
@@ -216,7 +224,7 @@ const fetchRecentDocuments = async (req) => {
                     };
                 }
             }
-            
+
             // If we're here, we need to refresh from API but still have DB records as fallback
             console.log('Database records exist but need refresh from API');
         } else {
@@ -252,6 +260,23 @@ const fetchRecentDocuments = async (req) => {
                             }
                         }
 
+                        // Get token from session (which should now have the token from file)
+                        let token = req.session?.accessToken;
+
+                        // If no token in session, try to get directly from file
+                        if (!token) {
+                            console.log('No token in session, trying to get from file directly');
+                            token = await readTokenFromFile();
+                        }
+
+                        // If still no token, throw error
+                        if (!token) {
+                            console.error('No valid access token found in session or file');
+                            throw new Error('No valid access token found');
+                        }
+
+                        console.log('Using token for LHDN API request');
+
                         const response = await axios.get(
                             `${lhdnConfig.baseUrl}/api/v1.0/documents/recent`,
                             {
@@ -262,7 +287,7 @@ const fetchRecentDocuments = async (req) => {
                                     sortOrder: 'desc'
                                 },
                                 headers: {
-                                    'Authorization': `Bearer ${req.session.accessToken}`,
+                                    'Authorization': `Bearer ${token}`,
                                     'Accept': 'application/json',
                                     'Content-Type': 'application/json'
                                 },
@@ -276,7 +301,7 @@ const fetchRecentDocuments = async (req) => {
 
                         // Handle pagination
                         const { result, pagination } = response.data;
-                        
+
                         if (!result || result.length === 0) {
                             console.log(`No more documents found after page ${pageNo-1}`);
                             hasMorePages = false;
@@ -288,19 +313,19 @@ const fetchRecentDocuments = async (req) => {
                             ...doc,
                             // Map issuerTin or supplierTin to issuerTin
                             issuerTin: doc.issuerTin || doc.supplierTin || null,
-                            
+
                             // Map issuerName or supplierName to issuerName
                             issuerName: doc.issuerName || doc.supplierName || null,
-                            
+
                             // Map receiverId or buyerTin to receiverId
                             receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN || null,
-                            
+
                             // Map receiverName or buyerName to receiverName
                             receiverName: doc.receiverName || doc.buyerName || null,
-                            
+
                             // Map receiverTIN or buyerTIN to receiverTIN
                             receiverTIN: doc.receiverTIN || doc.buyerTIN || null,
-                            
+
                             receiverRegistrationNo: doc.receiverRegistrationNo || doc.buyerRegistrationNo || null,
                             receiverAddress: doc.receiverAddress || doc.buyerAddress || null,
                             receiverPostcode: doc.receiverPostcode || doc.buyerPostcode || null,
@@ -308,7 +333,7 @@ const fetchRecentDocuments = async (req) => {
                             receiverState: doc.receiverState || doc.buyerState || null,
                             receiverCountry: doc.receiverCountry || doc.buyerCountry || null,
                             receiverPhone: doc.receiverPhone || doc.buyerPhone || null,
-                            
+
                             uuid: doc.uuid,
                             submissionUid: doc.submissionUid,
                             longId: doc.longId,
@@ -354,7 +379,47 @@ const fetchRecentDocuments = async (req) => {
 
                         // Handle authentication errors
                         if (error.response?.status === 401 || error.response?.status === 403) {
-                            throw new Error('Authentication failed. Please log in again.');
+                            console.error('Authentication error detected:', error.message);
+
+                            // Try to refresh token first
+                            try {
+                                console.log('Attempting to refresh token...');
+
+                                // Try to get token from file using our enhanced function
+                                const fileToken = await readTokenFromFile();
+
+                                if (fileToken) {
+                                    // If file token is different from session token, try using it
+                                    if (fileToken !== req.session.accessToken) {
+                                        console.log('Found different token in file, trying it...');
+                                        req.session.accessToken = fileToken;
+                                        retryCount--; // Don't count this as a retry
+                                        continue;
+                                    }
+                                }
+
+                                // If file token didn't work, try to get a fresh token
+                                try {
+                                    console.log('Attempting to get a fresh token...');
+                                    const { getTokenSession } = require('../../services/token-prisma.service');
+                                    const freshToken = await getTokenSession();
+
+                                    if (freshToken) {
+                                        console.log('Successfully obtained fresh token');
+                                        req.session.accessToken = freshToken;
+                                        retryCount--; // Don't count this as a retry
+                                        continue;
+                                    }
+                                } catch (tokenError) {
+                                    console.error('Error getting fresh token:', tokenError);
+                                }
+
+                                // If we couldn't refresh the token, throw authentication error
+                                throw new Error('Authentication failed. Please log in again.');
+                            } catch (refreshError) {
+                                console.error('Token refresh failed:', refreshError.message);
+                                throw new Error('Authentication failed. Please log in again.');
+                            }
                         }
 
                         // Handle rate limiting
@@ -362,7 +427,7 @@ const fetchRecentDocuments = async (req) => {
                             const resetTime = error.response.headers["x-rate-limit-reset"];
                             rateLimitRemaining = 0;
                             rateLimitReset = resetTime;
-                            
+
                             const waitTime = new Date(resetTime).getTime() - Date.now();
                             if (waitTime > 0) {
                                 console.log(`Rate limited. Waiting ${Math.round(waitTime/1000)}s before retry...`);
@@ -405,9 +470,29 @@ const fetchRecentDocuments = async (req) => {
             }
 
             console.log(`Fetch complete. Total documents retrieved: ${documents.length}`);
-            
+
             // Save the fetched documents to database
-            await saveInboundStatus({ result: documents });
+            await saveInboundStatus({ result: documents }, req);
+
+            // If we have submission UIDs, poll their status
+            const uniqueSubmissionUids = [...new Set(documents.map(doc => doc.submissionUid).filter(Boolean))];
+            if (uniqueSubmissionUids.length > 0) {
+                console.log(`Found ${uniqueSubmissionUids.length} unique submission UIDs to poll`);
+
+                // Poll each submission in sequence to avoid rate limiting
+                for (const submissionUid of uniqueSubmissionUids) {
+                    try {
+                        console.log(`Polling submission status for: ${submissionUid}`);
+                        await pollSubmissionStatus(submissionUid, 5); // Limit to 5 attempts for background polling
+                    } catch (pollError) {
+                        console.error(`Error polling submission ${submissionUid}:`, pollError);
+                        // Continue with next submission even if this one fails
+                    }
+
+                    // Add a small delay between submissions to avoid rate limiting
+                    await delay(1000);
+                }
+            }
 
             // Log successful document fetch
             await LoggingService.log({
@@ -422,14 +507,14 @@ const fetchRecentDocuments = async (req) => {
                 details: { count: documents.length }
             });
 
-            return { 
+            return {
                 result: documents,
                 cached: false,
                 fromApi: true
             };
         } catch (error) {
             console.error('Error fetching from LHDN API:', error.message);
-            
+
             // Log the error
             await LoggingService.log({
                 description: `Error fetching documents from LHDN: ${error.message}`,
@@ -442,7 +527,7 @@ const fetchRecentDocuments = async (req) => {
                 status: STATUS.FAILED,
                 details: { error: error.message }
             });
-            
+
             // If we have database records, use them as fallback
             if (dbDocuments && dbDocuments.length > 0) {
                 console.log(`Using ${dbDocuments.length} database records as fallback`);
@@ -454,67 +539,193 @@ const fetchRecentDocuments = async (req) => {
                     error: error.message
                 };
             }
-            
+
             // If no database records, rethrow the error
             throw error;
         }
     } catch (error) {
         console.error('Error in document fetch:', error);
-        return { 
-            success: false, 
+        return {
+            success: false,
             message: `Error fetching documents: ${error.message}`,
-            error: error 
+            error: error
         };
     }
 };
-// Caching function
-const getCachedDocuments = async (req) => {
+// Enhanced caching function with better error handling
+async function getCachedDocuments(req) {
     const cacheKey = `recentDocuments_${req.session?.user?.TIN || 'default'}`;
     const forceRefresh = req.query.forceRefresh === 'true';
-    
+    const useDatabase = req.query.useDatabase === 'true';
+
     // Get from cache if not forcing refresh
     let data = forceRefresh ? null : cache.get(cacheKey);
 
     if (!data) {
         try {
-            // If not in cache or forcing refresh, fetch from source
-            data = await fetchRecentDocuments(req);
-            // Store in cache
-            cache.set(cacheKey, data);
-            console.log(forceRefresh ? 'Force refreshed documents and cached the result' : 'Fetched documents and cached the result');
-        } catch (error) {
-            console.error('Error fetching documents:', error);
-            
-            // Try to get data from database as a last resort
-            try {
-                console.log('Attempting final fallback to database...');
-                const fallbackDocuments = await WP_INBOUND_STATUS.findAll({
-                    order: [['dateTimeReceived', 'DESC']],
-                    limit: 1000
-                });
-                
-                if (fallbackDocuments && fallbackDocuments.length > 0) {
-                    console.log(`Final fallback successful. Retrieved ${fallbackDocuments.length} documents from database.`);
-                    return {
-                        result: fallbackDocuments,
-                        cached: true,
-                        fromDatabase: true,
-                        fallback: true,
-                        error: error.message
-                    };
+            // If useDatabase is true and we're not forcing refresh, try to get from database first
+            if (useDatabase && !forceRefresh) {
+                try {
+                    console.log('Using database as primary data source due to useDatabase parameter');
+                    // Get documents from database
+                    const dbDocuments = await prisma.wP_INBOUND_STATUS.findMany({
+                        orderBy: {
+                            dateTimeReceived: 'desc'
+                        },
+                        take: 1000 // Limit to latest 1000 records
+                    });
+
+                    if (dbDocuments && dbDocuments.length > 0) {
+                        console.log(`Found ${dbDocuments.length} documents in database`);
+                        data = {
+                            result: dbDocuments,
+                            cached: false,
+                            fromDatabase: true,
+                            fromApi: false,
+                            timestamp: new Date().toISOString()
+                        };
+
+                        // Store in cache with shorter TTL for database data
+                        cache.set(cacheKey, data, 300); // 5 minutes
+                        console.log('Cached database documents for 5 minutes');
+
+                        // Try to fetch from API in the background to update the database
+                        try {
+                            console.log('Fetching from API in background to update database');
+                            fetchRecentDocuments(req).catch(apiError => {
+                                console.warn('Background API fetch failed:', apiError.message);
+                            });
+                        } catch (backgroundError) {
+                            console.warn('Error starting background fetch:', backgroundError);
+                        }
+
+                        return data;
+                    }
+                } catch (dbError) {
+                    console.error('Error getting documents from database:', dbError);
+                    // Continue to API fetch if database fetch fails
                 }
-            } catch (dbError) {
-                console.error('Database fallback also failed:', dbError.message);
             }
-            
-            throw error;
+
+            // If not using database or database fetch failed, fetch from API
+            data = await fetchRecentDocuments(req);
+
+            // Only cache successful results
+            if (data && data.result && data.result.length > 0) {
+                // Store in cache with appropriate TTL based on source
+                const cacheTTL = data.fromApi ? 900 : 300; // 15 minutes for API data, 5 minutes for DB data
+                cache.set(cacheKey, data, cacheTTL);
+                console.log(`${forceRefresh ? 'Force refreshed' : 'Fetched'} documents and cached for ${cacheTTL} seconds`);
+            }
+        } catch (error) {
+            console.error('Error in getCachedDocuments:', error);
+
+            // Check if it's an authentication error
+            if (error.message?.includes('Authentication failed')) {
+                // Log authentication error
+                await LoggingService.log({
+                    description: `Authentication error in getCachedDocuments: ${error.message}`,
+                    username: req.session?.user?.username || 'System',
+                    userId: req.session?.user?.id,
+                    ipAddress: req.ip,
+                    logType: LOG_TYPES.ERROR,
+                    module: MODULES.AUTH,
+                    action: ACTIONS.READ,
+                    status: STATUS.FAILED,
+                    details: { error: error.message }
+                });
+
+                // Try to refresh token
+                try {
+                    // Get token from file using our enhanced function
+                    const fileToken = await readTokenFromFile();
+
+                    if (fileToken) {
+                        // Update session with token from file
+                        if (req.session) {
+                            req.session.accessToken = fileToken;
+                            console.log('Updated session with token from file');
+
+                            // Try fetching again with new token
+                            try {
+                                data = await fetchRecentDocuments(req);
+                                if (data && data.result && data.result.length > 0) {
+                                    cache.set(cacheKey, data, 900); // 15 minutes
+                                    console.log('Successfully fetched data with refreshed token');
+                                }
+                            } catch (retryError) {
+                                console.error('Retry with refreshed token failed:', retryError);
+                            }
+                        }
+                    } else {
+                        // If no token in file, try to get a fresh one
+                        try {
+                            console.log('No token in file, attempting to get a fresh token');
+                            const { getTokenSession } = require('../../services/token-prisma.service');
+                            const freshToken = await getTokenSession();
+
+                            if (freshToken && req.session) {
+                                req.session.accessToken = freshToken;
+                                console.log('Updated session with fresh token');
+
+                                // Try fetching again with fresh token
+                                try {
+                                    data = await fetchRecentDocuments(req);
+                                    if (data && data.result && data.result.length > 0) {
+                                        cache.set(cacheKey, data, 900); // 15 minutes
+                                        console.log('Successfully fetched data with fresh token');
+                                    }
+                                } catch (retryError) {
+                                    console.error('Retry with fresh token failed:', retryError);
+                                }
+                            }
+                        } catch (tokenError) {
+                            console.error('Error getting fresh token:', tokenError);
+                        }
+                    }
+                } catch (tokenError) {
+                    console.error('Error refreshing token from file:', tokenError);
+                }
+            }
+
+            // If we still don't have data, try database fallback
+            if (!data || !data.result || data.result.length === 0) {
+                try {
+                    console.log('Attempting final fallback to database...');
+                    const fallbackDocuments = await prisma.wP_INBOUND_STATUS.findMany({
+                        orderBy: {
+                            dateTimeReceived: 'desc'
+                        },
+                        take: 1000
+                    });
+
+                    if (fallbackDocuments && fallbackDocuments.length > 0) {
+                        console.log(`Using ${fallbackDocuments.length} database records as final fallback`);
+                        data = {
+                            result: fallbackDocuments,
+                            cached: false,
+                            fromDatabase: true,
+                            fallback: true,
+                            error: error.message
+                        };
+
+                        // Cache fallback data for a shorter period
+                        cache.set(cacheKey, data, 120); // 2 minutes
+                    } else {
+                        throw new Error('No documents found in database');
+                    }
+                } catch (dbError) {
+                    console.error('Database fallback also failed:', dbError);
+                    throw error; // Rethrow the original error
+                }
+            }
         }
     } else {
-        console.log('Serving documents from cache');
+        console.log(`Using cached data (${data.result?.length || 0} documents)`);
     }
 
     return data;
-};
+}
 
 const generateTemplateHash = (templateData) => {
     const crypto = require('crypto');
@@ -543,8 +754,10 @@ const generateTemplateHash = (templateData) => {
 };
 
 // Helper function to generate JSON response file
-const generateResponseFile = async (item) => {
+const generateResponseFile = async (item, req = null) => {
     try {
+        // Get username from session if available
+        const username = req?.session?.user?.username || 'System';
         // Only generate for valid documents with required fields
         if (!item.uuid || !item.submissionUid || !item.longId || item.status !== 'Valid') {
             console.log(`Skipping response file generation for ${item.uuid}: missing required fields or invalid status`);
@@ -554,13 +767,15 @@ const generateResponseFile = async (item) => {
          // Get LHDN configuration
         const lhdnConfig = await getLHDNConfig();
 
-        // Get outgoing path configuration
-        const outgoingConfig = await WP_CONFIGURATION.findOne({
+        // Get outgoing path configuration using Prisma
+        const outgoingConfig = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'OUTGOING',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']]
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         if (!outgoingConfig || !outgoingConfig.Settings) {
@@ -568,8 +783,8 @@ const generateResponseFile = async (item) => {
             return { success: false, message: 'No outgoing path configuration found' };
         }
 
-        let settings = typeof outgoingConfig.Settings === 'string' 
-            ? JSON.parse(outgoingConfig.Settings) 
+        let settings = typeof outgoingConfig.Settings === 'string'
+            ? JSON.parse(outgoingConfig.Settings)
             : outgoingConfig.Settings;
 
         if (!settings.networkPath) {
@@ -578,9 +793,11 @@ const generateResponseFile = async (item) => {
         }
 
         // Try to get user registration details
-        const userRegistration = await WP_USER_REGISTRATION.findOne({
-            where: { ValidStatus: 1 },
-            order: [['CreateTS', 'DESC']]
+        const userRegistration = await prisma.wP_USER_REGISTRATION.findFirst({
+            where: { ValidStatus: '1' }, // ValidStatus is a CHAR(1) field, not a boolean
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         if (!userRegistration || !userRegistration.TIN) {
@@ -589,20 +806,20 @@ const generateResponseFile = async (item) => {
         }
 
         // Try to get company settings based on user's TIN
-        let companySettings = await WP_COMPANY_SETTINGS.findOne({
+        let companySettings = await prisma.wP_COMPANY_SETTINGS.findFirst({
             where: { TIN: userRegistration.TIN }
         });
 
         // If no company settings found with user's TIN, try with document TINs
         if (!companySettings) {
             console.log(`No company settings found for user TIN: ${userRegistration.TIN}, trying document TINs`);
-            
+
             // Check if the document's issuerTin or receiverId matches any company settings
             if (item.issuerTin === userRegistration.TIN || item.receiverId === userRegistration.TIN) {
-                companySettings = await WP_COMPANY_SETTINGS.findOne({
-                    where: { 
+                companySettings = await prisma.wP_COMPANY_SETTINGS.findFirst({
+                    where: {
                         TIN: {
-                            [Op.in]: [item.issuerTin, item.receiverId].filter(Boolean)
+                            in: [item.issuerTin, item.receiverId].filter(Boolean)
                         }
                     }
                 });
@@ -617,8 +834,9 @@ const generateResponseFile = async (item) => {
         // Set company name from settings
         const companyName = companySettings.CompanyName;
 
-        // Get document details from outbound status
-        const outboundDoc = await WP_OUTBOUND_STATUS.findOne({
+        // Get document details from outbound status using Prisma
+        // Note: UUID is not a unique field, so we need to use findFirst instead of findUnique
+        const outboundDoc = await prisma.wP_OUTBOUND_STATUS.findFirst({
             where: { UUID: item.uuid }
         });
 
@@ -636,8 +854,8 @@ const generateResponseFile = async (item) => {
         // Sanitize the invoiceNo immediately
         invoiceNo = sanitizePath(invoiceNo);
 
-        // Always try to get inbound data first
-        const inboundDoc = await WP_INBOUND_STATUS.findOne({
+        // Always try to get inbound data first using Prisma
+        const inboundDoc = await prisma.wP_INBOUND_STATUS.findUnique({
             where: { uuid: item.uuid }
         });
 
@@ -655,18 +873,18 @@ const generateResponseFile = async (item) => {
                 const pathParts = outboundDoc.filePath.split(path.sep);
                 if (pathParts.length >= 4) {
                     const dateIndex = pathParts.length - 2;
-                    const companyIndex = pathParts.length - 3;
+                    // const companyIndex = pathParts.length - 3; // Not used but kept for reference
                     const typeIndex = pathParts.length - 4;
 
                     type = pathParts[typeIndex] || 'LHDN';
                     company = companyName;  // Use company name from settings
                     date = pathParts[dateIndex] || moment().format('YYYY-MM-DD');
-                    
+
                     // Only update invoice number if we got it from outbound
                     if (outboundDoc.internalId) {
                         invoiceNo = sanitizePath(outboundDoc.internalId);
                     }
-                    
+
                     // Try to get invoice type code from typeName if available
                     if (outboundDoc.typeName) {
                         const typeMatch = outboundDoc.typeName.match(/^(\d{2})/);
@@ -697,11 +915,11 @@ const generateResponseFile = async (item) => {
         company = String(company || companyName);
         date = String(date || moment().format('YYYY-MM-DD'));
 
-        // Sanitize path components 
+        // Sanitize path components
         type = sanitizePath(type);
         company = sanitizePath(company);
         date = sanitizePath(date);
-        
+
         // Ensure invoiceNo is sanitized again (in case it was updated after initial sanitization)
         invoiceNo = sanitizePath(invoiceNo);
 
@@ -710,11 +928,11 @@ const generateResponseFile = async (item) => {
 
         // Construct paths for outgoing files using configured network path
         const outgoingBasePath = path.join(settings.networkPath, type, company);
-        
+
         // CHANGE: Previously tried to use a specific path from outboundDoc which might not exist
         // Now use a simpler path structure for all documents
         const outgoingJSONPath = outgoingBasePath;
-        
+
         // Create directory structure recursively
         await fsPromises.mkdir(outgoingBasePath, { recursive: true });
 
@@ -724,9 +942,9 @@ const generateResponseFile = async (item) => {
         try {
             await fsPromises.access(jsonFilePath);
             console.log(`Response file already exists for ${item.uuid}, skipping generation`);
-            return { 
-                success: true, 
-                message: 'Response file already exists', 
+            return {
+                success: true,
+                message: 'Response file already exists',
                 path: jsonFilePath,
                 fileName: fileName,
                 company: company
@@ -755,39 +973,62 @@ const generateResponseFile = async (item) => {
             // Make sure the directory exists (extra check)
             const dirPath = path.dirname(jsonFilePath);
             await fsPromises.mkdir(dirPath, { recursive: true });
-            
+
             // Write JSON file
             await fsPromises.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
             console.log(`Generated response file: ${jsonFilePath}`);
-            
-            return { 
-                success: true, 
-                message: 'Response file generated successfully', 
+
+            // Update the outbound status record with the username
+            try {
+                // Find the outbound record first
+                const outboundRecord = await prisma.wP_OUTBOUND_STATUS.findFirst({
+                    where: { UUID: item.uuid }
+                });
+
+                if (outboundRecord) {
+                    // Update the record with the username
+                    await prisma.wP_OUTBOUND_STATUS.update({
+                        where: { id: outboundRecord.id },
+                        data: {
+                            submitted_by: username,
+                            updated_at: new Date()
+                        }
+                    });
+                    console.log(`Updated outbound record with username: ${username} for UUID: ${item.uuid}`);
+                }
+            } catch (updateError) {
+                console.error(`Error updating outbound record with username for ${item.uuid}:`, updateError);
+                // Continue even if this fails
+            }
+
+            return {
+                success: true,
+                message: 'Response file generated successfully',
                 path: jsonFilePath,
                 fileName: fileName,
                 company: company
             };
         } catch (writeError) {
             console.error(`Error writing response file for ${item.uuid}:`, writeError);
-            
+
             // If original path fails, try a fallback path - simplify the path further
             try {
                 // Create a simpler fallback path without any potential problematic components
                 const fallbackDirName = `LHDN_Fallback_${moment().format('YYYYMMDD')}`;
                 const fallbackPath = path.join(settings.networkPath, fallbackDirName);
                 await fsPromises.mkdir(fallbackPath, { recursive: true });
-                
+
                 // Use a very simple filename pattern that removes all special characters
                 const simplifiedUuid = item.uuid.replace(/[^a-zA-Z0-9]/g, '');
                 const fallbackFileName = `document_${simplifiedUuid}.json`;
                 const fallbackFilePath = path.join(fallbackPath, fallbackFileName);
-                
+
                 await fsPromises.writeFile(fallbackFilePath, JSON.stringify(jsonContent, null, 2));
                 console.log(`Generated response file at fallback location: ${fallbackFilePath}`);
-                
-                return { 
-                    success: true, 
-                    message: 'Response file generated at fallback location', 
+
+                return {
+                    success: true,
+                    message: 'Response file generated at fallback location',
                     path: fallbackFilePath,
                     fileName: fallbackFileName,
                     company: company
@@ -799,16 +1040,16 @@ const generateResponseFile = async (item) => {
         }
     } catch (error) {
         console.error(`Error generating response file for ${item.uuid}:`, error);
-        return { 
-            success: false, 
+        return {
+            success: false,
             message: `Error generating response file: ${error.message}`,
-            error: error 
+            error: error
         };
     }
 };
 
 // Enhanced save to database function
-const saveInboundStatus = async (data) => {
+const saveInboundStatus = async (data, req = null) => {
     if (!data.result || !Array.isArray(data.result)) {
         console.warn("No valid data to process");
         await LoggingService.log({
@@ -823,18 +1064,18 @@ const saveInboundStatus = async (data) => {
 
     const batchSize = 100;
     const batches = [];
-    const maxRetries = 3;
-    const retryDelay = 1000; // 1 second
+    // const maxRetries = 3; // Not used but kept for reference
+    // const retryDelay = 1000; // Not used but kept for reference
     let successCount = 0;
     let errorCount = 0;
     let responseFileResults = [];
-    
+
     for (let i = 0; i < data.result.length; i += batchSize) {
         batches.push(data.result.slice(i, i + batchSize));
     }
 
     console.log(`Processing ${batches.length} batches of ${batchSize} documents each`);
-    
+
     // Log the start of batch processing
     await LoggingService.log({
         description: `Starting to process ${data.result.length} documents in ${batches.length} batches`,
@@ -863,31 +1104,57 @@ const saveInboundStatus = async (data) => {
                 try {
                     // Ensure issuerName is set from supplierName if missing
                     const issuerName = item.issuerName || item.supplierName || null;
-                    
-                    await WP_INBOUND_STATUS.upsert({
-                        uuid: item.uuid,
-                        submissionUid: item.submissionUid,
-                        longId: item.longId,
-                        internalId: item.internalId,
-                        typeName: item.typeName,
-                        typeVersionName: item.typeVersionName,
-                        issuerTin: item.issuerTin || item.supplierTin || null,
-                        issuerName: issuerName,
-                        receiverId: item.receiverId || item.buyerTin || item.buyerTIN || null,
-                        receiverName: item.receiverName || item.buyerName || null,
-                        dateTimeReceived: formatDate(item.dateTimeReceived),
-                        dateTimeValidated: formatDate(item.dateTimeValidated),
-                        status: item.status,
-                        documentStatusReason: item.documentStatusReason,
-                        totalSales: item.totalSales || item.total || item.netAmount || 0,
-                        totalExcludingTax: item.totalExcludingTax || 0,
-                        totalDiscount: item.totalDiscount || 0,
-                        totalNetAmount: item.totalNetAmount || item.netAmount || 0,
-                        totalPayableAmount: item.totalPayableAmount || item.total || 0,
-                        last_sync_date: formatDate(new Date()),
-                        sync_status: 'success'
+
+                    // Use Prisma upsert for WP_INBOUND_STATUS
+                    await prisma.wP_INBOUND_STATUS.upsert({
+                        where: { uuid: item.uuid },
+                        update: {
+                            submissionUid: item.submissionUid,
+                            longId: item.longId,
+                            internalId: item.internalId,
+                            typeName: item.typeName,
+                            typeVersionName: item.typeVersionName,
+                            issuerTin: item.issuerTin || item.supplierTin || null,
+                            issuerName: issuerName,
+                            receiverId: item.receiverId || item.buyerTin || item.buyerTIN || null,
+                            receiverName: item.receiverName || item.buyerName || null,
+                            dateTimeReceived: formatDate(item.dateTimeReceived),
+                            dateTimeValidated: formatDate(item.dateTimeValidated),
+                            status: item.status,
+                            documentStatusReason: item.documentStatusReason,
+                            totalSales: item.totalSales || item.total || item.netAmount || 0,
+                            totalExcludingTax: item.totalExcludingTax || 0,
+                            totalDiscount: item.totalDiscount || 0,
+                            totalNetAmount: item.totalNetAmount || item.netAmount || 0,
+                            totalPayableAmount: item.totalPayableAmount || item.total || 0,
+                            last_sync_date: formatDate(new Date()),
+                            sync_status: 'success'
+                        },
+                        create: {
+                            uuid: item.uuid,
+                            submissionUid: item.submissionUid,
+                            longId: item.longId,
+                            internalId: item.internalId,
+                            typeName: item.typeName,
+                            typeVersionName: item.typeVersionName,
+                            issuerTin: item.issuerTin || item.supplierTin || null,
+                            issuerName: issuerName,
+                            receiverId: item.receiverId || item.buyerTin || item.buyerTIN || null,
+                            receiverName: item.receiverName || item.buyerName || null,
+                            dateTimeReceived: formatDate(item.dateTimeReceived),
+                            dateTimeValidated: formatDate(item.dateTimeValidated),
+                            status: item.status,
+                            documentStatusReason: item.documentStatusReason,
+                            totalSales: item.totalSales || item.total || item.netAmount || 0,
+                            totalExcludingTax: item.totalExcludingTax || 0,
+                            totalDiscount: item.totalDiscount || 0,
+                            totalNetAmount: item.totalNetAmount || item.netAmount || 0,
+                            totalPayableAmount: item.totalPayableAmount || item.total || 0,
+                            last_sync_date: formatDate(new Date()),
+                            sync_status: 'success'
+                        }
                     });
-                    
+
                     // Log if we fixed a missing issuerName
                     if (!item.issuerName && item.supplierName) {
                         console.log(`Fixed missing issuerName using supplierName for UUID: ${item.uuid}`);
@@ -895,22 +1162,22 @@ const saveInboundStatus = async (data) => {
 
                     // Generate response file only for valid documents
                     if (item.status === 'Valid') {
-                        const responseResult = await generateResponseFile(item);
+                        const responseResult = await generateResponseFile(item, req);
                         responseFileResults.push(responseResult);
                     }
 
                     // If the inbound document status is "Failed"
                     if (item.status === 'Failed') {
-                        // Update the corresponding outbound status record
-                        await WP_OUTBOUND_STATUS.update(
-                            { 
-                                status: 'Failed', 
-                                updated_at: sequelize.literal('GETDATE()') 
-                            },
-                            { 
-                                where: { UUID: item.uuid } 
+                        // Update the corresponding outbound status record using Prisma
+                        // Note: UUID is not a unique field, so we need to use updateMany instead of update
+                        await prisma.wP_OUTBOUND_STATUS.updateMany({
+                            where: { UUID: item.uuid },
+                            data: {
+                                status: 'Failed',
+                                updated_at: new Date().toISOString(),
+                                submitted_by: req?.session?.user?.username || 'System' // Add username from session
                             }
-                        );
+                        });
                     }
 
                     successCount++;
@@ -939,9 +1206,9 @@ const saveInboundStatus = async (data) => {
     }
 
     console.log(`Save operation completed. Success: ${successCount}, Errors: ${errorCount}`);
-    
-    return { 
-        successCount, 
+
+    return {
+        successCount,
         errorCount,
         responseFiles: {
             total: responseFileResults.length,
@@ -951,7 +1218,7 @@ const saveInboundStatus = async (data) => {
     };
 };
 
-const requestLogger = async (req, res, next) => {
+const requestLogger = async (req, _res, next) => {
     const requestId = Math.random().toString(36).substring(7);
     console.log(`[${requestId}] New request:`, {
         method: req.method,
@@ -964,48 +1231,499 @@ const requestLogger = async (req, res, next) => {
     next();
 };
 
-// Apply logging middleware
+// Function to poll submission status using GetSubmission API
+const pollSubmissionStatus = async (submissionUid, maxAttempts = 10) => {
+    try {
+        if (!submissionUid) {
+            throw new Error('Submission UID is required for polling');
+        }
+
+        console.log(`Starting to poll submission status for: ${submissionUid}`);
+
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+
+        // Get token from file - try multiple patterns to be safe
+        const tokenFilePath = path.join(__dirname, '../../config/AuthorizeToken.ini');
+        let token = null;
+
+        if (fs.existsSync(tokenFilePath)) {
+            const tokenData = fs.readFileSync(tokenFilePath, 'utf8');
+
+            // Try different possible token formats in the file
+            const tokenPatterns = [
+                /AccessToken=(.+)/,
+                /access_token=(.+)/,
+                /token=(.+)/
+            ];
+
+            for (const pattern of tokenPatterns) {
+                const tokenMatch = tokenData.match(pattern);
+                if (tokenMatch && tokenMatch[1]) {
+                    token = tokenMatch[1].trim();
+                    console.log(`Found token in AuthorizeToken.ini using pattern: ${pattern}`);
+                    break;
+                }
+            }
+
+            // If we still don't have a token, try parsing as INI
+            if (!token && tokenData.includes('[') && tokenData.includes(']')) {
+                try {
+                    const ini = require('ini');
+                    const parsedIni = ini.parse(tokenData);
+
+                    // Check common sections and keys
+                    if (parsedIni.Token?.AccessToken) {
+                        token = parsedIni.Token.AccessToken;
+                    } else if (parsedIni.Token?.access_token) {
+                        token = parsedIni.Token.access_token;
+                    } else if (parsedIni.LHDN?.token) {
+                        token = parsedIni.LHDN.token;
+                    }
+
+                    if (token) {
+                        console.log('Found token in AuthorizeToken.ini using INI parsing');
+                    }
+                } catch (iniError) {
+                    console.error('Error parsing AuthorizeToken.ini:', iniError);
+                }
+            }
+        }
+
+        // If still no token, try to get it from the token service
+        if (!token) {
+            try {
+                console.log('No token found in file, trying to get from token service...');
+                const { getTokenSession } = require('../../services/token-prisma.service');
+                token = await getTokenSession();
+
+                if (token) {
+                    console.log('Successfully retrieved token from token service');
+                }
+            } catch (tokenServiceError) {
+                console.error('Error getting token from service:', tokenServiceError);
+            }
+        }
+
+        if (!token) {
+            throw new Error('No valid access token found for polling');
+        }
+
+        let attempts = 0;
+        let inProgress = true;
+        let submissionStatus = null;
+
+        while (inProgress && attempts < maxAttempts) {
+            attempts++;
+
+            try {
+                // Call GetSubmission API with proper polling interval
+                const response = await axios.get(
+                    `${lhdnConfig.baseUrl}/api/v1.0/documentsubmissions/${submissionUid}`,
+                    {
+                        params: {
+                            pageNo: 1,
+                            pageSize: 100 // Maximum allowed page size
+                        },
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: lhdnConfig.timeout
+                    }
+                );
+
+                // Check if submission is still in progress
+                submissionStatus = response.data;
+
+                if (submissionStatus.overallStatus && submissionStatus.overallStatus.toLowerCase() !== 'in progress') {
+                    inProgress = false;
+                    console.log(`Submission ${submissionUid} completed with status: ${submissionStatus.overallStatus}`);
+
+                    // Process documents in the submission
+                    if (submissionStatus.documentSummary && Array.isArray(submissionStatus.documentSummary)) {
+                        console.log(`Processing ${submissionStatus.documentSummary.length} documents from submission`);
+
+                        // Save documents to database
+                        await saveInboundStatus({
+                            result: submissionStatus.documentSummary.map(doc => ({
+                                ...doc,
+                                // Ensure consistent field names
+                                uuid: doc.uuid,
+                                submissionUid: doc.submissionUid,
+                                longId: doc.longId,
+                                internalId: doc.internalId,
+                                typeName: doc.typeName,
+                                typeVersionName: doc.typeVersionName,
+                                issuerTin: doc.issuerTin,
+                                issuerName: doc.issuerName,
+                                receiverId: doc.receiverId,
+                                receiverName: doc.receiverName,
+                                dateTimeReceived: doc.dateTimeReceived,
+                                dateTimeValidated: doc.dateTimeValidated,
+                                status: doc.status,
+                                documentStatusReason: doc.documentStatusReason,
+                                totalSales: doc.totalSales || doc.totalPayableAmount,
+                                totalExcludingTax: doc.totalExcludingTax,
+                                totalDiscount: doc.totalDiscount,
+                                totalNetAmount: doc.totalNetAmount,
+                                totalPayableAmount: doc.totalPayableAmount
+                            }))
+                        });
+                    }
+
+                    return {
+                        success: true,
+                        status: submissionStatus.overallStatus,
+                        documentCount: submissionStatus.documentCount,
+                        documents: submissionStatus.documentSummary || []
+                    };
+                }
+
+                console.log(`Submission ${submissionUid} still in progress (attempt ${attempts}/${maxAttempts}), waiting...`);
+
+                // Wait for 5 seconds between polling attempts (as recommended by LHDN)
+                await delay(5000);
+
+            } catch (error) {
+                console.error(`Error polling submission status (attempt ${attempts}/${maxAttempts}):`, error.message);
+
+                // If we get a rate limit error, wait longer
+                if (error.response?.status === 429) {
+                    const retryAfter = parseInt(error.response.headers['retry-after'] || '30');
+                    console.log(`Rate limited, waiting ${retryAfter} seconds before retry...`);
+                    await delay(retryAfter * 1000);
+                } else {
+                    // For other errors, wait 5 seconds before retry
+                    await delay(5000);
+                }
+            }
+        }
+
+        // If we've reached max attempts and still in progress
+        if (inProgress) {
+            console.log(`Reached maximum polling attempts (${maxAttempts}) for submission ${submissionUid}`);
+            return {
+                success: false,
+                status: 'timeout',
+                message: `Polling timed out after ${maxAttempts} attempts`,
+                submissionUid
+            };
+        }
+
+        return {
+            success: true,
+            status: submissionStatus?.overallStatus || 'unknown',
+            documentCount: submissionStatus?.documentCount || 0,
+            documents: submissionStatus?.documentSummary || []
+        };
+
+    } catch (error) {
+        console.error('Error in pollSubmissionStatus:', error);
+        return {
+            success: false,
+            status: 'error',
+            message: error.message,
+            error
+        };
+    }
+};
+
+// Import token refresh middleware
+const tokenRefreshMiddleware = require('../../middleware/token-refresh.middleware');
+
+// Apply middlewares
 router.use(requestLogger);
+router.use(tokenRefreshMiddleware);
+
+// Document refresh endpoint
+router.post('/documents/refresh', async (req, res) => {
+    try {
+        console.log('LHDN documents/refresh endpoint hit');
+
+        // Check if user is logged in
+        if (!req.session?.user) {
+            console.log('No user session found');
+            return handleAuthError(req, res);
+        }
+
+        // Log the refresh request
+        await LoggingService.log({
+            description: 'Manual refresh of LHDN documents requested',
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.PENDING
+        });
+
+        // Force refresh by clearing cache
+        const cacheKey = `recentDocuments_${req.session?.user?.TIN || 'default'}`;
+        cache.del(cacheKey);
+
+        // Fetch fresh data from LHDN API
+        const fetchResult = await fetchRecentDocuments(req);
+
+        // Log the result
+        await LoggingService.log({
+            description: `Manual refresh completed: ${fetchResult.result?.length || 0} documents retrieved`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.SUCCESS,
+            details: {
+                count: fetchResult.result?.length || 0,
+                fromApi: fetchResult.fromApi || false,
+                fromDatabase: fetchResult.fromDatabase || false,
+                cached: fetchResult.cached || false
+            }
+        });
+
+        // Return success response
+        return res.json({
+            success: true,
+            message: 'Documents refreshed successfully',
+            count: fetchResult.result?.length || 0,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error refreshing documents:', error);
+
+        // Log the error
+        await LoggingService.log({
+            description: `Error refreshing LHDN documents: ${error.message}`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.ERROR,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.FAILED,
+            details: { error: error.message }
+        });
+
+        // Check if it's an authentication error
+        if (error.message === 'Authentication failed. Please log in again.' ||
+            error.response?.status === 401 ||
+            error.response?.status === 403) {
+            return handleAuthError(req, res);
+        }
+
+        // Return error response
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to refresh documents',
+            error: {
+                code: error.code || 'REFRESH_ERROR',
+                message: error.message || 'An unexpected error occurred',
+                details: error.response?.data?.error || error.stack
+            }
+        });
+    }
+});
+
+// Authentication status endpoint - REMOVED DUPLICATE
+
+// Helper function to read token from file
+async function readTokenFromFile() {
+    try {
+        const tokenFilePath = path.join(__dirname, '../../config/AuthorizeToken.ini');
+        if (fs.existsSync(tokenFilePath)) {
+            const tokenData = await fsPromises.readFile(tokenFilePath, 'utf8');
+
+            // Try different possible token formats in the file
+            let tokenMatch = tokenData.match(/AccessToken=(.+)/i) ||
+                            tokenData.match(/access_token=(.+)/i) ||
+                            tokenData.match(/token=(.+)/i);
+
+            if (tokenMatch && tokenMatch[1]) {
+                console.log('Found token in AuthorizeToken.ini file');
+                return tokenMatch[1].trim();
+            } else {
+                console.log('Token pattern not found in AuthorizeToken.ini file');
+                // Try to parse as JSON if no match found
+                try {
+                    const jsonData = JSON.parse(tokenData);
+                    if (jsonData.access_token) {
+                        console.log('Found token in JSON format in AuthorizeToken.ini file');
+                        return jsonData.access_token;
+                    }
+                } catch (jsonError) {
+                    // Not JSON format, continue
+                    console.log('AuthorizeToken.ini is not in JSON format');
+                }
+            }
+        } else {
+            console.log('AuthorizeToken.ini file not found');
+        }
+        return null;
+    } catch (error) {
+        console.error('Error reading token from file:', error);
+        return null;
+    }
+}
 
 // Routes
 router.get('/documents/recent', async (req, res) => {
     console.log('LHDN documents/recent endpoint hit');
     try {
+        // Check if user is logged in
         if (!req.session?.user) {
             console.log('No user session found');
             return handleAuthError(req, res);
         }
 
         console.log('User from session:', req.session.user);
-        
+
+        // Check if we should use database only (for fallback)
+        const useDatabase = req.query.useDatabase === 'true';
+        const fallbackOnly = req.query.fallbackOnly === 'true';
+
+        // If fallbackOnly is true, skip token check and API call
+        if (fallbackOnly) {
+            console.log('Fallback only mode requested, skipping token check and API call');
+            try {
+                // Get documents from database
+                const dbDocuments = await prisma.wP_INBOUND_STATUS.findMany({
+                    orderBy: {
+                        dateTimeReceived: 'desc'
+                    },
+                    take: 1000 // Limit to latest 1000 records
+                });
+
+                if (dbDocuments && dbDocuments.length > 0) {
+                    console.log(`Found ${dbDocuments.length} documents in database for fallback`);
+                    return res.json({
+                        success: true,
+                        result: dbDocuments,
+                        metadata: {
+                            total: dbDocuments.length,
+                            fromDatabase: true,
+                            fromApi: false,
+                            fallback: true,
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                } else {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'No documents found in database',
+                        error: {
+                            code: 'NO_DATA',
+                            message: 'No documents found in database'
+                        }
+                    });
+                }
+            } catch (dbError) {
+                console.error('Error getting documents from database:', dbError);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error getting documents from database',
+                    error: {
+                        code: 'DATABASE_ERROR',
+                        message: dbError.message
+                    }
+                });
+            }
+        }
+
+        // First try to get token from file (preferred method)
+        let accessToken = await readTokenFromFile();
+
+        // If no token in file, try session as fallback
+        if (!accessToken && req.session.accessToken) {
+            console.log('No token in file, using token from session');
+            accessToken = req.session.accessToken;
+        }
+
+        // If still no token, try to get a fresh one
+        if (!accessToken) {
+            try {
+                console.log('No token found, attempting to get a fresh token');
+                const { getTokenSession } = require('../../services/token-prisma.service');
+                accessToken = await getTokenSession();
+                if (accessToken) {
+                    console.log('Successfully obtained fresh token');
+                }
+            } catch (tokenError) {
+                console.error('Error getting fresh token:', tokenError);
+            }
+        }
+
+        // Final check if we have a token
+        if (!accessToken) {
+            console.log('No access token found after all attempts');
+
+            // If useDatabase is true, try to get documents from database instead of returning error
+            if (useDatabase) {
+                try {
+                    // Get documents from database
+                    const dbDocuments = await prisma.wP_INBOUND_STATUS.findMany({
+                        orderBy: {
+                            dateTimeReceived: 'desc'
+                        },
+                        take: 1000 // Limit to latest 1000 records
+                    });
+
+                    if (dbDocuments && dbDocuments.length > 0) {
+                        console.log(`Found ${dbDocuments.length} documents in database as fallback for missing token`);
+                        return res.json({
+                            success: true,
+                            result: dbDocuments,
+                            metadata: {
+                                total: dbDocuments.length,
+                                fromDatabase: true,
+                                fromApi: false,
+                                fallback: true,
+                                timestamp: new Date().toISOString()
+                            }
+                        });
+                    }
+                } catch (dbError) {
+                    console.error('Error getting documents from database:', dbError);
+                }
+            }
+
+            return handleAuthError(req, res);
+        }
+
+        // Always update session with the token we're using
+        req.session.accessToken = accessToken;
+        console.log('Updated session with token');
+
         try {
-            // Fetch documents using the enhanced fetch function
-            console.log('Fetching recent documents using fetchRecentDocuments...');
-            const fetchResult = await fetchRecentDocuments(req);
-            
+            // Get documents using enhanced caching function
+            const fetchResult = await getCachedDocuments(req);
+
             if (!fetchResult.success && fetchResult.error) {
-                 // If fetch failed and no fallback data, return error
-                 if (!fetchResult.result || fetchResult.result.length === 0) {
-                    const statusCode = fetchResult.error.response?.status || 500;
-                     return res.status(statusCode).json({
-                         success: false,
-                         error: {
-                             code: fetchResult.error.code || 'FETCH_ERROR',
-                             message: fetchResult.error.message || 'Failed to fetch documents',
-                             details: fetchResult.error.details || fetchResult.error.stack
-                         },
-                         metadata: {
-                             timestamp: new Date().toISOString()
-                         }
-                     });
-                 }
-                 // If fetch failed but fallback data is available, log warning and proceed
-                 console.warn('Fetch from API failed, but using database fallback:', fetchResult.error.message);
+                // If fetch failed and no fallback data, return error
+                if (!fetchResult.result || fetchResult.result.length === 0) {
+                    const statusCode = fetchResult.error?.response?.status || 500;
+                    return res.status(statusCode).json({
+                        success: false,
+                        error: {
+                            code: fetchResult.error.code || 'FETCH_ERROR',
+                            message: fetchResult.error.message || 'Failed to fetch documents',
+                            details: fetchResult.error.details || fetchResult.error.stack
+                        },
+                        metadata: {
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                }
+                // If fetch failed but fallback data is available, log warning and proceed
+                console.warn('Fetch from API failed, but using database fallback:', fetchResult.error.message);
             }
 
             const documents = fetchResult.result || [];
             console.log('Got documents from fetchResult, count:', documents.length);
-            
+
             // Helper function to format dates for display
             const formatDateForDisplay = (dateString) => {
                 if (!dateString) return null;
@@ -1018,14 +1736,14 @@ router.get('/documents/recent', async (req, res) => {
                     return dateString;
                 }
             };
-            
+
             // Helper function to format dates for UI display
             const formatDateForUI = (dateString) => {
                 if (!dateString) return null;
                 try {
                     const date = new Date(dateString);
                     if (isNaN(date.getTime())) return null;
-                    
+
                     // Format as "Apr 07, 2025, 01:14 PM"
                     return date.toLocaleString('en-US', {
                         month: 'short',
@@ -1040,7 +1758,7 @@ router.get('/documents/recent', async (req, res) => {
                     return null;
                 }
             };
-            
+
             const formattedDocuments = documents.map(doc => {
                 // Get submission and validation dates
                 const receivedDate = doc.dateTimeReceived || doc.created_at;
@@ -1091,7 +1809,7 @@ router.get('/documents/recent', async (req, res) => {
                     typeVersionName: doc.typeVersionName,
                     documentStatusReason: doc.documentStatusReason,
                     documentCurrency: 'MYR',
-                    processingTimeMinutes 
+                    processingTimeMinutes
                 };
             });
 
@@ -1112,10 +1830,10 @@ router.get('/documents/recent', async (req, res) => {
             });
         } catch (error) {
             console.error('Error in documents/recent route processing:', error);
-            
+
             const statusCode = error.response?.status || 500;
-            res.status(statusCode).json({ 
-                success: false, 
+            res.status(statusCode).json({
+                success: false,
                 error: {
                     code: error.code || 'INTERNAL_SERVER_ERROR',
                     message: error.message || 'An unexpected error occurred',
@@ -1126,17 +1844,17 @@ router.get('/documents/recent', async (req, res) => {
         }
     } catch (error) {
         console.error('Error in route handler:', error);
-        
+
         // Check if it's an authentication error
-        if (error.message === 'Authentication failed. Please log in again.' || 
-            error.response?.status === 401 || 
+        if (error.message === 'Authentication failed. Please log in again.' ||
+            error.response?.status === 401 ||
             error.response?.status === 403) {
             return handleAuthError(req, res);
         }
 
         const statusCode = error.response?.status || 500;
-        res.status(statusCode).json({ 
-            success: false, 
+        res.status(statusCode).json({
+            success: false,
             error: {
                 code: error.code || 'INTERNAL_SERVER_ERROR',
                 message: error.message || 'An unexpected error occurred',
@@ -1147,16 +1865,517 @@ router.get('/documents/recent', async (req, res) => {
     }
 });
 
-router.get('/documents/recent-total', async (req, res) => {
+router.get('/documents/recent-total', async (_req, res) => {
     try {
-        const totalCount = await WP_INBOUND_STATUS.count();
+        const totalCount = await prisma.wP_INBOUND_STATUS.count();
         res.json({ totalCount, success: true });
     } catch (error) {
         console.error('Error getting total count:', error);
-        res.json({ 
-            totalCount: 0, 
-            success: false, 
-            message: 'Failed to fetch recent documents' 
+        res.json({
+            totalCount: 0,
+            success: false,
+            message: 'Failed to fetch recent documents'
+        });
+    }
+});
+
+// New endpoint to check submission status using polling
+router.get('/submission/:submissionUid', async (req, res) => {
+    try {
+        const { submissionUid } = req.params;
+        const maxAttempts = parseInt(req.query.maxAttempts) || 10;
+
+        if (!submissionUid) {
+            return res.status(400).json({
+                success: false,
+                message: 'Submission UID is required'
+            });
+        }
+
+        // Check if user is logged in
+        if (!req.session?.user) {
+            console.log('No user session found');
+            return handleAuthError(req, res);
+        }
+
+        // Log the request
+        await LoggingService.log({
+            description: `Checking submission status for: ${submissionUid}`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.PENDING
+        });
+
+        // Poll for submission status
+        const result = await pollSubmissionStatus(submissionUid, maxAttempts);
+
+        // Log the result
+        await LoggingService.log({
+            description: `Submission status check completed for: ${submissionUid}, status: ${result.status}`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: result.success ? STATUS.SUCCESS : STATUS.FAILED,
+            details: {
+                submissionUid,
+                status: result.status,
+                documentCount: result.documentCount || 0
+            }
+        });
+
+        return res.json(result);
+    } catch (error) {
+        console.error('Error checking submission status:', error);
+
+        // Log the error
+        await LoggingService.log({
+            description: `Error checking submission status: ${error.message}`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.ERROR,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.FAILED,
+            details: { error: error.message }
+        });
+
+        return res.status(500).json({
+            success: false,
+            status: 'error',
+            message: error.message
+        });
+    }
+});
+
+// Validation results endpoint
+router.get('/documents/:uuid/validation-results', async (req, res) => {
+    try {
+        const { uuid } = req.params;
+        const requestId = req.requestId;
+
+        console.log(`[${requestId}] Fetching validation results for document: ${uuid}`);
+
+        // Check if user is logged in
+        if (!req.session?.user) {
+            console.log(`[${requestId}] No user session found`);
+            return handleAuthError(req, res);
+        }
+
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+
+        // Log the request
+        await LoggingService.log({
+            description: `Fetching validation results for document: ${uuid}`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.PENDING
+        });
+
+        // First check if we have the validation results in the database
+        const dbDocument = await prisma.wP_INBOUND_STATUS.findUnique({
+            where: { uuid }
+        });
+
+        if (dbDocument && dbDocument.validationResults) {
+            console.log(`[${requestId}] Found validation results in database for document: ${uuid}`);
+
+            try {
+                // Parse validation results
+                const validationResults = JSON.parse(dbDocument.validationResults);
+
+                // Log success
+                await LoggingService.log({
+                    description: `Successfully retrieved validation results from database for document: ${uuid}`,
+                    username: req.session?.user?.username || 'System',
+                    userId: req.session?.user?.id,
+                    ipAddress: req.ip,
+                    logType: LOG_TYPES.INFO,
+                    module: MODULES.API,
+                    action: ACTIONS.READ,
+                    status: STATUS.SUCCESS
+                });
+
+                return res.json({
+                    success: true,
+                    validationResults,
+                    source: 'database'
+                });
+            } catch (parseError) {
+                console.error(`[${requestId}] Error parsing validation results from database:`, parseError);
+                // Continue to fetch from API if parsing fails
+            }
+        }
+
+        // If not in database or parsing failed, fetch from API
+        console.log(`[${requestId}] Fetching validation results from LHDN API for document: ${uuid}`);
+
+        // Get document details from LHDN API
+        const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/details`, {
+            headers: {
+                'Authorization': `Bearer ${req.session.accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const detailsData = response.data;
+
+        // Process validation results
+        let processedValidationResults = null;
+        if (detailsData.validationResults) {
+            processedValidationResults = {
+                status: detailsData.status,
+                validationSteps: detailsData.validationResults.validationSteps?.map(step => {
+                    let errors = [];
+                    if (step.error) {
+                        if (Array.isArray(step.error.errors)) {
+                            errors = step.error.errors.map(err => ({
+                                code: err.code || 'VALIDATION_ERROR',
+                                message: err.message || err.toString(),
+                                field: err.field || null,
+                                value: err.value || null,
+                                details: err.details || null
+                            }));
+                        } else if (typeof step.error === 'object') {
+                            errors = [{
+                                code: step.error.code || 'VALIDATION_ERROR',
+                                message: step.error.message || step.error.toString(),
+                                field: step.error.field || null,
+                                value: step.error.value || null,
+                                details: step.error.details || null
+                            }];
+                        } else {
+                            errors = [{
+                                code: 'VALIDATION_ERROR',
+                                message: step.error.toString(),
+                                field: null,
+                                value: null,
+                                details: null
+                            }];
+                        }
+                    }
+
+                    return {
+                        name: step.name || 'Validation Step',
+                        status: step.status || 'Invalid',
+                        error: errors.length > 0 ? { errors } : null,
+                        timestamp: step.timestamp || new Date().toISOString()
+                    };
+                }) || [],
+                summary: {
+                    totalSteps: detailsData.validationResults.validationSteps?.length || 0,
+                    failedSteps: detailsData.validationResults.validationSteps?.filter(step => step.status === 'Invalid' || step.error)?.length || 0,
+                    lastUpdated: new Date().toISOString()
+                }
+            };
+
+            // Save validation results to database
+            try {
+                await prisma.wP_INBOUND_STATUS.update({
+                    where: { uuid },
+                    data: {
+                        validationResults: JSON.stringify(processedValidationResults)
+                    }
+                });
+                console.log(`[${requestId}] Saved validation results to database for document: ${uuid}`);
+            } catch (dbError) {
+                console.error(`[${requestId}] Error saving validation results to database:`, dbError);
+                // Continue even if saving to database fails
+            }
+        }
+
+        // Log success
+        await LoggingService.log({
+            description: `Successfully retrieved validation results from API for document: ${uuid}`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.SUCCESS
+        });
+
+        return res.json({
+            success: true,
+            validationResults: processedValidationResults,
+            source: 'api'
+        });
+    } catch (error) {
+        console.error('Error fetching validation results:', error);
+
+        // Log the error
+        await LoggingService.log({
+            description: `Error fetching validation results: ${error.message}`,
+            username: req.session?.user?.username || 'System',
+            userId: req.session?.user?.id,
+            ipAddress: req.ip,
+            logType: LOG_TYPES.ERROR,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.FAILED,
+            details: { error: error.message }
+        });
+
+        // Check if it's an authentication error
+        if (error.message === 'Authentication failed. Please log in again.' ||
+            error.response?.status === 401 ||
+            error.response?.status === 403) {
+            return handleAuthError(req, res);
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch validation results',
+            error: {
+                code: error.code || 'VALIDATION_ERROR',
+                message: error.message || 'An unexpected error occurred',
+                details: error.response?.data?.error || error.stack
+            }
+        });
+    }
+});
+
+// Check LHDN API status
+router.get('/status', async (req, res) => {
+    try {
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+
+        // Get token from session
+        const accessToken = await getTokenSession();
+        if (!accessToken) {
+            return res.status(401).json({
+                success: false,
+                message: 'Failed to get access token'
+            });
+        }
+
+        // Try to make a simple API call to check if LHDN API is available
+        const response = await axios.get(
+            `${lhdnConfig.baseUrl}/api/v1.0/documents/status`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                },
+                timeout: 5000 // 5 second timeout
+            }
+        );
+
+        // If we get here, the API is available
+        res.json({
+            success: true,
+            message: 'LHDN API is available',
+            status: 'connected',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error checking LHDN API status:', error);
+
+        // Determine the specific error
+        let errorMessage = 'LHDN API is unavailable';
+        let errorStatus = 'disconnected';
+
+        if (error.code === 'ECONNABORTED') {
+            errorMessage = 'Connection to LHDN API timed out';
+        } else if (error.response) {
+            // The request was made and the server responded with a status code
+            // that falls out of the range of 2xx
+            errorMessage = `LHDN API returned error: ${error.response.status} ${error.response.statusText}`;
+
+            if (error.response.status === 401 || error.response.status === 403) {
+                errorStatus = 'unauthorized';
+            }
+        } else if (error.request) {
+            // The request was made but no response was received
+            errorMessage = 'No response received from LHDN API';
+        }
+
+        res.status(503).json({
+            success: false,
+            message: errorMessage,
+            status: errorStatus,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Authentication status endpoint - Modified to handle unauthenticated requests better
+router.get('/auth-status', async (req, res) => {
+    try {
+        // This endpoint should always return a 200 status with authentication status
+        // to avoid frontend errors, even when not authenticated
+
+        // Check if user is logged in
+        if (!req.session?.user) {
+            console.log('LHDN auth-status: No active user session');
+            return res.status(200).json({
+                success: true, // Changed to true to avoid frontend errors
+                authenticated: false,
+                message: 'No active user session',
+                code: 'SESSION_MISSING'
+            });
+        }
+
+        // Try to get token from session or file
+        const { getTokenSession, readTokenFromFile } = require('../../services/token-prisma.service');
+        let accessToken = req.session.accessToken;
+
+        // If no token in session, try to get from file
+        if (!accessToken) {
+            try {
+                const tokenData = readTokenFromFile();
+                if (tokenData && tokenData.access_token) {
+                    accessToken = tokenData.access_token;
+                    // Update session with token from file
+                    req.session.accessToken = accessToken;
+                    console.log('LHDN auth-status: Using token from file');
+                }
+            } catch (fileError) {
+                console.warn('LHDN auth-status: Error reading token from file:', fileError);
+            }
+        }
+
+        // If still no token, try to get a fresh one
+        if (!accessToken) {
+            try {
+                accessToken = await getTokenSession();
+                // Update session with new token
+                if (accessToken) {
+                    req.session.accessToken = accessToken;
+                    console.log('LHDN auth-status: Generated new token');
+                }
+            } catch (tokenError) {
+                console.warn('LHDN auth-status: Error getting fresh token:', tokenError);
+            }
+        }
+
+        // Check if we have a token now
+        if (!accessToken) {
+            console.log('LHDN auth-status: No token available after all attempts');
+            return res.status(200).json({
+                success: true, // Changed to true to avoid frontend errors
+                authenticated: false,
+                message: 'No LHDN access token available',
+                code: 'TOKEN_MISSING'
+            });
+        }
+
+        // Check token expiry if available
+        const now = Date.now();
+        const tokenExpiry = req.session.tokenExpiryTime || 0;
+        const bufferTime = 5 * 60 * 1000; // 5 minutes buffer
+
+        if (tokenExpiry && tokenExpiry < (now + bufferTime)) {
+            console.log('LHDN auth-status: Token expired or about to expire');
+            // Try to refresh the token
+            try {
+                const newToken = await getTokenSession();
+                if (newToken) {
+                    accessToken = newToken;
+                    req.session.accessToken = newToken;
+                    req.session.tokenExpiryTime = now + (3600 * 1000); // Assume 1 hour validity
+                    console.log('LHDN auth-status: Successfully refreshed expired token');
+                } else {
+                    return res.status(200).json({
+                        success: true, // Changed to true to avoid frontend errors
+                        authenticated: false,
+                        message: 'LHDN access token is expired and refresh failed',
+                        code: 'TOKEN_EXPIRED',
+                        expiresIn: Math.floor((tokenExpiry - now) / 1000) // seconds until expiry
+                    });
+                }
+            } catch (refreshError) {
+                console.warn('LHDN auth-status: Failed to refresh expired token:', refreshError);
+                return res.status(200).json({
+                    success: true, // Changed to true to avoid frontend errors
+                    authenticated: false,
+                    message: 'LHDN access token is expired and refresh failed',
+                    code: 'TOKEN_EXPIRED',
+                    expiresIn: Math.floor((tokenExpiry - now) / 1000) // seconds until expiry
+                });
+            }
+        }
+
+        // Get LHDN configuration
+        const lhdnConfig = await getLHDNConfig();
+
+        try {
+            // Verify token with LHDN API
+            const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/auth/verify`, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 5000 // Short timeout for quick response
+            });
+
+            // If verification succeeds, token is valid
+            console.log('LHDN auth-status: Token verification successful');
+            return res.status(200).json({
+                authenticated: true,
+                success: true,
+                message: 'Authentication valid',
+                expiresIn: response.data?.expiresIn || null
+            });
+        } catch (apiError) {
+            // If verification fails with 401/403, token is invalid
+            if (apiError.response?.status === 401 || apiError.response?.status === 403) {
+                console.log('LHDN auth-status: Token verification failed with 401/403');
+                // Try to get a fresh token
+                try {
+                    const newToken = await getTokenSession();
+                    if (newToken) {
+                        req.session.accessToken = newToken;
+                        req.session.tokenExpiryTime = now + (3600 * 1000); // Assume 1 hour validity
+                        console.log('LHDN auth-status: Successfully generated new token after 401/403');
+                        return res.status(200).json({
+                            authenticated: true,
+                            success: true,
+                            message: 'Authentication renewed successfully',
+                            tokenRefreshed: true
+                        });
+                    }
+                } catch (refreshError) {
+                    console.warn('LHDN auth-status: Failed to generate new token after 401/403:', refreshError);
+                }
+
+                return res.status(200).json({
+                    authenticated: false,
+                    success: true, // Changed to true to avoid frontend errors
+                    message: 'Authentication token is invalid or expired',
+                    code: 'TOKEN_INVALID'
+                });
+            }
+
+            // For other errors, assume token might still be valid
+            console.warn('LHDN auth-status: Error verifying token but assuming still valid:', apiError.message);
+            return res.status(200).json({
+                authenticated: true,
+                success: true,
+                message: 'Authentication assumed valid (verification error)',
+                warning: apiError.message
+            });
+        }
+    } catch (error) {
+        console.error('LHDN auth-status: Error checking auth status:', error);
+        return res.status(200).json({
+            success: true, // Changed to true to avoid frontend errors
+            authenticated: false,
+            message: 'Error checking authentication status',
+            error: error.message
         });
     }
 });
@@ -1177,7 +2396,7 @@ router.get('/sync', async (req, res) => {
                 status: STATUS.PENDING
             });
             await saveInboundStatus(apiData);
-            
+
             res.json({ success: true });
         } catch (error) {
             console.error('Error syncing with API:', error);
@@ -1186,6 +2405,84 @@ router.get('/sync', async (req, res) => {
                 message: `Failed to sync with API: ${error.message}`
             });
         }
+});
+
+// Refresh documents endpoint - Force refresh from LHDN API
+router.post('/documents/refresh', async (req, res) => {
+    try {
+        // Generate a unique request ID for tracking
+        const requestId = `refresh-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+        console.log(`[${requestId}] Starting document refresh from LHDN API`);
+
+        // Clear cache for documents
+        cache.del('documents_recent');
+
+        // Log the start of document fetching
+        await LoggingService.log({
+            description: 'Manually refreshing documents from LHDN',
+            username: req?.session?.user?.username || 'System',
+            userId: req?.session?.user?.id,
+            ipAddress: req?.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.PENDING,
+            details: { requestId }
+        });
+
+        // Force fetch from API by setting forceRefresh flag
+        req.query.forceRefresh = 'true';
+        const apiData = await fetchRecentDocuments(req);
+
+        // Save to database
+        await saveInboundStatus(apiData);
+
+        // Log success
+        await LoggingService.log({
+            description: 'Successfully refreshed documents from LHDN',
+            username: req?.session?.user?.username || 'System',
+            userId: req?.session?.user?.id,
+            ipAddress: req?.ip,
+            logType: LOG_TYPES.INFO,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.SUCCESS,
+            details: {
+                requestId,
+                documentCount: apiData?.result?.length || 0
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Successfully refreshed documents from LHDN',
+            count: apiData?.result?.length || 0,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Error refreshing documents from LHDN API:', error);
+
+        // Log error
+        await LoggingService.log({
+            description: 'Error refreshing documents from LHDN',
+            username: req?.session?.user?.username || 'System',
+            userId: req?.session?.user?.id,
+            ipAddress: req?.ip,
+            logType: LOG_TYPES.ERROR,
+            module: MODULES.API,
+            action: ACTIONS.READ,
+            status: STATUS.ERROR,
+            details: { error: error.message }
+        });
+
+        res.status(500).json({
+            success: false,
+            error: {
+                message: `Failed to refresh documents: ${error.message}`,
+                code: error.code || 'UNKNOWN_ERROR'
+            }
+        });
+    }
 });
 
 // Update display-details endpoint to fetch all required data
@@ -1279,9 +2576,11 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
         }
 
         // Process validation results
-        let processedValidationResults = null;
+        // This section processes validation results but doesn't use them
+        // Keeping the code for future reference
         if (detailsData.validationResults) {
-            processedValidationResults = {
+            /* Commented out unused code
+            const processedResults = {
                 status: detailsData.status,
                 validationSteps: detailsData.validationResults.validationSteps?.map(step => {
                     let errors = [];
@@ -1326,6 +2625,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
                     lastUpdated: new Date().toISOString()
                 }
             };
+            */
         }
 
         // Check if document field exists and can be parsed
@@ -1498,7 +2798,7 @@ router.get('/documents/:uuid/display-details', async (req, res) => {
 async function getTemplateData(uuid, accessToken, user) {
     // Get LHDN configuration
     const lhdnConfig = await getLHDNConfig();
-    
+
     // Get raw document data
     const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/documents/${uuid}/raw`, {
         headers: {
@@ -1507,8 +2807,8 @@ async function getTemplateData(uuid, accessToken, user) {
         }
     });
 
-    // Get company data
-    const company = await WP_COMPANY_SETTINGS.findOne({
+    // Get company data using Prisma
+    const company = await prisma.wP_COMPANY_SETTINGS.findFirst({
         where: { TIN: user.TIN }
     });
 
@@ -1591,7 +2891,7 @@ async function getTemplateData(uuid, accessToken, user) {
     const supplierIdInfo = getIdTypeAndNumber(supplierParty.PartyIdentification, idTypes);
     const customerIdInfo = getIdTypeAndNumber(customerParty.PartyIdentification, idTypes);
 
-    
+
 
     // Process tax information for each line item
     const taxSummary = {};
@@ -1604,7 +2904,7 @@ async function getTemplateData(uuid, accessToken, user) {
         const unitCode = line.InvoicedQuantity?.[0]?.unitCode || 'NA';
         const taxlineCurrency = line.TaxTotal?.[0]?.TaxAmount?.[0]?.currencyID || 'MYR';
         const allowanceCharges = parseFloat(line.AllowanceCharge?.[0]?.Amount?.[0]._ || 0);
-    
+
         // Get unit type name
         const unitType = await getUnitType(unitCode);
 
@@ -1612,18 +2912,18 @@ async function getTemplateData(uuid, accessToken, user) {
         const lineTaxCategory = line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0];
         const taxTypeCode = lineTaxCategory?.ID?.[0]._ || '06';
         const taxPercent = parseFloat(lineTaxCategory?.Percent?.[0]._ || 0);
-    
+
          // Calculate hypothetical tax for exempt items
          let hypotheticalTax = '0.00';
          let isExempt = taxTypeCode === 'E';
          if (isExempt) {
              // Use standard service tax rate of 8% if item is exempt
-             hypotheticalTax = (lineAmount * 8 / 100).toLocaleString('en-MY', { 
-                 minimumFractionDigits: 2, 
-                 maximumFractionDigits: 2 
+             hypotheticalTax = (lineAmount * 8 / 100).toLocaleString('en-MY', {
+                 minimumFractionDigits: 2,
+                 maximumFractionDigits: 2
              });
          }
-     
+
          // Add to tax summary
          const taxKey = `${taxTypeCode}_${taxPercent}`;
          if (!taxSummary[taxKey]) {
@@ -1638,22 +2938,22 @@ async function getTemplateData(uuid, accessToken, user) {
          taxSummary[taxKey].baseAmount += lineAmount;
          taxSummary[taxKey].taxAmount += lineTax;
          taxSummary[taxKey].hypotheticalTaxAmount += isExempt ? parseFloat(hypotheticalTax.replace(/,/g, '')) : 0;
-     
-    
+
+
         // Format quantity with exactly 2 decimal places
         const formattedQuantity = quantity.toLocaleString('en-MY', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
             useGrouping: false
         });
-    
+
         // Format unit price with exactly 4 decimal places
         const formattedUnitPrice = unitPrice.toLocaleString('en-MY', {
             minimumFractionDigits: 4,
             maximumFractionDigits: 4,
             useGrouping: false
         });
-    
+
         return {
             No: index + 1,
             Cls: line.Item?.[0]?.CommodityClassification?.[0]?.ItemClassificationCode?.[0]._ || 'NA',
@@ -1681,8 +2981,8 @@ async function getTemplateData(uuid, accessToken, user) {
         taxRate: parseFloat(summary.taxRate).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         taxAmount: parseFloat(summary.taxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         LHDNtaxExemptionReason: taxExempReason || 'Not Applicable',
-        hypotheticalTaxAmount: summary.taxType === 'E' ? 
-        parseFloat(summary.hypotheticalTaxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 
+        hypotheticalTaxAmount: summary.taxType === 'E' ?
+        parseFloat(summary.hypotheticalTaxAmount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) :
         '0.00'
     }));
 
@@ -1690,7 +2990,7 @@ async function getTemplateData(uuid, accessToken, user) {
     const taxTypeOrder = ['Service Tax', 'Sales Tax', 'Tourism Tax', 'High-Value Goods Tax', 'Sales Tax on Low Value Goods', 'Not Applicable', 'Tax exemption', 'Other'];
     taxSummaryArray.sort((a, b) => taxTypeOrder.indexOf(a.taxType) - taxTypeOrder.indexOf(b.taxType));
 
-    
+
 
     const templateData = {
         CompanyLogo: logoBase64,
@@ -1707,7 +3007,7 @@ async function getTemplateData(uuid, accessToken, user) {
         InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'NA',
         UniqueIdentifier: rawData.uuid || 'NA',
         lhdnLink: qrCodeUrl,
-        
+
         dateTimeReceived: new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString(),
         documentCurrency: invoice.DocumentCurrencyCode?.[0]._ || 'MYR',
         taxCurrency: invoice.TaxCurrencyCode?.[0]._ || 'MYR',
@@ -1715,7 +3015,7 @@ async function getTemplateData(uuid, accessToken, user) {
         issueDate: invoice.IssueDate?.[0]._ || 'NA',
         issueTime: invoice.IssueTime?.[0]._ || 'NA',
 
-        
+
         OriginalInvoiceRef: invoice.BillingReference?.[0]?.InvoiceDocumentReference?.[0]?.ID?.[0]._ || 'Not Applicable',
         OriginalInvoiceDateTime: invoice.IssueDate?.[0]._ ? new Date(invoice.IssueDate[0]._ + 'T' + invoice.IssueTime[0]._).toLocaleString() : 'Not Applicable',
         OriginalInvoiceStartDate: invoice.InvoicePeriod?.[0]?.StartDate?.[0]._ || '-- / -- / --',
@@ -1749,7 +3049,7 @@ async function getTemplateData(uuid, accessToken, user) {
         TotalIncludingTax: parseFloat(invoice.LegalMonetaryTotal?.[0]?.TaxInclusiveAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         TotalPayableAmount: parseFloat(invoice.LegalMonetaryTotal?.[0]?.PayableAmount?.[0]._ || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         TotalTaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-    
+
         TaxRate: Object.values(taxSummary).reduce((sum, item) => sum + item.taxRate, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         TaxAmount: Object.values(taxSummary).reduce((sum, item) => sum + item.taxAmount, 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
 
@@ -1779,7 +3079,7 @@ async function getTemplateData(uuid, accessToken, user) {
         companyAddress: supplierParty.PostalAddress?.[0]?.AddressLine?.map(line => line.Line[0]._).join(', ') || 'Not Applicable',
         companyPhone: supplierParty.Contact?.[0]?.Telephone?.[0]._ || 'Not Applicable',
         companyEmail: supplierParty.Contact?.[0]?.ElectronicMail?.[0]._ || 'Not Applicable',
-        
+
         InvoiceVersionCode: invoice.InvoiceTypeCode?.[0].listVersionID || 'Not Applicable',
         InvoiceVersion: rawData.typeVersionName || 'NA',
         InvoiceCode: invoice.ID?.[0]._ || rawData.internalId || 'Not Applicable',
@@ -1799,15 +3099,15 @@ async function getTemplateData(uuid, accessToken, user) {
         DigitalSignature: rawData.digitalSignature || '-',
         validationDateTime: new Date(rawData.dateTimeValidated).toLocaleString(),
     };
-   
+
    return templateData;
 }
 
 //route to check if PDF exists
 router.get('/documents/:uuid/check-pdf', async (req, res) => {
-    const { uuid, longId } = req.params;
+    const { uuid } = req.params; // longId is not used
     const requestId = req.requestId;
-    
+
     try {
         console.log(`[${requestId}] Checking PDF existence for ${uuid}`);
         const tempDir = path.join(__dirname, '../../public/temp');
@@ -1822,7 +3122,7 @@ router.get('/documents/:uuid/check-pdf', async (req, res) => {
         try {
             await fsPromises.access(pdfPath);
             console.log(`[${requestId}] PDF exists at ${pdfPath}`);
-            return res.json({ 
+            return res.json({
                 exists: true,
                 url: `/temp/${uuid}.pdf`
             });
@@ -1847,7 +3147,7 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
 
     try {
         console.log(`[${requestId}] Starting PDF Generation Process for ${uuid}`);
-        
+
         const tempDir = path.join(__dirname, '../../public/temp');
         const pdfPath = path.join(tempDir, `${uuid}.pdf`);
         const hashPath = path.join(tempDir, `${uuid}.hash`);
@@ -1934,10 +3234,10 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
 
         const page = await browser.newPage();
         await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
-        
+
         console.log(`[${requestId}] Setting page content...`);
         await page.setContent(html, { waitUntil: 'networkidle0' });
-        
+
         console.log(`[${requestId}] Generating PDF...`);
         const pdfBuffer = await page.pdf({
             format: 'A4',
@@ -1972,7 +3272,7 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
             stack: error.stack,
             name: error.name
         });
-        
+
         if (error.response?.status === 429) {
             return res.status(429).json({
                 success: false,
@@ -1980,7 +3280,7 @@ router.post('/documents/:uuid/pdf', async (req, res) => {
                 retryAfter: error.response.headers['retry-after'] || 30
             });
         }
-        
+
         return res.status(500).json({
             success: false,
             message: `Failed to generate PDF: ${error.message}`,
@@ -2071,7 +3371,7 @@ router.get('/taxpayer/validate/:tin', limiter, async (req, res) => {
 
         // Make API call to LHDN
         console.log(`[${requestId}] Calling LHDN API for TIN validation with standard headers...`);
-        const response = await axios.get(
+        await axios.get( // Response is not used directly
             `${lhdnConfig.baseUrl}/api/v1.0/taxpayer/validate/${tin}`,
             {
                 params: {
@@ -2190,18 +3490,18 @@ router.post('/documents/refresh', async (req, res) => {
         }
 
         console.log('User from session:', req.session.user);
-        
+
         try {
             // Get LHDN configuration
             const lhdnConfig = await getLHDNConfig();
-            
+
             // Fetch documents with multiple pages
             console.log('Fetching fresh data from LHDN API with pagination...');
-            
-            // First, check for records with missing issuerName
-            const docsWithMissingData = await WP_INBOUND_STATUS.findAll({
+
+            // First, check for records with missing issuerName using Prisma
+            const docsWithMissingData = await prisma.wP_INBOUND_STATUS.findMany({
                 where: {
-                    [Op.or]: [
+                    OR: [
                         { issuerTin: null },
                         { issuerTin: 'NULL' },
                         { issuerTin: '' },
@@ -2210,22 +3510,22 @@ router.post('/documents/refresh', async (req, res) => {
                         { issuerName: '' }
                     ]
                 },
-                attributes: ['uuid']
+                select: { uuid: true }
             });
-            
+
             if (docsWithMissingData.length > 0) {
                 console.log(`Found ${docsWithMissingData.length} documents with missing issuerName to update`);
             }
-            
+
             // Create array to hold all documents
             const allDocuments = [];
             let pageNo = 1;
             const pageSize = 100;
             let hasMorePages = true;
-            
+
             // Fetch up to 5 pages (500 documents)
             const maxPages = 5;
-            
+
             while (hasMorePages && pageNo <= maxPages) {
                 try {
                     console.log(`Fetching page ${pageNo} of LHDN documents...`);
@@ -2246,15 +3546,15 @@ router.post('/documents/refresh', async (req, res) => {
                             timeout: lhdnConfig.timeout
                         }
                     );
-                    
+
                     const pageDocuments = response.data.result || [];
                     console.log(`Fetched ${pageDocuments.length} documents from page ${pageNo}`);
-                    
+
                     // If we got fewer documents than pageSize, we've reached the end
                     if (pageDocuments.length < pageSize) {
                         hasMorePages = false;
                     }
-                    
+
                     // Process each document to ensure supplier/issuer mapping is correct
                     const processedDocuments = pageDocuments.map(doc => {
                         return {
@@ -2262,46 +3562,46 @@ router.post('/documents/refresh', async (req, res) => {
                             // Important: Map supplierName to issuerName if issuerName is missing
                             issuerName: doc.issuerName || doc.supplierName || null,
                             issuerTin:  doc.issuerTIN || doc.issuerTin || doc.supplierTin || doc.supplierTIN ||  null,
-                            receiverName: doc.receiverName || doc.buyerName || null, 
+                            receiverName: doc.receiverName || doc.buyerName || null,
                             receiverId: doc.receiverId || doc.buyerTin || doc.buyerTIN || null
                         };
                     });
 
                     console.log("Current Process Documents:", processedDocuments);
-                    
+
                     // Add to our collection
                     allDocuments.push(...processedDocuments);
-                    
+
                     // Move to next page
                     pageNo++;
-                    
+
                     // Small delay to avoid overwhelming the API
                     await delay(500);
-                    
+
                 } catch (pageError) {
                     console.error(`Error fetching page ${pageNo}:`, pageError.message);
                     // Stop fetching more pages on error
                     hasMorePages = false;
                 }
             }
-            
+
             console.log(`Total fetched: ${allDocuments.length} documents from ${pageNo-1} pages`);
-            
+
             // Save all fetched documents to database
             if (allDocuments.length > 0) {
                 await saveInboundStatus({ result: allDocuments });
             }
-            
+
             // Process documents with missing data separately if API fetch didn't update them
             if (docsWithMissingData.length > 0) {
                 console.log(`Fetching individual details for ${docsWithMissingData.length} documents with missing data...`);
                 let updatedCount = 0;
-                
+
                 // Process in batches to avoid overwhelming the system
                 const batchSize = 10;
                 for (let i = 0; i < docsWithMissingData.length; i += batchSize) {
                     const batch = docsWithMissingData.slice(i, i + batchSize);
-                    
+
                     await Promise.all(batch.map(async (doc) => {
                         try {
                             // Fetch individual document details from API
@@ -2313,28 +3613,28 @@ router.post('/documents/refresh', async (req, res) => {
                                 },
                                 timeout: lhdnConfig.timeout
                             });
-                            
+
                             // Look for supplier/issuer name in the response
                             const responseData = apiResponse.data;
-                            const supplierName = responseData.supplierName || 
-                                                responseData.issuerName || 
-                                                (responseData.document?.supplierName) || 
+                            const supplierName = responseData.supplierName ||
+                                                responseData.issuerName ||
+                                                (responseData.document?.supplierName) ||
                                                 (responseData.document?.issuerName);
-                            
+
                             if (supplierName) {
-                                // Update the database record
-                                await WP_INBOUND_STATUS.update(
-                                    { 
+                                // Update the database record using Prisma
+                                await prisma.wP_INBOUND_STATUS.update({
+                                    where: { uuid: doc.uuid },
+                                    data: {
                                         issuerName: supplierName,
                                         last_sync_date: new Date()
-                                    },
-                                    { where: { uuid: doc.uuid } }
-                                );
+                                    }
+                                });
                                 updatedCount++;
                                 console.log(`Updated issuerName to "${supplierName}" for UUID: ${doc.uuid}`);
                             } else {
                                 console.log(`Could not find supplierName in API response for UUID: ${doc.uuid}`);
-                                
+
                                 // Try alternate endpoint as fallback
                                 try {
                                     const rawDocEndpoint = `${lhdnConfig.baseUrl}/api/v1.0/documents/${doc.uuid}/raw`;
@@ -2345,20 +3645,20 @@ router.post('/documents/refresh', async (req, res) => {
                                         },
                                         timeout: lhdnConfig.timeout
                                     });
-                                    
+
                                     // Parse raw document for supplier info
                                     const rawData = rawDocResponse.data;
                                     const parsedSupplierName = rawData.AccountingSupplierParty?.Party?.PartyLegalEntity?.RegistrationName?.value ||
                                                                rawData.AccountingSupplierParty?.Party?.PartyName?.Name?.value;
-                                    
+
                                     if (parsedSupplierName) {
-                                        await WP_INBOUND_STATUS.update(
-                                            { 
+                                        await prisma.wP_INBOUND_STATUS.update({
+                                            where: { uuid: doc.uuid },
+                                            data: {
                                                 issuerName: parsedSupplierName,
                                                 last_sync_date: new Date()
-                                            },
-                                            { where: { uuid: doc.uuid } }
-                                        );
+                                            }
+                                        });
                                         updatedCount++;
                                         console.log(`Updated issuerName to "${parsedSupplierName}" from raw data for UUID: ${doc.uuid}`);
                                     }
@@ -2369,15 +3669,15 @@ router.post('/documents/refresh', async (req, res) => {
                         } catch (detailError) {
                             console.error(`Error fetching details for ${doc.uuid}:`, detailError.message);
                         }
-                        
+
                         // Small delay between requests
                         await delay(200);
                     }));
                 }
-                
+
                 console.log(`Updated ${updatedCount} documents with missing issuerName`);
             }
-            
+
             // Log successful refresh
             await LoggingService.log({
                 description: `Successfully refreshed ${allDocuments.length} documents from LHDN`,
@@ -2402,7 +3702,7 @@ router.post('/documents/refresh', async (req, res) => {
 
         } catch (error) {
             console.error('Error refreshing LHDN data:', error);
-            
+
             // Log error
             await LoggingService.log({
                 description: `Error refreshing LHDN data: ${error.message}`,

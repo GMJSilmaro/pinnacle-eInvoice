@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../../middleware');
-const { LoggingService, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
+const { LoggingService, MODULES, ACTIONS, STATUS } = require('../../services/logging-prisma.service');
 const excel = require('exceljs');
-const db = require('../../models');
+const prisma = require('../../src/lib/prisma');
 
 /**
  * @route GET /api/logs/recent
@@ -12,16 +12,12 @@ const db = require('../../models');
  */
 router.get('/recent', async (req, res) => {
   try {
-    // Check if WP_LOGS model is available
-    if (!db.WP_LOGS) {
-      console.warn('WP_LOGS model not available');
-      return res.json([]);
-    }
-
-    // Get the most recent 10 logs
-    const logs = await db.WP_LOGS.findAll({
-      order: [['CreateTS', 'DESC']],
-      limit: 10
+    // Get the most recent 10 logs using Prisma
+    const logs = await prisma.wP_LOGS.findMany({
+      orderBy: {
+        CreateTS: 'desc'
+      },
+      take: 10
     });
 
     res.json(logs);

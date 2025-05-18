@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const AdminSettingsService = require('../../services/adminSettings.service');
 const { auth } = require('../../middleware');
-const { WP_LOGS } = require('../../models');
+const prisma = require('../../src/lib/prisma');
 
 // Get all settings with pagination and filtering
 router.get('/settings', auth.isAdmin, async (req, res) => {
@@ -66,7 +66,7 @@ router.get('/settings/key/:key', auth.isAdmin, async (req, res) => {
 router.post('/settings', auth.isAdmin, async (req, res) => {
   try {
     const { key, value, group, description } = req.body;
-    
+
     if (!key || !group) {
       return res.status(400).json({
         success: false,
@@ -83,10 +83,16 @@ router.post('/settings', auth.isAdmin, async (req, res) => {
     );
 
     // Log the action
-    await WP_LOGS.create({
-      Description: `Admin ${req.user.Username} updated setting: ${key}`,
-      CreateTS: new Date().toISOString(),
-      LoggedUser: req.user.Username
+    await prisma.wP_LOGS.create({
+      data: {
+        Description: `Admin ${req.user.Username} updated setting: ${key}`,
+        CreateTS: new Date().toISOString(),
+        LoggedUser: req.user.Username,
+        LogType: 'INFO',
+        Module: 'ADMIN_SETTINGS',
+        Action: 'UPDATE',
+        Status: 'SUCCESS'
+      }
     });
 
     res.json({
@@ -107,7 +113,7 @@ router.post('/settings', auth.isAdmin, async (req, res) => {
 router.post('/settings/bulk', auth.isAdmin, async (req, res) => {
   try {
     const { settings } = req.body;
-    
+
     if (!Array.isArray(settings)) {
       return res.status(400).json({
         success: false,
@@ -118,10 +124,16 @@ router.post('/settings/bulk', auth.isAdmin, async (req, res) => {
     const result = await AdminSettingsService.bulkUpsertSettings(settings, req.user.id);
 
     // Log the action
-    await WP_LOGS.create({
-      Description: `Admin ${req.user.Username} performed bulk settings update`,
-      CreateTS: new Date().toISOString(),
-      LoggedUser: req.user.Username
+    await prisma.wP_LOGS.create({
+      data: {
+        Description: `Admin ${req.user.Username} performed bulk settings update`,
+        CreateTS: new Date().toISOString(),
+        LoggedUser: req.user.Username,
+        LogType: 'INFO',
+        Module: 'ADMIN_SETTINGS',
+        Action: 'BULK_UPDATE',
+        Status: 'SUCCESS'
+      }
     });
 
 
@@ -143,12 +155,18 @@ router.post('/settings/bulk', auth.isAdmin, async (req, res) => {
 router.post('/settings/initialize', auth.isAdmin, async (req, res) => {
   try {
     await AdminSettingsService.initializeDefaultSettings(req.user.id);
-    
+
     // Log the action
-    await WP_LOGS.create({
-      Description: `Admin ${req.user.Username} initialized default settings`,
-      CreateTS: new Date().toISOString(),
-      LoggedUser: req.user.Username
+    await prisma.wP_LOGS.create({
+      data: {
+        Description: `Admin ${req.user.Username} initialized default settings`,
+        CreateTS: new Date().toISOString(),
+        LoggedUser: req.user.Username,
+        LogType: 'INFO',
+        Module: 'ADMIN_SETTINGS',
+        Action: 'INITIALIZE',
+        Status: 'SUCCESS'
+      }
     });
 
     res.json({
@@ -164,4 +182,4 @@ router.post('/settings/initialize', auth.isAdmin, async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

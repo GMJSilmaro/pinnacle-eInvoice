@@ -3401,8 +3401,12 @@ async function validateExcelFile(fileName, type, company, date) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             },
+            credentials: 'same-origin', // Include credentials to send cookies with the request
             body: JSON.stringify({
                 type,
                 company,
@@ -4422,9 +4426,17 @@ async function showSuccessMessage(fileName, version) {
                 Your submission has been logged for tracking and audit purposes. You can view the logs in the system logs section.
             </div>
         </div>
+        <div class="auto-close-timer" style="
+            margin-top: 15px;
+            text-align: center;
+            font-size: 0.9rem;
+            color: #6c757d;
+        ">
+            <i class="fas fa-clock"></i> This message will close automatically in <span id="countdown">3</span> seconds
+        </div>
     `;
 
-    return Swal.fire({
+    const result = Swal.fire({
         html: createSemiMinimalDialog({
             title: 'Document Submitted Successfully',
             subtitle: 'Your document has been successfully submitted to LHDN',
@@ -4436,8 +4448,26 @@ async function showSuccessMessage(fileName, version) {
         customClass: {
             confirmButton: 'semi-minimal-confirm',
             popup: 'semi-minimal-popup'
+        },
+        timer: 3000, // Auto close after 3 seconds
+        timerProgressBar: true,
+        didOpen: () => {
+            // Start countdown timer
+            let countdown = 3;
+            const countdownElement = document.getElementById('countdown');
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdownElement) {
+                    countdownElement.textContent = countdown;
+                }
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                }
+            }, 1000);
         }
     });
+
+    return result;
 }
 
 // Main submission function
@@ -4888,48 +4918,120 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
 async function performStep2(data, version) {
     try {
         console.log('🚀 [Step 2] Starting LHDN submission with data:', data);
-        await updateStepStatus(2, 'processing', 'Connecting to to LHDN...');
-        await updateStepStatus(2, 'processing', 'Initializing Preparing Documents...');
+        await updateStepStatus(2, 'processing', 'Connecting to LHDN...');
+        await updateStepStatus(2, 'processing', 'Preparing Documents...');
         console.log('📤 [Step 2] Initiating submission to LHDN');
 
         // Extract the required parameters from the data
         const {
             fileName,
             type,
-            company,  // Make sure we extract company
+            company,
             date
         } = data;
 
-        // Make the API call with all required parameters
-        const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                type,
-                company,  // Include company in the request body
-                date,
-                version
-            })
-        });
+        // Store submission info in localStorage in case of server disconnection
+        const submissionInfo = {
+            fileName,
+            type,
+            company,
+            date,
+            version,
+            timestamp: new Date().toISOString()
+        };
+        localStorage.setItem('pendingLHDNSubmission', JSON.stringify(submissionInfo));
 
-        const result = await response.json();
+        // Set a longer timeout for the fetch request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
 
-        if (!response.ok) {
-            console.error('❌ [Step 2] API error response:', result);
-            await updateStepStatus(2, 'error', 'Submission failed');
-            showLHDNErrorModal(result.error);
-            throw new Error('LHDN submission failed');
+        try {
+            // Make the API call with all required parameters and timeout
+            const response = await fetch(`/api/outbound-files/${fileName}/submit-to-lhdn`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    type,
+                    company,
+                    date,
+                    version
+                }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            // Check if response is valid
+            if (!response.ok) {
+                const result = await response.json();
+                console.error('❌ [Step 2] API error response:', result);
+                await updateStepStatus(2, 'error', 'Submission failed');
+                showLHDNErrorModal(result.error);
+                throw new Error('LHDN submission failed');
+            }
+
+            const result = await response.json();
+
+            // Clear the pending submission from localStorage
+            localStorage.removeItem('pendingLHDNSubmission');
+
+            console.log('✅ [Step 2] Submission successful:', result);
+            await updateStepStatus(2, 'completed', 'Submission completed');
+
+            // Show notification about logging
+            showLoggingNotification();
+
+            return result;
+
+        } catch (fetchError) {
+            // Handle network errors or timeouts
+            if (fetchError.name === 'AbortError') {
+                console.warn('⚠️ [Step 2] Request timed out, but submission might still be processing');
+                await updateStepStatus(2, 'processing', 'Request timed out, checking status...');
+
+                // Wait a moment and then check if the document was actually submitted
+                await new Promise(resolve => setTimeout(resolve, 5000));
+
+                try {
+                    // Check document status
+                    const statusResponse = await fetch(`/api/outbound-files/status/${fileName}`);
+                    const statusResult = await statusResponse.json();
+
+                    if (statusResult.success && statusResult.exists &&
+                        ['Submitted', 'Processing'].includes(statusResult.document.status)) {
+                        // Document was actually submitted successfully
+                        console.log('✅ [Step 2] Document was submitted despite timeout');
+                        await updateStepStatus(2, 'completed', 'Submission completed (verified)');
+
+                        // Clear the pending submission
+                        localStorage.removeItem('pendingLHDNSubmission');
+
+                        return {
+                            success: true,
+                            message: 'Document submitted successfully (verified after timeout)',
+                            document: statusResult.document
+                        };
+                    }
+                } catch (statusError) {
+                    console.error('❌ [Step 2] Error checking document status:', statusError);
+                }
+
+                // If we get here, the submission status is unknown
+                await updateStepStatus(2, 'error', 'Submission status unknown');
+                throw new Error('Submission timed out. Please check the document status in a few minutes.');
+            }
+
+            // For other fetch errors
+            console.error('❌ [Step 2] Fetch error:', fetchError);
+            await updateStepStatus(2, 'error', 'Connection error');
+            throw fetchError;
         }
-
-        console.log('✅ [Step 2] Submission successful:', result);
-        await updateStepStatus(2, 'completed', 'Submission completed');
-
-        // Show notification about logging
-        showLoggingNotification();
-
-        return result;
 
     } catch (error) {
         console.error('❌ [Step 2] LHDN submission failed:', error);
@@ -5233,8 +5335,12 @@ async function deleteDocument(fileName, type, company, date) {
         const response = await fetch(url, {
             method: 'DELETE',
             headers: {
-                'Content-Type': 'application/json'
-            }
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            },
+            credentials: 'same-origin' // Include credentials to send cookies with the request
         });
 
         if (!response.ok) {
@@ -5362,6 +5468,12 @@ function getNextSteps(errorCode) {
             <li>Review the item classification codes</li>
             <li>Ensure all items have valid classification codes</li>
             <li>Update missing or invalid classifications</li>
+        `,
+        'AUTH_ERROR': `
+            <li>Click the "Logout and Refresh Token" button above</li>
+            <li>Log back in to refresh your authentication token</li>
+            <li>Try submitting the document again</li>
+            <li>If the problem persists, contact your system administrator</li>
         `,
         'AUTH001': `
             <li>Try logging out and logging back in</li>
@@ -5602,182 +5714,72 @@ async function showSystemErrorModal(error) {
 async function showLHDNErrorModal(error) {
     console.log('LHDN Error:', error);
 
-    // Parse error message if it's a string
-    let errorDetails = error;
+    // Import the LHDN UI Helper
     try {
-        if (typeof error === 'string') {
-            errorDetails = JSON.parse(error);
+        // Check if lhdnUIHelper is already loaded
+        if (typeof lhdnUIHelper === 'undefined') {
+            // Load the helper script dynamically if not already loaded
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = '/assets/utils/lhdnUIHelper.js';
+                script.onload = resolve;
+                script.onerror = () => {
+                    console.error('Failed to load LHDN UI Helper');
+                    reject(new Error('Failed to load LHDN UI Helper'));
+                };
+                document.head.appendChild(script);
+            });
+
+            console.log('LHDN UI Helper loaded successfully');
         }
-    } catch (e) {
-        console.warn('Error parsing error message:', e);
-    }
 
-    // Extract error details from the new error format
-    const errorData = Array.isArray(errorDetails) ? errorDetails[0] : errorDetails;
-    const mainError = {
-        code: errorData.code || 'VALIDATION_ERROR',
-        message: errorData.message || 'An unknown error occurred',
-        target: errorData.target || '',
-        details: errorData.details || {}
-    };
+        // Use the helper to show the error modal
+        const isDuplicateSubmission = error.code === 'DUPLICATE_SUBMISSION' || error.code === 'DS302';
 
-    // Format the validation error details
-    const validationDetails = mainError.details?.error?.details || [];
+        // Call the helper function to show the modal
+        lhdnUIHelper.showLHDNErrorModal(error, {
+            title: 'LHDN Submission Error',
+            showDetails: true,
+            showSuggestion: true,
+            onClose: async () => {
+                // Refresh the table if this is a duplicate submission error
+                // This ensures the table is updated even when a document is already submitted
+                if (isDuplicateSubmission) {
+                    console.log('Updating table after duplicate submission error');
+                    // Extract the filename from the error if possible
+                    let fileName = window.currentFileName;
+                    if (error.target && typeof error.target === 'string') {
+                        // If target contains the document number, use that to help identify the file
+                        fileName = error.target;
+                    }
 
-    // Check if this is a TIN matching error and provide specific guidance
-    const isTINMatchingError = mainError.message.includes("authenticated TIN and documents TIN is not matching");
-
-    // Check if this is a duplicate submission error
-    const isDuplicateSubmission = mainError.code === 'DUPLICATE_SUBMISSION' || mainError.code === 'DS302';
-
-    // Create tooltip help content for TIN matching errors
-    const tinErrorGuidance = `
-        <div class="tin-matching-guidance" style="margin-top: 15px; padding: 12px; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #17a2b8;">
-            <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                <i class="fas fa-info-circle" style="color: #17a2b8; margin-right: 8px;"></i>
-                <span style="color: #17a2b8; font-size: 14px; font-weight: 600;">How to resolve TIN matching errors:</span>
-            </div>
-            <div style="padding-left: 6px; margin-bottom: 0; text-align: left; color: #495057; font-size: 13px;">
-                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
-                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
-                    <span>Verify that the supplier's TIN in your document matches exactly with the one registered with LHDN</span>
-                </div>
-                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
-                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
-                    <span>When using Login as Taxpayer API: The issuer TIN in the document must match with the TIN associated with your Client ID and Client Secret</span>
-                </div>
-                <div style="margin-bottom: 6px; display: flex; align-items: flex-start;">
-                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
-                    <span>When using Login as Intermediary System API: The issuer TIN must match with the TIN of the taxpayer you're representing</span>
-                </div>
-                <div style="display: flex; align-items: flex-start;">
-                    <i class="fas fa-check-circle" style="color: #17a2b8; margin-right: 8px; font-size: 12px; margin-top: 2px;"></i>
-                    <span>For sole proprietors: You can validate TINs starting with "IG" along with your BRN if you have the "Business Owner" role in MyTax</span>
-                </div>
-            </div>
-            <div style="margin-top: 10px; font-size: 12px; color: #6c757d; text-align: right;">
-                <a href="https://sdk.myinvois.hasil.gov.my/faq/" target="_blank" style="color: #17a2b8; text-decoration: none; display: inline-flex; align-items: center;">
-                    <span>View LHDN FAQ for more details</span>
-                    <i class="fas fa-external-link-alt" style="margin-left: 4px; font-size: 10px;"></i>
-                </a>
-            </div>
-        </div>
-    `;
-
-    Swal.fire({
-        title: 'LHDN Submission Error',
-        html: `
-            <div class="content-card swal2-content">
-                <div style="margin-bottom: 15px; text-align: center;">
-                    <div class="error-icon" style="color: #dc3545; font-size: 36px; margin-bottom: 15px;">
-                        <i class="fas fa-exclamation-circle" style="animation: pulseError 1.5s infinite;"></i>
-                    </div>
-                    <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 10px; margin: 8px 0; border-radius: 4px; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                        <div style="display: flex; align-items: flex-start;">
-                            <i class="fas fa-exclamation-triangle" style="color: #dc3545; margin-right: 8px; margin-top: 2px; font-size: 13px;"></i>
-                            <span style="font-weight: 500; font-size: 13px;">${mainError.message}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="text-align: left; padding: 12px; border-radius: 8px; background: rgba(220, 53, 69, 0.05); box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
-                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Code:</span>
-                        <span style="color: #dc3545; font-family: monospace; background: rgba(220, 53, 69, 0.1); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.code}</span>
-                    </div>
-
-                    ${mainError.target ? `
-                    <div style="margin-bottom: 8px; display: flex; align-items: center;">
-                        <span style="color: #495057; font-weight: 600; min-width: 85px; font-size: 12px;">Error Target:</span>
-                        <span style="color: #495057; background: rgba(0,0,0,0.03); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${mainError.target}</span>
-                    </div>
-                    ` : ''}
-
-                    ${validationDetails.length > 0 ? `
-                        <div>
-                            <div style="color: #495057; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center;">
-                                <span style="font-size: 12px;">Validation Errors:</span>
-                                <span class="tooltip-container" style="margin-left: 6px; cursor: help; position: relative;">
-                                    <i class="fas fa-question-circle" style="color: #6c757d; font-size: 11px;"></i>
-                                    <div class="tooltip-content" style="position: absolute; width: 220px; background: #fff; border-radius: 4px; padding: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 1000; display: none; top: -5px; left: 20px; font-weight: normal; font-size: 11px; color: #495057; text-align: left;">
-                                        These validation errors indicate specific issues with your submission data. Each error includes the path to the problematic field and details about what needs to be fixed.
-                                    </div>
-                                </span>
-                            </div>
-                            <div style="margin-top: 6px; max-height: 150px; overflow-y: auto; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1);">
-                                ${validationDetails.map(detail => `
-                                    <div style="background: #fff; padding: 8px; border-radius: 0; margin-bottom: 1px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 12px;">
-                                        <div style="margin-bottom: 4px; display: flex;">
-                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Path:</strong>
-                                            <span style="color: #0d6efd; font-family: monospace; background: rgba(13, 110, 253, 0.05); padding: 0 3px; border-radius: 2px; font-size: 11px;">
-                                                ${detail.propertyPath || detail.target || 'Unknown'}
-                                            </span>
-                                        </div>
-                                        <div style="display: flex;">
-                                            <strong style="min-width: 60px; color: #495057; font-size: 11px;">Error:</strong>
-                                            <span style="font-size: 11px;">${formatValidationMessage(detail.message)}</span>
-                                        </div>
-                                        ${detail.code ? `
-                                            <div style="margin-top: 4px; color: #6c757d; display: flex;">
-                                                <strong style="min-width: 60px; color: #6c757d; font-size: 11px;">Code:</strong>
-                                                <span style="font-size: 11px;">${detail.code}</span>
-                                            </div>
-                                        ` : ''}
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                </div>
-
-                ${isTINMatchingError ? tinErrorGuidance : ''}
-            </div>
-
-            <div class="next-steps-card" style="margin-top: 25px; padding: 15px; border-radius: 8px; background: rgba(255, 193, 7, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
-                <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                    <i class="fas fa-lightbulb" style="color: #ffc107; margin-right: 8px; font-size: 16px;"></i>
-                    <span style="font-weight: 600; color: #495057; font-size: 13px;">Next Steps</span>
-                </div>
-                <ul style="margin: 0; padding-left: 25px; font-size: 12px; color: #495057;">
-                    ${getNextSteps(mainError.code)}
-                </ul>
-            </div>
-
-            <style>
-                @keyframes pulseError {
-                    0% { transform: scale(1); }
-                    50% { transform: scale(1.1); }
-                    100% { transform: scale(1); }
+                    // Use the more efficient single document update instead of full refresh
+                    if (fileName) {
+                        await updateSingleDocumentStatus(fileName);
+                    } else {
+                        // Fallback to full refresh if filename not available
+                        InvoiceTableManager.getInstance().refresh();
+                    }
                 }
-                .tooltip-container:hover .tooltip-content {
-                    display: block;
-                }
-            </style>
-        `,
-        confirmButtonText: 'I Understand',
-        confirmButtonColor: '#3085d6',
-        width: 600,
-        customClass: {
-            confirmButton: 'btn btn-primary'
-        }
-    });
+            }
+        });
+    } catch (helperError) {
+        console.error('Error using LHDN UI Helper:', helperError);
 
-    // Refresh the table if this is a duplicate submission error
-    // This ensures the table is updated even when a document is already submitted
-    if (isDuplicateSubmission) {
-        console.log('Updating table after duplicate submission error');
-        // Extract the filename from the error if possible
-        let fileName = window.currentFileName;
-        if (mainError.target && typeof mainError.target === 'string') {
-            // If target contains the document number, use that to help identify the file
-            fileName = mainError.target;
-        }
+        // Fallback to basic error display if helper fails
+        Swal.fire({
+            title: 'LHDN Submission Error',
+            text: typeof error === 'string' ? error : (error.message || 'An unknown error occurred'),
+            icon: 'error',
+            confirmButtonText: 'OK'
+        });
 
-        // Use the more efficient single document update instead of full refresh
-        if (fileName) {
-            await updateSingleDocumentStatus(fileName);
-        } else {
-            // Fallback to full refresh if filename not available
+        // Still try to refresh the table if needed
+        const isDuplicateSubmission =
+            (error.code === 'DUPLICATE_SUBMISSION' || error.code === 'DS302') ||
+            (typeof error === 'string' && error.includes('duplicate'));
+
+        if (isDuplicateSubmission) {
             InvoiceTableManager.getInstance().refresh();
         }
     }
@@ -5793,7 +5795,52 @@ function formatValidationMessage(message) {
                 Please ensure the supplier's TIN matches exactly with the one registered with LHDN.`;
     }
 
+    // Format other common error messages
+    if (message.includes('duplicate')) {
+        return 'This document has already been submitted to LHDN. Please check the document status.';
+    }
+
+    if (message.includes('invalid date') || message.includes('date format')) {
+        return 'The document contains an invalid date format. Please ensure all dates are in the correct format (YYYY-MM-DD).';
+    }
+
+    if (message.includes('tax')) {
+        return 'There is an issue with the tax information in your document. Please verify all tax amounts and calculations.';
+    }
+
+    if (message.includes('required field') || message.includes('is required')) {
+        return 'A required field is missing in your document. Please ensure all mandatory information is provided.';
+    }
+
+    if (message.includes('format') || message.includes('invalid')) {
+        return 'The document contains data in an invalid format. Please check all fields for correct formatting.';
+    }
+
     return message;
+}
+
+// Function to get user-friendly error message from error code
+function getUserFriendlyErrorMessage(errorCode, errorMessage) {
+    const errorMessages = {
+        'ValidationError': 'The document contains invalid or missing information',
+        'DS302': 'This document has already been submitted to LHDN',
+        'CF321': 'The document date is invalid or outside the allowed range',
+        'CF364': 'One or more item classifications are invalid',
+        'CF401': 'There is an issue with the tax calculations',
+        'CF402': 'The currency information is invalid',
+        'CF403': 'The tax code used is invalid',
+        'CF404': 'The identification information is invalid',
+        'CF405': 'The company or party information is invalid',
+        'AUTH001': 'Your authentication has expired or is invalid',
+        'DUPLICATE_SUBMISSION': 'This document has already been submitted',
+        'NETWORK_ERROR': 'Could not connect to LHDN due to network issues',
+        'TIMEOUT': 'The request to LHDN timed out',
+        'EMPTY_RESPONSE': 'LHDN service is currently unavailable',
+        'SUBMISSION_ERROR': 'There was a problem submitting your document'
+    };
+
+    // Return user-friendly message or the original error message
+    return errorMessages[errorCode] || errorMessage || 'An unknown error occurred';
 }
 
 
@@ -5806,9 +5853,78 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const manager = InvoiceTableManager.getInstance();
+    // Initialize the table manager and update date/time
+    InvoiceTableManager.getInstance();
     DateTimeManager.updateDateTime();
+
+    // Check for any pending submissions that might have been interrupted by a server restart
+    checkPendingSubmissions();
 });
+
+// Function to check for pending submissions that were interrupted
+async function checkPendingSubmissions() {
+    try {
+        const pendingSubmission = localStorage.getItem('pendingLHDNSubmission');
+        if (!pendingSubmission) {
+            return; // No pending submissions
+        }
+
+        const submission = JSON.parse(pendingSubmission);
+        const { fileName, timestamp } = submission;
+
+        // Only check submissions that are less than 10 minutes old
+        const submissionTime = new Date(timestamp).getTime();
+        const currentTime = new Date().getTime();
+        const timeDiff = currentTime - submissionTime;
+
+        if (timeDiff > 10 * 60 * 1000) {
+            // Submission is too old, remove it
+            localStorage.removeItem('pendingLHDNSubmission');
+            return;
+        }
+
+        console.log('Found pending submission:', submission);
+
+        // Check if the document was actually submitted
+        try {
+            const statusResponse = await fetch(`/api/outbound-files/status/${fileName}`);
+            const statusResult = await statusResponse.json();
+
+            if (statusResult.success && statusResult.exists &&
+                ['Submitted', 'Processing'].includes(statusResult.document.status)) {
+                // Document was submitted successfully
+                console.log('Pending submission was actually successful:', statusResult.document);
+
+                // Show notification to user
+                Swal.fire({
+                    title: 'Submission Recovered',
+                    html: `
+                        <div class="text-left">
+                            <p>We detected that your previous submission of <strong>${fileName}</strong> was successful,
+                            but the confirmation was interrupted.</p>
+                            <p>The document has been submitted to LHDN and is now in <strong>${statusResult.document.status}</strong> status.</p>
+                        </div>
+                    `,
+                    icon: 'info',
+                    confirmButtonText: 'OK'
+                });
+
+                // Update the table to reflect the current status
+                await updateSingleDocumentStatus(fileName);
+            }
+        } catch (error) {
+            console.error('Error checking pending submission status:', error);
+        }
+
+        // Clear the pending submission regardless of the outcome
+        localStorage.removeItem('pendingLHDNSubmission');
+
+    } catch (error) {
+        console.error('Error checking pending submissions:', error);
+        // Clear potentially corrupted data
+        localStorage.removeItem('pendingLHDNSubmission');
+    }
+}
 
 class ConsolidatedSubmissionManager {
     constructor() {
@@ -6022,8 +6138,12 @@ async function handleBulkSubmission(selectedDocs) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest' // Add AJAX header to prevent full page reload
+                'X-Requested-With': 'XMLHttpRequest', // Add AJAX header to prevent full page reload
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             },
+            credentials: 'same-origin', // Include credentials to send cookies with the request
             body: JSON.stringify({ documents: selectedDocs, version })
         });
 

@@ -1,18 +1,23 @@
-const db = require('../models');
-const { WP_ADMIN_SETTINGS } = db;
+const prisma = require('../src/lib/prisma');
 
 class AdminSettingsService {
   // Cache for settings
   static settingsCache = new Map();
   static cacheTTL = 5 * 60 * 1000; // 5 minutes
-  
+
   // Get all settings for a group
   static async getSettingsByGroup(group) {
     const cacheKey = `group_${group}`;
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
-    const settings = await WP_ADMIN_SETTINGS.getSettingsByGroup(group);
+    const settings = await prisma.wP_ADMIN_SETTINGS.findMany({
+      where: {
+        SettingGroup: group,
+        IsActive: true
+      }
+    });
+
     this.setCache(cacheKey, settings);
     return settings;
   }
@@ -23,47 +28,123 @@ class AdminSettingsService {
     const cached = this.getCached(cacheKey);
     if (cached) return cached;
 
-    const value = await WP_ADMIN_SETTINGS.getSetting(key);
+    const setting = await prisma.wP_ADMIN_SETTINGS.findFirst({
+      where: {
+        SettingKey: key,
+        IsActive: true
+      }
+    });
+
+    const value = setting ? setting.SettingValue : null;
     this.setCache(cacheKey, value);
     return value;
   }
 
   // Update or create a setting
   static async upsertSetting(key, value, group, description, userId) {
-    const setting = await WP_ADMIN_SETTINGS.upsertSetting(key, value, group, description, userId);
+    const now = new Date();
+
+    const setting = await prisma.wP_ADMIN_SETTINGS.upsert({
+      where: {
+        SettingKey: key
+      },
+      update: {
+        SettingValue: value,
+        SettingGroup: group,
+        Description: description,
+        UpdatedBy: userId ? String(userId) : null,
+        UpdateTS: now
+      },
+      create: {
+        SettingKey: key,
+        SettingValue: value,
+        SettingGroup: group,
+        Description: description,
+        IsActive: true,
+        CreatedBy: userId ? String(userId) : null,
+        UpdatedBy: userId ? String(userId) : null,
+        CreateTS: now,
+        UpdateTS: now
+      }
+    });
+
     this.clearCache();
     return setting;
   }
 
   // Bulk update settings
   static async bulkUpsertSettings(settings, userId) {
-    const result = await WP_ADMIN_SETTINGS.bulkUpsertSettings(settings, userId);
+    const now = new Date();
+    const results = [];
+
+    // Use a transaction for bulk operations
+    const result = await prisma.$transaction(async (tx) => {
+      for (const setting of settings) {
+        const { key, value, group, description } = setting;
+
+        const upsertedSetting = await tx.wP_ADMIN_SETTINGS.upsert({
+          where: {
+            SettingKey: key
+          },
+          update: {
+            SettingValue: value,
+            SettingGroup: group,
+            Description: description,
+            UpdatedBy: userId ? String(userId) : null,
+            UpdateTS: now
+          },
+          create: {
+            SettingKey: key,
+            SettingValue: value,
+            SettingGroup: group,
+            Description: description,
+            IsActive: true,
+            CreatedBy: userId ? String(userId) : null,
+            UpdatedBy: userId ? String(userId) : null,
+            CreateTS: now,
+            UpdateTS: now
+          }
+        });
+
+        results.push(upsertedSetting);
+      }
+
+      return results;
+    });
+
     this.clearCache();
     return result;
   }
 
   // Get all settings with pagination and filtering
   static async getAllSettings(page = 1, limit = 10, filter = {}) {
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     const where = { IsActive: true };
-    
+
     if (filter.group) where.SettingGroup = filter.group;
     if (filter.search) {
-      where[Op.or] = [
-        { SettingKey: { [Op.like]: `%${filter.search}%` } },
-        { Description: { [Op.like]: `%${filter.search}%` } }
+      where.OR = [
+        { SettingKey: { contains: filter.search } },
+        { Description: { contains: filter.search } }
       ];
     }
 
-    const { count, rows } = await WP_ADMIN_SETTINGS.findAndCountAll({
+    // Get total count
+    const count = await prisma.wP_ADMIN_SETTINGS.count({ where });
+
+    // Get paginated settings
+    const settings = await prisma.wP_ADMIN_SETTINGS.findMany({
       where,
-      limit,
-      offset,
-      order: [['SettingGroup', 'ASC'], ['SettingKey', 'ASC']]
+      skip,
+      take: limit,
+      orderBy: [
+        { SettingGroup: 'asc' },
+        { SettingKey: 'asc' }
+      ]
     });
 
     return {
-      settings: rows,
+      settings,
       total: count,
       page,
       totalPages: Math.ceil(count / limit)
@@ -74,12 +155,12 @@ class AdminSettingsService {
   static getCached(key) {
     const cached = this.settingsCache.get(key);
     if (!cached) return null;
-    
+
     if (Date.now() - cached.timestamp > this.cacheTTL) {
       this.settingsCache.delete(key);
       return null;
     }
-    
+
     return cached.value;
   }
 
@@ -412,8 +493,8 @@ class AdminSettingsService {
   static async getLHDNApiUrl() {
     const settings = await this.getLHDNSettings();
     const environment = settings['lhdn.api_environment'];
-    return environment === 'production' 
-      ? settings['lhdn.production_url'] 
+    return environment === 'production'
+      ? settings['lhdn.production_url']
       : settings['lhdn.sandbox_url'];
   }
 
@@ -430,4 +511,4 @@ class AdminSettingsService {
   }
 }
 
-module.exports = AdminSettingsService; 
+module.exports = AdminSettingsService;

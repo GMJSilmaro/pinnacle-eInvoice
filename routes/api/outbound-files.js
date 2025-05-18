@@ -6,10 +6,9 @@ const fsPromises = fs.promises;
 const XLSX = require('xlsx');
 const { processExcelData } = require('../../services/lhdn/processExcelData');
 const { mapToLHDNFormat } = require('../../services/lhdn/lhdnMapper');
-const { WP_OUTBOUND_STATUS, WP_INBOUND_STATUS, WP_LOGS, WP_CONFIGURATION, sequelize } = require('../../models');
+const prisma = require('../../src/lib/prisma');
 const moment = require('moment');
 const axios = require('axios');
-const { Op } = require('sequelize');
 const { validateAndFormatNetworkPath, testNetworkPathAccessibility } = require('../../config/paths');
 const { logDBOperation } = require('../../utils/logger');
 const { exec } = require('child_process');
@@ -18,12 +17,151 @@ const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../ser
 const { getActiveSAPConfig } = require('../../config/paths');
 const NodeCache = require('node-cache');
 const fileCache = new NodeCache({ stdTTL: 900 }); // 15 minutes cache instead of 1 minute
-const { OutboundLoggingService, LOG_TYPES, MODULES, ACTIONS, STATUSES } = require('../../services/outboundLogging.service');
+const { OutboundLoggingService, LOG_TYPES, MODULES, ACTIONS, STATUSES } = require('../../services/outbound-logging-prisma.service');
+const { auth } = require('../../middleware/index-prisma');
 
 // Add os module to the beginning of the file
 const os = require('os');
 
 const CACHE_KEY_PREFIX = 'outbound_files';
+
+/**
+ * Poll LHDN for submission status updates
+ * @param {string} submissionUid - The submission UID to poll for
+ * @param {string} fileName - The file name
+ * @param {string} invoice_number - The invoice number
+ * @param {Object} req - The request object for session access
+ * @returns {Promise<Object>} - The polling result
+ */
+async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req) {
+    try {
+        console.log(`Starting polling for submission ${submissionUid}`);
+
+        // Create a new LHDNSubmitter instance
+        const submitter = new LHDNSubmitter(req);
+
+        // Get token from AuthorizeToken.ini file
+        const { getTokenSession } = require('../../services/token-prisma.service');
+        let token;
+
+        try {
+            token = await getTokenSession();
+            console.log('Using token from AuthorizeToken.ini for polling');
+        } catch (tokenError) {
+            console.error('Error getting token from AuthorizeToken.ini for polling:', tokenError);
+            throw new Error('Failed to retrieve authentication token from AuthorizeToken.ini');
+        }
+
+        if (!token) {
+            throw new Error('No valid authentication token available for polling');
+        }
+
+        // Check if the document already has a completed status
+        const existingStatus = await prisma.wP_OUTBOUND_STATUS.findFirst({
+            where: {
+                submissionUid,
+                status: {
+                    in: ['Completed', 'Invalid', 'Partially Valid']
+                }
+            }
+        });
+
+        // If the document already has a completed status, don't poll again
+        if (existingStatus) {
+            console.log(`Document ${submissionUid} already has status ${existingStatus.status}, skipping polling`);
+            return {
+                success: true,
+                status: existingStatus.status.toLowerCase(),
+                documentDetails: {},
+                longId: existingStatus.longId || 'NA',
+                note: 'Status retrieved from database'
+            };
+        }
+
+        // Poll for submission details
+        const result = await submitter.getSubmissionDetails(submissionUid, token);
+
+        if (result.success) {
+            console.log(`Polling successful for ${submissionUid}, status: ${result.status}`);
+
+            // Normalize status to lowercase for consistency
+            const normalizedStatus = result.status.toLowerCase();
+
+            // Update the status in the database
+            await submitter.updateSubmissionStatus({
+                invoice_number,
+                uuid: result.documentDetails?.uuid || 'NA',
+                submissionUid,
+                fileName,
+                status: normalizedStatus === 'valid' ? 'Completed' :
+                        normalizedStatus === 'invalid' ? 'Invalid' :
+                        normalizedStatus === 'partially valid' ? 'Partially Valid' : 'Processing',
+                longId: result.longId
+            });
+
+            // If the status is valid/invalid/partially valid, we're done polling
+            if (normalizedStatus === 'valid' || normalizedStatus === 'invalid' || normalizedStatus === 'partially valid') {
+                console.log(`Document ${submissionUid} has final status ${normalizedStatus}, polling complete`);
+            }
+
+            return result;
+        } else {
+            // Special case: If we get an error with "Invalid response format for status: 200",
+            // it might be because the document is already valid but the response format is unexpected
+            if (result.error && result.error.includes('Invalid response format for status: 200')) {
+                console.log(`Received 200 status for ${submissionUid} but with unexpected format, assuming valid`);
+
+                // Update the status to Completed
+                await submitter.updateSubmissionStatus({
+                    invoice_number,
+                    uuid: 'NA',
+                    submissionUid,
+                    fileName,
+                    status: 'Completed',
+                    longId: 'NA'
+                });
+
+                return {
+                    success: true,
+                    status: 'valid',
+                    documentDetails: {},
+                    longId: 'NA',
+                    note: 'Assumed valid based on 200 response'
+                };
+            }
+
+            console.error(`Polling failed for ${submissionUid}:`, result.error);
+            return result;
+        }
+    } catch (error) {
+        console.error(`Error polling submission ${submissionUid}:`, error);
+
+        // If the error is about "Invalid response format for status: 200", handle it specially
+        if (error.message && error.message.includes('Invalid response format for status: 200')) {
+            console.log(`Received 200 status for ${submissionUid} but with error, assuming valid`);
+
+            // Update the status to Completed
+            await submitter.updateSubmissionStatus({
+                invoice_number,
+                uuid: 'NA',
+                submissionUid,
+                fileName,
+                status: 'Completed',
+                longId: 'NA'
+            });
+
+            return {
+                success: true,
+                status: 'valid',
+                documentDetails: {},
+                longId: 'NA',
+                note: 'Assumed valid based on 200 response with error'
+            };
+        }
+
+        throw error;
+    }
+}
 
 let lastFilesModifiedTime = null;
 let lastStatusUpdateTime = null;
@@ -76,13 +214,13 @@ async function checkForStatusUpdates(timestamp) {
         const date = new Date(timestamp);
         const formattedDate = date.toISOString().slice(0, 19).replace('T', ' ');
 
-        // Use raw SQL query to avoid timezone issues
-        const [results] = await sequelize.query(`
+        // Use Prisma to query for status updates
+        const results = await prisma.$queryRaw`
             SELECT TOP 1 updated_at
             FROM WP_OUTBOUND_STATUS
-            WHERE updated_at > '${formattedDate}'
+            WHERE updated_at > ${formattedDate}
             ORDER BY updated_at DESC
-        `);
+        `;
 
         // Store global last update time if we found one
         if (results && results.length > 0 && results[0].updated_at) {
@@ -109,16 +247,16 @@ async function getUpdatedStatuses(since) {
         const date = new Date(since);
         const formattedDate = date.toISOString().slice(0, 19).replace('T', ' ');
 
-        // Use raw SQL query to avoid timezone issues
-        const [updatedStatuses] = await sequelize.query(`
+        // Use Prisma to query for updated statuses
+        const updatedStatuses = await prisma.$queryRaw`
             SELECT
                 id, UUID, submissionUid, fileName, invoice_number,
                 status, date_submitted, date_cancelled, cancellation_reason,
                 cancelled_by, updated_at
             FROM WP_OUTBOUND_STATUS
-            WHERE updated_at > '${formattedDate}'
+            WHERE updated_at > ${formattedDate}
             ORDER BY updated_at DESC
-        `);
+        `;
 
         return updatedStatuses;
     } catch (error) {
@@ -252,15 +390,18 @@ async function checkForNewFiles(networkPath, lastCheck) {
 }
 
 async function getOutgoingConfig() {
-    const config = await WP_CONFIGURATION.findOne({
+    const config = await prisma.wP_CONFIGURATION.findFirst({
         where: {
             Type: 'OUTGOING',
-            IsActive: 1
+            IsActive: true
         },
-        order: [['CreateTS', 'DESC']]
+        orderBy: {
+            CreateTS: 'desc'
+        }
     });
 
     if (!config || !config.Settings) {
+
         throw new Error('Outgoing path configuration not found');
     }
 
@@ -345,7 +486,9 @@ async function logError(description, error, options = {}) {
             UserID: options.userId || null
         };
 
-        await WP_LOGS.create(logEntry);
+        await prisma.wP_LOGS.create({
+            data: logEntry
+        });
 
         console.error('Error logged:', {
             description,
@@ -379,10 +522,13 @@ router.get('/list-all', async (req, res) => {
 
         // Get the latest status update timestamp
         ////console.log('Fetching latest status update');
-        const latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
-            attributes: ['updated_at'],
-            order: [['updated_at', 'DESC']],
-            raw: true
+        const latestStatusUpdate = await prisma.wP_OUTBOUND_STATUS.findFirst({
+            select: {
+                updated_at: true
+            },
+            orderBy: {
+                updated_at: 'desc'
+            }
         });
         ////console.log('Latest status update:', latestStatusUpdate);
 
@@ -503,13 +649,14 @@ router.get('/list-all', async (req, res) => {
 
         // Get active SAP configuration first since we need it for the network path
         ////console.log('Fetching SAP configuration');
-        const config = await WP_CONFIGURATION.findOne({
+        const config = await prisma.wP_CONFIGURATION.findFirst({
             where: {
                 Type: 'SAP',
-                IsActive: 1
+                IsActive: true
             },
-            order: [['CreateTS', 'DESC']],
-            raw: true
+            orderBy: {
+                CreateTS: 'desc'
+            }
         });
 
         if (!config || !config.Settings) {
@@ -528,14 +675,17 @@ router.get('/list-all', async (req, res) => {
         }
         // Get inbound statuses for comparison
         ////console.log('Fetching inbound statuses');
-        const inboundStatuses = await WP_INBOUND_STATUS.findAll({
-            attributes: ['internalId', 'status', 'updated_at'],
+        const inboundStatuses = await prisma.wP_INBOUND_STATUS.findMany({
+            select: {
+                internalId: true,
+                status: true,
+                updated_at: true
+            },
             where: {
                 status: {
-                    [Op.like]: 'Invalid%'
+                    startsWith: 'Invalid'
                 }
-            },
-            raw: true
+            }
         });
 
         // Create a map of inbound statuses for quick lookup
@@ -550,13 +700,12 @@ router.get('/list-all', async (req, res) => {
         ////console.log('Fetching outbound statuses');
         let outboundStatusesToUpdate = [];
         if (inboundStatusMap.size > 0) {
-            outboundStatusesToUpdate = await WP_OUTBOUND_STATUS.findAll({
+            outboundStatusesToUpdate = await prisma.wP_OUTBOUND_STATUS.findMany({
                 where: {
                     status: {
-                        [Op.notIn]: ['Cancelled', 'Failed', 'Invalid', 'Rejected']
+                        notIn: ['Cancelled', 'Failed', 'Invalid', 'Rejected']
                     }
-                },
-                raw: true
+                }
             });
         }
 
@@ -575,15 +724,15 @@ router.get('/list-all', async (req, res) => {
                         const inbound = inboundStatusMap.get(outbound.invoice_number);
                         if (inbound.status.startsWith('Invalid')) {
                             batchPromises.push(
-                                WP_OUTBOUND_STATUS.update(
-                                    {
-                                        status: inbound.status,
-                                        updated_at: sequelize.literal('GETDATE()')
+                                prisma.wP_OUTBOUND_STATUS.update({
+                                    where: {
+                                        id: outbound.id
                                     },
-                                    {
-                                        where: { id: outbound.id }
+                                    data: {
+                                        status: inbound.status,
+                                        updated_at: new Date()
                                     }
-                                )
+                                })
                             );
                         }
                     }
@@ -602,23 +751,24 @@ router.get('/list-all', async (req, res) => {
 
         // Get existing submission statuses
         ////console.log('Fetching submission statuses');
-        const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
-            attributes: [
-                'id',
-                'UUID',
-                'submissionUid',
-                'fileName',
-                'filePath',
-                'invoice_number',
-                'status',
-                'date_submitted',
-                'date_cancelled',
-                'cancellation_reason',
-                'cancelled_by',
-                'updated_at'
-            ],
-            order: [['updated_at', 'DESC']],
-            raw: true
+        const submissionStatuses = await prisma.wP_OUTBOUND_STATUS.findMany({
+            select: {
+                id: true,
+                UUID: true,
+                submissionUid: true,
+                fileName: true,
+                filePath: true,
+                invoice_number: true,
+                status: true,
+                date_submitted: true,
+                date_cancelled: true,
+                cancellation_reason: true,
+                cancelled_by: true,
+                updated_at: true
+            },
+            orderBy: {
+                updated_at: 'desc'
+            }
         });
 
         // Create status lookup map
@@ -745,12 +895,12 @@ router.get('/check-submission/:docNum', async (req, res) => {
         const { docNum } = req.params;
        // ////console.log('Checking submission for document:', docNum);
 
-        const existingSubmission = await WP_OUTBOUND_STATUS.findOne({
+        const existingSubmission = await prisma.wP_OUTBOUND_STATUS.findFirst({
             where: {
-                [Op.or]: [
-                    { uuid: docNum },
+                OR: [
+                    { UUID: docNum },
                     { invoice_number: docNum },
-                    { fileName: { [Op.like]: `%${docNum}%` } }
+                    { fileName: { contains: docNum } }
                 ]
             }
         });
@@ -760,7 +910,7 @@ router.get('/check-submission/:docNum', async (req, res) => {
                 exists: true,
                 status: existingSubmission.status,
                 submissionDate: existingSubmission.date_submitted,
-                uuid: existingSubmission.uuid
+                uuid: existingSubmission.UUID
             });
         }
 
@@ -1421,7 +1571,7 @@ async function processFile(file, dateDir, date, company, type, files, processLog
 /**
  * Submit document to LHDN
  */
-router.post('/:fileName/submit-to-lhdn', async (req, res) => {
+router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, res) => {
     try {
         const { fileName } = req.params;
         const { type, company, date, version } = req.body;
@@ -1435,28 +1585,7 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             version
         });
 
-        // Basic auth check
-        if (!req.session?.accessToken) {
-            await OutboundLoggingService.createLog({
-                description: `Authentication failed for submission of file: ${fileName}`,
-                loggedUser: req.session?.user?.username || 'System',
-                ipAddress: req.ip,
-                logType: LOG_TYPES.ERROR,
-                module: MODULES.OUTBOUND,
-                action: ACTIONS.SUBMIT,
-                status: STATUSES.FAILED,
-                userId: req.session?.user?.id,
-                details: { fileName, error: 'Not authenticated' }
-            });
-
-            return res.status(401).json({
-                success: false,
-                error: {
-                    code: 'AUTH_ERROR',
-                    message: 'Not authenticated'
-                }
-            });
-        }
+        // Authentication is handled by auth.isApiAuthenticated middleware
 
         // Validate all required parameters with more context
         const paramValidation = [
@@ -1624,18 +1753,20 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
 
             if (!result.data) {
                 // Before throwing an error, check if there are rejected documents in the result
-                if (result.status === 'failed' && result.error?.details?.error?.details?.length > 0) {
+                if (result.status === 'failed' && result.error) {
                     // There are validation errors, show them to the user
-                    const errorDetails = result.error.details;
+                    const errorDetails = result.error;
+                    console.error('LHDN Error:', errorDetails);
+
                     return res.status(400).json({
                         success: false,
                         error: {
-                            code: 'VALIDATION_ERROR',
+                            code: errorDetails.code || 'VALIDATION_ERROR',
                             message: errorDetails.message || 'LHDN validation failed',
-                            details: errorDetails
+                            details: errorDetails.details || errorDetails
                         },
                         docNum: invoice_number,
-                        rejectedDocuments: [errorDetails]
+                        rejectedDocuments: errorDetails.details ? [errorDetails.details] : []
                     });
                 }
 
@@ -1651,16 +1782,29 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     });
                 }
 
-                throw new Error('Invalid response from LHDN server: No data received');
+                // Log the full result for debugging
+                console.error('LHDN Error: Invalid response structure', JSON.stringify(result, null, 2));
+
+                return res.status(500).json({
+                    success: false,
+                    error: {
+                        code: 'INVALID_RESPONSE',
+                        message: 'Invalid response from LHDN server: No data received',
+                        details: 'The LHDN server returned a response without the expected data structure'
+                    },
+                    docNum: invoice_number
+                });
             }
 
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
+                const submissionUid = result.data.submissionUid;
+
                 // Prepare status data
                 const statusData = {
                     invoice_number,
                     uuid: acceptedDoc.uuid,
-                    submissionUid: result.data.submissionUid,
+                    submissionUid: submissionUid,
                     fileName,
                     filePath: processedData.filePath || fileName,
                     status: 'Submitted'
@@ -1690,6 +1834,21 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
                     acceptedDoc.uuid,
                     invoice_number
                 );
+
+                // Start polling for submission status in the background with proper interval
+                // This follows the LHDN SDK best practice for polling (3-5 second interval)
+                console.log(`Starting delayed polling for ${submissionUid} with 5 second initial delay`);
+
+                // Initial delay of 5 seconds before first poll as recommended by LHDN
+                setTimeout(() => {
+                    pollSubmissionStatus(submissionUid, fileName, invoice_number, req)
+                        .then(pollResult => {
+                            console.log(`Polling completed for ${submissionUid}:`, pollResult);
+                        })
+                        .catch(pollError => {
+                            console.error(`Polling error for ${submissionUid}:`, pollError);
+                        });
+                }, 5000); // 5 second delay
 
                 if (!excelUpdateResult.success) {
                     console.error('Failed to update Excel file:', excelUpdateResult.error);
@@ -1765,6 +1924,10 @@ router.post('/:fileName/submit-to-lhdn', async (req, res) => {
             error: error.message,
             stack: error.stack
         });
+
+        // Get fileName from params to avoid reference error
+        const { fileName } = req.params;
+        const { type, company, date } = req.body;
 
         // Log submission failure
         await OutboundLoggingService.logSubmissionFailure(req, error, {
@@ -1865,9 +2028,36 @@ router.post('/:uuid/cancel', async (req, res) => {
     }
 
     try {
-        // Get document details first
-        const token = req.session.accessToken;
+        // Get token from AuthorizeToken.ini file
+        const { getTokenSession } = require('../../services/token-prisma.service');
+        let token;
 
+        try {
+            token = await getTokenSession();
+        } catch (tokenError) {
+            console.error('Error getting token from AuthorizeToken.ini for document cancellation:', tokenError);
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'AUTH_ERROR',
+                    message: 'Failed to retrieve authentication token',
+                    details: tokenError.message
+                }
+            });
+        }
+
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'AUTH_ERROR',
+                    message: 'No LHDN access token available',
+                    details: 'Authentication token is missing in AuthorizeToken.ini'
+                }
+            });
+        }
+
+        // Get document details first
         const documentDetails = await getDocumentDetails(uuid, token);
         if (!documentDetails.status === 'success' || !documentDetails.data) {
             throw new Error('Document not found');
@@ -1879,27 +2069,23 @@ router.post('/:uuid/cancel', async (req, res) => {
         if (cancelResponse.status === 'success') {
             // Update local database statuses
             await Promise.all([
-                WP_OUTBOUND_STATUS.update(
-                    {
+                prisma.wP_OUTBOUND_STATUS.updateMany({
+                    where: { UUID: uuid },
+                    data: {
                         status: 'Cancelled',
-                        date_cancelled: sequelize.literal('GETDATE()'),
+                        date_cancelled: new Date(),
                         cancelled_by: loggedUser,
                         cancellation_reason: reason,
-                        updated_at: sequelize.literal('GETDATE()'),
-                    },
-                    {
-                        where: { uuid: uuid }
+                        updated_at: new Date(),
                     }
-                ),
-                WP_INBOUND_STATUS.update(
-                    {
+                }),
+                prisma.wP_INBOUND_STATUS.updateMany({
+                    where: { uuid },
+                    data: {
                         status: 'Cancelled',
-                        dateTimeReceived: sequelize.literal('GETDATE()'),
-                    },
-                    {
-                        where: { uuid }
+                        dateTimeReceived: new Date().toISOString(),
                     }
-                )
+                })
             ]);
 
             await logDBOperation(req.app.get('models'), req, `Successfully cancelled document ${uuid}`, {
@@ -1936,14 +2122,14 @@ router.post('/:uuid/cancel', async (req, res) => {
 
                 // Update local status
                 await Promise.all([
-                    WP_OUTBOUND_STATUS.update(
-                        { status: 'Cancelled' },
-                        { where: { uuid: uuid } }
-                    ),
-                    WP_INBOUND_STATUS.update(
-                        { status: 'Cancelled' },
-                        { where: { uuid } }
-                    )
+                    prisma.wP_OUTBOUND_STATUS.updateMany({
+                        where: { UUID: uuid },
+                        data: { status: 'Cancelled' }
+                    }),
+                    prisma.wP_INBOUND_STATUS.updateMany({
+                        where: { uuid },
+                        data: { status: 'Cancelled' }
+                    })
                 ]);
 
                 return res.json({
@@ -1970,14 +2156,16 @@ router.post('/:uuid/cancel', async (req, res) => {
         }
 
         // Log the error
-        await WP_LOGS.create({
-            Description: `Failed to cancel invoice: ${error.message}`,
-            CreateTS: new Date().toISOString(),
-            LoggedUser: loggedUser || 'System',
-            LogType: 'ERROR',
-            Module: 'OUTBOUND',
-            Action: 'CANCEL',
-            Status: 'FAILED'
+        await prisma.wP_LOGS.create({
+            data: {
+                Description: `Failed to cancel invoice: ${error.message}`,
+                CreateTS: new Date().toISOString(),
+                LoggedUser: loggedUser || 'System',
+                LogType: 'ERROR',
+                Module: 'OUTBOUND',
+                Action: 'CANCEL',
+                Status: 'FAILED'
+            }
         });
 
         return res.status(500).json({
@@ -1988,7 +2176,7 @@ router.post('/:uuid/cancel', async (req, res) => {
     }
 });
 
-router.post('/:fileName/content-consolidated', async (req, res) => {
+router.post('/:fileName/content-consolidated', auth.isApiAuthenticated, async (req, res) => {
     try {
         const { fileName } = req.params;
         const { type, company, date, uuid, submissionUid, filePath: requestFilePath } = req.body;
@@ -2159,7 +2347,7 @@ router.post('/:fileName/content-consolidated', async (req, res) => {
     }
 });
 
-router.post('/:fileName/content', async (req, res) => {
+router.post('/:fileName/content', auth.isApiAuthenticated, async (req, res) => {
     try {
         const { fileName } = req.params;
         const { type, company, date, uuid, submissionUid } = req.body;
@@ -2307,22 +2495,13 @@ router.post('/:fileName/content', async (req, res) => {
 /**
  * Submit document to LHDN
  */
-router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
+router.post('/:fileName/submit-to-lhdn-consolidated', auth.isApiAuthenticated, async (req, res) => {
     try {
 
         const { fileName } = req.params;
         const { type, company, date, version } = req.body;
 
-        // // Basic auth check
-        // if (!req.session?.accessToken) {
-        //     return res.status(401).json({
-        //         success: false,
-        //         error: {
-        //             code: 'AUTH_ERROR',
-        //             message: 'Not authenticated'
-        //         }
-        //     });
-        // }
+        // Authentication is handled by auth.isApiAuthenticated middleware
 
         // Validate all required parameters with more context
         const paramValidation = [
@@ -2522,11 +2701,13 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
 
             if (result.data?.acceptedDocuments?.length > 0) {
                 const acceptedDoc = result.data.acceptedDocuments[0];
+                const submissionUid = result.data.submissionUid;
+
                 // First update the submission status in database
                 await submitter.updateSubmissionStatus({
                     invoice_number,
                     uuid: acceptedDoc.uuid,
-                    submissionUid: result.data.submissionUid,
+                    submissionUid: submissionUid,
                     fileName,
                     filePath: processedData.filePath || fileName,
                     status: 'Submitted',
@@ -2542,6 +2723,21 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
                     acceptedDoc.invoiceCodeNumber,
                     invoice_number
                 );
+
+                // Start polling for submission status in the background with proper interval
+                // This follows the LHDN SDK best practice for polling (3-5 second interval)
+                console.log(`Starting delayed polling for ${submissionUid} with 5 second initial delay`);
+
+                // Initial delay of 5 seconds before first poll as recommended by LHDN
+                setTimeout(() => {
+                    pollSubmissionStatus(submissionUid, fileName, invoice_number, req)
+                        .then(pollResult => {
+                            console.log(`Polling completed for ${submissionUid}:`, pollResult);
+                        })
+                        .catch(pollError => {
+                            console.error(`Polling error for ${submissionUid}:`, pollError);
+                        });
+                }, 5000); // 5 second delay
 
                 if (!excelUpdateResult.success) {
                     console.error('Failed to update Excel file:', excelUpdateResult.error);
@@ -2618,6 +2814,10 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
             stack: error.stack
         });
 
+        // Get fileName from params to avoid reference error
+        const { fileName } = req.params;
+        const { type, company, date } = req.body;
+
         // Update status if possible
         if (error.invoice_number) {
             try {
@@ -2662,22 +2862,40 @@ router.post('/:fileName/submit-to-lhdn-consolidated', async (req, res) => {
 /**
  * Get submission details and update longId
  */
-router.get('/submission/:submissionUid', async (req, res) => {
+router.get('/submission/:submissionUid', auth.isApiAuthenticated, async (req, res) => {
     try {
         const { submissionUid } = req.params;
 
-        // Basic auth check
-        if (!req.session?.accessToken) {
+        // Authentication is handled by auth.isApiAuthenticated middleware
+
+        // Get token from AuthorizeToken.ini file
+        const { getTokenSession } = require('../../services/token-prisma.service');
+        let token;
+
+        try {
+            token = await getTokenSession();
+        } catch (tokenError) {
+            console.error('Error getting token from AuthorizeToken.ini:', tokenError);
             return res.status(401).json({
                 success: false,
                 error: {
                     code: 'AUTH_ERROR',
-                    message: 'Not authenticated'
+                    message: 'Failed to retrieve authentication token',
+                    details: tokenError.message
                 }
             });
         }
 
-        const token = req.session.accessToken;
+        if (!token) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'AUTH_ERROR',
+                    message: 'No LHDN access token available',
+                    details: 'Authentication token is missing in AuthorizeToken.ini'
+                }
+            });
+        }
 
         // Call LHDN API to get submission details
         const response = await axios.get(
@@ -2698,15 +2916,13 @@ router.get('/submission/:submissionUid', async (req, res) => {
             const longId = document.longId;
 
             // Update the database with the longId
-            await WP_OUTBOUND_STATUS.update(
-                { longId },
-                {
-                    where: {
-                        submissionUid,
-                        status: 'Submitted'
-                    }
-                }
-            );
+            await prisma.wP_OUTBOUND_STATUS.updateMany({
+                where: {
+                    submissionUid,
+                    status: 'Submitted'
+                },
+                data: { longId }
+            });
 
             return res.json({
                 success: true,
@@ -3056,19 +3272,10 @@ router.delete('/:fileName', async (req, res) => {
 /**
  * Real-time updates endpoint - optimized for frequent polling
  */
-router.get('/real-time-updates', async (req, res) => {
+router.get('/real-time-updates', auth.isApiAuthenticated, async (req, res) => {
     //console.log('Starting real-time-updates endpoint');
 
-    // Check authentication
-    if (!req.session?.user) {
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_ERROR',
-                message: 'Authentication required'
-            }
-        });
-    }
+    // Authentication is handled by auth.isApiAuthenticated middleware
 
     // Check if access token exists
     if (!req.session?.accessToken) {
@@ -3091,13 +3298,14 @@ router.get('/real-time-updates', async (req, res) => {
         let hasNewFiles = false;
         if (!hasStatusUpdates && lastFileCheck) {
             // Get active SAP configuration
-            const config = await WP_CONFIGURATION.findOne({
+            const config = await prisma.wP_CONFIGURATION.findFirst({
                 where: {
                     Type: 'SAP',
-                    IsActive: 1
+                    IsActive: true
                 },
-                attributes: ['Settings'],
-                raw: true
+                select: {
+                    Settings: true
+                }
             });
 
             if (config && config.Settings) {
@@ -3149,268 +3357,32 @@ router.get('/real-time-updates', async (req, res) => {
 });
 
 /**
- * List all files with fixed paths (optimized version using hardcoded paths)
- */
-router.get('/list-fixed-paths', async (req, res) => {
-    //console.log('Starting list-fixed-paths endpoint');
-
-    // Check authentication
-    if (!req.session?.user) {
-        //console.log('Unauthorized access attempt - no session user');
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_ERROR',
-                message: 'Authentication required'
-            }
-        });
-    }
-
-    // Check if access token exists
-    if (!req.session?.accessToken) {
-        //console.log('Unauthorized access attempt - no access token');
-        return res.status(401).json({
-            success: false,
-            error: {
-                code: 'AUTH_ERROR',
-                message: 'Access token required'
-            }
-        });
-    }
-
-    const processLog = {
-        details: [],
-        summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
-    };
-
-    try {
-        // Use fixed paths instead of getting from configuration
-        const incomingPath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
-        const outgoingPath = 'C:\\SFTPRoot_Consolidation\\Outgoing\\LHDN\\PXC Branch';
-
-        //console.log('Using fixed paths:');
-        //console.log('- Incoming:', incomingPath);
-        //console.log('- Outgoing:', outgoingPath);
-
-        // Get the latest status update timestamp
-        //console.log('Fetching latest status update');
-        const latestStatusUpdate = await WP_OUTBOUND_STATUS.findOne({
-            attributes: ['updated_at'],
-            order: [['updated_at', 'DESC']],
-            raw: true
-        });
-        //console.log('Latest status update:', latestStatusUpdate);
-
-        // Get existing submission statuses
-        //console.log('Fetching submission statuses');
-        const submissionStatuses = await WP_OUTBOUND_STATUS.findAll({
-            attributes: [
-                'id',
-                'UUID',
-                'submissionUid',
-                'fileName',
-                'filePath',
-                'invoice_number',
-                'status',
-                'date_submitted',
-                'date_cancelled',
-                'cancellation_reason',
-                'cancelled_by',
-                'updated_at'
-            ],
-            order: [['updated_at', 'DESC']],
-            raw: true
-        });
-
-        // Create status lookup map
-        const statusMap = new Map();
-        submissionStatuses.forEach(status => {
-            const statusObj = {
-                UUID: status.UUID,
-                SubmissionUID: status.submissionUid,
-                SubmissionStatus: status.status,
-                DateTimeSent: status.date_submitted,
-                DateTimeUpdated: status.updated_at,
-                DateTimeCancelled: status.date_cancelled,
-                CancelledReason: status.cancellation_reason,
-                CancelledBy: status.cancelled_by,
-                FileName: status.fileName,
-                DocNum: status.invoice_number
-            };
-
-            if (status.fileName) statusMap.set(status.fileName, statusObj);
-            if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
-        });
-
-        const files = [];
-
-        // Process incoming directory directly
-        //console.log('Processing incoming directory');
-        try {
-            // For consolidated view, we don't need to process by type/company/date
-            // Since files are directly in the Incoming directory
-            await processDirectoryFlat(incomingPath, 'Incoming', files, processLog, statusMap);
-        } catch (dirError) {
-            console.error(`Error processing incoming directory:`, dirError);
-            // Continue with partial data if there's an error
-        }
-
-        // Create a map for latest documents
-        //console.log('Processing latest documents');
-        const latestDocuments = new Map();
-
-        files.forEach(file => {
-            const documentKey = file.invoiceNumber || file.fileName;
-            const existingDoc = latestDocuments.get(documentKey);
-
-            if (!existingDoc || new Date(file.modifiedTime) > new Date(existingDoc.modifiedTime)) {
-                latestDocuments.set(documentKey, file);
-            }
-        });
-
-        // Convert map to array and merge with status
-        const mergedFiles = Array.from(latestDocuments.values()).map(file => {
-            const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
-            const fileStatus = status?.SubmissionStatus || 'Pending';
-
-            return {
-                ...file,
-                status: fileStatus,
-                statusUpdateTime: status?.DateTimeUpdated || null,
-                date_submitted: status?.DateTimeSent || null,
-                date_cancelled: status?.DateTimeCancelled || null,
-                cancellation_reason: status?.CancelledReason || null,
-                cancelled_by: status?.CancelledBy || null,
-                uuid: status?.UUID || null,
-                submissionUid: status?.SubmissionUID || null
-            };
-        });
-
-        // Sort by modified time
-        mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-
-        //console.log(`Found ${mergedFiles.length} files`);
-        //console.log('Sending response');
-        res.json({
-            success: true,
-            files: mergedFiles,
-            processLog,
-            fromCache: false,
-            paths: {
-                incoming: incomingPath,
-                outgoing: outgoingPath
-            }
-        });
-
-    } catch (error) {
-        console.error('Error in list-fixed-paths:', error);
-        await logError('Error listing outbound files with fixed paths', error, {
-            action: 'LIST_FIXED_PATHS',
-            userId: req.user?.id
-        });
-
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            processLog,
-            stack: error.stack // Include stack trace for debugging
-        });
-    }
-});
-
-/**
- * Process a flat directory structure (no type/company/date hierarchy)
- */
-async function processDirectoryFlat(directory, type, files, processLog, statusMap) {
-    try {
-        // Check if directory exists
-        try {
-            await fsPromises.access(directory, fs.constants.R_OK);
-        } catch (accessError) {
-            console.error(`Cannot access directory ${directory}:`, accessError);
-            throw new Error(`Cannot access directory: ${directory}. Please check if the directory exists and you have proper permissions.`);
-        }
-
-        // Read all files in the directory
-        let dirContents;
-        try {
-            dirContents = await fsPromises.readdir(directory);
-        } catch (readError) {
-            console.error(`Error reading directory ${directory}:`, readError);
-            throw new Error(`Failed to read directory contents: ${directory}`);
-        }
-
-        // Process each item
-        for (const item of dirContents) {
-            const itemPath = path.join(directory, item);
-
-            try {
-                const stats = await fsPromises.stat(itemPath);
-
-                // If it's a directory, process recursively
-                if (stats.isDirectory()) {
-                    await processDirectoryFlat(itemPath, type, files, processLog, statusMap);
-                    continue;
-                }
-
-                // If it's a file and Excel file, process it
-                if (stats.isFile() && item.match(/\.(xls|xlsx)$/i)) {
-                    await processFile(item, directory, 'N/A', 'PXC Branch', type, files, processLog, statusMap);
-                }
-            } catch (itemError) {
-                console.error(`Error processing ${itemPath}:`, itemError);
-                processLog.details.push({
-                    file: item,
-                    path: itemPath,
-                    error: itemError.message,
-                    type: 'ITEM_PROCESSING_ERROR'
-                });
-                processLog.summary.errors++;
-            }
-        }
-
-    } catch (error) {
-        console.error(`Error processing directory ${directory}:`, error);
-        processLog.details.push({
-            directory,
-            error: error.message,
-            type: 'DIRECTORY_PROCESSING_ERROR'
-        });
-        processLog.summary.errors++;
-        throw error;
-    }
-}
-
-/**
  * Get document status by fileName - lightweight endpoint for refreshing single document status
  */
-router.get('/status/:fileName', async (req, res) => {
+router.get('/status/:fileName', auth.isApiAuthenticated, async (req, res) => {
     try {
         const { fileName } = req.params;
 
-        // Basic auth check
-        if (!req.session?.accessToken) {
-            return res.status(401).json({
-                success: false,
-                error: {
-                    code: 'AUTH_ERROR',
-                    message: 'Not authenticated'
-                }
-            });
-        }
+        // Authentication is handled by auth.isApiAuthenticated middleware
 
-        const status = await WP_OUTBOUND_STATUS.findOne({
+        const status = await prisma.wP_OUTBOUND_STATUS.findFirst({
             where: {
-                [Op.or]: [
+                OR: [
                     { fileName: fileName },
-                    { fileName: { [Op.like]: `%${fileName}%` } }
+                    { fileName: { contains: fileName } }
                 ]
             },
-            attributes: [
-                'id', 'UUID', 'submissionUid', 'fileName', 'invoice_number',
-                'status', 'date_submitted', 'date_cancelled', 'updated_at'
-            ],
-            raw: true
+            select: {
+                id: true,
+                UUID: true,
+                submissionUid: true,
+                fileName: true,
+                invoice_number: true,
+                status: true,
+                date_submitted: true,
+                date_cancelled: true,
+                updated_at: true
+            }
         });
 
         if (!status) {
@@ -3470,21 +3442,27 @@ router.get('/status/:fileName', async (req, res) => {
         }
 
         // Find the document status
-        const status = await WP_OUTBOUND_STATUS.findOne({
+        const status = await prisma.wP_OUTBOUND_STATUS.findFirst({
             where: {
-                [Op.or]: [
+                OR: [
                     { fileName: fileName },
-                    { fileName: { [Op.like]: `%${fileName}%` } },
+                    { fileName: { contains: fileName } },
                     { invoice_number: fileName }
                 ]
             },
-            attributes: [
-                'id', 'UUID', 'submissionUid', 'fileName',
-                'invoice_number', 'status', 'date_submitted',
-                'date_cancelled', 'cancellation_reason',
-                'cancelled_by', 'updated_at'
-            ],
-            raw: true
+            select: {
+                id: true,
+                UUID: true,
+                submissionUid: true,
+                fileName: true,
+                invoice_number: true,
+                status: true,
+                date_submitted: true,
+                date_cancelled: true,
+                cancellation_reason: true,
+                cancelled_by: true,
+                updated_at: true
+            }
         });
 
         if (status) {
@@ -3550,22 +3528,22 @@ router.get('/status/:fileName', async (req, res) => {
         //console.log(`Fetching status for document: ${fileName}`);
 
         // Query the database for this document's status
-        const document = await models.WP_OUTBOUND_STATUS.findOne({
+        const document = await prisma.wP_OUTBOUND_STATUS.findFirst({
             where: {
-                file_name: fileName
+                fileName: fileName
             },
-            attributes: [
-                'id',
-                'file_name',
-                'status',
-                'uuid',
-                'date_submitted',
-                'date_cancelled',
-                'cancelled_by',
-                'cancel_reason',
-                'created_at',
-                'updated_at'
-            ]
+            select: {
+                id: true,
+                fileName: true,
+                status: true,
+                UUID: true,
+                date_submitted: true,
+                date_cancelled: true,
+                cancelled_by: true,
+                cancellation_reason: true,
+                created_at: true,
+                updated_at: true
+            }
         });
 
         if (!document) {
@@ -3578,13 +3556,13 @@ router.get('/status/:fileName', async (req, res) => {
         // Format the response
         const formattedDocument = {
             id: document.id,
-            fileName: document.file_name,
+            fileName: document.fileName,
             status: document.status,
-            uuid: document.uuid,
+            uuid: document.UUID,
             submissionDate: document.date_submitted,
             date_cancelled: document.date_cancelled,
             cancelled_by: document.cancelled_by,
-            cancel_reason: document.cancel_reason,
+            cancel_reason: document.cancellation_reason,
             createdAt: document.created_at,
             updatedAt: document.updated_at
         };
