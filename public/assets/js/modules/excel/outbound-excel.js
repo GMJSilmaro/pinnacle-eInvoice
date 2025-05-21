@@ -4472,7 +4472,7 @@ async function showJsonPreview(fileName, type, company, date, version) {
                         font-weight: 500;
                         transition: all 0.2s;
                     }
-                  
+
                     .compact-preview #toggleJsonBtn {
                         transition: all 0.2s ease;
                         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -6227,6 +6227,96 @@ async function showSystemErrorModal(error) {
 async function showLHDNErrorModal(error) {
     console.log('LHDN Error:', error);
 
+    // Parse and format the error object to ensure we have proper details
+    let formattedError = error;
+
+    // Handle string errors that might be JSON
+    if (typeof error === 'string') {
+        try {
+            formattedError = JSON.parse(error);
+        } catch (e) {
+            // If not valid JSON, create a basic error object
+            formattedError = {
+                message: error,
+                code: 'SUBMISSION_ERROR'
+            };
+        }
+    }
+
+    // Handle case where error message contains "No documents were accepted or rejected by LHDN"
+    if (typeof formattedError === 'object' &&
+        (formattedError.message && formattedError.message.includes('No documents were accepted or rejected by LHDN'))) {
+
+        // Extract error details from the stack if available
+        let errorDetails = [];
+        if (formattedError.stack && typeof formattedError.stack === 'string') {
+            // Try to extract JSON from the stack trace
+            const jsonMatch = formattedError.stack.match(/\{.*\}/s);
+            if (jsonMatch) {
+                try {
+                    const parsedDetails = JSON.parse(jsonMatch[0]);
+                    if (parsedDetails && Array.isArray(parsedDetails)) {
+                        errorDetails = parsedDetails;
+                    } else if (parsedDetails) {
+                        errorDetails = [parsedDetails];
+                    }
+                } catch (e) {
+                    console.error('Failed to parse error details from stack:', e);
+                }
+            }
+        }
+
+        // If we couldn't extract details from stack, check if there's a details property
+        if (errorDetails.length === 0 && formattedError.details) {
+            if (Array.isArray(formattedError.details)) {
+                errorDetails = formattedError.details;
+            } else if (typeof formattedError.details === 'object') {
+                errorDetails = [formattedError.details];
+            } else if (typeof formattedError.details === 'string') {
+                try {
+                    const parsedDetails = JSON.parse(formattedError.details);
+                    errorDetails = Array.isArray(parsedDetails) ? parsedDetails : [parsedDetails];
+                } catch (e) {
+                    errorDetails = [{message: formattedError.details}];
+                }
+            }
+        }
+
+        // If we still don't have details, create a generic error
+        if (errorDetails.length === 0) {
+            errorDetails = [{
+                code: "SUBMISSION_ERROR",
+                message: "No documents were accepted or rejected by LHDN. The service might be unavailable or experiencing issues.",
+                target: "SubmissionProcess",
+                propertyPath: null
+            }];
+        }
+
+        // Update the formatted error with the extracted details
+        formattedError = {
+            code: "SUBMISSION_ERROR",
+            message: "No documents were accepted or rejected by LHDN",
+            details: errorDetails
+        };
+    }
+
+    // Check for validation errors in the CF414 format (phone number validation)
+    if (typeof formattedError === 'object' && formattedError.message &&
+        formattedError.message.includes('Enter valid phone number')) {
+
+        // Create a properly formatted error object for phone validation
+        formattedError = {
+            code: "CF414",
+            message: "Enter valid phone number and the minimum length is 8 characters - SUPPLIER",
+            details: [{
+                code: "CF414",
+                message: "Enter valid phone number and the minimum length is 8 characters - SUPPLIER",
+                target: "ContactNumber",
+                propertyPath: "Invoice.AccountingSupplierParty.Party.Contact.Telephone"
+            }]
+        };
+    }
+
     // Import the LHDN UI Helper
     try {
         // Check if lhdnUIHelper is already loaded
@@ -6247,10 +6337,10 @@ async function showLHDNErrorModal(error) {
         }
 
         // Use the helper to show the error modal
-        const isDuplicateSubmission = error.code === 'DUPLICATE_SUBMISSION' || error.code === 'DS302';
+        const isDuplicateSubmission = formattedError.code === 'DUPLICATE_SUBMISSION' || formattedError.code === 'DS302';
 
         // Call the helper function to show the modal
-        lhdnUIHelper.showLHDNErrorModal(error, {
+        lhdnUIHelper.showLHDNErrorModal(formattedError, {
             title: 'LHDN Submission Error',
             showDetails: true,
             showSuggestion: true,
@@ -6261,9 +6351,9 @@ async function showLHDNErrorModal(error) {
                     console.log('Updating table after duplicate submission error');
                     // Extract the filename from the error if possible
                     let fileName = window.currentFileName;
-                    if (error.target && typeof error.target === 'string') {
+                    if (formattedError.target && typeof formattedError.target === 'string') {
                         // If target contains the document number, use that to help identify the file
-                        fileName = error.target;
+                        fileName = formattedError.target;
                     }
 
                     // Use the more efficient single document update instead of full refresh
@@ -6280,17 +6370,40 @@ async function showLHDNErrorModal(error) {
         console.error('Error using LHDN UI Helper:', helperError);
 
         // Fallback to basic error display if helper fails
+        // Create a more detailed error message with the available information
+        let errorMessage = '';
+
+        if (typeof formattedError === 'object') {
+            errorMessage = formattedError.message || 'An unknown error occurred';
+
+            // Add details if available
+            if (formattedError.details && formattedError.details.length > 0) {
+                errorMessage += '<br><br><strong>Details:</strong><ul>';
+                formattedError.details.forEach(detail => {
+                    if (typeof detail === 'string') {
+                        errorMessage += `<li>${detail}</li>`;
+                    } else if (typeof detail === 'object') {
+                        const detailText = detail.message || detail.code || JSON.stringify(detail);
+                        errorMessage += `<li>${detailText}</li>`;
+                    }
+                });
+                errorMessage += '</ul>';
+            }
+        } else {
+            errorMessage = typeof formattedError === 'string' ? formattedError : 'An unknown error occurred';
+        }
+
         Swal.fire({
             title: 'LHDN Submission Error',
-            text: typeof error === 'string' ? error : (error.message || 'An unknown error occurred'),
+            html: errorMessage,
             icon: 'error',
             confirmButtonText: 'OK'
         });
 
         // Still try to refresh the table if needed
         const isDuplicateSubmission =
-            (error.code === 'DUPLICATE_SUBMISSION' || error.code === 'DS302') ||
-            (typeof error === 'string' && error.includes('duplicate'));
+            (formattedError.code === 'DUPLICATE_SUBMISSION' || formattedError.code === 'DS302') ||
+            (typeof formattedError === 'string' && formattedError.includes('duplicate'));
 
         if (isDuplicateSubmission) {
             InvoiceTableManager.getInstance().refresh();

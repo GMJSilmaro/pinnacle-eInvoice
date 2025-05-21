@@ -496,6 +496,82 @@ class LHDNSubmitter {
       console.error('Error submitting document:', error);
 
       // Create a more informative error response
+      // Check if this is an Axios error with a response
+      if (error.isAxiosError && error.response) {
+        const { status, data } = error.response;
+
+        // Handle specific error status codes
+        if (status === 400) {
+          // Validation error
+          return {
+            status: 'failed',
+            error: {
+              code: data.error?.code || 'VALIDATION_ERROR',
+              message: data.error?.message || 'Document validation failed',
+              details: data.error?.details || data
+            }
+          };
+        } else if (status === 401 || status === 403) {
+          // Authentication error
+          return {
+            status: 'failed',
+            error: {
+              code: 'AUTH_ERROR',
+              message: 'Authentication failed or token expired',
+              details: data
+            }
+          };
+        } else if (status === 429) {
+          // Rate limiting
+          return {
+            status: 'failed',
+            error: {
+              code: 'RATE_LIMIT',
+              message: 'Rate limit exceeded. Please try again later.',
+              details: data
+            }
+          };
+        } else if (status === 500) {
+          // Server error
+          return {
+            status: 'failed',
+            error: {
+              code: 'SERVER_ERROR',
+              message: 'LHDN server encountered an error',
+              details: data
+            }
+          };
+        }
+
+        // Generic response error
+        return {
+          status: 'failed',
+          error: {
+            code: `HTTP_${status}`,
+            message: data.message || `HTTP error ${status}`,
+            details: data
+          }
+        };
+      }
+
+      // Check for specific error messages
+      if (error.message && error.message.includes('Enter valid phone number')) {
+        return {
+          status: 'failed',
+          error: {
+            code: 'CF414',
+            message: 'Enter valid phone number and the minimum length is 8 characters - SUPPLIER',
+            details: [{
+              code: 'CF414',
+              message: 'Enter valid phone number and the minimum length is 8 characters - SUPPLIER',
+              target: 'ContactNumber',
+              propertyPath: 'Invoice.AccountingSupplierParty.Party.Contact.Telephone'
+            }]
+          }
+        };
+      }
+
+      // Generic error
       return {
         status: 'failed',
         error: {

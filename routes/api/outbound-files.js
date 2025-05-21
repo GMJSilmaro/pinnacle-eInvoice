@@ -2018,7 +2018,40 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
 
             // Update the error handling section
             if (!result.data?.acceptedDocuments?.length && !result.data?.rejectedDocuments?.length) {
-                ////console.log('Full LHDN Response:', JSON.stringify(result, null, 2));
+                console.error('Full LHDN Response:', JSON.stringify(result, null, 2));
+
+                // Check if there are validation errors in the response
+                if (result.data?.errors || result.data?.validationErrors) {
+                    const errors = result.data.errors || result.data.validationErrors;
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'VALIDATION_ERROR',
+                            message: 'Document validation failed',
+                            details: errors
+                        },
+                        docNum: invoice_number
+                    });
+                }
+
+                // If we have CF414 phone number validation error in the logs
+                if (result.error && result.error.message && result.error.message.includes('Enter valid phone number')) {
+                    return res.status(400).json({
+                        success: false,
+                        error: {
+                            code: 'CF414',
+                            message: 'Enter valid phone number and the minimum length is 8 characters - SUPPLIER',
+                            details: [{
+                                code: 'CF414',
+                                message: 'Enter valid phone number and the minimum length is 8 characters - SUPPLIER',
+                                target: 'ContactNumber',
+                                propertyPath: 'Invoice.AccountingSupplierParty.Party.Contact.Telephone'
+                            }]
+                        },
+                        docNum: invoice_number
+                    });
+                }
+
                 throw new Error(`No documents were accepted or rejected by LHDN. Response: ${JSON.stringify(result.data)}`);
             }
 
@@ -2082,13 +2115,54 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
             }
         }
 
+        // Parse error details if they exist in the error object
+        let errorDetails = [];
+
+        // Check for structured error details
+        if (error.details) {
+            errorDetails = Array.isArray(error.details) ? error.details : [error.details];
+        }
+        // Check for error details in the message (common for LHDN errors)
+        else if (error.message && error.message.includes('Enter valid phone number')) {
+            errorDetails = [{
+                code: 'CF414',
+                message: 'Enter valid phone number and the minimum length is 8 characters - SUPPLIER',
+                target: 'ContactNumber',
+                propertyPath: 'Invoice.AccountingSupplierParty.Party.Contact.Telephone'
+            }];
+        }
+        // Try to extract JSON from the error message if it contains JSON
+        else if (error.message && (error.message.includes('{') || error.message.includes('['))) {
+            try {
+                // Extract JSON from the error message using regex
+                const jsonMatch = error.message.match(/(\{.*\}|\[.*\])/s);
+                if (jsonMatch) {
+                    const parsedJson = JSON.parse(jsonMatch[0]);
+                    if (Array.isArray(parsedJson)) {
+                        errorDetails = parsedJson;
+                    } else if (parsedJson.details) {
+                        errorDetails = Array.isArray(parsedJson.details) ? parsedJson.details : [parsedJson.details];
+                    } else {
+                        errorDetails = [parsedJson];
+                    }
+                }
+            } catch (parseError) {
+                console.error('Error parsing JSON from error message:', parseError);
+                // If parsing fails, use the original error message
+                errorDetails = [{
+                    code: 'PARSE_ERROR',
+                    message: error.message
+                }];
+            }
+        }
+
         // Determine appropriate error response
         const errorResponse = {
             success: false,
             error: {
                 code: 'SUBMISSION_ERROR',
                 message: error.message || 'An unexpected error occurred during submission',
-                details: error.stack
+                details: errorDetails.length > 0 ? errorDetails : error.stack
             }
         };
 
@@ -2102,6 +2176,11 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
             errorResponse.error.code = 'CONFIG_ERROR';
             errorResponse.error.message = 'SAP configuration error: Unable to get active configuration';
             return res.status(500).json(errorResponse);
+        }
+
+        // Add document number to the response if available
+        if (error.invoice_number) {
+            errorResponse.docNum = error.invoice_number;
         }
 
         res.status(500).json(errorResponse);
