@@ -7,10 +7,10 @@ console.log('DB_USER:', process.env.DB_USER);
 console.log('DB_NAME:', process.env.DB_NAME);
 
 const config = {
-  HOST: "PXCSERVER",
-  USER: "sa",
-  PASSWORD: "pxc@sql1234",
-  DB: "PXC_TEKAUTO_E_INVOICE_DATABASE",
+  HOST: process.env.DB_HOST,
+  USER: process.env.DB_USER,
+  PASSWORD: process.env.DB_PASSWORD,
+  DB: process.env.DB_NAME,
   dialect: "mssql",
   dialectOptions: {
     options: {
@@ -23,11 +23,11 @@ const config = {
     authentication: {
       type: 'default',
       options: {
-        userName: "sa",
-        password: "pxc@sql1234"
+        userName: process.env.DB_USER,
+        password: process.env.DB_PASSWORD
       }
     },
-    server: "PXCSERVER"
+    server: process.env.DB_HOST
   },
   define: {
     timestamps: false

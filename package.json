@@ -111,10 +111,14 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@parcel/watcher",
+      "@prisma/client",
+      "@prisma/engines",
       "canvas",
       "core-js",
       "cpu-features",
       "es5-ext",
+      "esbuild",
+      "prisma",
       "puppeteer",
       "sharp",
       "sqlite3",
