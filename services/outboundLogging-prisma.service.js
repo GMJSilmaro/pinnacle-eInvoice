@@ -68,7 +68,7 @@ const STATUSES = {
 class OutboundLoggingService {
   /**
    * Create a log entry
-   * 
+   *
    * @param {Object} options - Log options
    * @returns {Promise<Object>} - Created log entry
    */
@@ -140,8 +140,113 @@ class OutboundLoggingService {
   }
 
   /**
+   * Log the start of the submission process
+   *
+   * @param {Object} req - Express request object
+   * @param {Object} fileInfo - Information about the file being submitted
+   * @returns {Promise<Object>} - Created log entry
+   */
+  static async logSubmissionStart(req, fileInfo) {
+    const user = req.session?.user || {};
+    return this.createLog({
+      description: `Starting submission process for file: ${fileInfo.fileName}`,
+      loggedUser: user.username || 'System',
+      ipAddress: req.ip,
+      logType: LOG_TYPES.INFO,
+      module: MODULES.SUBMISSION,
+      action: ACTIONS.SUBMIT,
+      status: STATUSES.PENDING,
+      userId: user.id,
+      details: {
+        fileName: fileInfo.fileName,
+        company: fileInfo.company,
+        type: fileInfo.type,
+        date: fileInfo.date
+      }
+    });
+  }
+
+  /**
+   * Log the successful submission to LHDN
+   *
+   * @param {Object} req - Express request object
+   * @param {Object} submissionResult - Result from LHDN submission
+   * @param {Object} fileInfo - Information about the submitted file
+   * @returns {Promise<Object>} - Created log entry
+   */
+  static async logSubmissionSuccess(req, submissionResult, fileInfo) {
+    const user = req.session?.user || {};
+    return this.createLog({
+      description: `Successfully submitted file to LHDN: ${fileInfo.fileName}, UUID: ${submissionResult.data?.acceptedDocuments?.[0]?.uuid || 'N/A'}`,
+      loggedUser: user.username || 'System',
+      ipAddress: req.ip,
+      logType: LOG_TYPES.SUCCESS,
+      module: MODULES.LHDN,
+      action: ACTIONS.SUBMIT,
+      status: STATUSES.SUCCESS,
+      userId: user.id,
+      details: {
+        fileName: fileInfo.fileName,
+        submissionUid: submissionResult.data?.submissionUid,
+        uuid: submissionResult.data?.acceptedDocuments?.[0]?.uuid,
+        invoiceNumber: fileInfo.invoiceNumber
+      }
+    });
+  }
+
+  /**
+   * Log a submission failure
+   *
+   * @param {Object} req - Express request object
+   * @param {Error} error - Error that occurred
+   * @param {Object} fileInfo - Information about the file
+   * @returns {Promise<Object>} - Created log entry
+   */
+  static async logSubmissionFailure(req, error, fileInfo) {
+    const user = req.session?.user || {};
+    return this.createLog({
+      description: `Failed to submit file to LHDN: ${fileInfo.fileName} - ${error.message}`,
+      loggedUser: user.username || 'System',
+      ipAddress: req.ip,
+      logType: LOG_TYPES.ERROR,
+      module: MODULES.LHDN,
+      action: ACTIONS.SUBMIT,
+      status: STATUSES.FAILED,
+      userId: user.id,
+      details: {
+        fileName: fileInfo.fileName,
+        error: error.message,
+        stack: error.stack,
+        invoiceNumber: fileInfo.invoiceNumber
+      }
+    });
+  }
+
+  /**
+   * Log status update for a submission
+   *
+   * @param {Object} req - Express request object
+   * @param {Object} statusData - Status data
+   * @returns {Promise<Object>} - Created log entry
+   */
+  static async logStatusUpdate(req, statusData) {
+    const user = req.session?.user || {};
+    return this.createLog({
+      description: `Updated submission status to ${statusData.status} for ${statusData.fileName || statusData.invoice_number}`,
+      loggedUser: user?.username || 'System',
+      ipAddress: req?.ip,
+      logType: LOG_TYPES.INFO,
+      module: MODULES.OUTBOUND,
+      action: ACTIONS.STATUS_UPDATE,
+      status: STATUSES.SUCCESS,
+      userId: user?.id,
+      details: statusData
+    });
+  }
+
+  /**
    * Get logs for a specific file
-   * 
+   *
    * @param {string} fileName - File name
    * @returns {Promise<Array>} - Array of logs
    */
