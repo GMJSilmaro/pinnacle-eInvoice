@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { auth } = require('../../middleware');
+const { auth } = require('../../middleware/index-prisma');
 const prisma = require('../../src/lib/prisma');
+const { LoggingService } = require('../../services/logging-prisma.service');
 
 // Auth routes
 router.get('/login', (req, res) => {
@@ -19,12 +20,14 @@ router.post('/auth/logout', async (req, res) => {
     try {
         // Log the logout action if user is in session
         if (req.session?.user) {
-            await WP_LOGS.create({
-                Description: `User ${req.session.user.username} logged out`,
-                CreateTS: sequelize.literal('GETDATE()'),
-                LoggedUser: req.session.user.username,
-                Action: 'LOGOUT',
-                IPAddress: req.ip
+            await prisma.wP_LOGS.create({
+                data: {
+                    Description: `User ${req.session.user.username} logged out`,
+                    CreateTS: new Date(),
+                    LoggedUser: req.session.user.username,
+                    Action: 'LOGOUT',
+                    IPAddress: req.ip
+                }
             });
         }
         // Destroy the session
@@ -42,12 +45,14 @@ router.get('/auth/logout', async (req, res) => {
     try {
         // Log the logout action if user is in session
         if (req.session?.user) {
-            await WP_LOGS.create({
-                Description: `User ${req.session.user.username} logged out (${req.query.reason || 'manual'})`,
-                CreateTS: sequelize.literal('GETDATE()'),
-                LoggedUser: req.session.user.username,
-                Action: 'LOGOUT',
-                IPAddress: req.ip
+            await prisma.wP_LOGS.create({
+                data: {
+                    Description: `User ${req.session.user.username} logged out (${req.query.reason || 'manual'})`,
+                    CreateTS: new Date(),
+                    LoggedUser: req.session.user.username,
+                    Action: 'LOGOUT',
+                    IPAddress: req.ip
+                }
             });
         }
 

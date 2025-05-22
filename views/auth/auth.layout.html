@@ -138,6 +138,7 @@
     <script src="/assets/vendor/jquery/jquery.min.js"></script>
     <script src="/assets/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/assets/js/utils/session-interceptor.js"></script>
     <!-- <script>
         // Theme toggle functionality
         const themeToggle = document.getElementById('themeToggle');
@@ -152,7 +153,7 @@
         themeToggle.addEventListener('click', () => {
             const currentTheme = html.getAttribute('data-theme');
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-            
+
             html.setAttribute('data-theme', newTheme);
             localStorage.setItem('theme', newTheme);
             updateThemeIcon(newTheme);
@@ -166,4 +167,4 @@
     {% block scripts %}{% endblock %}
 </body>
 
-</html> 
+</html>

@@ -2,6 +2,12 @@ const SettingsUtil = require('../utils/settings.util');
 
 module.exports = async (req, res, next) => {
   try {
+    // Check if headers have already been sent
+    if (res.headersSent) {
+      console.error('Headers already sent, cannot check maintenance mode');
+      return next();
+    }
+
     // Skip maintenance check for admin users
     if (req.session?.user?.admin) {
       return next();
@@ -14,7 +20,7 @@ module.exports = async (req, res, next) => {
     }
 
     const isMaintenanceMode = await SettingsUtil.isMaintenanceMode();
-    
+
     if (isMaintenanceMode) {
       if (req.xhr || req.headers.accept?.includes('application/json')) {
         // For API requests
@@ -36,4 +42,4 @@ module.exports = async (req, res, next) => {
     console.error('Error in maintenance middleware:', error);
     next();
   }
-}; 
+};

@@ -52,7 +52,7 @@ router.get('/profile', auth.isAdmin, async (req, res) => {
     }
 
     // Get user details first
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: req.session.user.username }
     });
 
@@ -64,18 +64,20 @@ router.get('/profile', auth.isAdmin, async (req, res) => {
     }
 
     // Find company using user's TIN
-    const company = await WP_COMPANY_SETTINGS.findOne({
+    const company = await prisma.wP_COMPANY_SETTINGS.findFirst({
       where: { TIN: user.TIN }
     });
 
     // Get LHDN configuration
-    const lhdnConfig = await WP_CONFIGURATION.findOne({
+    const lhdnConfig = await prisma.wP_CONFIGURATION.findFirst({
       where: {
         Type: 'LHDN',
-        UserID: user.ID,
+        UserID: String(user.ID),
         IsActive: true
       },
-      order: [['CreateTS', 'DESC']]
+      orderBy: {
+        CreateTS: 'desc'
+      }
     });
 
     // Parse LHDN settings
@@ -128,13 +130,12 @@ router.put('/profile', auth.isAdmin, async (req, res) => {
   try {
     if (!req.session?.user) {
       return res.status(401).json({
-
         success: false,
         message: 'User not authenticated'
       });
     }
 
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: req.session.user.username }
     });
 
@@ -163,66 +164,74 @@ router.put('/profile', auth.isAdmin, async (req, res) => {
       });
     }
 
-    // Start transaction
-    const transaction = await sequelize.transaction();
-
-    try {
-      // Find or create company settings
-      const [company, created] = await WP_COMPANY_SETTINGS.findOrCreate({
-        where: { TIN: user.TIN },
-        defaults: {
-          CompanyName: companyName,
-          Industry: industry,
-          Country: country,
-          Email: email,
-          Phone: phone,
-          Address: address,
-          About: about,
-          TIN: user.TIN,
-          BRN: user.IDValue,
-          UserID: user.ID,
-          ValidStatus: 1,
-          CreateTS: new Date().toISOString(),
-          UpdateTS: new Date().toISOString(),
-        },
-        transaction
+    // Use Prisma transaction
+    const result = await prisma.$transaction(async (prismaClient) => {
+      // Find existing company settings
+      const existingCompany = await prismaClient.wP_COMPANY_SETTINGS.findFirst({
+        where: { TIN: user.TIN }
       });
 
-      if (!created) {
+      let company;
+      let created = false;
+
+      if (!existingCompany) {
+        // Create new company settings
+        company = await prismaClient.wP_COMPANY_SETTINGS.create({
+          data: {
+            CompanyName: companyName,
+            Industry: industry,
+            Country: country,
+            Email: email,
+            Phone: phone,
+            Address: address,
+            About: about,
+            TIN: user.TIN,
+            BRN: user.IDValue,
+            UserID: String(user.ID),
+            ValidStatus: '1'
+          }
+        });
+        created = true;
+      } else {
         // Update existing company (excluding TIN/BRN)
-        await company.update({
-          CompanyName: companyName,
-          Industry: industry,
-          Country: country,
-          Email: email,
-          Phone: phone,
-          Address: address,
-          About: about,
-          UpdateTS: new Date().toISOString(),
-        }, { transaction });
+        company = await prismaClient.wP_COMPANY_SETTINGS.update({
+          where: { ID: existingCompany.ID },
+          data: {
+            CompanyName: companyName,
+            Industry: industry,
+            Country: country,
+            Email: email,
+            Phone: phone,
+            Address: address,
+            About: about
+          }
+        });
       }
 
       // Log the action
-      await WP_LOGS.create({
-        Description: created ? 'Company profile created' : 'Company profile updated',
-        CreateTS: new Date().toISOString(),
-        LoggedUser: user.Username,
-        LogType: 'INFO',
-        Module: 'Company Management',
-        Action: created ? 'CREATE' : 'UPDATE',
-        Status: 'SUCCESS',
-        UserID: user.ID
-      }, { transaction });
+      await prismaClient.wP_LOGS.create({
+        data: {
+          Description: created ? 'Company profile created' : 'Company profile updated',
+          CreateTS: new Date().toISOString(),
+          LoggedUser: user.Username,
+          LogType: 'INFO',
+          Module: 'Company Management',
+          Action: created ? 'CREATE' : 'UPDATE',
+          Status: 'SUCCESS',
+          UserID: user.ID
+        }
+      });
 
       // Get LHDN configuration
-      const lhdnConfig = await WP_CONFIGURATION.findOne({
+      const lhdnConfig = await prismaClient.wP_CONFIGURATION.findFirst({
         where: {
           Type: 'LHDN',
-          UserID: user.ID,
+          UserID: String(user.ID),
           IsActive: true
         },
-        order: [['CreateTS', 'DESC']],
-        transaction
+        orderBy: {
+          CreateTS: 'desc'
+        }
       });
 
       // Parse LHDN settings
@@ -236,31 +245,32 @@ router.put('/profile', auth.isAdmin, async (req, res) => {
         }
       }
 
-      await transaction.commit();
+      return {
+        company,
+        created,
+        lhdnSettings
+      };
+    });
 
-      res.json({
-        success: true,
-        message: created ? 'Company profile created successfully' : 'Company profile updated successfully',
-        company: {
-          companyName: company.CompanyName,
-          industry: company.Industry,
-          country: company.Country,
-          email: company.Email,
-          phone: company.Phone,
-          address: company.Address,
-          tin: company.TIN,
-          brn: company.BRN,
-          about: company.About,
-          profileImage: company.CompanyImage,
-          validStatus: company.ValidStatus,
-          clientId: lhdnSettings.clientId || '',
-          clientSecret: lhdnSettings.clientSecret ? '****************' : ''
-        }
-      });
-    } catch (error) {
-      await transaction.rollback();
-      throw error;
-    }
+    res.json({
+      success: true,
+      message: result.created ? 'Company profile created successfully' : 'Company profile updated successfully',
+      company: {
+        companyName: result.company.CompanyName,
+        industry: result.company.Industry,
+        country: result.company.Country,
+        email: result.company.Email,
+        phone: result.company.Phone,
+        address: result.company.Address,
+        tin: result.company.TIN,
+        brn: result.company.BRN,
+        about: result.company.About,
+        profileImage: result.company.CompanyImage,
+        validStatus: result.company.ValidStatus,
+        clientId: result.lhdnSettings.clientId || '',
+        clientSecret: result.lhdnSettings.clientSecret ? '****************' : ''
+      }
+    });
   } catch (error) {
     console.error('Error updating company profile:', error);
     res.status(500).json({
@@ -275,7 +285,6 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
   try {
     if (!req.session?.user) {
       return res.status(401).json({
-
         success: false,
         message: 'User not authenticated'
       });
@@ -291,7 +300,7 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
       });
     }
 
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: req.session.user.username }
     });
 
@@ -320,73 +329,60 @@ router.put('/registration-details/tin', auth.isAdmin, async (req, res) => {
       });
     }
 
-    // Start transaction
-    const transaction = await sequelize.transaction();
-
-    try {
+    // Use Prisma transaction
+    await prisma.$transaction(async (prismaClient) => {
       // Update user's TIN
-      await WP_USER_REGISTRATION.update(
-        { TIN: tin },
-        {
-          where: { ID: user.ID },
-          transaction
-        }
-      );
-
-      // Update or create company settings
-      const [company] = await WP_COMPANY_SETTINGS.findOrCreate({
-        where: { UserID: user.ID },
-        defaults: {
-          TIN: tin,
-          BRN: user.IDValue,
-          UserID: user.ID,
-          ValidStatus: 1,
-          CreateTS: new Date().toISOString(),
-          UpdateTS: new Date().toISOString(),
-        },
-        transaction
+      await prismaClient.wP_USER_REGISTRATION.update({
+        where: { ID: user.ID },
+        data: { TIN: tin }
       });
 
+      // Find existing company settings
+      const existingCompany = await prismaClient.wP_COMPANY_SETTINGS.findFirst({
+        where: { UserID: String(user.ID) }
+      });
 
-      if (company) {
-        await company.update(
-          {
+      if (existingCompany) {
+        // Update existing company
+        await prismaClient.wP_COMPANY_SETTINGS.update({
+          where: { ID: existingCompany.ID },
+          data: { TIN: tin }
+        });
+      } else {
+        // Create new company settings
+        await prismaClient.wP_COMPANY_SETTINGS.create({
+          data: {
             TIN: tin,
-            UpdateTS: sequelize.literal('GETDATE()')
-
-          },
-          { transaction }
-        );
+            BRN: user.IDValue,
+            UserID: String(user.ID),
+            ValidStatus: '1'
+          }
+        });
       }
 
       // Log the action
-      await WP_LOGS.create({
-        Description: 'Tax Identification Number (TIN) updated',
-        CreateTS: new Date().toISOString(),
-        LoggedUser: user.Username,
-        LogType: 'INFO',
-        Module: 'Company Management',
-        Action: 'UPDATE',
-        Status: 'SUCCESS',
-        UserID: user.ID
-      }, { transaction });
-
-      // Commit transaction
-      await transaction.commit();
-
-      res.json({
-        success: true,
-        message: 'Tax Identification Number updated successfully',
+      await prismaClient.wP_LOGS.create({
         data: {
-          tin,
-          username: user.Username
+          Description: 'Tax Identification Number (TIN) updated',
+          CreateTS: new Date().toISOString(),
+          LoggedUser: user.Username,
+          LogType: 'INFO',
+          Module: 'Company Management',
+          Action: 'UPDATE',
+          Status: 'SUCCESS',
+          UserID: user.ID
         }
       });
-    } catch (error) {
-      // Rollback transaction on error
-      await transaction.rollback();
-      throw error;
-    }
+    });
+
+    res.json({
+      success: true,
+      message: 'Tax Identification Number updated successfully',
+      data: {
+        tin,
+        username: user.Username
+      }
+    });
   } catch (error) {
     console.error('Error updating TIN:', error);
     res.status(500).json({
@@ -407,6 +403,7 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
     }
 
     const { IDType = 'BRN', IDValue, password } = req.body;
+    const brn = IDValue; // For clarity
 
     // Validate required fields
     if (!IDType || !IDValue || !password) {
@@ -416,8 +413,7 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
       });
     }
 
-
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: req.session.user.username }
     });
 
@@ -446,74 +442,60 @@ router.put('/registration-details/brn', auth.isAdmin, async (req, res) => {
       });
     }
 
-    // Start transaction
-    const transaction = await sequelize.transaction();
-
-    try {
+    // Use Prisma transaction
+    await prisma.$transaction(async (prismaClient) => {
       // Update user's BRN (IDValue)
-      await WP_USER_REGISTRATION.update(
-        { IDValue: brn },
-        {
-          where: { ID: user.ID },
-          transaction
-        }
-      );
-
-      // Update or create company settings
-      const [company] = await WP_COMPANY_SETTINGS.findOrCreate({
-        where: { UserID: user.ID },
-        defaults: {
-          TIN: user.TIN,
-          IDType: user.IDType,
-          IDValue: user.IDValue,
-          UserID: user.ID,
-          ValidStatus: 0,
-          CreateTS: new Date().toISOString(),
-
-        },
-        transaction
+      await prismaClient.wP_USER_REGISTRATION.update({
+        where: { ID: user.ID },
+        data: { IDValue: brn }
       });
 
-      if (company) {
-        await company.update(
-          {
+      // Find existing company settings
+      const existingCompany = await prismaClient.wP_COMPANY_SETTINGS.findFirst({
+        where: { UserID: String(user.ID) }
+      });
+
+      if (existingCompany) {
+        // Update existing company
+        await prismaClient.wP_COMPANY_SETTINGS.update({
+          where: { ID: existingCompany.ID },
+          data: { BRN: brn }
+        });
+      } else {
+        // Create new company settings
+        await prismaClient.wP_COMPANY_SETTINGS.create({
+          data: {
+            TIN: user.TIN,
             BRN: brn,
-            UpdateTS: sequelize.literal('GETDATE()')
-
-          },
-          { transaction }
-
-        );
+            UserID: String(user.ID),
+            ValidStatus: '0'
+          }
+        });
       }
 
       // Log the action
-      await WP_LOGS.create({
-        Description: 'Business Registration Number (BRN) updated',
-        CreateTS: new Date().toISOString(),
-        LoggedUser: user.Username,
-        LogType: 'INFO',
-        Module: 'Company Management',
-        Action: 'UPDATE',
-        Status: 'SUCCESS',
-        UserID: user.ID
-      }, { transaction });
-
-      // Commit transaction
-      await transaction.commit();
-
-      res.json({
-        success: true,
-        message: 'Business Registration Number updated successfully',
+      await prismaClient.wP_LOGS.create({
         data: {
-          brn,
-          username: user.Username
+          Description: 'Business Registration Number (BRN) updated',
+          CreateTS: new Date().toISOString(),
+          LoggedUser: user.Username,
+          LogType: 'INFO',
+          Module: 'Company Management',
+          Action: 'UPDATE',
+          Status: 'SUCCESS',
+          UserID: user.ID
         }
       });
-    } catch (error) {
-      // Rollback transaction on error
-      await transaction.rollback();
-      throw error;
-    }
+    });
+
+    res.json({
+      success: true,
+      message: 'Business Registration Number updated successfully',
+      data: {
+        brn,
+        username: user.Username
+      }
+    });
   } catch (error) {
     console.error('Error updating BRN:', error);
     res.status(500).json({
@@ -528,7 +510,6 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
   try {
     if (!req.session?.user) {
       return res.status(401).json({
-
         success: false,
         message: 'User not authenticated'
       });
@@ -545,7 +526,7 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
     }
 
     // Get user details
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: req.session.user.username }
     });
 
@@ -566,47 +547,79 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
       });
     }
 
-    // Save to WP_CONFIGURATION
-    const settings = {
-      clientId,
-      clientSecret,
-      lastModifiedBy: {
-        userId: user.ID,
-        username: user.Username,
-        timestamp: sequelize.literal('GETDATE()')
-      }
-    };
+    // Use Prisma transaction
+    await prisma.$transaction(async (prismaClient) => {
+      // Save to WP_CONFIGURATION
+      const settings = {
+        clientId,
+        clientSecret,
+        lastModifiedBy: {
+          userId: user.ID,
+          username: user.Username,
+          timestamp: new Date().toISOString()
+        }
+      };
 
-
-    await WP_CONFIGURATION.updateConfig('LHDN', user.ID, settings);
-
-    // Log the action
-    await WP_LOGS.create({
-      Description: 'LHDN credentials updated by ' + user.Username,
-      CreateTS: new Date().toISOString(),
-      LoggedUser: user.Username,
-      LogType: 'INFO',
-      Module: 'Company Management',
-      Action: 'UPDATE',
-      Status: 'SUCCESS',
-      UserID: user.ID
-
-    });
-
-    // Get company to update status
-    const company = await WP_COMPANY_SETTINGS.findOne({
-      where: { TIN: user.TIN }
-    });
-
-    if (company) {
-      await company.update({
-        ValidStatus: 1,
-        UpdateTS: sequelize.literal('GETDATE()')
-
+      // Find existing configuration
+      const existingConfig = await prismaClient.wP_CONFIGURATION.findFirst({
+        where: {
+          Type: 'LHDN',
+          UserID: String(user.ID),
+          IsActive: true
+        }
       });
-    }
 
+      if (existingConfig) {
+        // Update existing configuration
+        await prismaClient.wP_CONFIGURATION.update({
+          where: { ID: existingConfig.ID },
+          data: {
+            Settings: JSON.stringify(settings),
+            UpdateTS: new Date()
+          }
+        });
+      } else {
+        // Create new configuration
+        await prismaClient.wP_CONFIGURATION.create({
+          data: {
+            Type: 'LHDN',
+            UserID: String(user.ID),
+            Settings: JSON.stringify(settings),
+            IsActive: true,
+            CreateTS: new Date(),
+            UpdateTS: new Date()
+          }
+        });
+      }
 
+      // Log the action
+      await prismaClient.wP_LOGS.create({
+        data: {
+          Description: 'LHDN credentials updated by ' + user.Username,
+          CreateTS: new Date().toISOString(),
+          LoggedUser: user.Username,
+          LogType: 'INFO',
+          Module: 'Company Management',
+          Action: 'UPDATE',
+          Status: 'SUCCESS',
+          UserID: user.ID
+        }
+      });
+
+      // Get company to update status
+      const company = await prismaClient.wP_COMPANY_SETTINGS.findFirst({
+        where: { TIN: user.TIN }
+      });
+
+      if (company) {
+        await prismaClient.wP_COMPANY_SETTINGS.update({
+          where: { ID: company.ID },
+          data: {
+            ValidStatus: '1'
+          }
+        });
+      }
+    });
 
     res.json({
       success: true,
@@ -621,15 +634,17 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
 
     // Log the error
     if (req.session?.user) {
-      await WP_LOGS.create({
-        Description: 'Failed to update LHDN credentials',
-        CreateTS: new Date().toISOString(),
-        LoggedUser: req.session.user.username,
-        LogType: 'ERROR',
-        Module: 'Company Management',
-        Action: 'UPDATE',
-        Status: 'ERROR',
-        UserID: req.session.user.id
+      await prisma.wP_LOGS.create({
+        data: {
+          Description: 'Failed to update LHDN credentials',
+          CreateTS: new Date().toISOString(),
+          LoggedUser: req.session.user.username,
+          LogType: 'ERROR',
+          Module: 'Company Management',
+          Action: 'UPDATE',
+          Status: 'ERROR',
+          UserID: req.session.user.id
+        }
       });
     }
 
@@ -644,7 +659,6 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
 router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async (req, res) => {
   try {
     if (!req.session?.user) {
-
       return res.status(401).json({
         success: false,
         message: 'User not authenticated'
@@ -658,7 +672,7 @@ router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async
       });
     }
 
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: req.session.user.username }
     });
 
@@ -669,45 +683,60 @@ router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async
       });
     }
 
-    // Find or create company settings
-    const [company] = await WP_COMPANY_SETTINGS.findOrCreate({
-      where: { TIN: user.TIN },
-      defaults: {
-        TIN: user.TIN,
-        IDType: user.IDType,
-        IDValue: user.IDValue,
-        UserID: user.ID,
-        ValidStatus: 1,
+    // Use Prisma transaction
+    await prisma.$transaction(async (prismaClient) => {
+      // Find existing company settings
+      const existingCompany = await prismaClient.wP_COMPANY_SETTINGS.findFirst({
+        where: { TIN: user.TIN }
+      });
+
+      let company;
+      if (!existingCompany) {
+        // Create new company settings
+        company = await prismaClient.wP_COMPANY_SETTINGS.create({
+          data: {
+            TIN: user.TIN,
+            IDType: user.IDType,
+            IDValue: user.IDValue,
+            UserID: String(user.ID),
+            ValidStatus: '1'
+          }
+        });
+      } else {
+        company = existingCompany;
       }
-    });
 
+      const imageUrl = '/uploads/company-profiles/' + req.file.filename;
 
-
-    const imageUrl = '/uploads/company-profiles/' + req.file.filename;
-
-    // Remove old profile image if it exists
-    if (company.CompanyImage) {
-      const oldImagePath = path.join(__dirname, '../../../../public', company.CompanyImage);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
+      // Remove old profile image if it exists
+      if (company.CompanyImage) {
+        const oldImagePath = path.join(__dirname, '../../../../public', company.CompanyImage);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
       }
-    }
 
-    // Update company profile with new image URL
-    await company.update({
-      CompanyImage: imageUrl
-    });
+      // Update company profile with new image URL
+      await prismaClient.wP_COMPANY_SETTINGS.update({
+        where: { ID: company.ID },
+        data: {
+          CompanyImage: imageUrl
+        }
+      });
 
-    // Log the action
-    await WP_LOGS.create({
-      Description: 'Company profile image updated',
-      CreateTS: new Date().toISOString(),
-      LoggedUser: user.Username,
-      LogType: 'INFO',
-      Module: 'Company Management',
-      Action: 'UPDATE',
-      Status: 'SUCCESS',
-      UserID: user.ID
+      // Log the action
+      await prismaClient.wP_LOGS.create({
+        data: {
+          Description: 'Company profile image updated',
+          CreateTS: new Date().toISOString(),
+          LoggedUser: user.Username,
+          LogType: 'INFO',
+          Module: 'Company Management',
+          Action: 'UPDATE',
+          Status: 'SUCCESS',
+          UserID: user.ID
+        }
+      });
     });
 
     res.json({
@@ -733,13 +762,12 @@ router.delete('/profile-image', auth.isAdmin, async (req, res) => {
   try {
     if (!req.session?.user) {
       return res.status(401).json({
-
         success: false,
         message: 'User not authenticated'
       });
     }
 
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findFirst({
       where: { Username: req.session.user.username }
     });
 
@@ -750,7 +778,7 @@ router.delete('/profile-image', auth.isAdmin, async (req, res) => {
       });
     }
 
-    const company = await WP_COMPANY_SETTINGS.findOne({
+    const company = await prisma.wP_COMPANY_SETTINGS.findFirst({
       where: { TIN: user.TIN }
     });
 
@@ -761,29 +789,37 @@ router.delete('/profile-image', auth.isAdmin, async (req, res) => {
       });
     }
 
-    // Remove profile image if it exists
-    if (company.CompanyImage) {
-      const imagePath = path.join(__dirname, '../../../../public', company.CompanyImage);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+    // Use Prisma transaction
+    await prisma.$transaction(async (prismaClient) => {
+      // Remove profile image if it exists
+      if (company.CompanyImage) {
+        const imagePath = path.join(__dirname, '../../../../public', company.CompanyImage);
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
       }
-    }
 
-    // Update company profile to remove image reference
-    await company.update({
-      CompanyImage: null
-    });
+      // Update company profile to remove image reference
+      await prismaClient.wP_COMPANY_SETTINGS.update({
+        where: { ID: company.ID },
+        data: {
+          CompanyImage: null
+        }
+      });
 
-    // Log the action
-    await WP_LOGS.create({
-      Description: 'Company profile image removed',
-      CreateTS: new Date().toISOString(),
-      LoggedUser: user.Username,
-      LogType: 'INFO',
-      Module: 'Company Management',
-      Action: 'DELETE',
-      Status: 'SUCCESS',
-      UserID: user.ID
+      // Log the action
+      await prismaClient.wP_LOGS.create({
+        data: {
+          Description: 'Company profile image removed',
+          CreateTS: new Date().toISOString(),
+          LoggedUser: user.Username,
+          LogType: 'INFO',
+          Module: 'Company Management',
+          Action: 'DELETE',
+          Status: 'SUCCESS',
+          UserID: user.ID
+        }
+      });
     });
 
     res.json({
@@ -811,7 +847,7 @@ router.get('/settings', auth.middleware, async (req, res) => {
     }
 
     // Get user details first
-    const user = await WP_USER_REGISTRATION.findOne({
+    const user = await prisma.wP_USER_REGISTRATION.findUnique({
       where: { ID: req.user.id }
     });
 
@@ -823,7 +859,7 @@ router.get('/settings', auth.middleware, async (req, res) => {
     }
 
     // Find company using user's TIN
-    const company = await WP_COMPANY_SETTINGS.findOne({
+    const company = await prisma.wP_COMPANY_SETTINGS.findFirst({
       where: { TIN: user.TIN }
     });
 

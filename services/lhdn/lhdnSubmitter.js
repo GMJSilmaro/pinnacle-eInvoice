@@ -388,6 +388,24 @@ class LHDNSubmitter {
       // Verify the file exists
       if (!fs.existsSync(filePath)) {
         console.error(`File not found at path: ${filePath}`);
+
+        // Try alternate paths
+        const alternativePaths = [
+          path.join('C:\\SFTPRoot', type, company, formattedDate, fileName),
+          path.join('C:\\SFTPRoot_Consolidation', 'Incoming', company, formattedDate, fileName),
+          path.join('C:\\SFTPRoot_Consolidation', 'Outgoing', company, formattedDate, fileName)
+        ];
+
+        console.log('Trying alternative paths:', alternativePaths);
+
+        for (const altPath of alternativePaths) {
+          console.log('Checking alternative path:', altPath);
+          if (fs.existsSync(altPath)) {
+            console.log('File found at alternative path:', altPath);
+            return altPath;
+          }
+        }
+
         console.error('Path components:', {
           networkPath,
           type,

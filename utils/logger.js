@@ -1,5 +1,6 @@
 const winston = require('winston');
 const path = require('path');
+const prisma = require('../src/lib/prisma');
 
 // Create logger instance
 const logger = winston.createLogger({
@@ -9,12 +10,12 @@ const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    new winston.transports.File({ 
-      filename: path.join(__dirname, '../logs/error.log'), 
-      level: 'error' 
+    new winston.transports.File({
+      filename: path.join(__dirname, '../logs/error.log'),
+      level: 'error'
     }),
-    new winston.transports.File({ 
-      filename: path.join(__dirname, '../logs/combined.log') 
+    new winston.transports.File({
+      filename: path.join(__dirname, '../logs/combined.log')
     })
   ]
 });
@@ -35,10 +36,10 @@ if (process.env.NODE_ENV !== 'production') {
  * @returns {string} IP address
  */
 function getClientIP(req) {
-  return req.ip || 
-         req.connection?.remoteAddress || 
-         req.socket?.remoteAddress || 
-         req.headers['x-forwarded-for']?.split(',')[0] || 
+  return req.ip ||
+         req.connection?.remoteAddress ||
+         req.socket?.remoteAddress ||
+         req.headers['x-forwarded-for']?.split(',')[0] ||
          'Unknown';
 }
 
@@ -93,26 +94,24 @@ function getStatus(description, error = null) {
 
 /**
  * Log database operations to WP_LOGS table
- * @param {Object} models - Database models
+ * @param {Object} models - Database models (not used with Prisma)
  * @param {Object} req - Express request object
  * @param {string} description - Description of the operation
  * @param {Object} options - Additional options
  */
 async function logDBOperation(models, req, description, options = {}) {
   try {
-    // If models is not available, log to console only
-    if (!models || !models.WP_LOGS) {
-      console.log('DB Logging:', {
-        description,
-        ...options,
-        timestamp: new Date().toISOString()
-      });
-      return;
-    }
+    // Log to console in all cases
+    console.log('DB Logging:', {
+      description,
+      ...options,
+      timestamp: new Date().toISOString()
+    });
 
+    // Create log entry using Prisma
     const logEntry = {
       Description: description,
-      CreateTS: sequelize.literal('GETDATE()'),
+      CreateTS: new Date(), // Use JavaScript Date object instead of sequelize.literal
       LoggedUser: req?.session?.user?.username || 'System',
       IPAddress: req?.ip || null,
       LogType: options.status === 'FAILED' ? 'ERROR' : 'INFO',
@@ -122,8 +121,10 @@ async function logDBOperation(models, req, description, options = {}) {
       UserID: req?.session?.user?.id || null
     };
 
-    await models.WP_LOGS.create(logEntry);
-    
+    await prisma.wP_LOGS.create({
+      data: logEntry
+    });
+
   } catch (error) {
     console.error('Failed to log operation', {
       description,
@@ -136,19 +137,18 @@ async function logDBOperation(models, req, description, options = {}) {
 
 /**
  * Create middleware to log HTTP requests
- * @param {Object} models - Database models
  * @returns {Function} Express middleware
  */
-function createRequestLogger(models) {
+function createRequestLogger() {
   return async (req, res, next) => {
     const startTime = Date.now();
-    
+
     // Log after response is sent
     res.on('finish', async () => {
       const duration = Date.now() - startTime;
       const description = `${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`;
-      
-      await logDBOperation(models, req, description, {
+
+      await logDBOperation(null, req, description, {
         module: 'HTTP',
         action: req.method,
         duration,
@@ -164,4 +164,4 @@ module.exports = {
   logger,
   logDBOperation,
   createRequestLogger
-}; 
+};

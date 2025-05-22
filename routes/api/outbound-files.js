@@ -17,7 +17,7 @@ const { getDocumentDetails, cancelValidDocumentBySupplier } = require('../../ser
 const { getActiveSAPConfig } = require('../../config/paths');
 const NodeCache = require('node-cache');
 const fileCache = new NodeCache({ stdTTL: 900 }); // 15 minutes cache instead of 1 minute
-const { OutboundLoggingService, LOG_TYPES, MODULES, ACTIONS, STATUSES } = require('../../services/outbound-logging-prisma.service');
+const { OutboundLoggingService, LOG_TYPES, MODULES, ACTIONS, STATUSES } = require('../../services/outboundLogging-prisma.service');
 const { auth } = require('../../middleware/index-prisma');
 
 // Add os module to the beginning of the file

@@ -27,28 +27,9 @@ function initializeEventListeners() {
     });
 
     // Load company TINs when modal opens
-    document.getElementById('addUserModal')?.addEventListener('show.bs.modal', async function() {
-        try {
-            const response = await fetch('/api/user/company/list');
-            if (!response.ok) {
-                throw new Error('Failed to fetch companies');
-            }
-            
-            const companies = await response.json();
-            const tinSelect = document.getElementById('newUserTIN');
-            tinSelect.innerHTML = '<option value="">Select Company TIN</option>';
-            
-            companies.forEach(company => {
-                const option = document.createElement('option');
-                option.value = company.TIN || company.BRN;
-                option.textContent = `${company.CompanyName} (${company.TIN || company.BRN})`;
-                option.dataset.companyData = JSON.stringify(company);
-                tinSelect.appendChild(option);
-            });
-        } catch (error) {
-            console.error('Error loading company data:', error);
-            showToast('error', 'Failed to load company information');
-        }
+    document.getElementById('addUserModal')?.addEventListener('show.bs.modal', function() {
+        // Use the loadCompanyTINs helper function
+        loadCompanyTINs('newUserTIN');
     });
 
     // Handle TIN selection change
@@ -68,7 +49,7 @@ function initializeEventListeners() {
         const fullName = e.target.value;
         const email = document.getElementById('newUserEmail').value;
         const suggestions = generateUsernameSuggestions(fullName, email);
-        
+
         // Update dropdown suggestions
         const dropdown = document.getElementById('usernameSuggestions');
         dropdown.innerHTML = '';
@@ -85,7 +66,7 @@ function initializeEventListeners() {
             li.appendChild(a);
             dropdown.appendChild(li);
         });
-        
+
         // Set first suggestion as default if username field is empty
         const usernameField = document.getElementById('newUserUsername');
         if (!usernameField.value && suggestions.length > 0) {
@@ -128,10 +109,10 @@ function initializeEventListeners() {
 // Handle pagination click
 function handlePaginationClick(e) {
     e.preventDefault();
-    
+
     const clickedLink = e.currentTarget;
     const pageText = clickedLink.textContent.trim();
-    
+
     // Calculate the target page
     if (pageText === 'Previous') {
         if (currentPage > 1) currentPage--;
@@ -141,7 +122,7 @@ function handlePaginationClick(e) {
         // Clicked a specific page number
         currentPage = parseInt(pageText);
     }
-    
+
     // Reload users with the new page
     loadUsersList();
 }
@@ -154,19 +135,40 @@ async function loadUsersList() {
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading users...</td></tr>';
         }
-        
+
         // Fetch users with pagination params
         const response = await fetch(`/api/user/users-list?page=${currentPage}&limit=${itemsPerPage}`);
         if (!response.ok) throw new Error('Failed to fetch users');
-        
+
         const result = await response.json();
-        const users = result.users || [];
+
+        // Ensure we have valid data
+        if (!result || typeof result !== 'object') {
+            throw new Error('Invalid response format');
+        }
+
+        // Use empty array if users is null or undefined
+        const users = Array.isArray(result.users) ? result.users : [];
         totalUsers = result.totalCount || users.length;
-        
+
         displayUsers(users);
         updatePagination();
     } catch (error) {
         console.error('Error loading users:', error);
+
+        // Show error in the table
+        const tbody = document.getElementById('usersTableBody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">
+                <i class="fas fa-exclamation-circle me-2"></i>
+                Error loading users: ${error.message || 'Unknown error'}
+                <br>
+                <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadUsersList()">
+                    <i class="fas fa-sync"></i> Try Again
+                </button>
+            </td></tr>`;
+        }
+
         showToast('error', 'Failed to load users list');
     }
 }
@@ -177,8 +179,11 @@ function displayUsers(users) {
     if (!tbody) return;
 
     tbody.innerHTML = '';
-    
+
     users.forEach(user => {
+        // Ensure user object has all required properties
+        if (!user) return;
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${escapeHtml(user.FullName)}</td>
@@ -201,11 +206,11 @@ function displayUsers(users) {
             <td>${user.LastLoginTime ? new Date(user.LastLoginTime).toLocaleString() : 'Never'}</td>
             <td>
                 <div class="btn-group">
-                    <button class="btn btn-sm btn-primary" onclick="editUser(${user.ID})" title="Edit User">
+                    <button class="btn btn-sm btn-primary" onclick="editUser(${user.ID || 0})" title="Edit User">
                         <i class="fas fa-edit"></i>
                     </button>
-                    
-                    <button class="btn btn-sm btn-danger" onclick="deleteUser(${user.ID})" title="Delete User">
+
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser(${user.ID || 0})" title="Delete User">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -219,25 +224,25 @@ function displayUsers(users) {
 function updatePagination() {
     const paginationElement = document.querySelector('.pagination');
     if (!paginationElement) return;
-    
+
     // Calculate total pages
     const totalPages = Math.max(1, Math.ceil(totalUsers / itemsPerPage));
-    
+
     // Create pagination HTML
     let paginationHTML = '';
-    
+
     // Previous button
     paginationHTML += `
         <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
             <a class="page-link" href="#" tabindex="-1">Previous</a>
         </li>
     `;
-    
+
     // Page numbers
     const maxVisiblePages = 5;
     const startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
     const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-    
+
     for (let i = startPage; i <= endPage; i++) {
         paginationHTML += `
             <li class="page-item ${i === currentPage ? 'active' : ''}">
@@ -245,16 +250,16 @@ function updatePagination() {
             </li>
         `;
     }
-    
+
     // Next button
     paginationHTML += `
         <li class="page-item ${currentPage >= totalPages ? 'disabled' : ''}">
             <a class="page-link" href="#">Next</a>
         </li>
     `;
-    
+
     paginationElement.innerHTML = paginationHTML;
-    
+
     // Add event listeners to new pagination elements
     document.querySelectorAll('.pagination .page-link').forEach(link => {
         link.addEventListener('click', handlePaginationClick);
@@ -266,7 +271,7 @@ async function handleAddUser(e) {
     e.preventDefault();
 
     // Get the button that was clicked
-    const submitButton = e.target.querySelector('button[type="submit"]') || 
+    const submitButton = e.target.querySelector('button[type="submit"]') ||
                         document.querySelector('#addUserModal .modal-footer button.btn-primary');
     const originalText = submitButton ? submitButton.innerHTML : '<i class="fas fa-plus"></i> Create User';
 
@@ -284,7 +289,7 @@ async function handleAddUser(e) {
             password: generateTemporaryPassword(), // Generate a temporary password
             userType: document.getElementById('newUserRole').value,
             // TIN handling - this can be null
-            TIN: document.getElementById('newUserTIN')?.value || 
+            TIN: document.getElementById('newUserTIN')?.value ||
                  document.getElementById('newUserCustomTIN')?.value || null,
             IDType: document.getElementById('newUserIDType')?.value || null,
             IDValue: document.getElementById('newUserIDValue')?.value || null,
@@ -316,7 +321,7 @@ async function handleAddUser(e) {
         // Validate required fields
         const requiredFields = ['fullName', 'email', 'username'];
         const missingFields = requiredFields.filter(field => !formData[field]);
-        
+
         if (missingFields.length > 0) {
             showToast('error', `Please fill in all required fields: ${missingFields.join(', ')}`);
             // Reset button state
@@ -389,11 +394,11 @@ function isValidEmail(email) {
 // Format date for SQL Server
 function formatDateForSQL(date) {
     // Format as YYYY-MM-DD HH:MM:SS
-    return date.getFullYear() + '-' + 
-           String(date.getMonth() + 1).padStart(2, '0') + '-' + 
-           String(date.getDate()).padStart(2, '0') + ' ' + 
-           String(date.getHours()).padStart(2, '0') + ':' + 
-           String(date.getMinutes()).padStart(2, '0') + ':' + 
+    return date.getFullYear() + '-' +
+           String(date.getMonth() + 1).padStart(2, '0') + '-' +
+           String(date.getDate()).padStart(2, '0') + ' ' +
+           String(date.getHours()).padStart(2, '0') + ':' +
+           String(date.getMinutes()).padStart(2, '0') + ':' +
            String(date.getSeconds()).padStart(2, '0');
 }
 
@@ -404,11 +409,11 @@ async function loadCompanyTINs(selectId, selectedTIN = '') {
         if (!response.ok) {
             throw new Error('Failed to fetch companies');
         }
-        
+
         const companies = await response.json();
         const tinSelect = document.getElementById(selectId);
         tinSelect.innerHTML = '<option value="">Select Company TIN</option>';
-        
+
         companies.forEach(company => {
             const option = document.createElement('option');
             option.value = company.TIN || company.BRN;
@@ -442,7 +447,7 @@ async function editUser(userId) {
                         <div class="modal-body">
                             <form id="editUserForm" class="modal-form-container">
                                 <input type="hidden" id="editUserId" value="${userId}">
-                                
+
                                 <!-- User Information -->
                                 <div class="form-group">
                                     <label for="editUserFullName" class="form-label required">Full Name</label>
@@ -469,9 +474,9 @@ async function editUser(userId) {
                                         </button>
                                     </label>
                                     <div class="input-group">
-                                        <input type="password" 
-                                               class="form-control" 
-                                               id="editUserPassword" 
+                                        <input type="password"
+                                               class="form-control"
+                                               id="editUserPassword"
                                                placeholder="Leave blank to keep current password"
                                                autocomplete="new-password">
                                         <button type="button" class="btn btn-outline-secondary" onclick="togglePasswordVisibility('editUserPassword')">
@@ -517,7 +522,7 @@ async function handleEditUser(e) {
     const userId = document.getElementById('editUserId').value;
     const password = document.getElementById('editUserPassword').value;
     const email = document.getElementById('editUserEmail').value.trim();
-    
+
     // Get the original full name for passing to backend
     const fullName = document.getElementById('editUserFullName').value.trim();
 
@@ -540,7 +545,7 @@ async function handleEditUser(e) {
         showValidationError('editUserEmail', 'Email address is required');
         hasErrors = true;
     }
-    
+
     if (!fullName) {
         showValidationError('editUserFullName', 'Full Name is required');
         hasErrors = true;
@@ -597,19 +602,19 @@ async function handleEditUser(e) {
 function showValidationError(fieldId, message) {
     const field = document.getElementById(fieldId);
     if (!field) return;
-    
+
     // Remove any existing error for this field
     clearValidationError(fieldId);
-    
+
     // Create error message element
     const errorDiv = document.createElement('div');
     errorDiv.className = 'invalid-feedback d-block';
     errorDiv.textContent = message;
     errorDiv.id = `${fieldId}-error`;
-    
+
     // Add error class to input
     field.classList.add('is-invalid');
-    
+
     // Insert error after the field
     field.parentNode.appendChild(errorDiv);
 }
@@ -618,9 +623,9 @@ function showValidationError(fieldId, message) {
 function clearValidationError(fieldId) {
     const field = document.getElementById(fieldId);
     if (!field) return;
-    
+
     field.classList.remove('is-invalid');
-    
+
     const errorEl = document.getElementById(`${fieldId}-error`);
     if (errorEl) {
         errorEl.remove();
@@ -631,17 +636,17 @@ function clearValidationError(fieldId) {
 function clearValidationMessages() {
     const form = document.getElementById('editUserForm');
     if (!form) return;
-    
+
     // Remove is-invalid class from all fields
     form.querySelectorAll('.is-invalid').forEach(field => {
         field.classList.remove('is-invalid');
     });
-    
+
     // Remove all error messages
     form.querySelectorAll('.invalid-feedback').forEach(msg => {
         msg.remove();
     });
-    
+
     // Remove any modal error alert
     const modalError = document.getElementById('modal-error-alert');
     if (modalError) {
@@ -656,13 +661,13 @@ function showModalError(message) {
     if (existingError) {
         existingError.remove();
     }
-    
+
     // Create error alert
     const errorAlert = document.createElement('div');
     errorAlert.className = 'alert alert-danger text-center mt-3';
     errorAlert.id = 'modal-error-alert';
     errorAlert.innerHTML = `<i class="fas fa-exclamation-circle me-2"></i>${message}`;
-    
+
     // Add to modal body
     const modalBody = document.querySelector('#editUserModal .modal-body');
     if (modalBody) {
@@ -677,7 +682,7 @@ function showModalError(message) {
 function togglePasswordVisibility(inputId) {
     const input = document.getElementById(inputId);
     const icon = input.nextElementSibling.querySelector('i');
-    
+
     if (input.type === 'password') {
         input.type = 'text';
         icon.classList.remove('fa-eye');
@@ -695,7 +700,7 @@ function generateNewPassword(inputId) {
     const password = generateTemporaryPassword();
     input.type = 'text';
     input.value = password;
-    
+
     // Update the eye icon
     const icon = input.nextElementSibling.querySelector('i');
     icon.classList.remove('fa-eye');
@@ -752,27 +757,31 @@ function generateTemporaryPassword() {
     const numericChars = "0123456789";
     const specialChars = "!@#$%^&*";
     const allChars = uppercaseChars + lowercaseChars + numericChars + specialChars;
-    
+
     // Ensure at least one of each character type
-    let password = 
+    let password =
         uppercaseChars.charAt(Math.floor(Math.random() * uppercaseChars.length)) +
         lowercaseChars.charAt(Math.floor(Math.random() * lowercaseChars.length)) +
         numericChars.charAt(Math.floor(Math.random() * numericChars.length)) +
         specialChars.charAt(Math.floor(Math.random() * specialChars.length));
-    
+
     // Fill the rest with random characters
     for (let i = 4; i < length; i++) {
         password += allChars.charAt(Math.floor(Math.random() * allChars.length));
     }
-    
+
     // Shuffle the password
     return password.split('').sort(() => 0.5 - Math.random()).join('');
 }
 
 // Helper utility to escape HTML special characters
 function escapeHtml(unsafe) {
-    return unsafe
-        .toString()
+    // Handle null, undefined, or other non-string values
+    if (unsafe === null || unsafe === undefined) {
+        return '';
+    }
+
+    return String(unsafe)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -885,15 +894,22 @@ async function viewDetails(userId) {
         const modal = new bootstrap.Modal(document.getElementById('userDetailsModal'));
         const modalBody = document.querySelector('#userDetailsModal .modal-body');
 
+        // Fix profile picture URL by ensuring it has the correct path
+        const profilePicUrl = userData.ProfilePicture ?
+            (userData.ProfilePicture.startsWith('http') ?
+                userData.ProfilePicture :
+                `${window.location.origin}${userData.ProfilePicture}`) :
+            `${window.location.origin}/assets/img/default-avatar.png`;
+
         modalBody.innerHTML = `
             <div class="user-details-container">
                 <div class="user-profile-section">
-                    <img src="${userData.ProfilePicture || '/assets/img/default-avatar.png'}" 
+                    <img src="${profilePicUrl}"
                          alt="Profile Picture" class="profile-picture">
                     <h4>${escapeHtml(userData.FullName)}</h4>
                     <p class="text-muted">${escapeHtml(userData.Username)}</p>
                 </div>
-                
+
                 <div class="details-grid">
                     <div class="detail-item">
                         <label>Email:</label>
@@ -959,50 +975,50 @@ function showPasswordModal(email, password, username = null) {
     if (existingModal) {
         existingModal.dispose();
     }
-    
+
     // Initialize a new modal
     const modal = new bootstrap.Modal(document.getElementById('tempPasswordModal'));
     const modalBody = document.querySelector('#tempPasswordModal .modal-body');
-    
+
     // Extract username from email if not provided
     const usernameDisplay = username || email.split('@')[0];
-    
+
     modalBody.innerHTML = `
         <div class="alert alert-warning mb-4">
-            <strong><i class="fas fa-exclamation-triangle me-2"></i>Important!</strong> 
+            <strong><i class="fas fa-exclamation-triangle me-2"></i>Important!</strong>
             Please save or send these credentials securely.
         </div>
-        
+
         <div class="card credential-card mb-3 shadow-sm">
             <div class="card-body p-4">
                 <div class="mb-3">
                     <label class="fw-bold mb-2">Username:</label>
                     <div class="p-3 bg-light rounded border fw-bold">${escapeHtml(usernameDisplay)}</div>
                 </div>
-                
+
                 <div class="mb-4">
                     <label class="fw-bold mb-2">Email:</label>
                     <div class="p-3 bg-light rounded border">${escapeHtml(email)}</div>
                 </div>
-                
+
                 <div>
                     <label class="fw-bold  mb-2">Temporary Password:</label>
                     <div class="d-flex align-items-center password-display p-3 bg-light rounded border">
                         <code id="passwordText" class="flex-grow-1 fs-5">${escapeHtml(password)}</code>
-                       
+
                     </div>
                 </div>
             </div>
         </div>
-        
+
         <div class="text-center">
             <p class="text-muted fst-italic">The user can change this password after logging in</p>
         </div>
     `;
-    
+
     // Show the modal
     modal.show();
-    
+
     // Add event listener to ensure the modal is fully removed from DOM when hidden
     const tempPasswordModal = document.getElementById('tempPasswordModal');
     tempPasswordModal.addEventListener('hidden.bs.modal', function() {
@@ -1010,7 +1026,7 @@ function showPasswordModal(email, password, username = null) {
         document.body.classList.remove('modal-open');
         const backdrops = document.querySelectorAll('.modal-backdrop');
         backdrops.forEach(backdrop => backdrop.remove());
-        
+
         // Re-enable any disabled functionality
         setTimeout(() => {
             // Force a reflow after a short delay
@@ -1022,7 +1038,7 @@ function showPasswordModal(email, password, username = null) {
 // Add this helper function
 function generateUsernameSuggestions(fullName, email) {
     const suggestions = [];
-    
+
     // Handle empty input case
     if (!fullName.trim()) {
         if (email && email.includes('@')) {
@@ -1033,26 +1049,26 @@ function generateUsernameSuggestions(fullName, email) {
         }
         return []; // Return empty array if no valid input
     }
-    
+
     // Split and clean name parts
     const nameParts = fullName.toLowerCase().trim().split(/\s+/).filter(part => part.length > 0);
-    
+
     if (nameParts.length > 0) {
         // First name
         const firstName = nameParts[0];
-        
+
         // Last name (if exists)
         const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
-        
+
         // Add various combinations
         suggestions.push(firstName); // Just first name
-        
+
         if (lastName) {
             suggestions.push(firstName + lastName); // First + last concatenated
             suggestions.push(firstName + '.' + lastName); // First.Last
             suggestions.push(firstName[0] + lastName); // Initial + last
             suggestions.push(firstName + lastName[0]); // First + last initial
-            
+
             // First name + last name + random number (for uniqueness)
             suggestions.push(firstName + lastName + Math.floor(Math.random() * 100));
         } else {
@@ -1060,25 +1076,25 @@ function generateUsernameSuggestions(fullName, email) {
             suggestions.push(firstName + Math.floor(Math.random() * 100));
             suggestions.push(firstName + Math.floor(Math.random() * 1000));
         }
-        
+
         // Add middle initial if available
         if (nameParts.length > 2) {
             const middleInitial = nameParts[1][0];
             suggestions.push(firstName + middleInitial + lastName);
         }
     }
-    
+
     // Add email-based suggestion if available
     if (email && email.includes('@')) {
         const emailUsername = email.split('@')[0].toLowerCase();
         suggestions.push(emailUsername);
-        
+
         // Try email + random number if email is provided
         if (suggestions.length < 5) {
             suggestions.push(emailUsername + Math.floor(Math.random() * 100));
         }
     }
-    
+
     // Clean up suggestions: remove special chars, limit length, ensure uniqueness
     return [...new Set(suggestions.map(s => {
         // Replace non-alphanumeric chars (except underscore and hyphen)
@@ -1095,7 +1111,7 @@ function toggleTINInput(mode = 'add') {
     const prefix = mode === 'edit' ? 'edit' : 'new';
     const select = document.getElementById(`${prefix}UserTIN`);
     const input = document.getElementById(`${prefix}UserCustomTIN`);
-    
+
     if (select.style.display !== 'none') {
         select.style.display = 'none';
         input.style.display = 'block';
@@ -1105,4 +1121,4 @@ function toggleTINInput(mode = 'add') {
         input.style.display = 'none';
         select.value = ''; // Clear the dropdown selection
     }
-} 
+}

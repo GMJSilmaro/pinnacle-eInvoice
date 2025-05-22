@@ -261,7 +261,7 @@
     return true; // Always return true as session is checked by middleware
   }
 
-  // Improved session expiry handler
+  // Improved session expiry handler - Auto redirect to login page
   function handleSessionExpiry() {
     // Clear all timers first
     if (idleTimer) {
@@ -278,42 +278,14 @@
     localStorage.removeItem('navbarData');
 
     // Only proceed with logout if not already on login page
-    if (!window.location.pathname.includes('/auth/logout')) {
-      const message = `
-        <div class="text-center">
-          <i class="bi bi-shield-lock display-4 text-danger mb-3"></i>
-          <p class="mb-3">Your session has expired due to inactivity.</p>
-          <p class="small text-muted">Please log in again to continue.</p>
-        </div>
-      `;
-
-      // Perform logout
+    if (!window.location.pathname.includes('/auth/logout') && !window.location.pathname.includes('/auth/login')) {
+      // Perform logout and redirect immediately
       fetch('/auth/logout', {
         method: 'POST',
         credentials: 'same-origin'
       }).finally(() => {
-        if (typeof Swal !== 'undefined') {
-          Swal.fire({
-            title: 'Session Expired',
-            html: message,
-            icon: false,
-            confirmButtonText: '<i class="bi bi-box-arrow-in-right"></i> Return to Login',
-            confirmButtonColor: '#0d6efd',
-            allowOutsideClick: false,
-            allowEscapeKey: false,
-            customClass: {
-              popup: 'rounded-3 shadow-lg',
-              title: 'text-danger',
-              htmlContainer: 'py-3',
-              confirmButton: 'px-4'
-            }
-          }).then(() => {
-            window.location.href = '/auth/logout?expired=true&reason=idle';
-          });
-        } else {
-          alert('Your session has expired. Please log in again.');
-          window.location.href = '/auth/logout?expired=true&reason=idle';
-        }
+        // Redirect to login page immediately without showing modal
+        window.location.href = '/auth/login?expired=true&reason=idle';
       });
     }
   }

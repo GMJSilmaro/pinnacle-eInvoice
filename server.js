@@ -181,7 +181,13 @@ app.use('/', webRoutes);
 
 // 6. Error Handling
 // 404 handler
-app.use((req, res) => {
+app.use((req, res, next) => {
+  // Check if headers have already been sent
+  if (res.headersSent) {
+    console.error('Headers already sent, cannot send 404 response');
+    return next();
+  }
+
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     res.status(404).json({ success: false, message: 'Not Found' });
   } else {

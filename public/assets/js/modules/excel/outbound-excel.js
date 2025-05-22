@@ -1091,6 +1091,7 @@ class InvoiceTableManager {
 
 
     renderSupplierInfo(data) {
+       
         if (!data) {
             return '<span class="text-muted">Company Name</span>';
         }

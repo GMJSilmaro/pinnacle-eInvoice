@@ -10,8 +10,9 @@ const { logDBOperation } = require('../../utils/logger');
 const adminSettingsRoutes = require('./admin.settings.routes');
 const outboundFilesRoutes = require('./outbound-files');
 const userRoutes = require('./user-prisma');
+const userApiRoutes = require('./user');
 const companySettingsRoutes = require('./company-settings.routes');
-const logsRoutes = require('./logs.routes');
+const logsRoutes = require('./logs-prisma');
 const lhdnRoutes = require('./lhdn');
 const configRoutes = require('./config');
 const geminiRoutes = require('./gemini.routes');
@@ -32,6 +33,7 @@ router.use('/logs', logsRoutes);
 router.use('/lhdn', lhdnRoutes);
 router.use('/config', configRoutes);
 router.use('/user', userRoutes);
+router.use('/user', userApiRoutes);
 router.use('/gemini', geminiRoutes);
 router.use('/rss', rssRoutes);
 

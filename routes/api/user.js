@@ -3,7 +3,7 @@ const router = express.Router();
 const prisma = require('../../src/lib/prisma');
 const bcrypt = require('bcryptjs');
 const { auth } = require('../../middleware/index-prisma');
-const { LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging.service');
+const { LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging-prisma.service');
 
 // Helper function to check if user is admin
 const checkAdmin = (req, res, next) => {

@@ -3,6 +3,12 @@ const moment = require('moment');
 
 // Error handling middleware
 const errorMiddleware = async (err, req, res, next) => {
+  // Check if headers have already been sent
+  if (res.headersSent) {
+    console.error('Headers already sent, cannot send error response:', err);
+    return next(err);
+  }
+
   // Log the error
   console.error('Error:', err);
 
@@ -41,14 +47,25 @@ const errorMiddleware = async (err, req, res, next) => {
     });
   }
 
+  // Check for ERR_HTTP_HEADERS_SENT error
+  if (err.code === 'ERR_HTTP_HEADERS_SENT') {
+    console.error('Headers already sent error:', err);
+    return next(err);
+  }
+
   // Default error response
-  res.status(err.status || 500).json({
-    success: false,
-    message: process.env.NODE_ENV === 'production'
-      ? 'Internal server error'
-      : err.message || 'Internal server error',
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-  });
+  try {
+    res.status(err.status || 500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'production'
+        ? 'Internal server error'
+        : err.message || 'Internal server error',
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  } catch (responseError) {
+    console.error('Error sending error response:', responseError);
+    next(err);
+  }
 };
 
 module.exports = errorMiddleware;

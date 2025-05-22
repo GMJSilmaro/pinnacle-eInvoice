@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) {
                 // If response is not OK, just log it but don't throw an error
                 console.log('Session check returned status:', response.status);
+                // Don't redirect on 401 from session check
                 return { hasActiveSession: false };
             }
             return response.json();
@@ -365,7 +366,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 // Redirect after a short delay
                 setTimeout(() => {
-                    window.location.href = data.redirectUrl || '/dashboard';
+                    // Force a hard redirect to dashboard to ensure session is recognized
+                    window.location.replace(data.redirectUrl || '/dashboard');
                 }, 1000);
             } else if (data.activeSession) {
                 console.log('[Frontend] Active session detected.');
@@ -395,7 +397,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Handle different error types
             if (error.status === 401) {
-                showLoginError('Invalid username or password');
+                // Try to parse the response to see if it contains a message
+                error.json().then(data => {
+                    if (data && data.message) {
+                        showLoginError(data.message);
+                    } else {
+                        showLoginError('Invalid username or password');
+                    }
+                }).catch(() => {
+                    showLoginError('Invalid username or password');
+                });
             } else if (error.status === 404) {
                 showLoginError('Login service not available. Please try again or contact support.');
                 console.error('Login endpoint not found. Check server configuration.');

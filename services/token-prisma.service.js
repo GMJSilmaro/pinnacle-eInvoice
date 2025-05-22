@@ -51,7 +51,7 @@ async function getConfig() {
     // Validate required fields
     const requiredFields = ['clientId', 'clientSecret', 'middlewareUrl'];
     const missingFields = requiredFields.filter(field => !settings[field]);
-    
+
     if (missingFields.length > 0) {
       console.warn(`LHDN configuration missing required fields: ${missingFields.join(', ')}`);
     }
@@ -79,9 +79,9 @@ async function getTokenAsTaxPayer() {
       console.error('Configuration error:', configError);
       throw new Error(`Failed to get LHDN configuration: ${configError.message}`);
     }
-    
+
     // Validate and construct base URL
-    const baseUrl = settings.environment === 'production' ? 
+    const baseUrl = settings.environment === 'production' ?
       settings.middlewareUrl : settings.middlewareUrl;
 
     if (!baseUrl) {
@@ -108,11 +108,11 @@ async function getTokenAsTaxPayer() {
     });
 
     console.log(`Requesting token from: ${formattedBaseUrl}/connect/token`);
-    
+
     try {
       const response = await axios.post(
-        `${formattedBaseUrl}/connect/token`, 
-        httpOptions, 
+        `${formattedBaseUrl}/connect/token`,
+        httpOptions,
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded'
@@ -127,7 +127,7 @@ async function getTokenAsTaxPayer() {
         saveTokenToFile(response.data);
         return response.data;
       }
-      
+
       throw new Error(`Unexpected response: ${response.status}`);
     } catch (apiError) {
       // Handle API errors
@@ -141,7 +141,7 @@ async function getTokenAsTaxPayer() {
       message: errorMessage,
       stack: err.stack
     });
-    
+
     throw new Error(`Failed to get token: ${errorMessage}`);
   }
 }
@@ -230,12 +230,12 @@ async function getTokenSession() {
     if (fileToken && (new Date(fileToken.expiry_time).getTime() > (now + bufferTime))) {
       console.log('[Backend] Using existing token from file (expires in',
         Math.round((fileToken.expiry_time - now) / 1000), 'seconds)');
-      
+
       // Populate in-memory cache from file
       globalTokenCache.token = fileToken.access_token;
       globalTokenCache.expiryTime = fileToken.expiry_time;
       globalTokenCache.safeExpiryTime = globalTokenCache.expiryTime - bufferTime;
-      
+
       return globalTokenCache.token;
     }
 
@@ -284,9 +284,76 @@ async function getTokenSession() {
   }
 }
 
+/**
+ * Validate LHDN credentials by attempting to get a token
+ * @param {Object} options - Credential options
+ * @param {string} options.baseUrl - Base URL for the LHDN API
+ * @param {string} options.clientId - Client ID
+ * @param {string} options.clientSecret - Client Secret
+ * @param {string} options.environment - Environment (sandbox or production)
+ * @returns {Promise<Object>} Validation result
+ */
+async function validateCredentials(options) {
+  try {
+    console.log('[Token Service] Validating credentials:', {
+      baseUrl: options.baseUrl,
+      clientId: options.clientId ? '***' : 'missing',
+      clientSecret: options.clientSecret ? '***' : 'missing',
+      environment: options.environment
+    });
+
+    // Ensure URL is properly formatted
+    let formattedBaseUrl = options.baseUrl.trim();
+    if (!formattedBaseUrl.startsWith('http://') && !formattedBaseUrl.startsWith('https://')) {
+      formattedBaseUrl = 'https://' + formattedBaseUrl;
+    }
+    formattedBaseUrl = formattedBaseUrl.replace(/\/+$/, ''); // Remove trailing slashes
+
+    const httpOptions = new URLSearchParams({
+      client_id: options.clientId,
+      client_secret: options.clientSecret,
+      grant_type: 'client_credentials',
+      scope: 'InvoicingAPI'
+    });
+
+    console.log(`[Token Service] Testing connection to: ${formattedBaseUrl}/connect/token`);
+
+    const response = await axios.post(
+      `${formattedBaseUrl}/connect/token`,
+      httpOptions,
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        validateStatus: status => status === 200,
+        timeout: 10000 // 10 second timeout
+      }
+    );
+
+    if (response.status === 200 && response.data && response.data.access_token) {
+      console.log('[Token Service] Credential validation successful');
+      return {
+        success: true,
+        expiresIn: response.data.expires_in,
+        tokenType: response.data.token_type,
+        scope: response.data.scope
+      };
+    }
+
+    throw new Error('Invalid response from token endpoint');
+  } catch (error) {
+    console.error('[Token Service] Credential validation failed:', error.message);
+    return {
+      success: false,
+      error: error.message || 'Failed to validate credentials'
+    };
+  }
+}
+
 module.exports = {
   getTokenAsTaxPayer,
   getTokenSession,
   readTokenFromFile,
-  saveTokenToFile
+  saveTokenToFile,
+  validateCredentials
 };

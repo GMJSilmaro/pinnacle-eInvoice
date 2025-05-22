@@ -71,17 +71,20 @@ const handleUnauthorized = async (req, res, reason = 'unauthorized') => {
   return res.redirect('/login');
 };
 
-// Handle session expiry
+// Handle session expiry - Always redirect to login page
 const handleSessionExpiry = async (req, res, username, reason = 'timeout') => {
   return new Promise((resolve) => {
     req.session.destroy(() => {
       removeActiveSession(username);
       if (req.xhr || req.headers.accept?.includes('application/json')) {
+        // For AJAX requests, return 401 with redirect URL
         resolve(res.status(401).json({
           success: false,
-          message: reason || 'Session expired'
+          message: reason || 'Session expired',
+          redirect: '/auth/login?expired=true&reason=' + encodeURIComponent(reason || 'timeout')
         }));
       } else {
+        // For regular requests, redirect to login page
         resolve(res.redirect('/auth/login?expired=true&reason=' + encodeURIComponent(reason || 'timeout')));
       }
     });
@@ -277,6 +280,12 @@ const getSessionActivity = (username) => {
 
 // Authentication middleware
 const authMiddleware = (req, res, next) => {
+  // Check if headers have already been sent
+  if (res.headersSent) {
+    console.error('Headers already sent, cannot authenticate request');
+    return next();
+  }
+
   // Check if path is public
   if (authConfig.publicPaths.some(path => req.path.startsWith(path))) {
     return next();
@@ -310,19 +319,24 @@ const authMiddleware = (req, res, next) => {
     }
 
     // Update active session tracking
-    updateActiveSession(req.session.user.username, req);
+    try {
+      updateActiveSession(req.session.user.username, req);
+    } catch (error) {
+      console.error('Error updating active session:', error);
+      // Continue despite error
+    }
 
     return next();
   }
 
   console.log(`No session found for path: ${req.path} - redirecting to login`);
 
-  // For API requests, return 401
+  // For API requests, return 401 with redirect URL
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.status(401).json({
       success: false,
       message: 'Authentication required',
-      redirect: '/auth/login'
+      redirect: '/auth/login?redirect=' + encodeURIComponent(req.originalUrl)
     });
   }
 
@@ -332,6 +346,12 @@ const authMiddleware = (req, res, next) => {
 
 // Admin check middleware
 const isAdmin = (req, res, next) => {
+  // Check if headers have already been sent
+  if (res.headersSent) {
+    console.error('Headers already sent, cannot check admin status');
+    return next();
+  }
+
   // Check if user is authenticated and is an admin
   if (req.session && req.session.user && (req.session.user.admin === 1 || req.session.user.admin === true)) {
     console.log('Admin access granted for user:', req.session.user.username);
@@ -349,19 +369,31 @@ const isAdmin = (req, res, next) => {
   }
 
   // For regular requests, redirect to dashboard
-  res.redirect('/dashboard?error=admin-required');
+  try {
+    res.redirect('/dashboard?error=admin-required');
+  } catch (error) {
+    console.error('Error redirecting to dashboard:', error);
+    next(error);
+  }
 };
 
 // API authentication middleware
 async function isApiAuthenticated(req, res, next) {
   try {
+    // Check if headers have already been sent
+    if (res.headersSent) {
+      console.error('Headers already sent, cannot authenticate API request');
+      return next();
+    }
+
     // Check if session exists
     if (!req.session?.user) {
-      // Don't force logout, just return 401 for API requests
+      // Return 401 with redirect URL for API requests
       return res.status(401).json({
         success: false,
         message: 'Unauthorized',
-        needsLogin: true
+        needsLogin: true,
+        redirect: '/auth/login?expired=true&reason=timeout'
       });
     }
 
@@ -471,6 +503,14 @@ async function isApiAuthenticated(req, res, next) {
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
+    // Check if headers have already been sent before trying to send an error response
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Authentication error',
+        error: error.message
+      });
+    }
     // Don't block the request on error, just log it
     next();
   }

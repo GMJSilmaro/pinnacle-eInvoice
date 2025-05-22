@@ -4,6 +4,45 @@ const prisma = require('../../src/lib/prisma');
 const bcrypt = require('bcryptjs');
 const { auth } = require('../../middleware/index-prisma');
 const { LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../../services/logging-prisma.service');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Configure multer for avatar uploads
+const avatarStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadDir = path.join(process.cwd(), 'public/uploads/avatars');
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, 'avatar-' + uniqueSuffix + ext);
+    }
+});
+
+const avatarUpload = multer({
+    storage: avatarStorage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    },
+    fileFilter: function (req, file, cb) {
+        // Accept only image files
+        const allowedTypes = /jpeg|jpg|png|gif/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+
+        if (extname && mimetype) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Only image files (.jpg, .jpeg, .png, .gif) are allowed'));
+        }
+    }
+});
 
 // Note: Using auth.isAdmin middleware from middleware/index-prisma.js instead of custom checkAdmin
 
@@ -515,7 +554,7 @@ router.put('/update-profile', auth.isApiAuthenticated, async (req, res) => {
     }
 });
 
-// Update profile picture
+// Update profile picture (base64 method)
 router.post('/update-profile-picture', async (req, res) => {
     try {
         if (!req.session?.user) {
@@ -554,6 +593,67 @@ router.post('/update-profile-picture', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to update profile picture',
+            error: error.message
+        });
+    }
+});
+
+// Update avatar with file upload
+router.post('/update-avatar', avatarUpload.single('avatar'), async (req, res) => {
+    try {
+        if (!req.session?.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Not authenticated'
+            });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No avatar file uploaded'
+            });
+        }
+
+        const userId = req.session.user.id;
+
+        // Get the relative path to the uploaded file
+        const avatarPath = '/uploads/avatars/' + path.basename(req.file.path);
+
+        // Update user profile with the new avatar path
+        await prisma.wP_USER_REGISTRATION.update({
+            where: { ID: userId },
+            data: {
+                ProfilePicture: avatarPath,
+                UpdateTS: new Date()
+            }
+        });
+
+        // Log the action
+        await prisma.wP_LOGS.create({
+            data: {
+                Description: `User ${req.session.user.username} updated their avatar`,
+                CreateTS: new Date(),
+                LoggedUser: req.session.user.username,
+                Action: ACTIONS.UPDATE_PROFILE,
+                IPAddress: req.ip,
+                LogType: LOG_TYPES.INFO,
+                Module: MODULES.USER,
+                Status: STATUS.SUCCESS,
+                UserID: userId
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Avatar updated successfully',
+            avatarUrl: avatarPath
+        });
+    } catch (error) {
+        console.error('Error updating avatar:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update avatar',
             error: error.message
         });
     }
@@ -723,6 +823,34 @@ router.get('/check-session', auth.isApiAuthenticated, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to check session'
+        });
+    }
+});
+
+// Check for active session by username (no auth required)
+router.post('/check-session', async (req, res) => {
+    try {
+        const { username } = req.body;
+
+        if (!username) {
+            return res.status(400).json({
+                success: false,
+                message: 'Username is required'
+            });
+        }
+
+        // Check if there's an active session for this user
+        const hasActiveSession = auth.checkActiveSession(username);
+
+        res.json({
+            success: true,
+            hasActiveSession
+        });
+    } catch (error) {
+        console.error('Error checking for active session:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to check for active session'
         });
     }
 });

@@ -259,8 +259,6 @@ router.get('/lhdn/get-config', async (req, res) => {
 
 // Save LHDN configuration
 router.post('/lhdn/save-config', async (req, res) => {
-    const t = await sequelize.transaction();
-
     try {
         const { environment, middlewareUrl, clientId, clientSecret, timeout, retryEnabled } = req.body;
 
@@ -298,55 +296,56 @@ router.post('/lhdn/save-config', async (req, res) => {
             retryEnabled: !!retryEnabled
         };
 
-        if (currentConfig) {
-            // Update existing configuration
-            await prisma.wP_CONFIGURATION.update({
-                where: {
-                    ID: currentConfig.ID
-                },
-                data: {
-                    Settings: JSON.stringify(settings),
-                    UpdateTS: new Date()
-                }
-            });
-        } else {
-            // Create new configuration if none exists
-            await prisma.wP_CONFIGURATION.create({
-                data: {
-                    Type: 'LHDN',
-                    Settings: JSON.stringify(settings),
-                    IsActive: true,
-                    UserID: String(req.user.id),
-                    CreateTS: new Date(),
-                    UpdateTS: new Date()
-                }
-            });
-        }
+        // Use Prisma transaction
+        const result = await prisma.$transaction(async (prismaClient) => {
+            if (currentConfig) {
+                // Update existing configuration
+                await prismaClient.wP_CONFIGURATION.update({
+                    where: {
+                        ID: currentConfig.ID
+                    },
+                    data: {
+                        Settings: JSON.stringify(settings),
+                        UpdateTS: new Date()
+                    }
+                });
+            } else {
+                // Create new configuration if none exists
+                await prismaClient.wP_CONFIGURATION.create({
+                    data: {
+                        Type: 'LHDN',
+                        Settings: JSON.stringify(settings),
+                        IsActive: true,
+                        UserID: String(req.user.id),
+                        CreateTS: new Date(),
+                        UpdateTS: new Date()
+                    }
+                });
+            }
 
-        // Log the configuration change
-        await db.WP_LOGS.create({
-            Description: `LHDN configuration ${currentConfig ? 'updated' : 'created'} by ${req.user.username}`,
-            CreateTS: new Date().toISOString(),
-            LoggedUser: req.user.username,
-            LogType: 'CONFIG',
-            Module: 'LHDN',
-            Action: 'UPDATE',
-            Status: 'SUCCESS',
-            UserID: req.user.id,
-            Details: JSON.stringify({
-                configId: currentConfig?.ID,
-                environment,
-                middlewareUrl
-            })
-        }, {
-            transaction: t
+            // Log the configuration change
+            await prismaClient.wP_LOGS.create({
+                data: {
+                    Description: `LHDN configuration ${currentConfig ? 'updated' : 'created'} by ${req.user.username} (${environment}, ${middlewareUrl})`,
+                    CreateTS: new Date().toISOString(), // Convert to ISO string format
+                    LoggedUser: req.user.username,
+                    LogType: 'CONFIG',
+                    Module: 'LHDN',
+                    Action: 'UPDATE',
+                    Status: 'SUCCESS',
+                    UserID: req.user.id,
+                    IPAddress: req.ip || null
+                }
+            });
+
+            return {
+                success: true,
+                message: `LHDN configuration ${currentConfig ? 'updated' : 'created'} successfully`
+            };
         });
 
-        await t.commit();
-
         res.json({
-            success: true,
-            message: `LHDN configuration ${currentConfig ? 'updated' : 'created'} successfully`,
+            ...result,
             config: {
                 environment,
                 middlewareUrl,
@@ -357,7 +356,6 @@ router.post('/lhdn/save-config', async (req, res) => {
             }
         });
     } catch (error) {
-        await t.rollback();
         console.error('Error saving LHDN config:', error);
         res.status(500).json({
             success: false,
@@ -810,8 +808,6 @@ router.post('/certificate/validate', upload.single('certificate'), async (req, r
 
 // Update certificate save endpoint
 router.post('/certificate/save', upload.single('certificate'), async (req, res) => {
-    const t = await sequelize.transaction();
-
     try {
         if (!req.file) {
             throw new Error('No certificate file uploaded');
@@ -975,29 +971,50 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
                 subjectString
             };
 
-            // Deactivate any existing certificates
-            await WP_CONFIGURATION.update(
-                { IsActive: 0 },
-                {
-                    where: { Type: 'CERTIFICATE' },
-                    transaction: t
-                }
-            );
+            // Use Prisma transaction
+            const result = await prisma.$transaction(async (prismaClient) => {
+                // Deactivate any existing certificates
+                await prismaClient.wP_CONFIGURATION.updateMany({
+                    where: {
+                        Type: 'CERTIFICATE'
+                    },
+                    data: {
+                        IsActive: false
+                    }
+                });
 
-            // Create new certificate configuration
-            await prisma.wP_CONFIGURATION.create({
-                data: {
-                    Type: 'CERTIFICATE',
-                    Settings: JSON.stringify({
-                        certificatePath: req.file.filename,
-                        password: password, // Consider encrypting this in a production environment
-                        certInfo
-                    }),
-                    IsActive: true,
-                    UserID: req.user.id ? String(req.user.id) : null,
-                    CreateTS: new Date(),
-                    UpdateTS: new Date()
-                }
+                // Create new certificate configuration
+                const newConfig = await prismaClient.wP_CONFIGURATION.create({
+                    data: {
+                        Type: 'CERTIFICATE',
+                        Settings: JSON.stringify({
+                            certificatePath: req.file.filename,
+                            password: password, // Consider encrypting this in a production environment
+                            certInfo
+                        }),
+                        IsActive: true,
+                        UserID: req.user.id ? String(req.user.id) : null,
+                        CreateTS: new Date(),
+                        UpdateTS: new Date()
+                    }
+                });
+
+                // Log the configuration change
+                await prismaClient.wP_LOGS.create({
+                    data: {
+                        Description: `Certificate saved by ${req.user.username} (${req.file.filename})`,
+                        CreateTS: new Date().toISOString(), // Convert to ISO string format
+                        LoggedUser: req.user.username,
+                        LogType: 'CONFIG',
+                        Module: 'CERTIFICATE',
+                        Action: 'CREATE',
+                        Status: 'SUCCESS',
+                        UserID: req.user.id,
+                        IPAddress: req.ip || null
+                    }
+                });
+
+                return newConfig;
             });
 
             // Get user info for last modified by
@@ -1008,8 +1025,6 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
                     Username: true
                 }
             });
-
-            await t.commit();
 
             res.json({
                 success: true,
@@ -1031,7 +1046,6 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
         }
 
     } catch (error) {
-        await t.rollback();
         console.error('Error saving certificate:', error);
         res.status(500).json({
             success: false,
@@ -1042,38 +1056,34 @@ router.post('/certificate/save', upload.single('certificate'), async (req, res) 
 
 // Add certificate disable endpoint
 router.post('/certificate/disable', async (req, res) => {
-    const t = await sequelize.transaction();
-
     try {
-        // Deactivate any existing certificates
-        await prisma.wP_CONFIGURATION.updateMany({
-            where: {
-                Type: 'CERTIFICATE'
-            },
-            data: {
-                IsActive: false
-            }
-        });
+        // Use Prisma transaction
+        await prisma.$transaction(async (prismaClient) => {
+            // Deactivate any existing certificates
+            await prismaClient.wP_CONFIGURATION.updateMany({
+                where: {
+                    Type: 'CERTIFICATE'
+                },
+                data: {
+                    IsActive: false
+                }
+            });
 
-        // Log the configuration change
-        await db.WP_LOGS.create({
-            Description: `Certificate disabled by ${req.user.username}`,
-            CreateTS: sequelize.literal('GETDATE()'),
-            LoggedUser: req.user.username,
-            LogType: 'CONFIG',
-            Module: 'CERTIFICATE',
-            Action: 'DISABLE',
-            Status: 'SUCCESS',
-            UserID: req.user.id,
-            Details: JSON.stringify({
-                action: 'disable_certificate',
-                timestamp: new Date().toISOString()
-            })
-        }, {
-            transaction: t
+            // Log the configuration change
+            await prismaClient.wP_LOGS.create({
+                data: {
+                    Description: `Certificate disabled by ${req.user.username}`,
+                    CreateTS: new Date().toISOString(), // Convert to ISO string format
+                    LoggedUser: req.user.username,
+                    LogType: 'CONFIG',
+                    Module: 'CERTIFICATE',
+                    Action: 'DISABLE',
+                    Status: 'SUCCESS',
+                    UserID: req.user.id,
+                    IPAddress: req.ip || null
+                }
+            });
         });
-
-        await t.commit();
 
         res.json({
             success: true,
@@ -1081,7 +1091,6 @@ router.post('/certificate/disable', async (req, res) => {
         });
 
     } catch (error) {
-        await t.rollback();
         console.error('Error disabling certificate:', error);
         res.status(500).json({
             success: false,
@@ -1092,8 +1101,6 @@ router.post('/certificate/disable', async (req, res) => {
 
 // Add this new route to handle outgoing path configuration
 router.post('/outgoing/save-config', async (req, res) => {
-    const t = await sequelize.transaction();
-
     try {
         const { networkPath, domain, username, password } = req.body;
 
@@ -1135,30 +1142,46 @@ router.post('/outgoing/save-config', async (req, res) => {
             password
         };
 
-        if (currentConfig) {
-            await prisma.wP_CONFIGURATION.update({
-                where: {
-                    ID: currentConfig.ID
-                },
-                data: {
-                    Settings: JSON.stringify(settings),
-                    UpdateTS: new Date()
-                }
-            });
-        } else {
-            await prisma.wP_CONFIGURATION.create({
-                data: {
-                    Type: 'OUTGOING',
-                    Settings: JSON.stringify(settings),
-                    IsActive: true,
-                    UserID: String(req.user.id),
-                    CreateTS: new Date(),
-                    UpdateTS: new Date()
-                }
-            });
-        }
+        // Use Prisma transaction
+        await prisma.$transaction(async (prismaClient) => {
+            if (currentConfig) {
+                await prismaClient.wP_CONFIGURATION.update({
+                    where: {
+                        ID: currentConfig.ID
+                    },
+                    data: {
+                        Settings: JSON.stringify(settings),
+                        UpdateTS: new Date()
+                    }
+                });
+            } else {
+                await prismaClient.wP_CONFIGURATION.create({
+                    data: {
+                        Type: 'OUTGOING',
+                        Settings: JSON.stringify(settings),
+                        IsActive: true,
+                        UserID: String(req.user.id),
+                        CreateTS: new Date(),
+                        UpdateTS: new Date()
+                    }
+                });
+            }
 
-        await t.commit();
+            // Log the configuration change
+            await prismaClient.wP_LOGS.create({
+                data: {
+                    Description: `Outgoing path configuration ${currentConfig ? 'updated' : 'created'} by ${req.user.username} (${formattedPath})`,
+                    CreateTS: new Date().toISOString(), // Convert to ISO string format
+                    LoggedUser: req.user.username,
+                    LogType: 'CONFIG',
+                    Module: 'OUTGOING',
+                    Action: currentConfig ? 'UPDATE' : 'CREATE',
+                    Status: 'SUCCESS',
+                    UserID: req.user.id,
+                    IPAddress: req.ip || null
+                }
+            });
+        });
 
         res.json({
             success: true,
@@ -1171,7 +1194,6 @@ router.post('/outgoing/save-config', async (req, res) => {
             }
         });
     } catch (error) {
-        await t.rollback();
         console.error('Error saving outgoing path config:', error);
         res.status(500).json({
             success: false,
