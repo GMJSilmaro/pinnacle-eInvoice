@@ -405,25 +405,116 @@ function formatDateForSQL(date) {
 // Add this function to load company TINs
 async function loadCompanyTINs(selectId, selectedTIN = '') {
     try {
-        const response = await fetch('/api/user/company/list');
-        if (!response.ok) {
-            throw new Error('Failed to fetch companies');
+        // Show loading state in the select element
+        const tinSelect = document.getElementById(selectId);
+        if (!tinSelect) {
+            console.error(`Select element with ID "${selectId}" not found`);
+            return;
         }
 
+        tinSelect.innerHTML = '<option value="">Loading companies...</option>';
+        tinSelect.disabled = true;
+
+        // Fetch companies with error handling
+        const response = await fetch('/api/user/company/list');
+
+        // Handle HTTP errors
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const statusCode = response.status;
+            let errorMessage = 'Failed to fetch companies';
+
+            // Provide more specific error messages based on status code
+            if (statusCode === 401) {
+                errorMessage = 'Your session has expired. Please log in again.';
+                // Redirect to login page after a short delay
+                setTimeout(() => {
+                    window.location.href = '/auth/login?redirect=' + encodeURIComponent(window.location.pathname);
+                }, 2000);
+            } else if (statusCode === 403) {
+                errorMessage = 'You do not have permission to view company information.';
+            } else if (statusCode === 500) {
+                errorMessage = 'Server error while fetching companies. Please try again later.';
+            }
+
+            // Add any additional error details from the response
+            if (errorData.message) {
+                errorMessage += `: ${errorData.message}`;
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        // Parse the JSON response
         const companies = await response.json();
-        const tinSelect = document.getElementById(selectId);
+
+        // Check if companies is an array
+        if (!Array.isArray(companies)) {
+            throw new Error('Invalid response format: expected an array of companies');
+        }
+
+        // Reset the select element
         tinSelect.innerHTML = '<option value="">Select Company TIN</option>';
 
-        companies.forEach(company => {
-            const option = document.createElement('option');
-            option.value = company.TIN || company.BRN;
-            option.textContent = `${company.CompanyName} (${company.TIN || company.BRN})`;
-            option.selected = (company.TIN === selectedTIN || company.BRN === selectedTIN);
-            tinSelect.appendChild(option);
-        });
+        // Populate the select element with company options
+        if (companies.length === 0) {
+            // Handle case when no companies are available
+            const noCompaniesOption = document.createElement('option');
+            noCompaniesOption.value = "";
+            noCompaniesOption.textContent = "No companies available";
+            noCompaniesOption.disabled = true;
+            tinSelect.appendChild(noCompaniesOption);
+        } else {
+            // Add company options
+            companies.forEach(company => {
+                const option = document.createElement('option');
+                option.value = company.TIN || company.BRN;
+                option.textContent = `${company.CompanyName} (${company.TIN || company.BRN})`;
+                option.selected = (company.TIN === selectedTIN || company.BRN === selectedTIN);
+
+                // Store company data as a data attribute for auto-filling
+                option.dataset.companyData = JSON.stringify({
+                    ID: company.ID,
+                    CompanyName: company.CompanyName,
+                    TIN: company.TIN,
+                    BRN: company.BRN,
+                    Email: company.Email,
+                    Phone: company.Phone,
+                    Address: company.Address
+                });
+
+                tinSelect.appendChild(option);
+            });
+        }
     } catch (error) {
         console.error('Error loading company data:', error);
-        showToast('error', 'Failed to load company information');
+
+        // Update the select element to show the error
+        const tinSelect = document.getElementById(selectId);
+        if (tinSelect) {
+            tinSelect.innerHTML = '<option value="">Error loading companies</option>';
+            // Add a retry option
+            const retryOption = document.createElement('option');
+            retryOption.value = "retry";
+            retryOption.textContent = "Click here to retry";
+            tinSelect.appendChild(retryOption);
+
+            // Add event listener for retry
+            tinSelect.addEventListener('change', function(e) {
+                if (e.target.value === 'retry') {
+                    loadCompanyTINs(selectId, selectedTIN);
+                }
+            }, { once: true });
+        }
+
+        // Show toast notification with the error message
+        showToast('error', error.message || 'Failed to load company information');
+    } finally {
+        // Always re-enable the select element
+        const tinSelect = document.getElementById(selectId);
+        if (tinSelect) {
+            tinSelect.disabled = false;
+        }
     }
 }
 

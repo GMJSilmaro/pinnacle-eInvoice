@@ -10,16 +10,31 @@ const bcrypt = require('bcryptjs');
 // Configure multer for image upload
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = 'public/uploads/company-profiles';
+    // Use absolute path with process.cwd() to ensure correct directory resolution
+    const uploadDir = path.join(process.cwd(), 'public/uploads/company-profiles');
+
     // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    try {
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+        console.log(`Created upload directory: ${uploadDir}`);
+      }
+      cb(null, uploadDir);
+    } catch (error) {
+      console.error(`Error creating upload directory ${uploadDir}:`, error);
+      cb(error);
     }
-    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'company-' + uniqueSuffix + path.extname(file.originalname));
+    try {
+      // Generate a unique filename with timestamp and random number
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const safeFilename = 'company-' + uniqueSuffix + path.extname(file.originalname);
+      cb(null, safeFilename);
+    } catch (error) {
+      console.error('Error generating filename:', error);
+      cb(error);
+    }
   }
 });
 
@@ -29,14 +44,20 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
   fileFilter: function (req, file, cb) {
-    const allowedTypes = /jpeg|jpg|png/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    try {
+      // Check file type
+      const allowedTypes = /jpeg|jpg|png/;
+      const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+      const mimetype = allowedTypes.test(file.mimetype);
 
-    if (extname && mimetype) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Only .png, .jpg and .jpeg format allowed!'));
+      if (extname && mimetype) {
+        return cb(null, true);
+      } else {
+        return cb(new Error('Only .png, .jpg and .jpeg format allowed!'));
+      }
+    } catch (error) {
+      console.error('Error in file filter:', error);
+      return cb(error);
     }
   }
 });
@@ -656,7 +677,7 @@ router.put('/lhdn-credentials', auth.isAdmin, async (req, res) => {
 });
 
 // Upload company profile image
-router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async (req, res) => {
+router.post('/profile-image', upload.single('profileImage'), async (req, res) => {
   try {
     if (!req.session?.user) {
       return res.status(401).json({
@@ -683,6 +704,9 @@ router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async
       });
     }
 
+    // Define imageUrl here to ensure it's in scope for the entire function
+    const imageUrl = '/uploads/company-profiles/' + req.file.filename;
+
     // Use Prisma transaction
     await prisma.$transaction(async (prismaClient) => {
       // Find existing company settings
@@ -699,30 +723,37 @@ router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async
             IDType: user.IDType,
             IDValue: user.IDValue,
             UserID: String(user.ID),
-            ValidStatus: '1'
+            CompanyName: user.FullName || 'My Company', // Add default company name
+            Email: user.Email || '', // Add user email
+            ValidStatus: '1',
+            CompanyImage: imageUrl // Set image URL during creation
           }
         });
       } else {
         company = existingCompany;
-      }
 
-      const imageUrl = '/uploads/company-profiles/' + req.file.filename;
-
-      // Remove old profile image if it exists
-      if (company.CompanyImage) {
-        const oldImagePath = path.join(__dirname, '../../../../public', company.CompanyImage);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
+        // Remove old profile image if it exists
+        if (company.CompanyImage) {
+          try {
+            // Fix path resolution - use correct relative path
+            const oldImagePath = path.join(process.cwd(), 'public', company.CompanyImage);
+            if (fs.existsSync(oldImagePath)) {
+              fs.unlinkSync(oldImagePath);
+            }
+          } catch (deleteError) {
+            console.warn('Failed to delete old image:', deleteError);
+            // Continue even if old image deletion fails
+          }
         }
-      }
 
-      // Update company profile with new image URL
-      await prismaClient.wP_COMPANY_SETTINGS.update({
-        where: { ID: company.ID },
-        data: {
-          CompanyImage: imageUrl
-        }
-      });
+        // Update company profile with new image URL
+        await prismaClient.wP_COMPANY_SETTINGS.update({
+          where: { ID: company.ID },
+          data: {
+            CompanyImage: imageUrl
+          }
+        });
+      }
 
       // Log the action
       await prismaClient.wP_LOGS.create({
@@ -747,18 +778,26 @@ router.post('/profile-image', auth.isAdmin, upload.single('profileImage'), async
   } catch (error) {
     // Remove uploaded file if any error occurs
     if (req.file) {
-      fs.unlinkSync(req.file.path);
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (deleteError) {
+        console.warn('Failed to delete uploaded file after error:', deleteError);
+      }
     }
+
     console.error('Error uploading profile image:', error);
+
+    // Provide more detailed error message
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error uploading profile image: ' + (error.message || 'Internal server error'),
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
 
 // Delete company profile image
-router.delete('/profile-image', auth.isAdmin, async (req, res) => {
+router.delete('/profile-image', async (req, res) => {
   try {
     if (!req.session?.user) {
       return res.status(401).json({
@@ -793,9 +832,15 @@ router.delete('/profile-image', auth.isAdmin, async (req, res) => {
     await prisma.$transaction(async (prismaClient) => {
       // Remove profile image if it exists
       if (company.CompanyImage) {
-        const imagePath = path.join(__dirname, '../../../../public', company.CompanyImage);
-        if (fs.existsSync(imagePath)) {
-          fs.unlinkSync(imagePath);
+        try {
+          // Fix path resolution - use correct relative path
+          const imagePath = path.join(process.cwd(), 'public', company.CompanyImage);
+          if (fs.existsSync(imagePath)) {
+            fs.unlinkSync(imagePath);
+          }
+        } catch (deleteError) {
+          console.warn('Failed to delete image file:', deleteError);
+          // Continue even if file deletion fails
         }
       }
 
@@ -830,7 +875,8 @@ router.delete('/profile-image', auth.isAdmin, async (req, res) => {
     console.error('Error removing profile image:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Error removing profile image: ' + (error.message || 'Internal server error'),
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

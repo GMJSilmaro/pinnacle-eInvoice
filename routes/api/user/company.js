@@ -6,28 +6,66 @@ const auth = require('../../../middleware/auth-prisma.middleware');
 /**
  * @route GET /api/user/company/list
  * @desc Get list of all companies
- * @access Private (Admin only)
+ * @access Private (All authenticated users)
  */
-router.get('/list', auth.isAdmin, async (req, res) => {
+router.get('/list', async (req, res) => {
     try {
-        // Fetch all companies
-        const companies = await prisma.wP_COMPANY_SETTINGS.findMany({
-            select: {
-                ID: true,
-                CompanyName: true,
-                Industry: true,
-                Country: true,
-                TIN: true,
-                BRN: true,
-                Email: true,
-                Phone: true,
-                Address: true,
-                ValidStatus: true
-            },
-            orderBy: {
-                CompanyName: 'asc'
-            }
-        });
+        let companies;
+
+        // Check if user is admin
+        const isAdmin = req.session && req.session.user &&
+                       (req.session.user.admin === 1 || req.session.user.admin === true);
+
+        if (isAdmin) {
+            // Admin can see all companies
+            companies = await prisma.wP_COMPANY_SETTINGS.findMany({
+                select: {
+                    ID: true,
+                    CompanyName: true,
+                    Industry: true,
+                    Country: true,
+                    TIN: true,
+                    BRN: true,
+                    Email: true,
+                    Phone: true,
+                    Address: true,
+                    ValidStatus: true
+                },
+                orderBy: {
+                    CompanyName: 'asc'
+                }
+            });
+        } else if (req.session && req.session.user) {
+            // Regular users can only see active companies
+            companies = await prisma.wP_COMPANY_SETTINGS.findMany({
+                where: {
+                    ValidStatus: {
+                        in: ['1', 1]
+                    }
+                },
+                select: {
+                    ID: true,
+                    CompanyName: true,
+                    Industry: true,
+                    Country: true,
+                    TIN: true,
+                    BRN: true,
+                    Email: true,
+                    Phone: true,
+                    Address: true,
+                    ValidStatus: true
+                },
+                orderBy: {
+                    CompanyName: 'asc'
+                }
+            });
+        } else {
+            // No valid session
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required'
+            });
+        }
 
         // Format the response
         const formattedCompanies = companies.map(company => ({

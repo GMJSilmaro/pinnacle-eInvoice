@@ -57,7 +57,7 @@ const processExcelData = (rawData) => {
       info: (msg, data) => console.log(`[INFO] ${msg}`, data || ''),
       error: (msg, data) => console.error(`[ERROR] ${msg}`, data || '')
     };
-  
+
     /**
      * Helper function to get field value with support for different Excel column formats
      * Tries multiple format variations to find the correct field value
@@ -79,8 +79,8 @@ const processExcelData = (rawData) => {
       // If no exact match found, try case-insensitive matches
       const lowerBaseField = baseField.toLowerCase();
       for (const key of Object.keys(row)) {
-        if (key.toLowerCase() === lowerBaseField || 
-            EXCEL_FIELD_PREFIXES.some(prefix => 
+        if (key.toLowerCase() === lowerBaseField ||
+            EXCEL_FIELD_PREFIXES.some(prefix =>
               key.toLowerCase() === `${prefix.toLowerCase()}${lowerBaseField}`)) {
           return row[key];
         }
@@ -91,7 +91,7 @@ const processExcelData = (rawData) => {
       if (numericField) {
         const index = numericField[1];
         const alternateFormats = EXCEL_FIELD_PREFIXES.map(prefix => `${prefix}${index}`);
-        
+
         for (const format of alternateFormats) {
           if (row[format] !== undefined) {
             return row[format];
@@ -109,11 +109,11 @@ const processExcelData = (rawData) => {
      */
     const getRowType = (row) => {
       // Check all possible column names for row type
-      const rowType = row[''] || row['__EMPTY'] || row['_'] || 
-                     row['RowType'] || row['Type'] || row['Row_Type'] || 
-                     row['Row Type'] || row['RowIdentifier'] || row['Row Identifier'] || 
+      const rowType = row[''] || row['__EMPTY'] || row['_'] ||
+                     row['RowType'] || row['Type'] || row['Row_Type'] ||
+                     row['Row Type'] || row['RowIdentifier'] || row['Row Identifier'] ||
                      null;
-      
+
       if (!rowType && row) {
         // Check if this looks like a specific row type using the indicators
         for (const [type, config] of Object.entries(ROW_TYPE_INDICATORS)) {
@@ -122,7 +122,7 @@ const processExcelData = (rawData) => {
           }
         }
       }
-      
+
       return rowType;
     };
 
@@ -157,7 +157,7 @@ const processExcelData = (rawData) => {
           data
         });
       };
-  
+
       // Extract structure rows and data rows
       const descriptions = rawData[0];     // First row contains field descriptions
       const fieldMappings = rawData[1];    // Second row contains field mappings
@@ -176,7 +176,7 @@ const processExcelData = (rawData) => {
        */
       let currentDocument = null;
       const documents = [];
-  
+
       /**
        * Helper function to process party identifications
        * Extracts and validates identification information for parties
@@ -185,11 +185,11 @@ const processExcelData = (rawData) => {
        */
       const getIdentifications = (rows) => {
         const identifications = [];
-        
+
         logStep('Processing Identifications', {
           inputRows: rows
         });
-  
+
         if (rows && rows.length > 0) {
           rows.forEach((row) => {
             if (row?.PartyIdentification_ID && row?.schemeId) {
@@ -200,7 +200,7 @@ const processExcelData = (rawData) => {
             }
           });
         }
-  
+
         processLogs.identifications.push({
           input: rows,
           output: identifications,
@@ -209,7 +209,7 @@ const processExcelData = (rawData) => {
 
         return identifications;
       };
-  
+
       /**
        * Creates a new invoice document from header row data
        * @param {Object} headerRow - Excel row containing header information
@@ -219,7 +219,7 @@ const processExcelData = (rawData) => {
        */
       const createNewDocument = (headerRow, dataRows, currentIndex) => {
         // logRawExcelData(headerRow, dataRows, currentIndex);
-        
+
         logStep('Creating New Document', {
           headerRow,
           currentIndex
@@ -231,61 +231,61 @@ const processExcelData = (rawData) => {
         // Update scheme ID rows with consistent naming
         const partyIdentifications = {
           supplier: [
-            { 
+            {
               PartyIdentification_ID: getField(headerRow, '16'),
               schemeId: getField(headerRow, '17') || PARTY_SCHEME_TYPES.TIN
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 1] ? getField(dataRows[currentIndex + 1], '16') : undefined,
               schemeId: PARTY_SCHEME_TYPES.BRN
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 2] ? getField(dataRows[currentIndex + 2], '16') : undefined,
               schemeId: PARTY_SCHEME_TYPES.SST
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 3] ? getField(dataRows[currentIndex + 3], '16') : undefined,
               schemeId: PARTY_SCHEME_TYPES.TTX
             }
           ],
           buyer: [
-            { 
+            {
               PartyIdentification_ID: headerRow.Buyer,
               schemeId: getField(headerRow, '28')
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 1]?.Buyer,
               schemeId: PARTY_SCHEME_TYPES.BRN
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 2]?.Buyer,
               schemeId: PARTY_SCHEME_TYPES.SST
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 3]?.Buyer,
               schemeId: PARTY_SCHEME_TYPES.TTX
             }
           ],
           delivery: [
-            { 
+            {
               PartyIdentification_ID: headerRow.Delivery,
               schemeId: getField(headerRow, '39')
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 1]?.Delivery,
               schemeId: PARTY_SCHEME_TYPES.BRN
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 2]?.Delivery,
               schemeId: PARTY_SCHEME_TYPES.SST
             },
-            { 
+            {
               PartyIdentification_ID: dataRows[currentIndex + 3]?.Delivery,
               schemeId: PARTY_SCHEME_TYPES.TTX
             }
           ]
         };
-  
+
         // Add detailed logging for document creation
         const documentLog = {
           timestamp: new Date().toISOString(),
@@ -331,7 +331,8 @@ const processExcelData = (rawData) => {
             identifications: getIdentifications(partyIdentifications.supplier),
             name: getField(headerRow, '25'),
             address: {
-              line: getField(headerRow, '21')|| "NA",
+              // Process address line with proper formatting - collect from multiple rows
+              line: processAddressLine(null, headerRow, dataRows, currentIndex, '21'),
               city: getField(headerRow, '18') || "NA",
               postcode: getField(headerRow, '19') || "NA",
               state: getField(headerRow, '20') || "NA",
@@ -349,7 +350,8 @@ const processExcelData = (rawData) => {
             identifications: getIdentifications(partyIdentifications.buyer),
             name: getField(headerRow, '36'),
             address: {
-              line: getField(headerRow, '32') || "NA",
+              // Process address line with proper formatting - collect from multiple rows
+              line: processAddressLine(null, headerRow, dataRows, currentIndex, '32'),
               city: getField(headerRow, '29') || "NA",
               postcode: getField(headerRow, '30') || "NA",
               state: getField(headerRow, '31') || "NA",
@@ -367,7 +369,8 @@ const processExcelData = (rawData) => {
             identifications: getIdentifications(partyIdentifications.delivery),
             name: getField(headerRow, '47'),
             address: {
-              line: getField(headerRow, '43'),
+              // Process address line with proper formatting - collect from multiple rows
+              line: processAddressLine(null, headerRow, dataRows, currentIndex, '43'),
               city: getField(headerRow, '40'),
               postcode: getField(headerRow, '41'),
               state: getField(headerRow, '42'),
@@ -378,8 +381,8 @@ const processExcelData = (rawData) => {
             shipment: {
               id: getField(headerRow, '48') || DEFAULT_VALUES.NOT_APPLICABLE,
               freightAllowanceCharge: {
-                indicator: getField(headerRow, '49') === true || 
-                          getField(headerRow, '49') === 'true' || 
+                indicator: getField(headerRow, '49') === true ||
+                          getField(headerRow, '49') === 'true' ||
                           getField(headerRow, '49') === 1,
                 reason: getField(headerRow, '50') || DEFAULT_VALUES.NOT_APPLICABLE,
                 amount: getField(headerRow, '51') || DEFAULT_VALUES.ZERO
@@ -428,8 +431,8 @@ const processExcelData = (rawData) => {
             }
           },
           allowanceCharge: {
-            indicator: getField(headerRow, 'InvoiceAllowanceCharge') === true || 
-                      getField(headerRow, 'InvoiceAllowanceCharge') === 'true' || 
+            indicator: getField(headerRow, 'InvoiceAllowanceCharge') === true ||
+                      getField(headerRow, 'InvoiceAllowanceCharge') === 'true' ||
                       getField(headerRow, 'InvoiceAllowanceCharge') === 1,
             reason: getField(headerRow, '56') || DEFAULT_VALUES.NOT_APPLICABLE,
             amount: getField(headerRow, '57') || DEFAULT_VALUES.ZERO
@@ -441,7 +444,7 @@ const processExcelData = (rawData) => {
 
         return doc;
       };
-  
+
       const processLineItem = (lineRow, headerData) => {
         return {
           lineId: getField(lineRow, 'InvoiceLine'),
@@ -450,8 +453,8 @@ const processExcelData = (rawData) => {
           unitPrice: getField(lineRow, '88'),
           lineExtensionAmount: getField(lineRow, '72'),
           allowanceCharges: [{
-            chargeIndicator: getField(lineRow, '73') === true || 
-                            getField(lineRow, '73') === 'true' || 
+            chargeIndicator: getField(lineRow, '73') === true ||
+                            getField(lineRow, '73') === 'true' ||
                             getField(lineRow, '73') === 1,
             reason: getField(lineRow, '74') || null,
             multiplierFactorNumeric: getField(lineRow, '75') || 0,
@@ -489,7 +492,71 @@ const processExcelData = (rawData) => {
           }
         };
       };
-  
+
+      // Helper function to collect all address lines from multiple rows with the same field
+      const collectAddressLines = (baseField, headerRow, dataRows, currentIndex) => {
+        const addressLines = [];
+
+        // Get address from header row
+        const headerAddress = getField(headerRow, baseField);
+        if (headerAddress && headerAddress !== 'NA' && headerAddress.trim() !== '') {
+          addressLines.push(headerAddress);
+        }
+
+        // Get addresses from subsequent rows (typically 3 more rows for additional address lines)
+        for (let i = 1; i <= 3; i++) {
+          if (dataRows[currentIndex + i]) {
+            const additionalAddress = getField(dataRows[currentIndex + i], baseField);
+            if (additionalAddress && additionalAddress !== 'NA' && additionalAddress.trim() !== '') {
+              addressLines.push(additionalAddress);
+            }
+          }
+        }
+
+        return addressLines;
+      };
+
+      // Helper function to process address lines
+      const processAddressLine = (addressLine, headerRow, dataRows, currentIndex, baseField) => {
+        // If we have headerRow and dataRows, collect all address lines
+        if (headerRow && dataRows && currentIndex !== undefined && baseField) {
+          const addressLines = collectAddressLines(baseField, headerRow, dataRows, currentIndex);
+
+          if (addressLines.length === 0) return "NA";
+
+          // Join all address lines with commas
+          return addressLines.join(', ');
+        }
+
+        // If we only have a single address line (legacy behavior)
+        if (!addressLine) return "NA";
+
+        // Convert to string and handle special cases
+        const addressStr = String(addressLine);
+        if (addressStr.toLowerCase() === 'na' || addressStr.trim() === '') {
+          return "NA";
+        }
+
+        // If address already has commas, return as is
+        if (addressStr.includes(',')) {
+          return addressStr;
+        }
+
+        // Try to intelligently split address based on common patterns
+        // This handles all address types, not just PLO addresses
+        const commonAddressPatterns = /\s+(?=\d+[A-Za-z]|\d+,|Jalan|Taman|Persiaran|Lorong|Kampung|Kg\.|Bandar|Street|Road|Lane|Avenue|Block|Unit|Floor|Level|Plaza|Tower|Building|Complex|Park|Garden|Heights|Court|Apartment|Suite|Room|House|No\.|No\s+\d+)/i;
+
+        if (addressStr.match(commonAddressPatterns)) {
+          const addressParts = addressStr.split(commonAddressPatterns);
+          if (addressParts.length > 1) {
+            return addressParts.join(', ');
+          }
+        }
+
+        // If no patterns found, return as is
+        return addressStr;
+      };
+
       const DEFAULT_VALUES = {
         CURRENCY: 'MYR',
         COUNTRY: 'MYS',
@@ -510,7 +577,7 @@ const processExcelData = (rawData) => {
           }
         }
       };
-      
+
       // Add helper function to support multiple tax types if needed
       const createTaxSubtotal = (taxTypeCode, taxAmount, taxableAmount, percent, exemptionReason) => {
         return {
@@ -526,14 +593,14 @@ const processExcelData = (rawData) => {
           }
         };
       };
-      
+
       // Add function to process multiple tax types if needed
       const processMultipleTaxTypes = (taxRows) => {
         let totalTaxAmount = 0;
         const taxSubtotals = taxRows.map(row => {
           const taxAmount = getField(row, '78') || DEFAULT_VALUES.ZERO;
           totalTaxAmount += taxAmount;
-          
+
           return createTaxSubtotal(
             getField(row, '80'),
             taxAmount,
@@ -542,13 +609,13 @@ const processExcelData = (rawData) => {
             getField(row, '81')
           );
         });
-        
+
         return {
           taxAmount: totalTaxAmount,
           taxSubtotal: taxSubtotals
         };
       };
-  
+
       const processFooter = (footerRow) => {
         return {
           amounts: {
@@ -577,7 +644,7 @@ const processExcelData = (rawData) => {
           }
         };
       };
-  
+
       /**
        * Process each row in the Excel data:
        * 1. Determine row type (Header, Line, Footer)
@@ -589,7 +656,7 @@ const processExcelData = (rawData) => {
       dataRows.forEach((row, index) => {
         const rowType = getRowType(row);
         const normalizedType = rowType ? rowType.toString().toUpperCase().charAt(0) : null;
-  
+
         switch(normalizedType) {
           case 'H': // Header row - start new document
             if (row.Invoice) {
@@ -599,21 +666,21 @@ const processExcelData = (rawData) => {
               currentDocument = createNewDocument(row, dataRows, index);
             }
             break;
-  
+
           case 'L': // Line item row - add to current document
             if (currentDocument) {
               const lineItem = processLineItem(row, currentDocument.header);
-              
+
               // Initialize items array if it doesn't exist
               if (!currentDocument.items) {
                 currentDocument.items = [];
               }
-              
-              if (lineItem.lineId && lineItem.quantity !== undefined && 
+
+              if (lineItem.lineId && lineItem.quantity !== undefined &&
                 (lineItem.lineExtensionAmount !== undefined || lineItem.lineExtensionAmount === 0)) {
-                
+
                 const existingLineIndex = currentDocument.items.findIndex(item => item.lineId === lineItem.lineId);
-                
+
                 if (existingLineIndex >= 0) {
                   // Add allowance/charge to existing line
                   currentDocument.items[existingLineIndex].allowanceCharges.push({
@@ -638,12 +705,12 @@ const processExcelData = (rawData) => {
               }
             }
             break;
-  
+
           case 'F': // Footer row - finalize document
             if (currentDocument) {
               // Process footer data with current document for tax calculations
               const footerData = processFooter(row);
-              
+
               // Update document summary with footer data
               currentDocument.summary = footerData;
 
@@ -659,12 +726,12 @@ const processExcelData = (rawData) => {
             break;
         }
       });
-  
+
       // Add the last document if exists
       if (currentDocument) {
         documents.push(currentDocument);
       }
-  
+
       logger.info('Processed documents:', documents.length);
 
       // Always write logs for debugging
@@ -687,6 +754,32 @@ const processExcelData = (rawData) => {
           }
         };
 
+        // Log all raw Excel data for address debugging
+        const rawExcelData = {
+          timestamp: new Date().toISOString(),
+          allRows: dataRows.map((row, index) => {
+            // Extract only address-related fields for clarity
+            const addressFields = {};
+            for (const key of Object.keys(row)) {
+              if (key.includes('21') || key.includes('32') || key.includes('43')) {
+                addressFields[key] = row[key];
+              }
+            }
+            return {
+              rowIndex: index,
+              rowType: getRowType(row),
+              supplier: row.Supplier,
+              buyer: row.Buyer,
+              delivery: row.Delivery,
+              addressFields
+            };
+          })
+        };
+
+        // Write raw Excel data log specifically for address debugging
+        const rawExcelLogPath = path.join(logsDir, `excel_raw_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+        fs.writeFileSync(rawExcelLogPath, JSON.stringify(rawExcelData, null, 2));
+
         // Write raw data log
         const rawDataLogPath = path.join(logsDir, `raw_data_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
         fs.writeFileSync(rawDataLogPath, JSON.stringify(rawDataLog, null, 2));
@@ -702,7 +795,7 @@ const processExcelData = (rawData) => {
       }
 
       return documents;
-  
+
     } catch (error) {
       logger.error('Error processing Excel data:', error);
       addToProcessLog({
@@ -712,5 +805,5 @@ const processExcelData = (rawData) => {
       throw error;
     }
   };
-  
+
   module.exports = { processExcelData };

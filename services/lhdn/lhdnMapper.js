@@ -153,9 +153,39 @@ const mapAddressLines = (line) => {
   }
 
   // Split the address line by commas or line breaks
-  const lines = addressStr.split(/[,\n]/).map(l => l.trim()).filter(l => l);
+  let lines = addressStr.split(/[,\n]/).map(l => l.trim()).filter(l => l);
 
-  return lines.map(l => ({
+  // If there are no commas, try to intelligently split the address
+  if (lines.length === 1) {
+    // Common address patterns for various address types
+    const commonAddressPatterns = /\s+(?=\d+[A-Za-z]|\d+,|Jalan|Taman|Persiaran|Lorong|Kampung|Kg\.|Bandar|Street|Road|Lane|Avenue|Block|Unit|Floor|Level|Plaza|Tower|Building|Complex|Park|Garden|Heights|Court|Apartment|Suite|Room|House|No\.|No\s+\d+)/i;
+
+    if (addressStr.match(commonAddressPatterns)) {
+      const parts = addressStr.split(commonAddressPatterns);
+      lines = parts.map(p => p.trim()).filter(p => p);
+    }
+  }
+
+  // Ensure we don't have duplicate country codes in address lines
+  lines = lines.filter(line =>
+    !line.match(/^(MYS|Malaysia|SGP|Singapore)$/i) ||
+    lines.indexOf(line) === lines.findIndex(l => l.match(/^(MYS|Malaysia|SGP|Singapore)$/i))
+  );
+
+  // Remove any duplicate address lines
+  const uniqueLines = [...new Set(lines)];
+
+  // Format address lines properly
+  const formattedLines = uniqueLines.map(line => {
+    // If this is a line that should end with a comma but doesn't, add one
+    // This applies to address prefixes like PLO, No., Block, etc.
+    if (line.match(/^(PLO|No\.|Block|Unit|Floor|Level)\s+\d+$/i)) {
+      return line + ',';
+    }
+    return line;
+  });
+
+  return formattedLines.map(l => ({
     "Line": [{ "_": l }]
   }));
 };

@@ -1091,7 +1091,7 @@ class InvoiceTableManager {
 
 
     renderSupplierInfo(data) {
-       
+
         if (!data) {
             return '<span class="text-muted">Company Name</span>';
         }
@@ -4235,11 +4235,41 @@ async function showConfirmationDialog(fileName, type, company, date, version) {
         padding: '1.5rem',
         focusConfirm: false,
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
+            confirmButton: 'btn btn-primary',
+            cancelButton: 'btn btn-secondary',
             popup: 'semi-minimal-popup'
         }
     }).then((result) => result.isConfirmed);
+}
+
+// Helper function to format address for display
+function formatAddress(address) {
+    if (!address) return 'N/A';
+
+    // If address is already a string, return it
+    if (typeof address === 'string') {
+        // Replace commas with line breaks for better display
+        return address.replace(/,\s*/g, '\n');
+    }
+
+    // If address is an object with line property
+    if (address.line) {
+        // Format the address line with line breaks instead of commas
+        const formattedLine = address.line.replace(/,\s*/g, '\n');
+
+        // Combine with other address parts
+        const parts = [
+            formattedLine,
+            address.city,
+            address.postcode || address.postal,
+            address.state,
+            address.country
+        ].filter(part => part && part !== 'NA' && part !== 'N/A');
+
+        return parts.join('\n');
+    }
+
+    return 'N/A';
 }
 
 // Show JSON preview dialog
@@ -4268,162 +4298,225 @@ async function showJsonPreview(fileName, type, company, date, version) {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'Failed to generate preview');
+            const errorMessage = errorData.error?.message || 'Failed to generate preview';
+
+            // Check if this is a file not found error
+            if (errorMessage.includes('File not found')) {
+                throw new Error(`${errorMessage}\n\nPlease verify that the file exists in the correct location: ${type}/${company}/${moment(date).format('YYYY-MM-DD')}`);
+            } else {
+                throw new Error(errorMessage);
+            }
         }
 
         const data = await response.json();
 
         if (!data.success) {
-            throw new Error(data.error?.message || 'Failed to generate preview');
+            const errorMessage = data.error?.message || 'Failed to generate preview';
+
+            // Check if this is a file not found error
+            if (errorMessage.includes('File not found')) {
+                throw new Error(`${errorMessage}\n\nPlease verify that the file exists in the correct location: ${type}/${company}/${moment(date).format('YYYY-MM-DD')}`);
+            } else {
+                throw new Error(errorMessage);
+            }
         }
 
         // Extract summary information
         const summary = data.summary;
 
-        // Create content for the preview - more polished and professional layout
+        // Create content for the preview - improved layout with better space utilization
         const summaryContent = `
-            <div class="preview-container" style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
-                <!-- Invoice Summary - Left column -->
-                <div class="preview-column" style="flex: 1; min-width: 280px;">
-                    <div class="content-card" style="height: 100%; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden;">
-                        <div class="content-header" style="padding: 8px 12px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
-                            <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; background: rgba(13, 110, 253, 0.1); margin-right: 8px;">
-                                <i class="fas fa-file-invoice" style="color: #0d6efd; font-size: 12px;"></i>
-                            </div>
-                            <span class="content-title" style="font-weight: 600; font-size: 13px; color: #212529;">Invoice Summary</span>
+            <div class="preview-container" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
+
+                <!-- Supplier Information - Now on the left -->
+                <div class="content-card" style="grid-column: 1; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;">
+                    <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f1f8f3, #e8f5ec); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
+                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(25, 135, 84, 0.15); margin-right: 10px; box-shadow: 0 2px 5px rgba(25, 135, 84, 0.2);">
+                            <i class="fas fa-building" style="color: #198754; font-size: 14px;"></i>
                         </div>
-                        <div style="padding: 8px 12px;">
-                            <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; width: 40%; color: #495057;"><strong>Invoice Number:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.invoiceNumber}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Document Type:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.documentType}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Issue Date:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.issueDate}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Total Amount:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">
-                                        <span class="badge" style="background-color: #0d6efd; font-weight: 500; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-                                            ${summary.currency} ${summary.totalAmount}
-                                        </span>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>Item Count:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.itemCount}</td>
-                                </tr>
-                            </table>
+                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #198754; text-transform: uppercase; letter-spacing: 0.5px;">Supplier Information</span>
+                    </div>
+                    <div style="padding: 12px 15px; background: linear-gradient(to bottom right, #ffffff, #f9fdfb);">
+                        <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; width: 25%; color: #198754;"><i class="fas fa-id-card-alt me-2" style="color: #198754;"></i><strong>Name:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.supplier.name}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; color: #198754;"><i class="fas fa-fingerprint me-2" style="color: #198754;"></i><strong>ID:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.supplier.id}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; color: #198754;"><i class="fas fa-map-marker-alt me-2" style="color: #198754;"></i><strong>Address:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500; white-space: pre-line;">${formatAddress(summary.supplier.address) || 'N/A'}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Buyer Information - Now in the middle -->
+                <div class="content-card" style="grid-column: 2; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;">
+                    <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f1f1fb, #e8e8f5); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
+                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(102, 16, 242, 0.15); margin-right: 10px; box-shadow: 0 2px 5px rgba(102, 16, 242, 0.2);">
+                            <i class="fas fa-user-tie" style="color: #6610f2; font-size: 14px;"></i>
+                        </div>
+                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #6610f2; text-transform: uppercase; letter-spacing: 0.5px;">Buyer Information</span>
+                    </div>
+                    <div style="padding: 12px 15px; background: linear-gradient(to bottom right, #ffffff, #f9f9fd);">
+                        <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; width: 25%; color: #6610f2;"><i class="fas fa-id-card me-2" style="color: #6610f2;"></i><strong>Name:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.buyer.name}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; color: #6610f2;"><i class="fas fa-fingerprint me-2" style="color: #6610f2;"></i><strong>ID:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.buyer.id}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; color: #6610f2;"><i class="fas fa-map-marker-alt me-2" style="color: #6610f2;"></i><strong>Address:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500; white-space: pre-line;">${formatAddress(summary.buyer.address) || 'N/A'}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Delivery Information - Now on the right -->
+                <div class="content-card" style="grid-column: 3; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;">
+                    <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f1f6fb, #e8f1f5); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
+                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(13, 110, 253, 0.15); margin-right: 10px; box-shadow: 0 2px 5px rgba(13, 110, 253, 0.2);">
+                            <i class="fas fa-truck" style="color: #0d6efd; font-size: 14px;"></i>
+                        </div>
+                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #0d6efd; text-transform: uppercase; letter-spacing: 0.5px;">Delivery Information</span>
+                    </div>
+                    <div style="padding: 12px 15px; background: linear-gradient(to bottom right, #ffffff, #f9fbfd);">
+                        <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; width: 25%; color: #0d6efd;"><i class="fas fa-user-tag me-2" style="color: #0d6efd;"></i><strong>Name:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.delivery ? summary.delivery.name : (summary.buyer.name || 'N/A')}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 5px 8px 5px 0; color: #0d6efd;"><i class="fas fa-map-marked-alt me-2" style="color: #0d6efd;"></i><strong>Address:</strong></td>
+                                <td style="padding: 5px 0; color: #212529; font-weight: 500; white-space: pre-line;">${formatAddress(summary.delivery ? summary.delivery.address : summary.buyer.address) || 'N/A'}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Invoice Summary - Subtle design to match the application theme -->
+                <div class="content-card" style="grid-column: span 3; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s ease;">
+                    <div class="content-header" style="padding: 10px 15px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
+                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; background: rgba(0, 0, 0, 0.05); margin-right: 8px;">
+                            <i class="fas fa-file-invoice" style="color: #495057; font-size: 12px;"></i>
+                        </div>
+                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #212529;">INVOICE SUMMARY</span>
+                    </div>
+                    <div style="padding: 15px; background: #ffffff;">
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                            <div style="padding-left: 10px;">
+                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                    <i class="fas fa-hashtag" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
+                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Invoice Number</span>
+                                </div>
+                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.invoiceNumber}</div>
+                            </div>
+
+                            <div style="padding-left: 10px;">
+                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                    <i class="fas fa-file-alt" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
+                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Document Type</span>
+                                </div>
+                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.documentType}</div>
+                            </div>
+
+                            <div style="padding-left: 10px;">
+                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                    <i class="fas fa-calendar-alt" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
+                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Issue Date</span>
+                                </div>
+                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.issueDate}</div>
+                            </div>
+
+                            <div style="padding-left: 10px; grid-column: span 2;">
+                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                    <i class="fas fa-money-bill-wave" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
+                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Total Amount</span>
+                                </div>
+                                <div style="font-weight: 600; color: #212529; font-size: 14px;">
+                                    <span class="badge" style="background-color: #495057; font-weight: 500; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                                        ${summary.currency} ${summary.totalAmount}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div style="padding-left: 10px;">
+                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                                    <i class="fas fa-shopping-cart" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
+                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Item Count</span>
+                                </div>
+                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.itemCount}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Company Information - Right column -->
-                <div class="preview-column" style="flex: 1; min-width: 280px;">
-                    <div class="content-card" style="margin: 0 0 10px 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden;">
-                        <div class="content-header" style="padding: 8px 12px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
-                            <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; background: rgba(25, 135, 84, 0.1); margin-right: 8px;">
-                                <i class="fas fa-building" style="color: #198754; font-size: 12px;"></i>
-                            </div>
-                            <span class="content-title" style="font-weight: 600; font-size: 13px; color: #212529;">Supplier Information</span>
-                        </div>
-                        <div style="padding: 8px 12px;">
-                            <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; width: 25%; color: #495057;"><strong>Name:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.supplier.name}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>ID:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.supplier.id}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
 
-                    <div class="content-card" style="margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden;">
-                        <div class="content-header" style="padding: 8px 12px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
-                            <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; background: rgba(220, 53, 69, 0.1); margin-right: 8px;">
-                                <i class="fas fa-user" style="color: #dc3545; font-size: 12px;"></i>
-                            </div>
-                            <span class="content-title" style="font-weight: 600; font-size: 13px; color: #212529;">Buyer Information</span>
-                        </div>
-                        <div style="padding: 8px 12px;">
-                            <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; width: 25%; color: #495057;"><strong>Name:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.buyer.name}</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 3px 8px 3px 0; color: #495057;"><strong>ID:</strong></td>
-                                    <td style="padding: 3px 0; color: #212529;">${summary.buyer.id}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
             </div>
 
-            <!-- JSON Preview - Modern design with loading animation -->
-            <div class="content-card json-preview-card" style="margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f8f9fa, #f1f3f5); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center; cursor: pointer;" id="jsonPreviewHeader">
-                    <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(13, 202, 240, 0.15); margin-right: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
-                        <i class="fas fa-code" style="color: #0dcaf0; font-size: 12px;"></i>
+            <!-- JSON Preview - Subtle design with loading animation -->
+            <div class="content-card json-preview-card" style="margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-top: 15px; transition: all 0.2s ease;">
+                <div class="content-header" style="padding: 12px 18px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center; cursor: pointer;" id="jsonPreviewHeader">
+                    <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 4px; background: rgba(0, 0, 0, 0.05); margin-right: 12px;">
+                        <i class="fas fa-code" style="color: #495057; font-size: 16px;"></i>
                     </div>
-                    <span class="content-title" style="font-weight: 600; font-size: 14px; color: #212529;">JSON Data</span>
+                    <span class="content-title" style="font-weight: 600; font-size: 16px; color: #212529; letter-spacing: 0.5px;">JSON Data</span>
                     <span class="ms-auto">
-                        <button id="toggleJsonBtn" class="outbound-btn-lhdn submit" style="background-color: #0d6efd; color: white; font-size: 12px; padding: 5px 12px; border-radius: 4px; border: none; box-shadow: 0 1px 2px rgba(0,0,0,0.1); transition: all 0.2s;">
+                        <button id="toggleJsonBtn" class="outbound-btn-lhdn submit" style="background: #6c757d; color: white; font-size: 13px; padding: 8px 16px; border-radius: 4px; border: none; transition: all 0.2s; font-weight: 500; display: flex; align-items: center; gap: 6px;">
                             <i class="fas fa-code"></i> View JSON
                         </button>
                     </span>
                 </div>
 
                 <!-- Loading animation (initially hidden) -->
-                <div id="jsonLoadingAnimation" style="display: none; padding: 20px; text-align: center; background: #f8f9fa;">
-                    <div class="json-loading-steps" style="display: flex; justify-content: space-between; max-width: 500px; margin: 0 auto;">
-                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 100px;">
-                            <div class="json-loading-icon" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(13, 110, 253, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
-                                <i class="fas fa-file-invoice" style="color: #0d6efd; font-size: 16px;"></i>
+                <div id="jsonLoadingAnimation" style="display: none; padding: 25px; text-align: center; background: linear-gradient(to bottom right, #ffffff, #f8fafc);">
+                    <div class="json-loading-steps" style="display: flex; justify-content: space-between; max-width: 600px; margin: 0 auto;">
+                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 120px;">
+                            <div class="json-loading-icon" style="width: 48px; height: 48px; border-radius: 50%; background: rgba(20, 184, 166, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(20, 184, 166, 0.2);">
+                                <i class="fas fa-file-invoice" style="color: #14b8a6; font-size: 20px;"></i>
                             </div>
-                            <div class="json-loading-text" style="font-size: 12px; color: #495057; font-weight: 500;">Validating</div>
-                            <div class="json-loading-status" style="font-size: 11px; color: #0d6efd; margin-top: 4px;">Complete</div>
+                            <div class="json-loading-text" style="font-size: 14px; color: #334155; font-weight: 600; margin-bottom: 4px;">Validating</div>
+                            <div class="json-loading-status" style="font-size: 12px; color: #14b8a6; font-weight: 500;">Complete</div>
                         </div>
-                        <div class="json-loading-connector" style="flex-grow: 1; height: 2px; background: #dee2e6; margin-top: 18px;"></div>
-                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 100px;">
-                            <div class="json-loading-icon" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(13, 110, 253, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
-                                <i class="fas fa-cogs" style="color: #0d6efd; font-size: 16px;"></i>
+                        <div class="json-loading-connector" style="flex-grow: 1; height: 3px; background: linear-gradient(to right, #14b8a6, #0ea5e9); margin-top: 24px; border-radius: 3px;"></div>
+                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 120px;">
+                            <div class="json-loading-icon" style="width: 48px; height: 48px; border-radius: 50%; background: rgba(14, 165, 233, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(14, 165, 233, 0.2);">
+                                <i class="fas fa-cogs" style="color: #0ea5e9; font-size: 20px;"></i>
                             </div>
-                            <div class="json-loading-text" style="font-size: 12px; color: #495057; font-weight: 500;">Processing</div>
-                            <div class="json-loading-status json-loading-active" style="font-size: 11px; color: #0d6efd; margin-top: 4px;">
-                                <div class="spinner-border spinner-border-sm" style="width: 10px; height: 10px; border-width: 1px;" role="status">
+                            <div class="json-loading-text" style="font-size: 14px; color: #334155; font-weight: 600; margin-bottom: 4px;">Processing</div>
+                            <div class="json-loading-status json-loading-active" style="font-size: 12px; color: #0ea5e9; font-weight: 500;">
+                                <div class="spinner-border spinner-border-sm" style="width: 12px; height: 12px; border-width: 2px; border-color: #0ea5e9 transparent #0ea5e9 transparent;" role="status">
                                     <span class="visually-hidden">Loading...</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="json-loading-connector" style="flex-grow: 1; height: 2px; background: #dee2e6; margin-top: 18px;"></div>
-                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 100px;">
-                            <div class="json-loading-icon" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(173, 181, 189, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 8px;">
-                                <i class="fas fa-check-circle" style="color: #adb5bd; font-size: 16px;"></i>
+                        <div class="json-loading-connector" style="flex-grow: 1; height: 3px; background: #e2e8f0; margin-top: 24px; border-radius: 3px;"></div>
+                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 120px;">
+                            <div class="json-loading-icon" style="width: 48px; height: 48px; border-radius: 50%; background: rgba(148, 163, 184, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(148, 163, 184, 0.1);">
+                                <i class="fas fa-check-circle" style="color: #94a3b8; font-size: 20px;"></i>
                             </div>
-                            <div class="json-loading-text" style="font-size: 12px; color: #adb5bd; font-weight: 500;">Ready</div>
-                            <div class="json-loading-status" style="font-size: 11px; color: #adb5bd; margin-top: 4px;">Waiting</div>
+                            <div class="json-loading-text" style="font-size: 14px; color: #94a3b8; font-weight: 600; margin-bottom: 4px;">Ready</div>
+                            <div class="json-loading-status" style="font-size: 12px; color: #94a3b8; font-weight: 500;">Waiting</div>
                         </div>
                     </div>
                 </div>
 
                 <!-- JSON Content (initially hidden) -->
-                <div id="jsonPreviewContent" style="display: none; max-height: 150px; overflow-y: auto; background: #f8f9fa; padding: 12px; border-radius: 0 0 4px 4px; font-family: 'Consolas', monospace; font-size: 11px; text-align: left; border-top: 1px solid rgba(0,0,0,0.05);">
-                    <pre id="jsonFormattedContent" style="margin-bottom: 0; white-space: pre-wrap; text-align: left; display: block; overflow-x: auto;">${JSON.stringify(data.lhdnJson, null, 2)}</pre>
+                <div id="jsonPreviewContent" style="display: none; max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 18px; border-radius: 0 0 8px 8px; font-family: 'Consolas', monospace; font-size: 12px; text-align: left; border-top: 1px solid rgba(0,0,0,0.05);">
+                    <pre id="jsonFormattedContent" style="margin-bottom: 0; white-space: pre-wrap; text-align: left; display: block; overflow-x: auto; color: #212529;">${JSON.stringify(data.lhdnJson, null, 2)}</pre>
                 </div>
             </div>
         `;
 
-        // Show the preview dialog with improved styling
+        // Show the preview dialog with enhanced styling
         const result = await Swal.fire({
             html: createSemiMinimalDialog({
                 title: 'Invoice Preview',
@@ -4431,61 +4524,120 @@ async function showJsonPreview(fileName, type, company, date, version) {
                 content: summaryContent
             }),
             showCancelButton: true,
-            confirmButtonText: 'Proceed with Submission',
-            cancelButtonText: 'Cancel',
-            width: 720,
-            padding: '0.75rem',
+            confirmButtonText: '<i class="fas fa-check-circle me-2"></i>Proceed with Submission',
+            cancelButtonText: '<i class="fas fa-times-circle me-2"></i>Cancel',
+            width: 950,
+            padding: '1rem',
             focusConfirm: false,
+            backdrop: `
+                rgba(15, 23, 42, 0.4)
+                url("/assets/images/pattern-dots.png")
+                left top
+                repeat
+            `,
             customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                cancelButton: 'outbound-action-btn cancel',
+                confirmButton: 'btn btn-primary',
+                cancelButton: 'btn btn-secondary',
                 popup: 'semi-minimal-popup compact-preview',
-                actions: 'preview-actions',
+                actions: 'preview-actions d-flex justify-content-center gap-3 mt-3',
                 container: 'preview-container'
             },
             didOpen: () => {
-                // Add custom CSS for compact preview
+                // Add custom CSS for enhanced preview
                 const style = document.createElement('style');
                 style.textContent = `
                     .preview-container {
                         max-width: 100%;
                     }
                     .compact-preview {
-                        border-radius: 10px !important;
+                        border-radius: 16px !important;
+                        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1) !important;
+                        overflow: hidden !important;
                     }
                     .compact-preview .semi-minimal-title {
-                        font-size: 18px;
-                        margin-bottom: 4px;
-                        color: #212529;
+                        font-size: 1.75rem !important;
+                        font-weight: 700 !important;
+                        color: #0f172a !important;
+                        letter-spacing: -0.5px !important;
+                        margin-bottom: 8px !important;
+                    }
+                    /* Responsive grid adjustments */
+                    @media (max-width: 768px) {
+                        .preview-container {
+                            display: flex !important;
+                            flex-direction: column !important;
+                        }
+                        .content-card {
+                            margin-bottom: 15px !important;
+                        }
                     }
                     .compact-preview .semi-minimal-subtitle {
-                        font-size: 13px;
-                        margin-bottom: 12px;
-                        color: #6c757d;
+                        font-size: 1rem !important;
+                        margin-bottom: 16px !important;
+                        color: #64748b !important;
                     }
                     .compact-preview .preview-actions {
-                        margin-top: 12px;
+                        margin-top: 20px !important;
                     }
                     .compact-preview .outbound-action-btn {
-                        border-radius: 6px;
-                        font-size: 14px;
-                        padding: 8px 16px;
-                        font-weight: 500;
-                        transition: all 0.2s;
+                        border-radius: 8px !important;
+                        font-size: 15px !important;
+                        padding: 10px 24px !important;
+                        font-weight: 600 !important;
+                        letter-spacing: 0.5px !important;
+                        transition: all 0.3s ease !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                    }
+                    .compact-preview .outbound-action-btn.submit {
+                        background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
+                        border: none !important;
+                        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3) !important;
+                    }
+                    .compact-preview .outbound-action-btn.submit:hover {
+                        transform: translateY(-2px) !important;
+                        box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4) !important;
+                    }
+                    .compact-preview .outbound-action-btn.cancel {
+                        background: linear-gradient(135deg, #f1f5f9, #e2e8f0) !important;
+                        color: #475569 !important;
+                        border: none !important;
+                        box-shadow: 0 4px 12px rgba(148, 163, 184, 0.2) !important;
+                    }
+                    .compact-preview .outbound-action-btn.cancel:hover {
+                        transform: translateY(-2px) !important;
+                        box-shadow: 0 6px 16px rgba(148, 163, 184, 0.3) !important;
+                    }
+                    .content-card {
+                        transition: all 0.3s ease !important;
+                    }
+                    .content-card:hover {
+                        transform: translateY(-3px) !important;
+                        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1) !important;
                     }
 
                     .compact-preview #toggleJsonBtn {
-                        transition: all 0.2s ease;
-                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                        transition: all 0.3s ease !important;
+                        box-shadow: 0 4px 12px rgba(20, 184, 166, 0.3) !important;
+                        background: linear-gradient(135deg, #14b8a6, #0d9488) !important;
+                        color: white !important;
+                        font-size: 14px !important;
+                        padding: 8px 16px !important;
+                        border-radius: 8px !important;
+                        border: none !important;
+                        font-weight: 600 !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        gap: 6px !important;
                     }
                     .compact-preview #toggleJsonBtn:hover {
-                        background-color: #0b5ed7 !important;
-                        transform: translateY(-1px);
-                        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+                        transform: translateY(-2px) !important;
+                        box-shadow: 0 6px 16px rgba(20, 184, 166, 0.4) !important;
                     }
                     .compact-preview #toggleJsonBtn:active {
-                        transform: translateY(0);
-                        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                        transform: translateY(0) !important;
+                        box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3) !important;
                     }
                     /* JSON Preview Card */
                     .compact-preview .json-preview-card {
@@ -4709,17 +4861,53 @@ async function showJsonPreview(fileName, type, company, date, version) {
         tableManager.hideLoadingBackdrop();
         console.error('Error generating JSON preview:', error);
 
-        // Show error modal
-        await Swal.fire({
-            icon: 'error',
-            title: 'Preview Generation Failed',
-            text: error.message || 'Failed to generate JSON preview',
-            confirmButtonText: 'OK',
-            customClass: {
-                confirmButton: 'outbound-action-btn submit',
-                popup: 'semi-minimal-popup'
-            }
-        });
+        // Show error modal with more detailed information
+        const errorMessage = error.message || 'Failed to generate JSON preview';
+        const isFileNotFoundError = errorMessage.includes('File not found');
+
+        // Create a more detailed error modal for file not found errors
+        if (isFileNotFoundError) {
+            await Swal.fire({
+                icon: 'error',
+                title: 'File Not Found',
+                html: `
+                    <div class="text-start">
+                        <p>${errorMessage.split('\n\n')[0]}</p>
+                        <hr>
+                        <p class="text-muted small">
+                            <i class="fas fa-info-circle me-1"></i>
+                            ${errorMessage.split('\n\n')[1] || 'Please check that the file exists in the expected location.'}
+                        </p>
+                        <div class="alert alert-warning mt-3 small">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            <strong>Possible solutions:</strong>
+                            <ul class="mb-0 mt-1">
+                                <li>Verify the file name is correct</li>
+                                <li>Check if the file was moved or renamed</li>
+                                <li>Ensure the file was uploaded to the correct folder</li>
+                            </ul>
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'OK',
+                customClass: {
+                    confirmButton: 'outbound-action-btn submit',
+                    popup: 'semi-minimal-popup'
+                }
+            });
+        } else {
+            // Standard error modal for other errors
+            await Swal.fire({
+                icon: 'error',
+                title: 'Preview Generation Failed',
+                text: errorMessage,
+                confirmButtonText: 'OK',
+                customClass: {
+                    confirmButton: 'outbound-action-btn submit',
+                    popup: 'semi-minimal-popup'
+                }
+            });
+        }
 
         return false;
     }
@@ -4950,7 +5138,7 @@ async function showSuccessMessage(fileName, version) {
         width: 480,
         padding: '1.5rem',
         customClass: {
-            confirmButton: 'semi-minimal-confirm',
+            confirmButton: 'btn btn-primary',
             popup: 'semi-minimal-popup'
         },
         timer: 3000, // Auto close after 3 seconds
@@ -6068,8 +6256,8 @@ async function showErrorModal(title, message, fileName, uuid) {
         `,
         confirmButtonText: 'OK',
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
+            confirmButton: 'btn btn-primary',
+            cancelButton: 'btn btn-secondary',
             popup: 'semi-minimal-popup'
         },
     });
@@ -6152,7 +6340,7 @@ async function showExcelValidationError(error) {
         width: 480,
         padding: '1.5rem',
         customClass: {
-            confirmButton: 'semi-minimal-confirm',
+            confirmButton: 'btn btn-primary',
             popup: 'semi-minimal-popup'
         }
     }).then((result) => {
@@ -6219,7 +6407,7 @@ async function showSystemErrorModal(error) {
             popup: 'animate__animated animate__fadeOut'
         },
         customClass: {
-            confirmButton: 'semi-minimal-confirm',
+            confirmButton: 'btn btn-primary',
             popup: 'semi-minimal-popup'
         }
     });
@@ -6855,7 +7043,7 @@ async function handleBulkSubmission(selectedDocs) {
             title: 'Submission Failed',
             text: error.message || 'An error occurred during bulk submission',
             confirmButtonText: 'OK',
-            customClass: { confirmButton: 'outbound-action-btn submit' }
+            customClass: { confirmButton: 'btn btn-primary' }
         });
     }
 }
@@ -6916,8 +7104,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 confirmButtonText: 'Yes, Submit',
                 cancelButtonText: 'Cancel',
                 customClass: {
-                    confirmButton: 'outbound-action-btn submit',
-                    cancelButton: 'outbound-action-btn cancel'
+                    confirmButton: 'btn btn-primary',
+                    cancelButton: 'btn btn-secondary'
                 }
             });
 

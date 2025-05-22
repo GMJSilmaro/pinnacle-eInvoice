@@ -40,10 +40,10 @@ async function loadCompanyData() {
     // Fetch company profile
     const response = await fetch('/api/company/profile');
     const data = await response.json();
-    
+
     if (data.success) {
       originalData = data.company;
-      
+
       // Update view mode spans
       document.querySelectorAll('[data-field]').forEach(span => {
         const field = span.getAttribute('data-field');
@@ -236,12 +236,12 @@ async function handleLHDNEdit(field) {
       preConfirm: () => {
         const newValue = document.getElementById('credentialInput').value;
         const password = document.getElementById('passwordInput').value;
-        
+
         if (!newValue || !password) {
           Swal.showValidationMessage('Please fill in all fields');
           return false;
         }
-        
+
         return { newValue, password };
       }
     });
@@ -334,12 +334,12 @@ async function handleRegistrationEdit(field) {
       preConfirm: () => {
         const newValue = document.getElementById('registrationInput').value;
         const password = document.getElementById('passwordInput').value;
-        
+
         if (!newValue || !password) {
           Swal.showValidationMessage('Please fill in all fields');
           return false;
         }
-        
+
         return { newValue, password };
       }
     });
@@ -410,18 +410,39 @@ function setupImageHandlers() {
       }
 
       try {
+        // Show loading indicator
+        Swal.fire({
+          title: 'Uploading...',
+          text: 'Please wait while we upload your image',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          }
+        });
+
         const formData = new FormData();
         formData.append('profileImage', file);
 
         const response = await fetch('/api/company/profile-image', {
           method: 'POST',
-          body: formData
+          body: formData,
+          credentials: 'same-origin' // Include cookies for authentication
         });
 
-        const data = await response.json();
+        // Parse response data
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('Error parsing response:', parseError);
+          throw new Error('Invalid server response. Please try again.');
+        }
 
         if (data.success) {
-          profileImg.src = data.imageUrl;
+          // Update image with cache-busting parameter
+          const cacheBuster = new Date().getTime();
+          profileImg.src = data.imageUrl + '?t=' + cacheBuster;
+
           Swal.fire({
             icon: 'success',
             title: 'Success',
@@ -432,10 +453,24 @@ function setupImageHandlers() {
         }
       } catch (error) {
         console.error('Error uploading image:', error);
+
+        // Close any open loading dialog
+        Swal.close();
+
+        // Show detailed error message
         Swal.fire({
           icon: 'error',
-          title: 'Error',
-          text: error.message || 'Failed to upload image. Please try again later.'
+          title: 'Error Uploading Image',
+          html: `
+            <p>${error.message || 'Failed to upload image. Please try again later.'}</p>
+            <p class="small text-muted mt-2">If this problem persists, please contact support.</p>
+          `,
+          confirmButtonText: 'Try Again'
+        }).then((result) => {
+          if (result.isConfirmed) {
+            // Reset the file input to allow trying again
+            fileInput.value = '';
+          }
         });
       }
     }
@@ -448,18 +483,42 @@ function setupImageHandlers() {
         text: 'Are you sure you want to remove the profile image?',
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonText: 'Yes, remove it!'
+        confirmButtonText: 'Yes, remove it!',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6'
       });
 
       if (result.isConfirmed) {
-        const response = await fetch('/api/company/profile-image', {
-          method: 'DELETE'
+        // Show loading indicator
+        Swal.fire({
+          title: 'Removing...',
+          text: 'Please wait while we remove your image',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          }
         });
 
-        const data = await response.json();
+        const response = await fetch('/api/company/profile-image', {
+          method: 'DELETE',
+          credentials: 'same-origin' // Include cookies for authentication
+        });
+
+        // Parse response data
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('Error parsing response:', parseError);
+          throw new Error('Invalid server response. Please try again.');
+        }
 
         if (data.success) {
-          profileImg.src = '/assets/img/noimage.png';
+          // Update image with cache-busting parameter
+          const cacheBuster = new Date().getTime();
+          profileImg.src = '/assets/img/noimage.png' + '?t=' + cacheBuster;
+
           Swal.fire({
             icon: 'success',
             title: 'Success',
@@ -471,10 +530,19 @@ function setupImageHandlers() {
       }
     } catch (error) {
       console.error('Error removing image:', error);
+
+      // Close any open loading dialog
+      Swal.close();
+
+      // Show detailed error message
       Swal.fire({
         icon: 'error',
-        title: 'Error',
-        text: error.message || 'Failed to remove image. Please try again later.'
+        title: 'Error Removing Image',
+        html: `
+          <p>${error.message || 'Failed to remove image. Please try again later.'}</p>
+          <p class="small text-muted mt-2">If this problem persists, please contact support.</p>
+        `,
+        confirmButtonText: 'OK'
       });
     }
   });
