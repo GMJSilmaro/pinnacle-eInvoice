@@ -174,7 +174,7 @@ class SFTPService {
 
       // Get current date in YYYYMMDD format
       const today = moment().format('YYYYMMDD');
-      const companyName = 'MindValley';
+      const companyName = 'PXC Branch';
 
       // Define directories without /SFTP_DATA prefix
       const directories = [
