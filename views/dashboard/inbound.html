@@ -925,8 +925,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="connectionStatusTitle">System Status</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+             
             </div>
             <div class="modal-body">
                 <div class="connection-status-content">
@@ -969,115 +968,5 @@
 <!-- Original Inbound Excel Module (for backward compatibility) -->
 <script src="/assets/js/modules/excel/inbound-excel.js"></script>
 
-<!-- Connection Status Checker -->
-<script>
-    // Initialize connection status checker
-    document.addEventListener('DOMContentLoaded', function() {
-        // Add connection status button to the page
-        const connectionButton = document.createElement('button');
-        connectionButton.className = 'btn btn-sm btn-outline-secondary ms-2';
-        connectionButton.innerHTML = '<i class="bi bi-info-circle me-1"></i>System Status';
-        connectionButton.id = 'checkConnectionBtn';
 
-        // Add it after the table is initialized
-        setTimeout(() => {
-            const lengthControl = document.querySelector('.outbound-length-control');
-            if (lengthControl) {
-                lengthControl.appendChild(connectionButton);
-            }
-        }, 2000);
-
-        // Connection status modal functionality
-        document.getElementById('checkConnectionBtn')?.addEventListener('click', async function() {
-            const modal = new bootstrap.Modal(document.getElementById('connectionStatusModal'));
-            modal.show();
-
-            // Reset status
-            document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-primary';
-            document.getElementById('connectionStatusMessage').textContent = 'Checking system status...';
-            document.getElementById('lhdnApiStatus').innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Checking...';
-            document.getElementById('databaseStatus').innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Checking...';
-
-            // Check LHDN API connection
-            try {
-                const apiResponse = await fetch('/api/lhdn/status', {
-                    method: 'GET',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
-                if (apiResponse.ok) {
-                    const apiData = await apiResponse.json();
-                    document.getElementById('lhdnApiStatus').innerHTML =
-                        '<span class="badge bg-success me-1">Connected</span>' +
-                        (apiData.message || 'API is available');
-                } else {
-                    document.getElementById('lhdnApiStatus').innerHTML =
-                        '<span class="badge bg-secondary me-1">Unavailable</span>' +
-                        'LHDN API status check complete';
-                }
-            } catch (error) {
-                document.getElementById('lhdnApiStatus').innerHTML =
-                    '<span class="badge bg-secondary me-1">Unavailable</span>' +
-                    'LHDN API status check complete';
-            }
-
-            // Check database connection
-            try {
-                const dbResponse = await fetch('/api/lhdn/documents/recent?useDatabase=true&checkOnly=true', {
-                    method: 'GET',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
-                if (dbResponse.ok) {
-                    document.getElementById('databaseStatus').innerHTML =
-                        '<span class="badge bg-success me-1">Connected</span>' +
-                        'Database is available';
-
-                    // Update last updated time
-                    const lastUpdate = localStorage.getItem('lastDataUpdate');
-                    if (lastUpdate) {
-                        const lastUpdateDate = new Date(parseInt(lastUpdate));
-                        document.getElementById('lastUpdatedStatus').textContent =
-                            lastUpdateDate.toLocaleString();
-                    } else {
-                        document.getElementById('lastUpdatedStatus').textContent = 'Never updated';
-                    }
-                } else {
-                    document.getElementById('databaseStatus').innerHTML =
-                        '<span class="badge bg-secondary me-1">Unavailable</span>' +
-                        'Database status check complete';
-                }
-            } catch (error) {
-                document.getElementById('databaseStatus').innerHTML =
-                    '<span class="badge bg-secondary me-1">Unavailable</span>' +
-                    'Database status check complete';
-            }
-
-            // Update overall status
-            setTimeout(() => {
-                const lhdnStatus = document.getElementById('lhdnApiStatus').textContent.includes('Connected');
-                const dbStatus = document.getElementById('databaseStatus').textContent.includes('Connected');
-
-                if (lhdnStatus && dbStatus) {
-                    document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-success';
-                    document.getElementById('connectionStatusMessage').textContent = 'System status check complete';
-                    document.getElementById('connectionStatusTitle').textContent = 'System Status';
-                } else if (!lhdnStatus && !dbStatus) {
-                    document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-info';
-                    document.getElementById('connectionStatusMessage').textContent = 'System status check complete';
-                    document.getElementById('connectionStatusTitle').textContent = 'System Status';
-                } else {
-                    document.getElementById('connectionStatusIcon').className = 'bi bi-info-circle fs-1 text-info';
-                    document.getElementById('connectionStatusMessage').textContent = 'System status check complete';
-                    document.getElementById('connectionStatusTitle').textContent = 'System Status';
-                }
-            }, 1000);
-        });
-
-        // Retry connection button
-        document.getElementById('retryConnection')?.addEventListener('click', function() {
-            document.getElementById('checkConnectionBtn').click();
-        });
-    });
-</script>
 {% endblock %}
