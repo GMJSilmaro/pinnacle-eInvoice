@@ -730,11 +730,6 @@ class InvoiceTableManager {
                         updateCharts();
                     }, 100);
 
-                    // Show warning if data is from database and not API
-                    if (json.metadata && json.metadata.fromDatabase && !json.metadata.fromApi) {
-                        ToastManager.show('Showing data from database. LHDN API connection may be unavailable.', 'warning', 5000);
-                    }
-
                     return result;
                 },
                 error: function(xhr, error, thrown) {

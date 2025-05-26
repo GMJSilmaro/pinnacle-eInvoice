@@ -11,7 +11,7 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
-router.get('/', (req, res) => {
+router.get('/', auth.middleware, (req, res) => {
   res.render('dashboard/index', {
     title: 'Dashboard',
     user: req.session.user || null,
@@ -19,7 +19,7 @@ router.get('/', (req, res) => {
   });
 });
 
-router.get('/audit-trail', (req, res) => {
+router.get('/audit-trail', auth.middleware, (req, res) => {
   res.render('dashboard/audit-trail.html', {
     title: 'Audit Trail',
     user: req.session.user || null,
@@ -27,7 +27,7 @@ router.get('/audit-trail', (req, res) => {
   });
 });
 
-router.get('/outbound', (req, res) => {
+router.get('/outbound', auth.middleware, (req, res) => {
   res.render('dashboard/outbound.html', {
     title: 'Outbound',
     user: req.session.user || null,
@@ -43,7 +43,7 @@ router.get('/consolidated', auth.middleware, (req, res) => {
   });
 });
 
-router.get('/inbound', (req, res) => {
+router.get('/inbound', auth.middleware, (req, res) => {
   res.render('dashboard/inbound.html', {
     title: 'Inbound',
     user: req.session.user || null,
@@ -51,7 +51,7 @@ router.get('/inbound', (req, res) => {
   });
 });
 
-router.get('/sdk-updates', (req, res) => {
+router.get('/sdk-updates', auth.middleware, (req, res) => {
   res.render('dashboard/sdk-updates.html', {
     title: 'SDK Updates',
     user: req.session.user || null,

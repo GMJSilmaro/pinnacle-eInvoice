@@ -69,8 +69,8 @@ router.get('/auth/logout', async (req, res) => {
     }
 });
 
-// Dashboard routes with session checking
-router.get('/', (req, res) => {
+// Dashboard routes with authentication middleware
+router.get('/', auth.middleware, (req, res) => {
     res.render('dashboard/index.html', {
         title: 'Dashboard',
         user: req.session.user || null,
@@ -78,7 +78,7 @@ router.get('/', (req, res) => {
     });
 });
 
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', auth.middleware, (req, res) => {
     res.render('dashboard/index.html', {
         title: 'Dashboard',
         user: req.session.user || null,

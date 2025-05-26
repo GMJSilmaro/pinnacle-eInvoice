@@ -3695,152 +3695,40 @@ async function validateExcelFile(fileName, type, company, date) {
 
 async function showVersionDialog() {
     return Swal.fire({
+        title: 'Select Document Version',
         html: `
-            <div class="semi-minimal-dialog">
-                <style>
-                    .semi-minimal-dialog {
-                        --primary: hsl(220 76% 55%);
-                        --primary-light: hsl(220 76% 97%);
-                        --text-main: hsl(220 39% 11%);
-                        --text-muted: hsl(215 16% 47%);
-                        font-family: system-ui, -apple-system, sans-serif;
-                    }
-
-                    .dialog-heading {
-                        text-align: center;
-                        margin-bottom: 1.5rem;
-                    }
-
-                    .dialog-title {
-                        font-size: 1.125rem;
-                        font-weight: 600;
-                        color: var(--text-main);
-                        margin-bottom: 0.25rem;
-                    }
-
-                    .dialog-subtitle {
-                        font-size: 0.875rem;
-                        color: var(--text-muted);
-                        line-height: 1.4;
-                    }
-
-                    .version-card {
-                        padding: 1rem;
-                        border-radius: 8px;
-                        border: 1px solid hsl(214 32% 91%);
-                        margin-bottom: 0.75rem;
-                        transition: all 0.2s ease;
-                        cursor: pointer;
-                        position: relative;
-                        background: white;
-                    }
-
-                    .version-card:hover:not(.disabled) {
-                        transform: translateY(-2px);
-                        box-shadow: 0 3px 6px rgba(0,0,0,0.05);
-                    }
-
-                    .version-card.selected {
-                        border-color: var(--primary);
-                        background: var(--primary-light);
-                    }
-
-                    .version-card.disabled {
-                        background: hsl(220 33% 98%);
-                        cursor: not-allowed;
-                    }
-
-                    .version-header {
-                        display: flex;
-                        align-items: center;
-                        gap: 0.75rem;
-                        margin-bottom: 0.5rem;
-                    }
-
-                    .version-badge {
-                        width: 24px;
-                        height: 24px;
-                        border-radius: 6px;
-                        background: var(--primary-light);
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: var(--primary);
-                        font-size: 0.75rem;
-                        font-weight: 600;
-                    }
-
-                    .version-title {
-                        font-size: 0.9375rem;
-                        font-weight: 500;
-                        color: var(--text-main);
-                    }
-
-                    .version-desc {
-                        font-size: 0.8125rem;
-                        color: var(--text-muted);
-                        line-height: 1.4;
-                        margin-left: 0.5rem;
-                    }
-
-                    .status-indicator {
-                        position: absolute;
-                        top: 12px;
-                        right: 12px;
-                        font-size: 0.75rem;
-                        padding: 2px 8px;
-                        border-radius: 4px;
-                    }
-
-                    .status-available {
-                        background: hsl(142 71% 95%);
-                        color: hsl(142 76% 24%);
-                    }
-
-                    .status-coming {
-                        background: hsl(33 100% 96%);
-                        color: hsl(27 90% 45%);
-                    }
-                </style>
-
-                <div class="dialog-heading">
-                    <h3 class="dialog-title">Select Document Version</h3>
-                    <p class="dialog-subtitle">Choose your preferred format for submission</p>
-                </div>
-
-                <div class="version-card selected">
-                    <div class="version-header">
-                        <span class="version-badge">1.0</span>
-                        <span class="version-title">Standard Version</span>
-                    </div>
-                    <p class="version-desc">
-                        This is the standard e-invoice version designed for submitting invoices to LHDN without the need for a digital signature.
-                    </p>
-                    <span class="status-indicator status-available">Available Now</span>
-                </div>
-
-                <div class="version-card disabled">
-                    <div class="version-header">
-                        <span class="version-badge">1.1</span>
-                        <span class="version-title">Secure Version</span>
-                    </div>
-                     <p class="version-desc">
-                        Enhanced encrypted format with digital signature capabilities,
-                        tailored for LHDN's advanced security requirements.
-                    </p>
-                    <span class="status-indicator status-coming">Coming Soon</span>
-                </div>
+            <div style="text-align: center; margin-bottom: 1.5rem; color: #6b7280; font-size: 0.875rem;">
+                Choose your preferred format for submission
             </div>
-        `,
+            <div class="version-options">
+                <div class="version-card selected" data-version="1.0">
+                    <div class="version-header">
+                        <div class="version-number">1.0</div>
+                        <div class="version-status available">Available Now</div>
+                    </div>
+                    <div class="version-title">Standard Version</div>
+                    <div class="version-description">
+                        This is the standard e-invoice version designed for submitting invoices to LHDN without the need for a digital signature.
+                    </div>
+                </div>
+                <div class="version-card disabled" data-version="1.1">
+                    <div class="version-header">
+                        <div class="version-number">1.1</div>
+                        <div class="version-status coming-soon">Coming Soon</div>
+                    </div>
+                    <div class="version-title">Secure Version</div>
+                    <div class="version-description">
+                        Enhanced encrypted format with digital signature capabilities, tailored for LHDN's advanced security requirements.
+                    </div>
+                </div>
+            </div>`,
         showCancelButton: true,
         confirmButtonText: 'Continue',
         cancelButtonText: 'Cancel',
-        width: 480,
-        padding: '1.5rem',
+        width: 500,
+        padding: '2rem',
         focusConfirm: false,
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
             popup: 'semi-minimal-popup'
         },
         didOpen: () => {
@@ -4174,21 +4062,21 @@ async function showConfirmationDialog(fileName, type, company, date, version) {
     `;
 
     return Swal.fire({
-        html: createSemiMinimalDialog({
-            title: 'Confirm Submission',
-            subtitle: 'Please review the document details before submitting to LHDN',
-            content: content
-        }),
+        title: 'Confirm Submission',
+        html: `
+            <div style="text-align: center; margin-bottom: 1.5rem; color: #6b7280; font-size: 0.875rem;">
+                Please review the document details before submitting to LHDN
+            </div>
+            ${content}`,
         showCancelButton: true,
         confirmButtonText: 'Yes, Submit',
         cancelButtonText: 'Cancel',
-        width: 480,
-        padding: '1.5rem',
+        width: 600,
+        padding: '2rem',
         focusConfirm: false,
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
-            popup: 'semi-minimal-popup'
+            confirmButton: 'btn-success',
+            popup: 'large-modal'
         }
     }).then((result) => result.isConfirmed);
 }
@@ -5327,79 +5215,124 @@ async function showExcelValidationError(error) {
     // Add delay before showing the validation error modal
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Format validation errors for display
+    // Format validation errors for display with user-friendly messages
     let errorContent = '';
     if (error.validationErrors && error.validationErrors.length > 0) {
-        const groupedErrors = error.validationErrors.reduce((acc, err) => {
-            const errors = Array.isArray(err.errors) ? err.errors : [err.errors];
-            acc[err.row] = acc[err.row] || [];
-            acc[err.row].push(...errors);
-            return acc;
-        }, {});
+        // Process and make validation errors more user-friendly
+        const processedErrors = error.validationErrors.map(err => {
+            if (typeof err === 'object' && err.errors) {
+                const errors = Array.isArray(err.errors) ? err.errors : [err.errors];
+                return {
+                    row: err.row || 'Unknown Row',
+                    errors: errors.map(e => {
+                        const errorText = typeof e === 'object' ? e.message : e;
+                        // Convert technical error messages to user-friendly ones
+                        if (errorText.includes('invoiceCodeNumber')) {
+                            return 'Invoice number is missing or invalid. Please ensure each invoice has a unique invoice number.';
+                        }
+                        if (errorText.includes('Validation Error')) {
+                            return errorText.replace('Validation Error', 'Data validation issue');
+                        }
+                        if (errorText.includes('TIN')) {
+                            return 'Tax Identification Number (TIN) is missing or invalid. Please verify the TIN format.';
+                        }
+                        if (errorText.includes('required')) {
+                            return errorText.replace('is required', 'must be provided');
+                        }
+                        return errorText;
+                    })
+                };
+            }
+            return { row: 'General', errors: [err] };
+        });
 
-        errorContent = Object.entries(groupedErrors).map(([row, errors]) => `
-            <div class="content-card">
-                <div class="content-header">
-                    <span class="content-badge error">
-                        <i class="fas fa-exclamation-circle"></i>
-                    </span>
-                    <span class="content-title" style="text-align: center;">${row}</span>
-                </div>
-                ${errors.map(e => `
-                    <div class="content-desc">
-                        ${typeof e === 'object' ? e.message : e}
-                    </div>
-                `).join('')}
-            </div>
-        `).join('');
-    } else {
         errorContent = `
-            <div class="content-card">
-                <div class="content-header">
-                    <span class="content-badge error">
-                        <i class="fas fa-exclamation-circle"></i>
-                    </span>
-                    <span class="content-title" style="text-align: center;">Validation Error</span>
+            <div class="error-code-badge">
+                <i class="fas fa-file-excel"></i>
+                EXCEL_VALIDATION_ERROR
+            </div>
+            <div class="error-message">
+                <h6><i class="fas fa-exclamation-triangle"></i> Validation Issues Found</h6>
+                <p>Your Excel file contains the following issues that must be resolved before submission:</p>
+                <div class="error-list-container">
+                    ${processedErrors.map(errorGroup => `
+                        <div class="error-group">
+                            <div class="error-group-header">
+                                <i class="fas fa-table"></i>
+                                <span>${errorGroup.row}</span>
+                            </div>
+                            <ul class="error-list">
+                                ${errorGroup.errors.map((err, index) => `
+                                    <li class="error-item">
+                                        <span class="error-number">${index + 1}</span>
+                                        <span class="error-text">${err}</span>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `).join('')}
                 </div>
-                <div class="content-desc">
-                    ${error.message || 'Unknown validation error'}
-                </div>
+            </div>
+        `;
+    } else {
+        // Handle generic validation error
+        const friendlyMessage = error.message
+            ? error.message.replace('Validation Error', 'Data validation issue')
+            : 'Your Excel file contains validation errors that prevent submission to LHDN.';
+
+        errorContent = `
+            <div class="error-code-badge">
+                <i class="fas fa-file-excel"></i>
+                EXCEL_VALIDATION_ERROR
+            </div>
+            <div class="error-message">
+                <h6><i class="fas fa-exclamation-triangle"></i> Validation Error</h6>
+                <p>${friendlyMessage}</p>
             </div>
         `;
     }
 
-    // Add user guidance
+    // Add helpful guidance section
     const guidance = `
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-title" style="text-align: center;">Next Steps</span>
+        <div class="error-suggestion">
+            <h6><i class="fas fa-lightbulb"></i> How to Fix This</h6>
+            <p>Please correct the validation errors in your Excel file and try uploading again.</p>
+            <div class="suggestion-steps">
+                <div class="suggestion-step">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Ensure all required fields are properly filled</span>
+                </div>
+                <div class="suggestion-step">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Verify data formats match LHDN requirements</span>
+                </div>
+                <div class="suggestion-step">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Check for duplicate or missing invoice numbers</span>
+                </div>
             </div>
-            <div class="content-desc">
-                <ul>
-                    <li>Review the errors listed above carefully.</li>
-                    <li>Ensure all mandatory fields are filled out correctly.</li>
-                    <li>Check the format of the data (e.g., dates, numbers).</li>
-                    <li>Try submitting the document again after corrections.</li>
-                </ul>
-            </div>
+        </div>
+
+        <div class="error-information">
+            <h6><i class="fas fa-info-circle"></i> Need Help?</h6>
+            <p>If you continue to experience validation errors, please refer to the LHDN Excel template guidelines or contact support for assistance.</p>
         </div>
     `;
 
+    // Use the modern error modal template for consistency
     return Swal.fire({
-        html: createSemiMinimalDialog({
+        html: createModernErrorModal({
             title: 'Excel Validation Failed',
-            subtitle: 'Correct the issues listed and proceed with creating a new document using the EXCEL Template',
+            subtitle: 'Please correct the issues below and try again',
             content: errorContent + guidance
         }),
-        icon: 'error',
+        showConfirmButton: false,
         showCancelButton: false,
-        confirmButtonText: 'I Understand',
-        confirmButtonColor: '#405189',
-        width: 480,
-        padding: '1.5rem',
+        width: 600,
+        padding: 0,
+        background: 'transparent',
         customClass: {
-            confirmButton: 'semi-minimal-confirm',
-            popup: 'semi-minimal-popup'
+            popup: 'modern-error-popup'
         }
     }).then((result) => {
         if (result.isConfirmed && error.fileName) {
@@ -5668,6 +5601,42 @@ function formatValidationMessage(message) {
     return message;
 }
 
+
+// Modern Error Modal Template
+function createModernErrorModal(options) {
+    const {
+        title,
+        subtitle,
+        content
+    } = options;
+
+    return `
+        <div class="modern-error-modal">
+            <div class="error-header">
+                <div class="error-icon">
+                    <div class="icon-wrapper">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                </div>
+                <h1 class="error-title">${title}</h1>
+                <p class="error-subtitle">${subtitle}</p>
+                <div class="error-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Process</span>
+                        <span class="meta-value">LHDN</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Status</span>
+                        <span class="meta-value">Failed</span>
+                    </div>
+                </div>
+            </div>
+            <div class="error-content">
+                ${content}
+            </div>
+        </div>
+    `;
+}
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {

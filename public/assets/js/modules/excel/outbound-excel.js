@@ -366,6 +366,7 @@ class InvoiceTableManager {
             }
 
             const self = this; // Store reference to this
+            this.currentDataSource = 'list-all'; // Track current data source
 
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
@@ -456,16 +457,19 @@ class InvoiceTableManager {
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l>><"outbound-table-responsive"t><"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 initComplete: function() {
-                    // Add filter button handlers to existing buttons
-                    $('.quick-filters .btn[data-filter]').on('click', function() {
+                    // Add filter button handlers with proper data source switching
+                    $('.quick-filters .btn[data-filter]').off('click').on('click', function() {
                         $('.quick-filters .btn').removeClass('active');
                         $(this).addClass('active');
 
                         const filter = $(this).data('filter');
-                        if (filter === 'all') {
-                            self.table.column(8).search('').draw();
+
+                        if (filter === 'staging') {
+                            // Switch to staging data source
+                            self.switchToStagingData();
                         } else {
-                            self.table.column(8).search('Pending').draw();
+                            // Switch back to list-all data source
+                            self.switchToListAllData(filter);
                         }
                     });
 
@@ -1369,6 +1373,14 @@ class InvoiceTableManager {
             });
         }
 
+        // Sync amounts button
+        const syncAmountsBtn = document.getElementById('syncAmountsBtn');
+        if (syncAmountsBtn) {
+            syncAmountsBtn.addEventListener('click', () => {
+                this.handleSyncAmounts();
+            });
+        }
+
         // Advanced Filters
         // Date Range
         const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type');
@@ -1412,6 +1424,12 @@ class InvoiceTableManager {
         // Clear the global search
         const globalSearch = document.getElementById('globalSearch');
         if (globalSearch) globalSearch.value = '';
+
+        // Handle staging filter differently
+        if (filterValue === 'staging') {
+            this.loadStagingData();
+            return;
+        }
 
         // Apply filter based on value
         this.table.column('status:name').search(
@@ -1794,6 +1812,383 @@ class InvoiceTableManager {
         return csvRows.join('\n');
     }
 
+    // Switch to staging data source
+    async switchToStagingData() {
+        try {
+            this.currentDataSource = 'staging';
+
+            // Show loading state
+            this.showLoadingBackdrop('Loading Staging Data from Database');
+
+            // Update the table's AJAX URL to staging endpoint
+            this.table.ajax.url('/api/outbound-files/staging-data').load(() => {
+                // Clear any column filters when switching to staging
+                this.table.columns().search('').draw();
+                this.hideLoadingBackdrop();
+                this.updateCardTotals();
+            });
+
+        } catch (error) {
+            console.error('Error switching to staging data:', error);
+            this.hideLoadingBackdrop();
+            this.showErrorMessage('Failed to load staging data: ' + error.message);
+        }
+    }
+
+    // Switch back to list-all data source
+    async switchToListAllData(filter = 'pending') {
+        try {
+            this.currentDataSource = 'list-all';
+
+            // Show loading state
+            this.showLoadingBackdrop('Loading Excel Files from Network');
+
+            // Update the table's AJAX URL back to list-all endpoint
+            this.table.ajax.url('/api/outbound-files/list-all').load(() => {
+                // Apply the appropriate filter
+                if (filter === 'all') {
+                    this.table.column(8).search('').draw();
+                } else {
+                    this.table.column(8).search('Pending').draw();
+                }
+                this.hideLoadingBackdrop();
+                this.updateCardTotals();
+            });
+
+        } catch (error) {
+            console.error('Error switching to list-all data:', error);
+            this.hideLoadingBackdrop();
+            this.showErrorMessage('Failed to load excel files: ' + error.message);
+        }
+    }
+
+    // Load staging data from WP_OUTBOUND_STATUS table (legacy method - kept for compatibility)
+    async loadStagingData() {
+        try {
+            // Show loading state
+            const loadingHtml = `
+                <div class="text-center p-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading staging data...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Loading staging database records...</p>
+                </div>
+            `;
+
+            // Clear table and show loading
+            this.table.clear().draw();
+            $('#invoiceTable tbody').html(loadingHtml);
+
+            const response = await fetch('/api/outbound-files/staging-data');
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to load staging data');
+            }
+
+            if (data.success && data.files) {
+                // Clear loading and populate with staging data
+                this.table.clear();
+                this.table.rows.add(data.files).draw();
+
+                // Update card totals for staging data
+                this.updateCardTotalsForStaging(data.files);
+
+                // Show success message
+                ToastManager.show(`Loaded ${data.files.length} staging records`, 'success');
+            } else {
+                throw new Error('No staging data found');
+            }
+
+        } catch (error) {
+            console.error('Error loading staging data:', error);
+            ToastManager.show(`Failed to load staging data: ${error.message}`, 'error');
+
+            // Show empty state
+            this.table.clear().draw();
+            $('#invoiceTable tbody').html(`
+                <tr>
+                    <td colspan="10" class="text-center p-4">
+                        <div class="text-muted">
+                            <i class="bi bi-database-x fs-1 mb-3 d-block"></i>
+                            <h5>No Staging Data Available</h5>
+                            <p>Unable to load staging database records.</p>
+                        </div>
+                    </td>
+                </tr>
+            `);
+        }
+    }
+
+    // Update card totals for staging data
+    updateCardTotalsForStaging(files) {
+        const totals = {
+            total: files.length,
+            submitted: 0,
+            invalid: 0,
+            cancelled: 0,
+            pending: 0
+        };
+
+        files.forEach(file => {
+            switch (file.status?.toLowerCase()) {
+                case 'submitted':
+                case 'completed':
+                    totals.submitted++;
+                    break;
+                case 'invalid':
+                    totals.invalid++;
+                    break;
+                case 'cancelled':
+                    totals.cancelled++;
+                    break;
+                default:
+                    totals.pending++;
+                    break;
+            }
+        });
+
+        // Update card values
+        this.animateNumber(document.querySelector('.total-invoice-count'), totals.total);
+        this.animateNumber(document.querySelector('.total-submitted-count'), totals.submitted);
+        this.animateNumber(document.querySelector('.total-invalid-count'), totals.invalid);
+        this.animateNumber(document.querySelector('.total-cancelled-count'), totals.cancelled);
+        this.animateNumber(document.querySelector('.total-queue-value'), totals.pending);
+    }
+
+    // Handle sync amounts functionality
+    async handleSyncAmounts() {
+        try {
+            // Show confirmation dialog
+            const result = await Swal.fire({
+                title: 'Sync Amount Data',
+                html: `
+                    <div class="text-start">
+                        <p>This will sync amount data from inbound records to outbound records where UUIDs match.</p>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>What this does:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Matches records by UUID or invoice number</li>
+                                <li>Updates amount fields in outbound records</li>
+                                <li>Adds supplier/receiver names if missing</li>
+                                <li>Does not overwrite existing data</li>
+                            </ul>
+                        </div>
+                    </div>
+                `,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: '<i class="bi bi-arrow-repeat"></i> Start Sync',
+                cancelButtonText: 'Cancel',
+                customClass: {
+                    confirmButton: 'btn btn-primary',
+                    cancelButton: 'btn btn-secondary'
+                }
+            });
+
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            // Show loading
+            this.showLoadingBackdrop('Syncing amount data...');
+
+            // Call the sync API
+            const response = await fetch('/api/outbound-files/sync-amounts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            // Hide loading
+            this.hideLoadingBackdrop();
+
+            if (data.success) {
+                // Show success message with stats
+                await Swal.fire({
+                    title: 'Sync Completed',
+                    html: `
+                        <div class="text-start">
+                            <p class="text-success mb-3">
+                                <i class="bi bi-check-circle me-2"></i>
+                                Amount data sync completed successfully!
+                            </p>
+                            <div class="sync-stats">
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="stat-item">
+                                            <div class="stat-value">${data.stats.inboundRecordsProcessed}</div>
+                                            <div class="stat-label">Records Processed</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="stat-item">
+                                            <div class="stat-value">${data.stats.matchesFound}</div>
+                                            <div class="stat-label">Matches Found</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <div class="stat-item">
+                                            <div class="stat-value text-primary">${data.stats.recordsUpdated}</div>
+                                            <div class="stat-label">Records Updated</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <style>
+                            .sync-stats .stat-item {
+                                text-align: center;
+                                padding: 1rem;
+                                background: #f8f9fa;
+                                border-radius: 8px;
+                                margin-bottom: 0.5rem;
+                            }
+                            .sync-stats .stat-value {
+                                font-size: 1.5rem;
+                                font-weight: 600;
+                                color: #495057;
+                            }
+                            .sync-stats .stat-label {
+                                font-size: 0.875rem;
+                                color: #6c757d;
+                                margin-top: 0.25rem;
+                            }
+                        </style>
+                    `,
+                    icon: 'success',
+                    confirmButtonText: 'OK',
+                    customClass: {
+                        confirmButton: 'btn btn-primary'
+                    }
+                });
+
+                // Refresh the table to show updated data
+                this.refresh(true);
+            } else {
+                // Show error message
+                await Swal.fire({
+                    title: 'Sync Failed',
+                    text: data.message || 'Failed to sync amount data',
+                    icon: 'error',
+                    confirmButtonText: 'OK',
+                    customClass: {
+                        confirmButton: 'btn btn-primary'
+                    }
+                });
+            }
+
+        } catch (error) {
+            console.error('Error syncing amounts:', error);
+            this.hideLoadingBackdrop();
+
+            await Swal.fire({
+                title: 'Sync Error',
+                text: 'An error occurred while syncing amount data. Please try again.',
+                icon: 'error',
+                confirmButtonText: 'OK',
+                customClass: {
+                    confirmButton: 'btn btn-primary'
+                }
+            });
+        }
+    }
+
+    // Handle cleanup of old files
+    async handleCleanupOldFiles() {
+        try {
+            const result = await Swal.fire({
+                title: 'Cleanup Old Files',
+                html: `
+                    <div class="text-start">
+                        <p class="mb-3">This will delete files older than 3 months from:</p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-folder text-warning me-2"></i>Network file system</li>
+                            <li><i class="bi bi-database text-info me-2"></i>WP_OUTBOUND_STATUS table</li>
+                        </ul>
+                        <div class="alert alert-warning mt-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Warning:</strong> This action cannot be undone.
+                        </div>
+                    </div>
+                `,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, cleanup old files',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#dc3545',
+                customClass: {
+                    popup: 'semi-minimal-popup'
+                }
+            });
+
+            if (!result.isConfirmed) return;
+
+            // Show loading
+            Swal.fire({
+                title: 'Cleaning up old files...',
+                text: 'Please wait while we remove old files',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            const response = await fetch('/api/outbound-files/cleanup-old', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Cleanup failed');
+            }
+
+            // Show success result
+            await Swal.fire({
+                title: 'Cleanup Complete',
+                html: `
+                    <div class="text-start">
+                        <p class="mb-3">Successfully cleaned up old files:</p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-file-earmark-x text-danger me-2"></i>${data.filesDeleted || 0} files deleted</li>
+                            <li><i class="bi bi-database-dash text-info me-2"></i>${data.recordsDeleted || 0} database records removed</li>
+                        </ul>
+                        ${data.errors && data.errors.length > 0 ? `
+                            <div class="alert alert-warning mt-3">
+                                <strong>Some errors occurred:</strong>
+                                <ul class="mb-0 mt-2">
+                                    ${data.errors.map(error => `<li>${error}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                `,
+                icon: 'success',
+                confirmButtonText: 'OK'
+            });
+
+            // Refresh the current view
+            this.loadFiles();
+
+        } catch (error) {
+            console.error('Cleanup error:', error);
+            Swal.fire({
+                title: 'Cleanup Failed',
+                text: error.message,
+                icon: 'error',
+                confirmButtonText: 'OK'
+            });
+        }
+    }
+
     updateCardTotals() {
         const totals = {
             total: 0,
@@ -2139,6 +2534,12 @@ class InvoiceTableManager {
 
         // Add event listeners to validate TIN buttons in table rows
         this.addTableTinValidationListeners();
+
+        // Add cleanup button listener
+        const cleanupButton = document.getElementById('cleanupOldFiles');
+        if (cleanupButton) {
+            cleanupButton.addEventListener('click', () => this.handleCleanupOldFiles());
+        }
     }
 
     // Validate form using Bootstrap's validation
@@ -3012,47 +3413,65 @@ class InvoiceTableManager {
 
     showProgressModal(title = 'Submitting Document to LHDN', message = 'Please wait while we process your request') {
         return `
-            <div class="modal-content">
-                <div class="modal-header">
-                <div class="icon primary">
-                    <i class="fas fa-file-earmark-text"></i>
-                </div>
-                <div class="title">${title}</div>
-                <div class="subtitle">${message}</div>
-                </div>
-                <div class="modal-body">
-                <div class="progress-steps">
-                    <div class="step">
-                        <div class="step-icon">
-                            <i class="fas fa-check"></i>
+            <div class="modern-submission-container">
+                <div class="submission-header">
+                    <div class="submission-icon">
+                        <div class="icon-wrapper">
+                            <i class="fas fa-cloud-upload-alt"></i>
                         </div>
-                        <div class="step-content">
-                            <div class="step-title">Validating Document</div>
-                            <div class="step-status">Validation completed</div>
-                        </div>
-                            </div>
-                    <div class="step processing">
-                        <div class="step-icon">
-                            <div class="spinner-border spinner-border-sm"></div>
-                                            </div>
-                        <div class="step-content">
-                            <div class="step-title">Uploading to LHDN</div>
-                            <div class="step-status">Submitting to LHDN...</div>
-                                        </div>
-                                </div>
-                    <div class="step">
-                        <div class="step-icon">
-                            <i class="fas fa-clock"></i>
-                            </div>
-                        <div class="step-content">
-                            <div class="step-title">Processing</div>
-                            <div class="step-status">Waiting...</div>
-                                </div>
-                            </div>
                     </div>
+                    <div class="submission-title">${title}</div>
+                    <div class="submission-subtitle">${message}</div>
+                </div>
+
+                <div class="modern-progress-steps">
+                    <div class="progress-step completed" data-step="1">
+                        <div class="step-indicator">
+                            <div class="step-number">
+                                <i class="fas fa-check"></i>
+                            </div>
+                        </div>
+                        <div class="step-details">
+                            <div class="step-title">Document Validation</div>
+                            <div class="step-status">Completed successfully</div>
+                        </div>
+                        <div class="step-connector"></div>
+                    </div>
+
+                    <div class="progress-step processing" data-step="2">
+                        <div class="step-indicator">
+                            <div class="step-number">
+                                <div class="modern-spinner"></div>
+                            </div>
+                        </div>
+                        <div class="step-details">
+                            <div class="step-title">LHDN Submission</div>
+                            <div class="step-status">Uploading to LHDN...</div>
+                        </div>
+                        <div class="step-connector"></div>
+                    </div>
+
+                    <div class="progress-step pending" data-step="3">
+                        <div class="step-indicator">
+                            <div class="step-number">3</div>
+                        </div>
+                        <div class="step-details">
+                            <div class="step-title">Processing Response</div>
+                            <div class="step-status">Waiting...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="submission-footer">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 66%"></div>
+                        </div>
+                        <div class="progress-text">Step 2 of 3</div>
+                    </div>
+                </div>
             </div>
-        </div>
-    `;
+        `;
     }
 
     showErrorModal(title = 'XML Validation Failed', errors = []) {
@@ -3743,153 +4162,66 @@ async function validateExcelFile(fileName, type, company, date) {
 }
 
 async function showVersionDialog() {
-    return Swal.fire({
-        html: `
-            <div class="semi-minimal-dialog">
-                <style>
-                    .semi-minimal-dialog {
-                        --primary: hsl(220 76% 55%);
-                        --primary-light: hsl(220 76% 97%);
-                        --text-main: hsl(220 39% 11%);
-                        --text-muted: hsl(215 16% 47%);
-                        font-family: system-ui, -apple-system, sans-serif;
-                    }
-
-                    .dialog-heading {
-                        text-align: center;
-                        margin-bottom: 1.5rem;
-                    }
-
-                    .dialog-title {
-                        font-size: 1.125rem;
-                        font-weight: 600;
-                        color: var(--text-main);
-                        margin-bottom: 0.25rem;
-                    }
-
-                    .dialog-subtitle {
-                        font-size: 0.875rem;
-                        color: var(--text-muted);
-                        line-height: 1.4;
-                    }
-
-                    .version-card {
-                        padding: 1rem;
-                        border-radius: 8px;
-                        border: 1px solid hsl(214 32% 91%);
-                        margin-bottom: 0.75rem;
-                        transition: all 0.2s ease;
-                        cursor: pointer;
-                        position: relative;
-                        background: white;
-                    }
-
-                    .version-card:hover:not(.disabled) {
-                        transform: translateY(-2px);
-                        box-shadow: 0 3px 6px rgba(0,0,0,0.05);
-                    }
-
-                    .version-card.selected {
-                        border-color: var(--primary);
-                        background: var(--primary-light);
-                    }
-
-                    .version-card.disabled {
-                        background: hsl(220 33% 98%);
-                        cursor: not-allowed;
-                    }
-
-                    .version-header {
-                        display: flex;
-                        align-items: center;
-                        gap: 0.75rem;
-                        margin-bottom: 0.5rem;
-                    }
-
-                    .version-badge {
-                        width: 24px;
-                        height: 24px;
-                        border-radius: 6px;
-                        background: var(--primary-light);
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: var(--primary);
-                        font-size: 0.75rem;
-                        font-weight: 600;
-                    }
-
-                    .version-title {
-                        font-size: 0.9375rem;
-                        font-weight: 500;
-                        color: var(--text-main);
-                    }
-
-                    .version-desc {
-                        font-size: 0.8125rem;
-                        color: var(--text-muted);
-                        line-height: 1.4;
-                        margin-left: 0.5rem;
-                    }
-
-                    .status-indicator {
-                        position: absolute;
-                        top: 12px;
-                        right: 12px;
-                        font-size: 0.75rem;
-                        padding: 2px 8px;
-                        border-radius: 4px;
-                    }
-
-                    .status-available {
-                        background: hsl(142 71% 95%);
-                        color: hsl(142 76% 24%);
-                    }
-
-                    .status-coming {
-                        background: hsl(33 100% 96%);
-                        color: hsl(27 90% 45%);
-                    }
-                </style>
-
-                <div class="dialog-heading">
-                    <h3 class="dialog-title">Select Document Version</h3>
-                    <p class="dialog-subtitle">Choose your preferred format for submission</p>
-                </div>
-
-                <div class="version-card selected">
-                    <div class="version-header">
-                        <span class="version-badge">1.0</span>
-                        <span class="version-title">Standard Version</span>
+    const content = `
+        <div class="modern-modal-content">
+            <!-- Header Section with Invoice Branding -->
+            <div class="modal-header-section">
+                <div class="modal-brand">
+                    <div class="brand-icon">
+                        <i class="bi bi-file-earmark-code"></i>
                     </div>
-                    <p class="version-desc">
-                        This is the standard e-invoice version designed for submitting invoices to LHDN without the need for a digital signature.
-                    </p>
-                    <span class="status-indicator status-available">Available Now</span>
-                </div>
-
-                <div class="version-card disabled">
-                    <div class="version-header">
-                        <span class="version-badge">1.1</span>
-                        <span class="version-title">Secure Version</span>
+                    <div class="brand-info">
+                        <h1 class="modal-title">SELECT DOCUMENT VERSION</h1>
+                        <p class="modal-subtitle">Choose your preferred format for submission</p>
                     </div>
-                     <p class="version-desc">
-                        Enhanced encrypted format with digital signature capabilities,
-                        tailored for LHDN's advanced security requirements.
-                    </p>
-                    <span class="status-indicator status-coming">Coming Soon</span>
+                </div>
+                <div class="modal-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Available Formats</span>
+                        <span class="meta-value">2</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Recommended</span>
+                        <span class="meta-value">v1.0</span>
+                    </div>
                 </div>
             </div>
-        `,
+
+            <!-- Version Options -->
+            <div class="version-options">
+                <div class="version-card selected" data-version="1.0">
+                    <div class="version-header">
+                        <div class="version-number">1.0</div>
+                        <div class="version-status available">Available Now</div>
+                    </div>
+                    <div class="version-title">Standard Version</div>
+                    <div class="version-description">
+                        This is the standard e-invoice version designed for submitting invoices to LHDN without the need for a digital signature.
+                    </div>
+                </div>
+                <div class="version-card disabled" data-version="1.1">
+                    <div class="version-header">
+                        <div class="version-number">1.1</div>
+                        <div class="version-status coming-soon">Coming Soon</div>
+                    </div>
+                    <div class="version-title">Secure Version</div>
+                    <div class="version-description">
+                        Enhanced encrypted format with digital signature capabilities, tailored for LHDN's advanced security requirements.
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    return Swal.fire({
+        html: content,
         showCancelButton: true,
         confirmButtonText: 'Continue',
         cancelButtonText: 'Cancel',
-        width: 480,
-        padding: '1.5rem',
+        width: 600,
+        padding: '2rem',
         focusConfirm: false,
         customClass: {
-            confirmButton: 'outbound-action-btn submit',
-            cancelButton: 'outbound-action-btn cancel',
             popup: 'semi-minimal-popup'
         },
         didOpen: () => {
@@ -3907,336 +4239,195 @@ async function showVersionDialog() {
         return null;
     });
 }
-// Base template for semi-minimal dialog
-function createSemiMinimalDialog(options) {
+// Modern Success Modal Template
+function createModernSuccessModal(options) {
     const {
         title,
         subtitle,
-        content,
-        showCancelButton = true,
-        confirmButtonText = 'Continue',
-        cancelButtonText = 'Cancel',
-        width = 480,
-        padding = '1.5rem',
-        customClass = {},
-        didOpen = () => { }
+        content
     } = options;
 
     return `
-        <div class="semi-minimal-dialog">
-            <style>
-                .semi-minimal-dialog {
-                    --primary: hsl(220 76% 55%);
-                    --primary-light: hsl(220 76% 97%);
-                    --text-main: hsl(220 39% 11%);
-                    --text-muted: hsl(215 16% 47%);
-                    --error: hsl(0 84% 60%);
-                    --error-light: hsl(0 84% 97%);
-                    --success: hsl(142 76% 36%);
-                    --success-light: hsl(142 76% 97%);
-                    --warning: hsl(37 90% 51%);
-                    --warning-light: hsl(37 90% 97%);
-                    --info: hsl(200 76% 55%);
-                    --info-light: hsl(200 76% 97%);
-                    font-family: system-ui, -apple-system, sans-serif;
-                }
-
-                .dialog-heading {
-                    text-align: center;
-                    margin-bottom: 1.5rem;
-                }
-
-                .dialog-title {
-                    font-size: 1.125rem;
-                    font-weight: 600;
-                    color: var(--text-main);
-                    margin-bottom: 0.25rem;
-                }
-
-                .dialog-subtitle {
-                    font-size: 0.875rem;
-                    color: var(--text-muted);
-                    line-height: 1.4;
-                }
-
-                .content-card {
-                    padding: 1rem;
-                    border-radius: 8px;
-                    border: 1px solid hsl(214 32% 91%);
-                    margin-bottom: 0.75rem;
-                    background: white;
-                }
-
-                .content-card:hover:not(.disabled) {
-                    transform: translateY(-2px);
-                    box-shadow: 0 3px 6px rgba(0,0,0,0.05);
-                }
-
-                .content-card.selected {
-                    border-color: var(--primary);
-                    background: var(--primary-light);
-                }
-
-                .content-card.disabled {
-                    background: hsl(220 33% 98%);
-                    cursor: not-allowed;
-                }
-
-  .content-header {
-    display: flex !important;
-    justify-content: center !important;
-    align-items: center !important;
-    width: 100% !important;
-    margin-bottom: 0.5rem !important;
-    text-align: center !important;
-}
-
-.content-title {
-    font-size: 0.9375rem !important;
-    font-weight: 500 !important;
-    color: var(--text-main) !important;
-    text-align: center !important;
-    width: 100% !important;
-}
-
-                .content-badge {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: 6px;
-                    background: var(--primary-light);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: var(--primary);
-                    font-size: 0.75rem;
-                    font-weight: 600;
-                }
-
-                .content-badge.error {
-                    background: var(--error-light);
-                    color: var(--error);
-                }
-
-                .content-badge.success {
-                    background: var(--success-light);
-                    color: var(--success);
-                }
-
-                .content-badge.warning {
-                    background: var(--warning-light);
-                    color: var(--warning);
-                }
-
-                .content-badge.info {
-                    background: var(--info-light);
-                    color: var(--info);
-                }
-
-
-                .content-desc {
-                    font-size: 0.8125rem;
-                    color: var(--text-muted);
-                    line-height: 1.4;
-                    margin-left: 0.5rem;
-                }
-
-                .status-indicator {
-                    position: absolute;
-                    top: 12px;
-                    right: 12px;
-                    font-size: 0.75rem;
-                    padding: 2px 8px;
-                    border-radius: 4px;
-                }
-
-                .field-row {
-                    display: flex;
-                    align-items: center;
-                    gap: 0.5rem;
-                    margin-bottom: 0.5rem;
-                }
-
-                .field-label {
-                    font-size: 0.8125rem;
-                    color: var(--text-muted);
-                    min-width: 100px;
-                }
-
-                .field-value {
-                    font-size: 0.875rem;
-                    color: var(--text-main);
-                    font-weight: 500;
-                }
-
-                  .loading-steps {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 0.5rem;
-                }
-
-                .loading-step {
-                    position: relative;
-                    display: flex;
-                    align-items: center;
-                    gap: 1rem;
-                    padding: 1rem;
-                    background: white;
-                    border-radius: 8px;
-                    border: 1px solid #e9ecef;
-                    margin-bottom: 0.5rem;
-                }
-
-                .step-indicator {
-                    width: 20px;
-                    height: 20px;
-                    position: relative;
-                    flex-shrink: 0;
-                }
-
-                .step-indicator::before {
-                    content: '';
-                    position: absolute;
-                    width: 20px;
-                    height: 20px;
-                    border-radius: 50%;
-                    background: #e9ecef;
-                }
-
-                .step-indicator.processing::before {
-                    background: var(--primary);
-                }
-
-                .step-indicator.completed::before {
-                    background: var(--success);
-                }
-
-                .step-indicator.error::before {
-                    background: var(--error);
-                }
-
-                .step-content {
-                    flex: 1;
-                    min-width: 0;
-                }
-
-                .step-title {
-                    font-size: 0.9375rem;
-                    font-weight: 500;
-                    color: var(--text-main);
-                    margin-bottom: 0.25rem;
-                }
-
-                .step-message {
-                    font-size: 0.8125rem;
-                    color: var(--text-muted);
-                }
-
-                /* Loading animation */
-                .loading-spinner {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 20px;
-                    height: 20px;
-                    border: 2px solid transparent;
-                    border-top-color: var(--primary);
-                    border-right-color: var(--primary);
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
-                }
-
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-
-                /* Status-specific styles */
-                .loading-step.processing {
-                    border-color: var(--primary);
-                    background: var(--primary-light);
-                }
-
-                .loading-step.completed {
-                    border-color: var(--success);
-                    background: var(--success-light);
-                }
-
-                .loading-step.error {
-                    border-color: var(--error);
-                    background: var(--error-light);
-                }
-
-                .loading-step.processing .step-message {
-                    color: var(--primary);
-                }
-
-                .loading-step.completed .step-message {
-                    color: var(--success);
-                }
-
-                .loading-step.error .step-message {
-                    color: var(--error);
-                }
-            </style>
-
-            <div class="dialog-heading">
-                <h3 class="dialog-title">${title}</h3>
-                ${subtitle ? `<p class="dialog-subtitle">${subtitle}</p>` : ''}
+        <div class="modern-submission-container">
+            <div class="submission-header" style="background: linear-gradient(135deg, #059669 0%, #047857 100%);">
+                <div class="submission-icon">
+                    <div class="icon-wrapper" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); color: #059669;">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                </div>
+                <h1 class="submission-title">${title}</h1>
+                <p class="submission-subtitle">${subtitle}</p>
+                <div class="error-meta" style="display: flex; gap: 1.5rem; justify-content: center;">
+                    <div class="meta-item">
+                        <span class="meta-label">Process</span>
+                        <span class="meta-value">LHDN</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Status</span>
+                        <span class="meta-value">Success</span>
+                    </div>
+                </div>
             </div>
-
-            ${content}
+            <div class="error-content" style="background: white; padding: 2rem;">
+                ${content}
+            </div>
         </div>
     `;
+}
+
+// Modern Error Modal Template
+function createModernErrorModal(options) {
+    const {
+        title,
+        subtitle,
+        content
+    } = options;
+
+    return `
+        <div class="modern-error-modal">
+            <div class="error-header">
+                <div class="error-icon">
+                    <div class="icon-wrapper">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                </div>
+                <h1 class="error-title">${title}</h1>
+                <p class="error-subtitle">${subtitle}</p>
+                <div class="error-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Process</span>
+                        <span class="meta-value">LHDN</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Status</span>
+                        <span class="meta-value">Failed</span>
+                    </div>
+                </div>
+            </div>
+            <div class="error-content">
+                ${content}
+            </div>
+        </div>
+    `;
+}
+
+// Modern Confirmation Modal Template
+function createModernConfirmationModal(options) {
+    const {
+        title,
+        subtitle,
+        content
+    } = options;
+
+    return `
+        <div class="modern-submission-container">
+            <div class="submission-header">
+                <div class="submission-icon">
+                    <div class="icon-wrapper">
+                        <i class="fas fa-file-check"></i>
+                    </div>
+                </div>
+                <h1 class="submission-title">${title}</h1>
+                <p class="submission-subtitle">${subtitle}</p>
+                <div class="error-meta" style="display: flex; gap: 1.5rem; justify-content: center;">
+                    <div class="meta-item">
+                        <span class="meta-label">Document Type</span>
+                        <span class="meta-value">01</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Issue Date</span>
+                        <span class="meta-value">${new Date().toLocaleDateString()}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="error-content" style="background: white; padding: 2rem;">
+                ${content}
+            </div>
+        </div>
+    `;
+}
+
+// Legacy function for backward compatibility
+function createSemiMinimalDialog(options) {
+    // Determine the type based on title or content
+    if (options.title && options.title.toLowerCase().includes('success')) {
+        return createModernSuccessModal(options);
+    } else if (options.title && (options.title.toLowerCase().includes('error') || options.title.toLowerCase().includes('failed'))) {
+        return createModernErrorModal(options);
+    } else {
+        return createModernConfirmationModal(options);
+    }
 }
 
 // Update showConfirmationDialog to use the new template
 async function showConfirmationDialog(fileName, type, company, date, version) {
     const content = `
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-badge">
-                    <i class="fas fa-file-invoice"></i>
-                </span>
-                <span class="content-title">Document Details</span>
+        <div class="modern-modal-content">
+            <!-- Header Section with Invoice Branding -->
+            <div class="modal-header-section">
+                <div class="modal-brand">
+                    <div class="brand-icon">
+                        <i class="bi bi-file-check"></i>
+                    </div>
+                    <div class="brand-info">
+                        <h1 class="modal-title">CONFIRM SUBMISSION</h1>
+                        <p class="modal-subtitle">Please review the document details before submitting to LHDN</p>
+                    </div>
+                </div>
+                <div class="modal-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Document Type</span>
+                        <span class="meta-value">01</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Issue Date</span>
+                        <span class="meta-value">${new Date().toLocaleDateString()}</span>
+                    </div>
+                </div>
             </div>
-            <div class="field-row">
-                <span class="field-label">File Name:</span>
-                <span class="field-value">${fileName}</span>
-            </div>
-            <div class="field-row">
-                <span class="field-label">Source:</span>
-                <span class="field-value">${type}</span>
-            </div>
-            <div class="field-row">
-                <span class="field-label">Company:</span>
-                <span class="field-value">${company}</span>
-            </div>
-            <div class="field-row">
-                <span class="field-label">Upload Date:</span>
-                <span class="field-value">${new Date(date).toLocaleString()}</span>
-            </div>
-            <div class="field-row">
-                <span class="field-label">Version:</span>
-                <span class="field-value">${version}</span>
+
+            <!-- Document Details Card -->
+            <div class="content-card">
+                <div class="content-header">
+                    <span class="content-badge">
+                        <i class="bi bi-file-earmark-text"></i>
+                    </span>
+                    <span class="content-title">Document Details</span>
+                </div>
+                <div class="field-row">
+                    <span class="field-label">File Name:</span>
+                    <span class="field-value">${fileName}</span>
+                </div>
+                <div class="field-row">
+                    <span class="field-label">Source:</span>
+                    <span class="field-value">${type}</span>
+                </div>
+                <div class="field-row">
+                    <span class="field-label">Company:</span>
+                    <span class="field-value">${company}</span>
+                </div>
+                <div class="field-row">
+                    <span class="field-label">Upload Date:</span>
+                    <span class="field-value">${new Date(date).toLocaleString()}</span>
+                </div>
+                <div class="field-row">
+                    <span class="field-label">Version:</span>
+                    <span class="field-value">${version}</span>
+                </div>
             </div>
         </div>
     `;
 
     return Swal.fire({
-        html: createSemiMinimalDialog({
-            title: 'Confirm Submission',
-            subtitle: 'Please review the document details before submitting to LHDN',
-            content: content
-        }),
+        html: content,
         showCancelButton: true,
         confirmButtonText: 'Yes, Submit',
         cancelButtonText: 'Cancel',
-        width: 480,
-        padding: '1.5rem',
+        width: 600,
+        padding: '2rem',
         focusConfirm: false,
         customClass: {
-            confirmButton: 'btn btn-primary',
-            cancelButton: 'btn btn-secondary',
+            confirmButton: 'btn-success',
             popup: 'semi-minimal-popup'
         }
     }).then((result) => result.isConfirmed);
@@ -4270,6 +4461,151 @@ function formatAddress(address) {
     }
 
     return 'N/A';
+}
+
+/**
+ * Calculate subtotal (before tax) from LHDN JSON data
+ */
+function calculateSubtotal(lhdnJson) {
+    try {
+        const invoiceLines = lhdnJson?.Invoice?.[0]?.InvoiceLine || [];
+        let subtotal = 0;
+
+        invoiceLines.forEach(line => {
+            const lineAmount = parseFloat(line.LineExtensionAmount?.[0]?._ || 0);
+            subtotal += lineAmount;
+        });
+
+        return subtotal.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch (error) {
+        console.error('Error calculating subtotal:', error);
+        return '0.00';
+    }
+}
+
+/**
+ * Calculate total tax amount from LHDN JSON data
+ */
+function calculateTotalTax(lhdnJson) {
+    try {
+        const invoiceLines = lhdnJson?.Invoice?.[0]?.InvoiceLine || [];
+        let totalTax = 0;
+
+        invoiceLines.forEach(line => {
+            const taxAmount = parseFloat(line.TaxTotal?.[0]?.TaxAmount?.[0]?._ || 0);
+            totalTax += taxAmount;
+        });
+
+        return totalTax.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch (error) {
+        console.error('Error calculating total tax:', error);
+        return '0.00';
+    }
+}
+
+/**
+ * Get Supplier TIN from LHDN JSON data
+ */
+function getSupplierTIN(lhdnJson) {
+    try {
+        return lhdnJson?.Invoice?.[0]?.AccountingSupplierParty?.[0]?.Party?.[0]?.PartyTaxScheme?.[0]?.CompanyID?.[0]?._ || 'N/A';
+    } catch (error) {
+        console.error('Error getting supplier TIN:', error);
+        return 'N/A';
+    }
+}
+
+/**
+ * Get Buyer TIN from LHDN JSON data
+ */
+function getBuyerTIN(lhdnJson) {
+    try {
+        return lhdnJson?.Invoice?.[0]?.AccountingCustomerParty?.[0]?.Party?.[0]?.PartyTaxScheme?.[0]?.CompanyID?.[0]?._ || 'N/A';
+    } catch (error) {
+        console.error('Error getting buyer TIN:', error);
+        return 'N/A';
+    }
+}
+
+/**
+ * Get Supply Place from LHDN JSON data
+ */
+function getSupplyPlace(lhdnJson) {
+    try {
+        const delivery = lhdnJson?.Invoice?.[0]?.Delivery?.[0]?.DeliveryLocation?.[0]?.Address?.[0];
+        if (delivery) {
+            const city = delivery.CityName?.[0]?._ || '';
+            const state = delivery.CountrySubentity?.[0]?._ || '';
+            const country = delivery.Country?.[0]?.IdentificationCode?.[0]?._ || '';
+
+            if (city && state) {
+                return `${city}, ${state}`;
+            } else if (state) {
+                return state;
+            } else if (country) {
+                return country;
+            }
+        }
+        return 'Malaysia';
+    } catch (error) {
+        console.error('Error getting supply place:', error);
+        return 'Malaysia';
+    }
+}
+
+/**
+ * Get Issue Time from LHDN JSON data
+ */
+function getIssueTime(lhdnJson) {
+    try {
+        return lhdnJson?.Invoice?.[0]?.IssueTime?.[0]?._ || 'N/A';
+    } catch (error) {
+        console.error('Error getting issue time:', error);
+        return 'N/A';
+    }
+}
+
+/**
+ * Generate line items table rows from LHDN JSON data
+ */
+function generateLineItemsRows(lhdnJson) {
+    try {
+        const invoiceLines = lhdnJson?.Invoice?.[0]?.InvoiceLine || [];
+        const currency = lhdnJson?.Invoice?.[0]?.DocumentCurrencyCode?.[0]?._ || 'MYR';
+
+        if (!invoiceLines.length) {
+            return `<tr><td colspan="9" style="padding: 16px; text-align: center; color: #6b7280;">No line items found</td></tr>`;
+        }
+
+        return invoiceLines.map((line, index) => {
+            const lineId = line.ID?.[0]?._ || (index + 1);
+            const description = line.Item?.[0]?.Description?.[0]?._ || 'N/A';
+            const quantity = parseFloat(line.InvoicedQuantity?.[0]?._ || 0);
+            const unitCode = line.InvoicedQuantity?.[0]?.unitCode || 'N/A';
+            const unitPrice = parseFloat(line.Price?.[0]?.PriceAmount?.[0]?._ || 0);
+            const lineAmount = parseFloat(line.LineExtensionAmount?.[0]?._ || 0);
+            const taxAmount = parseFloat(line.TaxTotal?.[0]?.TaxAmount?.[0]?._ || 0);
+            const taxPercent = parseFloat(line.TaxTotal?.[0]?.TaxSubtotal?.[0]?.TaxCategory?.[0]?.Percent?.[0]?._ || 0);
+            const totalAmount = lineAmount + taxAmount;
+
+            return `
+                <tr style="border-bottom: 1px solid #fbbf24;">
+                    <td style="padding: 8px; text-align: center; background: #fef3c7;">${lineId}</td>
+                    <td style="padding: 8px; text-align: left; background: #fef3c7; max-width: 200px; word-wrap: break-word;">${description}</td>
+                    <td style="padding: 8px; text-align: center; background: #fef3c7;">${quantity.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding: 8px; text-align: center; background: #fef3c7;">${unitCode}</td>
+                    <td style="padding: 8px; text-align: right; background: #fef3c7;">${currency} ${unitPrice.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding: 8px; text-align: right; background: #fef3c7;">${currency} ${lineAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding: 8px; text-align: center; background: #fef3c7;">${taxPercent.toFixed(2)}%</td>
+                    <td style="padding: 8px; text-align: right; background: #fef3c7;">${currency} ${taxAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding: 8px; text-align: right; background: #fef3c7; font-weight: 600;">${currency} ${totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error generating line items rows:', error);
+        return `<tr><td colspan="9" style="padding: 16px; text-align: center; color: #ef4444;">Error loading line items</td></tr>`;
+    }
 }
 
 // Show JSON preview dialog
@@ -4324,388 +4660,727 @@ async function showJsonPreview(fileName, type, company, date, version) {
         // Extract summary information
         const summary = data.summary;
 
-        // Create content for the preview - improved layout with better space utilization
+        // Create content for the redesigned professional preview using external CSS
         const summaryContent = `
-            <div class="preview-container" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
-
-                <!-- Supplier Information - Now on the left -->
-                <div class="content-card" style="grid-column: 1; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;">
-                    <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f1f8f3, #e8f5ec); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
-                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(25, 135, 84, 0.15); margin-right: 10px; box-shadow: 0 2px 5px rgba(25, 135, 84, 0.2);">
-                            <i class="fas fa-building" style="color: #198754; font-size: 14px;"></i>
+            <div class="modern-modal-content">
+                <!-- Header Section with Invoice Branding -->
+                <div class="modal-header-section">
+                    <div class="modal-brand">
+                        <div class="brand-icon">
+                            <i class="bi bi-receipt-cutoff"></i>
                         </div>
-                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #198754; text-transform: uppercase; letter-spacing: 0.5px;">Supplier Information</span>
-                    </div>
-                    <div style="padding: 12px 15px; background: linear-gradient(to bottom right, #ffffff, #f9fdfb);">
-                        <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; width: 25%; color: #198754;"><i class="fas fa-id-card-alt me-2" style="color: #198754;"></i><strong>Name:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.supplier.name}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; color: #198754;"><i class="fas fa-fingerprint me-2" style="color: #198754;"></i><strong>ID:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.supplier.id}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; color: #198754;"><i class="fas fa-map-marker-alt me-2" style="color: #198754;"></i><strong>Address:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500; white-space: pre-line;">${formatAddress(summary.supplier.address) || 'N/A'}</td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Buyer Information - Now in the middle -->
-                <div class="content-card" style="grid-column: 2; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;">
-                    <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f1f1fb, #e8e8f5); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
-                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(102, 16, 242, 0.15); margin-right: 10px; box-shadow: 0 2px 5px rgba(102, 16, 242, 0.2);">
-                            <i class="fas fa-user-tie" style="color: #6610f2; font-size: 14px;"></i>
+                        <div class="brand-info">
+                            <h1 class="modal-title">INVOICE PREVIEW</h1>
+                            <p class="modal-subtitle">Review details before LHDN submission</p>
                         </div>
-                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #6610f2; text-transform: uppercase; letter-spacing: 0.5px;">Buyer Information</span>
                     </div>
-                    <div style="padding: 12px 15px; background: linear-gradient(to bottom right, #ffffff, #f9f9fd);">
-                        <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; width: 25%; color: #6610f2;"><i class="fas fa-id-card me-2" style="color: #6610f2;"></i><strong>Name:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.buyer.name}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; color: #6610f2;"><i class="fas fa-fingerprint me-2" style="color: #6610f2;"></i><strong>ID:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.buyer.id}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; color: #6610f2;"><i class="fas fa-map-marker-alt me-2" style="color: #6610f2;"></i><strong>Address:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500; white-space: pre-line;">${formatAddress(summary.buyer.address) || 'N/A'}</td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Delivery Information - Now on the right -->
-                <div class="content-card" style="grid-column: 3; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: all 0.3s ease;">
-                    <div class="content-header" style="padding: 10px 15px; background: linear-gradient(to right, #f1f6fb, #e8f1f5); border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
-                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(13, 110, 253, 0.15); margin-right: 10px; box-shadow: 0 2px 5px rgba(13, 110, 253, 0.2);">
-                            <i class="fas fa-truck" style="color: #0d6efd; font-size: 14px;"></i>
+                    <div class="modal-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Document Type</span>
+                            <span class="meta-value">${summary.documentType}</span>
                         </div>
-                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #0d6efd; text-transform: uppercase; letter-spacing: 0.5px;">Delivery Information</span>
-                    </div>
-                    <div style="padding: 12px 15px; background: linear-gradient(to bottom right, #ffffff, #f9fbfd);">
-                        <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; width: 25%; color: #0d6efd;"><i class="fas fa-user-tag me-2" style="color: #0d6efd;"></i><strong>Name:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500;">${summary.delivery ? summary.delivery.name : (summary.buyer.name || 'N/A')}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 5px 8px 5px 0; color: #0d6efd;"><i class="fas fa-map-marked-alt me-2" style="color: #0d6efd;"></i><strong>Address:</strong></td>
-                                <td style="padding: 5px 0; color: #212529; font-weight: 500; white-space: pre-line;">${formatAddress(summary.delivery ? summary.delivery.address : summary.buyer.address) || 'N/A'}</td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Invoice Summary - Subtle design to match the application theme -->
-                <div class="content-card" style="grid-column: span 3; margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s ease;">
-                    <div class="content-header" style="padding: 10px 15px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center;">
-                        <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; background: rgba(0, 0, 0, 0.05); margin-right: 8px;">
-                            <i class="fas fa-file-invoice" style="color: #495057; font-size: 12px;"></i>
-                        </div>
-                        <span class="content-title" style="font-weight: 600; font-size: 14px; color: #212529;">INVOICE SUMMARY</span>
-                    </div>
-                    <div style="padding: 15px; background: #ffffff;">
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                            <div style="padding-left: 10px;">
-                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                    <i class="fas fa-hashtag" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
-                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Invoice Number</span>
-                                </div>
-                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.invoiceNumber}</div>
-                            </div>
-
-                            <div style="padding-left: 10px;">
-                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                    <i class="fas fa-file-alt" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
-                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Document Type</span>
-                                </div>
-                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.documentType}</div>
-                            </div>
-
-                            <div style="padding-left: 10px;">
-                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                    <i class="fas fa-calendar-alt" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
-                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Issue Date</span>
-                                </div>
-                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.issueDate}</div>
-                            </div>
-
-                            <div style="padding-left: 10px; grid-column: span 2;">
-                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                    <i class="fas fa-money-bill-wave" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
-                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Total Amount</span>
-                                </div>
-                                <div style="font-weight: 600; color: #212529; font-size: 14px;">
-                                    <span class="badge" style="background-color: #495057; font-weight: 500; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-                                        ${summary.currency} ${summary.totalAmount}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div style="padding-left: 10px;">
-                                <div style="display: flex; align-items: center; margin-bottom: 5px;">
-                                    <i class="fas fa-shopping-cart" style="color: #495057; font-size: 14px; margin-right: 8px;"></i>
-                                    <span style="font-weight: 500; color: #495057; font-size: 13px;">Item Count</span>
-                                </div>
-                                <div style="font-weight: 500; color: #212529; font-size: 14px;">${summary.itemCount}</div>
-                            </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Issue Date</span>
+                            <span class="meta-value">${summary.issueDate}</span>
                         </div>
                     </div>
                 </div>
 
-
-            </div>
-
-            <!-- JSON Preview - Subtle design with loading animation -->
-            <div class="content-card json-preview-card" style="margin: 0; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-top: 15px; transition: all 0.2s ease;">
-                <div class="content-header" style="padding: 12px 18px; background: #f8f9fa; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; align-items: center; cursor: pointer;" id="jsonPreviewHeader">
-                    <div class="content-badge" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 4px; background: rgba(0, 0, 0, 0.05); margin-right: 12px;">
-                        <i class="fas fa-code" style="color: #495057; font-size: 16px;"></i>
+                <!-- Main Invoice Content - Three Column Layout -->
+                <div class="modal-content-grid-three">
+                    <!-- Left Column: Supplier Information -->
+                    <div class="modal-column-left">
+                        <div class="modal-card theme-success">
+                            <div class="modal-card-header">
+                                <div class="modal-card-icon">
+                                    <i class="bi bi-building"></i>
+                                </div>
+                                <div class="modal-card-title">
+                                    <h3>SUPPLIER INFORMATION</h3>
+                                    <p>Billing entity details</p>
+                                </div>
+                            </div>
+                            <div class="modal-card-content">
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-person-badge"></i>
+                                        <span>Company Name</span>
+                                    </div>
+                                    <div class="detail-value">${summary.supplier.name}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-card-text"></i>
+                                        <span>Registration ID</span>
+                                    </div>
+                                    <div class="detail-value">${summary.supplier.id}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-geo-alt"></i>
+                                        <span>Address</span>
+                                    </div>
+                                    <div class="detail-value address-text">${formatAddress(summary.supplier.address) || 'N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <span class="content-title" style="font-weight: 600; font-size: 16px; color: #212529; letter-spacing: 0.5px;">JSON Data</span>
-                    <span class="ms-auto">
-                        <button id="toggleJsonBtn" class="outbound-btn-lhdn submit" style="background: #6c757d; color: white; font-size: 13px; padding: 8px 16px; border-radius: 4px; border: none; transition: all 0.2s; font-weight: 500; display: flex; align-items: center; gap: 6px;">
-                            <i class="fas fa-code"></i> View JSON
+
+                    <!-- Middle Column: Buyer Information -->
+                    <div class="modal-column-middle">
+                        <div class="modal-card theme-primary">
+                            <div class="modal-card-header">
+                                <div class="modal-card-icon">
+                                    <i class="bi bi-person-circle"></i>
+                                </div>
+                                <div class="modal-card-title">
+                                    <h3>BUYER INFORMATION</h3>
+                                    <p>Customer details</p>
+                                </div>
+                            </div>
+                            <div class="modal-card-content">
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-person-badge"></i>
+                                        <span>Company Name</span>
+                                    </div>
+                                    <div class="detail-value">${summary.buyer.name}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-card-text"></i>
+                                        <span>Registration ID</span>
+                                    </div>
+                                    <div class="detail-value">${summary.buyer.id}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-geo-alt"></i>
+                                        <span>Address</span>
+                                    </div>
+                                    <div class="detail-value address-text">${formatAddress(summary.buyer.address) || 'N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Delivery Information -->
+                    <div class="modal-column-right">
+                        <div class="modal-card theme-info">
+                            <div class="modal-card-header">
+                                <div class="modal-card-icon">
+                                    <i class="bi bi-truck"></i>
+                                </div>
+                                <div class="modal-card-title">
+                                    <h3>DELIVERY INFORMATION</h3>
+                                    <p>Shipping details</p>
+                                </div>
+                            </div>
+                            <div class="modal-card-content">
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-person-badge"></i>
+                                        <span>Recipient</span>
+                                    </div>
+                                    <div class="detail-value">${summary.delivery ? summary.delivery.name : (summary.buyer.name || 'N/A')}</div>
+                                </div>
+                                <div class="detail-row">
+                                    <div class="detail-label">
+                                        <i class="bi bi-geo-alt"></i>
+                                        <span>Delivery Address</span>
+                                    </div>
+                                    <div class="detail-value address-text">${formatAddress(summary.delivery ? summary.delivery.address : summary.buyer.address) || 'N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Invoice Summary Section - Below the 3 columns -->
+                <div class="modal-invoice-summary-section">
+                    <div class="modal-card theme-warning">
+                        <div class="modal-card-header">
+                            <div class="modal-card-icon">
+                                <i class="bi bi-receipt"></i>
+                            </div>
+                            <div class="modal-card-title">
+                                <h3>INVOICE SUMMARY</h3>
+                                <p>Financial breakdown</p>
+                            </div>
+                        </div>
+                        <div class="modal-card-content">
+                            <!-- Enhanced Invoice Summary Grid -->
+                            <div class="enhanced-invoice-summary" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+                                <!-- Left Column: Invoice Details -->
+                                <div class="invoice-details-section">
+                                    <div class="detail-group" style="margin-bottom: 1rem;">
+                                        <div class="detail-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #fbbf24;">
+                                            <span style="font-weight: 600; color: #374151; font-size: 0.875rem;">
+                                                <i class="bi bi-receipt" style="margin-right: 8px; color: #f59e0b;"></i>Invoice Number
+                                            </span>
+                                            <span style="font-weight: 700; color: #1f2937; font-size: 0.875rem;">${summary.invoiceNumber}</span>
+                                        </div>
+                                        <div class="detail-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #fbbf24;">
+                                            <span style="font-weight: 600; color: #374151; font-size: 0.875rem;">
+                                                <i class="bi bi-calendar3" style="margin-right: 8px; color: #f59e0b;"></i>Issue Date
+                                            </span>
+                                            <span style="font-weight: 500; color: #1f2937; font-size: 0.875rem;">${summary.issueDate}</span>
+                                        </div>
+                                        <div class="detail-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #fbbf24;">
+                                            <span style="font-weight: 600; color: #374151; font-size: 0.875rem;">
+                                                <i class="bi bi-file-earmark-text" style="margin-right: 8px; color: #f59e0b;"></i>Document Type
+                                            </span>
+                                            <span style="font-weight: 500; color: #1f2937; font-size: 0.875rem;">${summary.documentType}</span>
+                                        </div>
+                                        <div class="detail-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #fbbf24;">
+                                            <span style="font-weight: 600; color: #374151; font-size: 0.875rem;">
+                                                <i class="bi bi-list-ol" style="margin-right: 8px; color: #f59e0b;"></i>Total Items
+                                            </span>
+                                            <span style="font-weight: 500; color: #1f2937; font-size: 0.875rem;">${summary.itemCount} items</span>
+                                        </div>
+                                        <div class="detail-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #fbbf24;">
+                                            <span style="font-weight: 600; color: #374151; font-size: 0.875rem;">
+                                                <i class="bi bi-cash-coin" style="margin-right: 8px; color: #f59e0b;"></i>Currency
+                                            </span>
+                                            <span style="font-weight: 500; color: #1f2937; font-size: 0.875rem;">${summary.currency}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Right Column: Status & Date Info -->
+                                <div class="status-info-section">
+                                    <div class="status-info-header" style="margin-bottom: 1rem;">
+                                        <h4 style="margin: 0; font-size: 0.875rem; font-weight: 600; color: #374151; display: flex; align-items: center;">
+                                            <i class="bi bi-info-circle" style="margin-right: 8px; color: #f59e0b;"></i>Status Information
+                                        </h4>
+                                    </div>
+                                    <div class="status-details">
+                                    <div class="detail-row" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #fbbf24;">
+                                            <span style="font-weight: 600; color: #374151; font-size: 0.875rem;">
+                                                <i class="bi bi-shield-check" style="margin-right: 8px; color: #f59e0b;"></i>LHDN Status
+                                            </span>
+                                         <span style="font-weight: 500; color: #10b981; font-size: 0.875rem; background: #d1fae5; padding: 4px 12px; border-radius: 12px;">
+                                                <i class="bi bi-check-circle-fill" style="margin-right: 4px;"></i>Ready for Submission
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Line Items Table -->
+                            <div class="line-items-section" style="margin-top: 1.5rem;">
+                                <div class="line-items-header" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                                    <i class="bi bi-table" style="color: #f59e0b; font-size: 1.25rem;"></i>
+                                    <h4 style="margin: 0; font-size: 0.875rem; font-weight: 600; color: #374151;">Line Items</h4>
+                                </div>
+                                <div class="line-items-table-container" style="background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; overflow: hidden;">
+                                    <table class="line-items-table" style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+                                        <thead style="background: #f59e0b; color: white;">
+                                            <tr>
+                                                <th style="padding: 8px; text-align: center; font-weight: 600;">No.</th>
+                                                <th style="padding: 8px; text-align: left; font-weight: 600;">Description</th>
+                                                <th style="padding: 8px; text-align: center; font-weight: 600;">Qty</th>
+                                                <th style="padding: 8px; text-align: center; font-weight: 600;">UOM</th>
+                                                <th style="padding: 8px; text-align: right; font-weight: 600;">Unit Price</th>
+                                                <th style="padding: 8px; text-align: right; font-weight: 600;">Amount</th>
+                                                <th style="padding: 8px; text-align: center; font-weight: 600;">Tax %</th>
+                                                <th style="padding: 8px; text-align: right; font-weight: 600;">Tax Amount</th>
+                                                <th style="padding: 8px; text-align: right; font-weight: 600;">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${generateLineItemsRows(data.lhdnJson)}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Financial Summary Below Table - Right Aligned -->
+                                <div class="table-summary-section" style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+                                    <div class="table-financial-summary" style="width: 350px; background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; padding: 1rem;">
+                                        <div class="summary-header" style="margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #f59e0b;">
+                                            <h5 style="margin: 0; font-size: 0.875rem; font-weight: 700; color: #374151; display: flex; align-items: center;">
+                                                <i class="bi bi-calculator-fill" style="margin-right: 8px; color: #f59e0b;"></i>Invoice Totals
+                                            </h5>
+                                        </div>
+                                        <div class="summary-rows">
+                                            <div class="summary-row" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #fbbf24;">
+                                                <span style="font-weight: 500; color: #374151; font-size: 0.8rem;">Items Count:</span>
+                                                <span style="font-weight: 600; color: #1f2937; font-size: 0.8rem;">${summary.itemCount}</span>
+                                            </div>
+                                            <div class="summary-row" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #fbbf24;">
+                                                <span style="font-weight: 500; color: #374151; font-size: 0.8rem;">Subtotal (Before Tax):</span>
+                                                <span style="font-weight: 600; color: #1f2937; font-size: 0.8rem;">${summary.currency} ${calculateSubtotal(data.lhdnJson)}</span>
+                                            </div>
+                                            <div class="summary-row" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #fbbf24;">
+                                                <span style="font-weight: 500; color: #374151; font-size: 0.8rem;">Total Tax:</span>
+                                                <span style="font-weight: 600; color: #1f2937; font-size: 0.8rem;">${summary.currency} ${calculateTotalTax(data.lhdnJson)}</span>
+                                            </div>
+                                            <div class="summary-row total-row" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; margin-top: 8px; background: #f59e0b; border-radius: 6px;">
+                                                <span style="font-weight: 700; color: white; font-size: 0.9rem;">
+                                                    <i class="bi bi-currency-dollar" style="margin-right: 4px;"></i>Grand Total:
+                                                </span>
+                                                <span style="font-weight: 700; color: white; font-size: 1rem;">${summary.currency} ${summary.totalAmount}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JSON Preview Section - Simplified Design -->
+                <div class="json-preview-section">
+                    <!-- Header with View JSON Button -->
+                    <div class="json-section-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="bi bi-code-slash" style="color: #6b7280; font-size: 1.25rem;"></i>
+                            <div>
+                                <h3 style="margin: 0; font-size: 0.875rem; font-weight: 600; color: #374151;">JSON DATA PREVIEW</h3>
+                                <p style="margin: 0; font-size: 0.75rem; color: #6b7280;">LHDN-formatted invoice data</p>
+                            </div>
+                        </div>
+                        <button id="toggleJsonBtn" class="modern-btn modern-btn-primary">
+                            <i class="bi bi-eye"></i>
+                            <span>View JSON</span>
                         </button>
-                    </span>
-                </div>
+                    </div>
 
-                <!-- Loading animation (initially hidden) -->
-                <div id="jsonLoadingAnimation" style="display: none; padding: 25px; text-align: center; background: linear-gradient(to bottom right, #ffffff, #f8fafc);">
-                    <div class="json-loading-steps" style="display: flex; justify-content: space-between; max-width: 600px; margin: 0 auto;">
-                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 120px;">
-                            <div class="json-loading-icon" style="width: 48px; height: 48px; border-radius: 50%; background: rgba(20, 184, 166, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(20, 184, 166, 0.2);">
-                                <i class="fas fa-file-invoice" style="color: #14b8a6; font-size: 20px;"></i>
-                            </div>
-                            <div class="json-loading-text" style="font-size: 14px; color: #334155; font-weight: 600; margin-bottom: 4px;">Validating</div>
-                            <div class="json-loading-status" style="font-size: 12px; color: #14b8a6; font-weight: 500;">Complete</div>
+                    <!-- Initial State Message - Outside the card -->
+                    <div id="invoiceJsonInitialMessage" class="json-initial-message">
+                        <div class="initial-message-content">
+                            <i class="bi bi-eye text-muted"></i>
+                            <p class="text-muted mb-0">Click "View JSON" to see the LHDN-formatted invoice data</p>
                         </div>
-                        <div class="json-loading-connector" style="flex-grow: 1; height: 3px; background: linear-gradient(to right, #14b8a6, #0ea5e9); margin-top: 24px; border-radius: 3px;"></div>
-                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 120px;">
-                            <div class="json-loading-icon" style="width: 48px; height: 48px; border-radius: 50%; background: rgba(14, 165, 233, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(14, 165, 233, 0.2);">
-                                <i class="fas fa-cogs" style="color: #0ea5e9; font-size: 20px;"></i>
+                    </div>
+
+                    <!-- JSON Content Card - Hidden by default -->
+                    <div class="modal-card theme-gray">
+                        <div class="modal-card-header">
+                            <div class="modal-card-icon">
+                                <i class="bi bi-code-slash"></i>
                             </div>
-                            <div class="json-loading-text" style="font-size: 14px; color: #334155; font-weight: 600; margin-bottom: 4px;">Processing</div>
-                            <div class="json-loading-status json-loading-active" style="font-size: 12px; color: #0ea5e9; font-weight: 500;">
-                                <div class="spinner-border spinner-border-sm" style="width: 12px; height: 12px; border-width: 2px; border-color: #0ea5e9 transparent #0ea5e9 transparent;" role="status">
-                                    <span class="visually-hidden">Loading...</span>
+                            <div class="modal-card-title">
+                                <h3>JSON DATA PREVIEW</h3>
+                                <p>LHDN-formatted invoice data</p>
+                            </div>
+                        </div>
+
+                        <!-- JSON Content Container - Single Container -->
+                        <div class="modal-card-content">
+                            <!-- JSON Loading Animation with unique IDs for invoice preview -->
+                            <div id="invoiceJsonLoadingAnimation" class="json-loading-animation" style="display: none;">
+                                <div class="invoice-json-loading-steps horizontal-steps">
+                                    <div class="invoice-json-loading-step active">
+                                        <div class="invoice-json-step-icon">
+                                            <i class="bi bi-check-circle-fill"></i>
+                                        </div>
+                                        <div class="invoice-json-step-title">Validating</div>
+                                        <div class="invoice-json-step-status">COMPLETE</div>
+                                    </div>
+                                    <div class="invoice-json-loading-connector active"></div>
+                                    <div class="invoice-json-loading-step processing">
+                                        <div class="invoice-json-step-icon">
+                                            <div class="spinner-border spinner-border-sm" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                        </div>
+                                        <div class="invoice-json-step-title">Processing</div>
+                                        <div class="invoice-json-step-status">IN PROGRESS</div>
+                                    </div>
+                                    <div class="invoice-json-loading-connector"></div>
+                                    <div class="invoice-json-loading-step">
+                                        <div class="invoice-json-step-icon">
+                                            <i class="bi bi-circle"></i>
+                                        </div>
+                                        <div class="invoice-json-step-title">Ready</div>
+                                        <div class="invoice-json-step-status">Waiting</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- JSON Content - Initially Hidden -->
+                            <div id="invoiceJsonPreviewContent" class="json-content-wrapper" style="display: none;">
+                                <div class="json-viewer">
+                                    <div class="json-toolbar">
+                                        <div class="json-info">
+                                            <i class="bi bi-info-circle"></i>
+                                            <span>LHDN-formatted invoice data ready for submission</span>
+                                        </div>
+                                        <div class="json-controls">
+                                            <button class="modern-btn modern-btn-success invoice-json-copy-btn" onclick="copyInvoiceJsonToClipboard()">
+                                                <i class="bi bi-clipboard"></i>
+                                                Copy
+                                            </button>
+                                            <button class="modern-btn modern-btn-info" onclick="openInvoiceJsonFullscreen()">
+                                                <i class="bi bi-arrows-fullscreen"></i>
+                                                Fullscreen
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="json-code-container">
+                                        <pre id="invoiceJsonFormattedContent" class="json-code">${JSON.stringify(data.lhdnJson, null, 2)}</pre>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="json-loading-connector" style="flex-grow: 1; height: 3px; background: #e2e8f0; margin-top: 24px; border-radius: 3px;"></div>
-                        <div class="json-loading-step" style="display: flex; flex-direction: column; align-items: center; width: 120px;">
-                            <div class="json-loading-icon" style="width: 48px; height: 48px; border-radius: 50%; background: rgba(148, 163, 184, 0.1); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; box-shadow: 0 2px 8px rgba(148, 163, 184, 0.1);">
-                                <i class="fas fa-check-circle" style="color: #94a3b8; font-size: 20px;"></i>
-                            </div>
-                            <div class="json-loading-text" style="font-size: 14px; color: #94a3b8; font-weight: 600; margin-bottom: 4px;">Ready</div>
-                            <div class="json-loading-status" style="font-size: 12px; color: #94a3b8; font-weight: 500;">Waiting</div>
-                        </div>
                     </div>
-                </div>
-
-                <!-- JSON Content (initially hidden) -->
-                <div id="jsonPreviewContent" style="display: none; max-height: 200px; overflow-y: auto; background: #f8f9fa; padding: 18px; border-radius: 0 0 8px 8px; font-family: 'Consolas', monospace; font-size: 12px; text-align: left; border-top: 1px solid rgba(0,0,0,0.05);">
-                    <pre id="jsonFormattedContent" style="margin-bottom: 0; white-space: pre-wrap; text-align: left; display: block; overflow-x: auto; color: #212529;">${JSON.stringify(data.lhdnJson, null, 2)}</pre>
                 </div>
             </div>
         `;
 
-        // Show the preview dialog with enhanced styling
+        // Show the redesigned preview dialog
         const result = await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Invoice Preview',
-                subtitle: 'Review the invoice details before submitting to LHDN',
-                content: summaryContent
-            }),
+            html: summaryContent,
             showCancelButton: true,
-            confirmButtonText: '<i class="fas fa-check-circle me-2"></i>Proceed with Submission',
-            cancelButtonText: '<i class="fas fa-times-circle me-2"></i>Cancel',
-            width: 950,
-            padding: '1rem',
+            confirmButtonText: '<i class="bi bi-check-circle"></i> Proceed with Submission',
+            cancelButtonText: '<i class="bi bi-x-circle"></i> Cancel',
+            width: 1200,
+            padding: '2rem',
             focusConfirm: false,
-            backdrop: `
-                rgba(15, 23, 42, 0.4)
-                url("/assets/images/pattern-dots.png")
-                left top
-                repeat
-            `,
             customClass: {
-                confirmButton: 'btn btn-primary',
-                cancelButton: 'btn btn-secondary',
-                popup: 'semi-minimal-popup compact-preview',
-                actions: 'preview-actions d-flex justify-content-center gap-3 mt-3',
-                container: 'preview-container'
+                confirmButton: 'modern-btn modern-btn-success modern-btn-large',
+                cancelButton: 'modern-btn modern-btn-cancel modern-btn-large',
+                popup: 'large-modal'
             },
-            didOpen: () => {
-                // Add custom CSS for enhanced preview
+            willOpen: () => {
+                // Add CSS to ensure modal content starts at top
                 const style = document.createElement('style');
                 style.textContent = `
-                    .preview-container {
-                        max-width: 100%;
+                    .swal2-html-container {
+                        overflow-y: auto !important;
+                        max-height: 70vh !important;
+                        scroll-behavior: smooth !important;
                     }
-                    .compact-preview {
-                        border-radius: 16px !important;
-                        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1) !important;
-                        overflow: hidden !important;
-                    }
-                    .compact-preview .semi-minimal-title {
-                        font-size: 1.75rem !important;
-                        font-weight: 700 !important;
-                        color: #0f172a !important;
-                        letter-spacing: -0.5px !important;
-                        margin-bottom: 8px !important;
-                    }
-                    /* Responsive grid adjustments */
-                    @media (max-width: 768px) {
-                        .preview-container {
-                            display: flex !important;
-                            flex-direction: column !important;
-                        }
-                        .content-card {
-                            margin-bottom: 15px !important;
-                        }
-                    }
-                    .compact-preview .semi-minimal-subtitle {
-                        font-size: 1rem !important;
-                        margin-bottom: 16px !important;
-                        color: #64748b !important;
-                    }
-                    .compact-preview .preview-actions {
-                        margin-top: 20px !important;
-                    }
-                    .compact-preview .outbound-action-btn {
-                        border-radius: 8px !important;
-                        font-size: 15px !important;
-                        padding: 10px 24px !important;
-                        font-weight: 600 !important;
-                        letter-spacing: 0.5px !important;
-                        transition: all 0.3s ease !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        justify-content: center !important;
-                    }
-                    .compact-preview .outbound-action-btn.submit {
-                        background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
-                        border: none !important;
-                        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3) !important;
-                    }
-                    .compact-preview .outbound-action-btn.submit:hover {
-                        transform: translateY(-2px) !important;
-                        box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4) !important;
-                    }
-                    .compact-preview .outbound-action-btn.cancel {
-                        background: linear-gradient(135deg, #f1f5f9, #e2e8f0) !important;
-                        color: #475569 !important;
-                        border: none !important;
-                        box-shadow: 0 4px 12px rgba(148, 163, 184, 0.2) !important;
-                    }
-                    .compact-preview .outbound-action-btn.cancel:hover {
-                        transform: translateY(-2px) !important;
-                        box-shadow: 0 6px 16px rgba(148, 163, 184, 0.3) !important;
-                    }
-                    .content-card {
-                        transition: all 0.3s ease !important;
-                    }
-                    .content-card:hover {
-                        transform: translateY(-3px) !important;
-                        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1) !important;
-                    }
-
-                    .compact-preview #toggleJsonBtn {
-                        transition: all 0.3s ease !important;
-                        box-shadow: 0 4px 12px rgba(20, 184, 166, 0.3) !important;
-                        background: linear-gradient(135deg, #14b8a6, #0d9488) !important;
-                        color: white !important;
-                        font-size: 14px !important;
-                        padding: 8px 16px !important;
-                        border-radius: 8px !important;
-                        border: none !important;
-                        font-weight: 600 !important;
-                        display: flex !important;
-                        align-items: center !important;
-                        gap: 6px !important;
-                    }
-                    .compact-preview #toggleJsonBtn:hover {
-                        transform: translateY(-2px) !important;
-                        box-shadow: 0 6px 16px rgba(20, 184, 166, 0.4) !important;
-                    }
-                    .compact-preview #toggleJsonBtn:active {
-                        transform: translateY(0) !important;
-                        box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3) !important;
-                    }
-                    /* JSON Preview Card */
-                    .compact-preview .json-preview-card {
-                        transition: all 0.3s ease;
-                    }
-                    .compact-preview .json-preview-card:hover {
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                    }
-
-                    /* JSON Loading Animation */
-                    .compact-preview #jsonLoadingAnimation {
-                        padding: 15px 10px;
-                    }
-                    .compact-preview .json-loading-connector {
-                        transition: background 0.5s ease;
-                    }
-                    .compact-preview .json-loading-icon {
-                        transition: all 0.3s ease;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-                    }
-                    .compact-preview .json-loading-text {
-                        transition: color 0.3s ease;
-                    }
-                    .compact-preview .json-loading-status {
-                        transition: color 0.3s ease;
-                        height: 16px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                    }
-
-                    /* JSON Content */
-                    .compact-preview #jsonPreviewContent {
-                        text-align: left !important;
-                        background: #f8f9fa;
-                        border-top: 1px solid rgba(0,0,0,0.05);
-                        transition: all 0.3s ease;
-                    }
-                    .compact-preview #jsonPreviewContent pre {
-                        font-size: 11px;
-                        color: #495057;
-                        text-align: left !important;
-                        margin: 0;
-                        padding: 0;
-                        line-height: 1.4;
-                    }
-
-                    /* JSON syntax highlighting */
-                    .compact-preview #jsonPreviewContent .json-key {
-                        color: #0d6efd;
-                        font-weight: 600;
-                    }
-                    .compact-preview #jsonPreviewContent .json-string {
-                        color: #198754;
-                    }
-                    .compact-preview #jsonPreviewContent .json-number {
-                        color: #dc3545;
-                    }
-                    .compact-preview #jsonPreviewContent .json-boolean {
-                        color: #6f42c1;
-                        font-weight: 600;
-                    }
-                    .compact-preview #jsonPreviewContent .json-null {
-                        color: #6c757d;
-                        font-style: italic;
+                    .large-modal .swal2-html-container {
+                        padding-top: 0 !important;
                     }
                 `;
                 document.head.appendChild(style);
+            },
+            didOpen: () => {
+                // Add right-click protection and developer tools prevention
+                const addSecurityProtection = () => {
+                    // Disable right-click context menu
+                    document.addEventListener('contextmenu', function(e) {
+                        e.preventDefault();
+                        return false;
+                    });
+
+                    // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+Shift+C
+                    document.addEventListener('keydown', function(e) {
+                        // F12
+                        if (e.keyCode === 123) {
+                            e.preventDefault();
+                            return false;
+                        }
+                        // Ctrl+Shift+I (Developer Tools)
+                        if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
+                            e.preventDefault();
+                            return false;
+                        }
+                        // Ctrl+Shift+J (Console)
+                        if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
+                            e.preventDefault();
+                            return false;
+                        }
+                        // Ctrl+U (View Source)
+                        if (e.ctrlKey && e.keyCode === 85) {
+                            e.preventDefault();
+                            return false;
+                        }
+                        // Ctrl+Shift+C (Inspect Element)
+                        if (e.ctrlKey && e.shiftKey && e.keyCode === 67) {
+                            e.preventDefault();
+                            return false;
+                        }
+                        // Ctrl+S (Save Page)
+                        if (e.ctrlKey && e.keyCode === 83) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+
+                    // Disable text selection
+                    document.onselectstart = function() {
+                        return false;
+                    };
+                    document.onmousedown = function() {
+                        return false;
+                    };
+
+                    // Disable drag and drop
+                    document.ondragstart = function() {
+                        return false;
+                    };
+
+                    // Clear console periodically
+                    setInterval(() => {
+                        console.clear();
+                    }, 1000);
+
+                    // Detect developer tools
+                    let devtools = {
+                        open: false,
+                        orientation: null
+                    };
+
+                    const threshold = 160;
+                    setInterval(() => {
+                        if (window.outerHeight - window.innerHeight > threshold ||
+                            window.outerWidth - window.innerWidth > threshold) {
+                            if (!devtools.open) {
+                                devtools.open = true;
+                                // Close the modal if developer tools are detected
+                                Swal.close();
+                                alert('Developer tools detected. Access denied for security reasons.');
+                            }
+                        } else {
+                            devtools.open = false;
+                        }
+                    }, 500);
+                };
+
+                // Apply security protection
+                addSecurityProtection();
+
+                // Enhanced scroll position fix - ensure modal starts at the top
+                const modalContainer = document.querySelector('.swal2-container');
+                const modalContent = document.querySelector('.swal2-popup');
+                const modalHtmlContainer = document.querySelector('.swal2-html-container');
+
+                // Immediate scroll reset
+                if (modalContainer) {
+                    modalContainer.scrollTop = 0;
+                }
+
+                if (modalContent) {
+                    modalContent.scrollTop = 0;
+                }
+
+                if (modalHtmlContainer) {
+                    modalHtmlContainer.scrollTop = 0;
+                }
+
+                // Also ensure any scrollable content within the modal starts at top
+                const scrollableElements = document.querySelectorAll('.modal-content-grid-three, .modern-modal-content, .modal-card-content, .swal2-html-container');
+                scrollableElements.forEach(element => {
+                    element.scrollTop = 0;
+                });
+
+                // Force scroll to top multiple times with increasing delays to ensure it sticks
+                const forceScrollToTop = () => {
+                    if (modalContainer) modalContainer.scrollTop = 0;
+                    if (modalContent) modalContent.scrollTop = 0;
+                    if (modalHtmlContainer) modalHtmlContainer.scrollTop = 0;
+
+                    scrollableElements.forEach(element => {
+                        element.scrollTop = 0;
+                    });
+
+                    // Scroll the entire page to top as well
+                    window.scrollTo(0, 0);
+                };
+
+                // Multiple attempts to ensure scroll position
+                setTimeout(forceScrollToTop, 50);
+                setTimeout(forceScrollToTop, 100);
+                setTimeout(forceScrollToTop, 200);
+                setTimeout(forceScrollToTop, 500);
+                // Initialize JSON toggle functionality
+
+                // Add global function for copying JSON to clipboard with unique names
+                window.copyInvoiceJsonToClipboard = function() {
+                    const jsonContent = document.getElementById('invoiceJsonFormattedContent');
+                    if (jsonContent) {
+                        const textContent = jsonContent.textContent;
+                        navigator.clipboard.writeText(textContent).then(() => {
+                            // Show success feedback
+                            const copyBtn = document.querySelector('.invoice-json-copy-btn');
+                            if (copyBtn) {
+                                const originalText = copyBtn.innerHTML;
+                                copyBtn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+                                copyBtn.classList.remove('modern-btn-success');
+                                copyBtn.classList.add('modern-btn-success-active');
+
+                                setTimeout(() => {
+                                    copyBtn.innerHTML = originalText;
+                                    copyBtn.classList.remove('modern-btn-success-active');
+                                    copyBtn.classList.add('modern-btn-success');
+                                }, 2000);
+                            }
+                        }).catch(err => {
+                            console.error('Failed to copy JSON:', err);
+                            // Show error feedback
+                            const copyBtn = document.querySelector('.invoice-json-copy-btn');
+                            if (copyBtn) {
+                                const originalText = copyBtn.innerHTML;
+                                copyBtn.innerHTML = '<i class="bi bi-x"></i> Failed!';
+                                setTimeout(() => {
+                                    copyBtn.innerHTML = originalText;
+                                }, 2000);
+                            }
+                        });
+                    }
+                };
+
+                // Add global function for opening JSON in fullscreen with unique names
+                window.openInvoiceJsonFullscreen = function() {
+                    const jsonContent = document.getElementById('invoiceJsonFormattedContent');
+                    if (jsonContent) {
+                        const jsonData = jsonContent.textContent;
+                        const newWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+
+                        newWindow.document.write(`
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <title>JSON Preview - Fullscreen</title>
+                                <style>
+                                    body {
+                                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                                        margin: 0;
+                                        padding: 20px;
+                                        background: #f8fafc;
+                                    }
+                                    .header {
+                                        background: white;
+                                        padding: 20px;
+                                        border-radius: 8px;
+                                        margin-bottom: 20px;
+                                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                                        display: flex;
+                                        justify-content: space-between;
+                                        align-items: center;
+                                    }
+                                    .title {
+                                        font-size: 1.5rem;
+                                        font-weight: 600;
+                                        color: #1f2937;
+                                        margin: 0;
+                                    }
+                                    .subtitle {
+                                        color: #6b7280;
+                                        margin: 0;
+                                        font-size: 0.875rem;
+                                    }
+                                    .actions {
+                                        display: flex;
+                                        gap: 10px;
+                                    }
+                                    .btn {
+                                        padding: 8px 16px;
+                                        border: none;
+                                        border-radius: 6px;
+                                        cursor: pointer;
+                                        font-size: 0.875rem;
+                                        font-weight: 500;
+                                        transition: all 0.2s;
+                                    }
+                                    .btn-primary {
+                                        background: #3b82f6;
+                                        color: white;
+                                    }
+                                    .btn-primary:hover {
+                                        background: #2563eb;
+                                    }
+                                    .btn-secondary {
+                                        background: #6b7280;
+                                        color: white;
+                                    }
+                                    .btn-secondary:hover {
+                                        background: #4b5563;
+                                    }
+                                    .json-container {
+                                        background: white;
+                                        border-radius: 8px;
+                                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                                        overflow: hidden;
+                                    }
+                                    .json-content {
+                                        padding: 20px;
+                                        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+                                        font-size: 0.875rem;
+                                        line-height: 1.6;
+                                        color: #374151;
+                                        white-space: pre-wrap;
+                                        word-break: break-word;
+                                        text-align: left;
+                                        max-height: calc(100vh - 200px);
+                                        overflow-y: auto;
+                                    }
+                                    .json-key { color: #0969da; font-weight: 600; }
+                                    .json-string { color: #0a3069; }
+                                    .json-number { color: #0550ae; }
+                                    .json-boolean { color: #8250df; font-weight: 600; }
+                                    .json-null { color: #656d76; font-style: italic; }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="header">
+                                    <div>
+                                        <h1 class="title">JSON Preview</h1>
+                                        <p class="subtitle">LHDN-formatted invoice data</p>
+                                    </div>
+                                    <div class="actions">
+                                        <button class="btn btn-secondary" onclick="window.close()">Close</button>
+                                    </div>
+                                </div>
+                                <div class="json-container">
+                                    <pre class="json-content" id="jsonContent">${jsonData}</pre>
+                                </div>
+                                <script>
+                                    function copyToClipboard() {
+                                        const content = document.getElementById('jsonContent').textContent;
+                                        navigator.clipboard.writeText(content).then(() => {
+                                            const btn = event.target;
+                                            const originalText = btn.textContent;
+                                            btn.textContent = 'Copied!';
+                                            setTimeout(() => {
+                                                btn.textContent = originalText;
+                                            }, 2000);
+                                        }).catch(err => {
+                                            console.error('Failed to copy:', err);
+                                            alert('Failed to copy to clipboard');
+                                        });
+                                    }
+
+                                    // Apply syntax highlighting
+                                    function formatJson() {
+                                        const element = document.getElementById('jsonContent');
+                                        let content = element.textContent;
+
+                                        // Add syntax highlighting
+                                        content = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                        content = content.replace(/("(\\\\u[a-zA-Z0-9]{4}|\\\\[^u]|[^\\\\"])*"(\\s*:)?|\\b(true|false|null)\\b|-?\\d+(?:\\.\\d*)?(?:[eE][+\\-]?\\d+)?)/g, function (match) {
+                                            let cls = 'json-number';
+                                            if (/^"/.test(match)) {
+                                                if (/:$/.test(match)) {
+                                                    cls = 'json-key';
+                                                } else {
+                                                    cls = 'json-string';
+                                                }
+                                            } else if (/true|false/.test(match)) {
+                                                cls = 'json-boolean';
+                                            } else if (/null/.test(match)) {
+                                                cls = 'json-null';
+                                            }
+                                            return '<span class="' + cls + '">' + match + '</span>';
+                                        });
+
+                                        element.innerHTML = content;
+                                    }
+
+                                    // Apply formatting when page loads
+                                    window.onload = formatJson;
+                                </script>
+                            </body>
+                            </html>
+                        `);
+
+                        newWindow.document.close();
+                    }
+                };
 
                 // Function to format JSON with syntax highlighting
                 const formatJson = (json) => {
@@ -4732,48 +5407,93 @@ async function showJsonPreview(fileName, type, company, date, version) {
                     });
                 };
 
-                // Show loading animation first
-                const jsonLoadingAnimation = document.getElementById('jsonLoadingAnimation');
-                const jsonContent = document.getElementById('jsonPreviewContent');
+                // Show loading animation first with unique IDs
+                const invoiceJsonLoadingAnimation = document.getElementById('invoiceJsonLoadingAnimation');
+                const invoiceJsonPreviewContent = document.getElementById('invoiceJsonPreviewContent');
+                const invoiceJsonInitialMessage = document.getElementById('invoiceJsonInitialMessage');
                 const toggleBtn = document.getElementById('toggleJsonBtn');
+                const jsonPreviewSection = document.querySelector('.json-preview-section');
 
-                // Simulate the loading process
-                const simulateJsonLoading = () => {
-                    // Show loading animation
-                    jsonLoadingAnimation.style.display = 'block';
+                // Simulate the modern loading process with unique selectors for invoice JSON
+                const simulateInvoiceJsonLoading = () => {
+                    // Hide initial message and show the JSON card with loading animation
+                    invoiceJsonInitialMessage.style.display = 'none';
+                    jsonPreviewSection.classList.add('json-active');
+                    invoiceJsonLoadingAnimation.style.display = 'block';
 
-                    // Get all steps and connectors
-                    const steps = jsonLoadingAnimation.querySelectorAll('.json-loading-step');
-                    const connectors = jsonLoadingAnimation.querySelectorAll('.json-loading-connector');
+                    // Get all steps and connectors with unique class names for invoice JSON
+                    const steps = invoiceJsonLoadingAnimation.querySelectorAll('.invoice-json-loading-step');
+                    const connectors = invoiceJsonLoadingAnimation.querySelectorAll('.invoice-json-loading-connector');
 
-                    // Step 1 is already complete
+                    // Reset all steps first
+                    steps.forEach((step, index) => {
+                        if (index === 0) return; // Keep first step active
+                        step.classList.remove('active', 'processing');
+                        const statusEl = step.querySelector('.invoice-json-step-status');
+                        const iconEl = step.querySelector('.invoice-json-step-icon');
+                        if (statusEl) statusEl.textContent = 'Waiting';
+                        if (iconEl) iconEl.innerHTML = '<i class="bi bi-circle"></i>';
+                    });
+
+                    // Reset connectors
+                    connectors.forEach(connector => {
+                        connector.classList.remove('active');
+                    });
+
+                    // Start step 2 as processing
+                    if (steps[1]) {
+                        steps[1].classList.add('processing');
+                        const statusEl = steps[1].querySelector('.invoice-json-step-status');
+                        const iconEl = steps[1].querySelector('.invoice-json-step-icon');
+                        if (statusEl) statusEl.textContent = 'IN PROGRESS';
+                        if (iconEl) iconEl.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>';
+                    }
 
                     // After 1 second, complete step 2 (Processing)
                     setTimeout(() => {
-                        // Update step 2
-                        steps[1].querySelector('.json-loading-status').innerHTML = 'Complete';
+                        // Complete step 2
+                        if (steps[1]) {
+                            steps[1].classList.remove('processing');
+                            steps[1].classList.add('active');
+                            const statusEl = steps[1].querySelector('.invoice-json-step-status');
+                            const iconEl = steps[1].querySelector('.invoice-json-step-icon');
+                            if (statusEl) statusEl.textContent = 'COMPLETE';
+                            if (iconEl) iconEl.innerHTML = '<i class="bi bi-check-circle-fill"></i>';
+                        }
 
-                        // Update connector to step 3
-                        connectors[1].style.background = 'linear-gradient(to right, #0d6efd, #adb5bd)';
+                        // Activate first connector
+                        if (connectors[0]) {
+                            connectors[0].classList.add('active');
+                        }
 
-                        // Update step 3 to active
-                        steps[2].querySelector('.json-loading-icon').style.background = 'rgba(13, 110, 253, 0.1)';
-                        steps[2].querySelector('.json-loading-icon i').style.color = '#0d6efd';
-                        steps[2].querySelector('.json-loading-text').style.color = '#495057';
-                        steps[2].querySelector('.json-loading-status').innerHTML = `
-                            <div class="spinner-border spinner-border-sm" style="width: 10px; height: 10px; border-width: 1px;" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                        `;
-                        steps[2].querySelector('.json-loading-status').style.color = '#0d6efd';
+                        // Start step 3 (Ready)
+                        if (steps[2]) {
+                            steps[2].classList.add('processing');
+                            const statusEl = steps[2].querySelector('.invoice-json-step-status');
+                            const iconEl = steps[2].querySelector('.invoice-json-step-icon');
+                            if (statusEl) statusEl.textContent = 'IN PROGRESS';
+                            if (iconEl) iconEl.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading...</span></div>';
+                        }
 
-                        // After another 1 second, complete step 3 (Ready)
+                        // After another 1.5 seconds, complete step 3
                         setTimeout(() => {
-                            // Update step 3
-                            steps[2].querySelector('.json-loading-status').innerHTML = 'Complete';
+                            // Complete step 3
+                            if (steps[2]) {
+                                steps[2].classList.remove('processing');
+                                steps[2].classList.add('active');
+                                const statusEl = steps[2].querySelector('.invoice-json-step-status');
+                                const iconEl = steps[2].querySelector('.invoice-json-step-icon');
+                                if (statusEl) statusEl.textContent = 'COMPLETE';
+                                if (iconEl) iconEl.innerHTML = '<i class="bi bi-check-circle-fill"></i>';
+                            }
+
+                            // Activate second connector
+                            if (connectors[1]) {
+                                connectors[1].classList.add('active');
+                            }
 
                             // Format the JSON content
-                            const jsonElement = document.getElementById('jsonFormattedContent');
+                            const jsonElement = document.getElementById('invoiceJsonFormattedContent');
                             if (jsonElement) {
                                 try {
                                     const jsonObj = JSON.parse(jsonElement.textContent);
@@ -4783,75 +5503,44 @@ async function showJsonPreview(fileName, type, company, date, version) {
                                 }
                             }
 
-                            // After a short delay, hide loading and show JSON
+                            // After a brief delay, hide loading and show content
                             setTimeout(() => {
-                                jsonLoadingAnimation.style.display = 'none';
-                                jsonContent.style.display = 'block';
-                                toggleBtn.innerHTML = '<i class="fas fa-code-slash"></i> Hide JSON';
-                                toggleBtn.style.backgroundColor = '#6c757d';
+                                invoiceJsonLoadingAnimation.style.display = 'none';
+                                invoiceJsonInitialMessage.style.display = 'none'; // Ensure initial message stays hidden
+                                invoiceJsonPreviewContent.style.display = 'block';
+                                toggleBtn.innerHTML = '<i class="bi bi-eye-slash"></i><span>Hide JSON</span>';
                             }, 500);
-                        }, 800);
+                        }, 1500);
                     }, 1000);
                 };
 
-                // Add event listener for the toggle JSON button
+                // Add event listener for the toggle JSON button - Fixed with unique IDs
                 toggleBtn.addEventListener('click', function() {
-                    const isVisible = jsonContent.style.display !== 'none';
-                    const isLoading = jsonLoadingAnimation.style.display !== 'none';
+                    const isContentVisible = invoiceJsonPreviewContent.style.display !== 'none';
+                    const isLoading = invoiceJsonLoadingAnimation.style.display !== 'none';
 
-                    if (isVisible) {
-                        // Hide JSON content
-                        jsonContent.style.display = 'none';
-                        this.innerHTML = '<i class="fas fa-code"></i> View JSON';
-                        this.style.backgroundColor = '#0d6efd';
+                    if (isContentVisible) {
+                        // Hide JSON content and show initial message
+                        invoiceJsonPreviewContent.style.display = 'none';
+                        invoiceJsonLoadingAnimation.style.display = 'none';
+                        jsonPreviewSection.classList.remove('json-active');
+                        invoiceJsonInitialMessage.style.display = 'flex';
+                        this.innerHTML = '<i class="bi bi-eye"></i><span>View JSON</span>';
                     } else if (isLoading) {
-                        // If loading is visible, hide it
-                        jsonLoadingAnimation.style.display = 'none';
-                        this.innerHTML = '<i class="fas fa-code"></i> View JSON';
-                        this.style.backgroundColor = '#0d6efd';
+                        // If loading is visible, hide it and show initial message
+                        invoiceJsonLoadingAnimation.style.display = 'none';
+                        invoiceJsonPreviewContent.style.display = 'none';
+                        jsonPreviewSection.classList.remove('json-active');
+                        invoiceJsonInitialMessage.style.display = 'flex';
+                        this.innerHTML = '<i class="bi bi-eye"></i><span>View JSON</span>';
                     } else {
                         // Start the loading animation
-                        simulateJsonLoading();
-                        this.innerHTML = '<i class="fas fa-times"></i> Cancel';
-                        this.style.backgroundColor = '#6c757d';
+                        simulateInvoiceJsonLoading();
+                        this.innerHTML = '<i class="bi bi-x-circle"></i><span>Cancel</span>';
                     }
                 });
 
-                // Also make the header clickable to toggle JSON
-                document.getElementById('jsonPreviewHeader').addEventListener('click', function(e) {
-                    // Don't trigger if the button itself was clicked
-                    if (e.target.closest('#toggleJsonBtn')) {
-                        return;
-                    }
 
-                    const isVisible = jsonContent.style.display !== 'none';
-                    const isLoading = jsonLoadingAnimation.style.display !== 'none';
-
-                    // Add a subtle hover effect
-                    this.style.transition = 'background-color 0.2s';
-                    const originalBackground = this.style.background;
-                    this.style.background = 'linear-gradient(to right, #e9ecef, #dee2e6)';
-                    setTimeout(() => {
-                        this.style.background = originalBackground;
-                    }, 200);
-
-                    if (isVisible) {
-                        // Hide JSON content
-                        jsonContent.style.display = 'none';
-                        toggleBtn.innerHTML = '<i class="fas fa-code"></i> View JSON';
-                        toggleBtn.style.backgroundColor = '#0d6efd';
-                    } else if (isLoading) {
-                        // If loading is visible, hide it
-                        jsonLoadingAnimation.style.display = 'none';
-                        toggleBtn.innerHTML = '<i class="fas fa-code"></i> View JSON';
-                        toggleBtn.style.backgroundColor = '#0d6efd';
-                    } else {
-                        // Start the loading animation
-                        simulateJsonLoading();
-                        toggleBtn.innerHTML = '<i class="fas fa-times"></i> Cancel';
-                        toggleBtn.style.backgroundColor = '#6c757d';
-                    }
-                });
             }
         });
 
@@ -4952,108 +5641,19 @@ function showLoggingNotification() {
     const notification = document.createElement('div');
     notification.className = 'logging-notification';
     notification.innerHTML = `
-        <div class="logging-notification-content">
-            <div class="logging-notification-icon">
-                <i class="fas fa-clipboard-check"></i>
-            </div>
-            <div class="logging-notification-message">
-                <strong>Submission Logged</strong>
-                <p>Your submission has been logged for tracking and audit purposes.</p>
-            </div>
-            <button class="logging-notification-close">
-                <i class="fas fa-times"></i>
-            </button>
+        <div class="logging-notification-icon">
+            <i class="fas fa-clipboard-check"></i>
         </div>
+        <div class="logging-notification-message">
+            <strong>Submission Logged</strong>
+            <p>Your submission has been logged for tracking and audit purposes.</p>
+        </div>
+        <button class="logging-notification-close">
+            <i class="fas fa-times"></i>
+        </button>
     `;
 
-    // Add styles
-    const style = document.createElement('style');
-    style.textContent = `
-        .logging-notification {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 9999;
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            padding: 16px;
-            max-width: 400px;
-            width: 100%;
-            animation: slideDown 0.3s ease-out forwards;
-        }
-
-        .logging-notification-content {
-            display: flex;
-            align-items: center;
-        }
-
-        .logging-notification-icon {
-            background-color: #4caf50;
-            color: white;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 16px;
-            flex-shrink: 0;
-        }
-
-        .logging-notification-message {
-            flex-grow: 1;
-        }
-
-        .logging-notification-message strong {
-            display: block;
-            margin-bottom: 4px;
-            color: #333;
-        }
-
-        .logging-notification-message p {
-            margin: 0;
-            color: #666;
-            font-size: 14px;
-        }
-
-        .logging-notification-close {
-            background: none;
-            border: none;
-            color: #999;
-            cursor: pointer;
-            padding: 4px;
-            margin-left: 8px;
-        }
-
-        .logging-notification-close:hover {
-            color: #333;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translate(-50%, -20px);
-            }
-            to {
-                opacity: 1;
-                transform: translate(-50%, 0);
-            }
-        }
-
-        @keyframes fadeOut {
-            from {
-                opacity: 1;
-            }
-            to {
-                opacity: 0;
-            }
-        }
-    `;
-
-    // Add to document
-    document.head.appendChild(style);
+    // Styles are now in external CSS file
     document.body.appendChild(notification);
 
     // Add close button functionality
@@ -5076,70 +5676,57 @@ function showLoggingNotification() {
 
 async function showSuccessMessage(fileName, version) {
     const content = `
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-badge success" style="margin-bottom: 10px;">
-                    <i class="fas fa-check-circle"></i>
-                </span>
-                <span class="content-title">Submission Details</span>
-            </div>
-            <div class="field-row">
-                <span class="field-label">File Name:</span>
-                <span class="field-value">${fileName}</span>
-            </div>
-            <div class="field-row">
-                <span class="field-label">Version:</span>
-                <span class="field-value">${version}</span>
-            </div>
-            <div class="field-row">
-                <span class="field-label">Submitted At:</span>
-                <span class="field-value">${new Date().toLocaleString()}</span>
+        <div class="error-message" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border: 2px solid #10b981; color: #065f46;">
+            <h6 style="color: #059669; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fas fa-check-circle"></i> Submission Successful
+            </h6>
+            <p style="color: #047857; margin: 0; line-height: 1.6;">
+                Your document has been successfully submitted to LHDN and is now being processed.
+            </p>
+        </div>
+
+        <div class="error-details" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <h6 style="color: #475569; font-weight: 600; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;">
+                <i class="fas fa-file-alt"></i> Submission Details
+            </h6>
+            <div style="display: grid; gap: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid #e2e8f0;">
+                    <span style="font-weight: 600; color: #374151; font-size: 0.8125rem;">File Name:</span>
+                    <span style="color: #6b7280; font-size: 0.8125rem;">${fileName}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid #e2e8f0;">
+                    <span style="font-weight: 600; color: #374151; font-size: 0.8125rem;">Version:</span>
+                    <span style="color: #6b7280; font-size: 0.8125rem;">${version}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid #e2e8f0;">
+                    <span style="font-weight: 600; color: #374151; font-size: 0.8125rem;">Submitted At:</span>
+                    <span style="color: #6b7280; font-size: 0.8125rem;">${new Date().toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 0.4rem 0;">
+                    <span style="font-weight: 600; color: #374151; font-size: 0.8125rem;">Status:</span>
+                    <span style="color: #059669; font-weight: 600; font-size: 0.8125rem;">Processing</span>
+                </div>
             </div>
         </div>
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-badge info">
-                    <i class="fas fa-info-circle"></i>
-                </span>
-                <span class="content-title">Next Steps</span>
-            </div>
-            <div class="content-desc">
-                You can track the status of your submission in the table below. The document will be processed by LHDN within 72 hours.
-            </div>
-        </div>
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-badge info" style="background-color: #4caf50;">
-                    <i class="fas fa-clipboard-check"></i>
-                </span>
-                <span class="content-title">Logging</span>
-            </div>
-            <div class="content-desc">
-                Your submission has been logged for tracking and audit purposes. You can view the logs in the system logs section.
-            </div>
-        </div>
-        <div class="auto-close-timer" style="
-            margin-top: 15px;
-            text-align: center;
-            font-size: 0.9rem;
-            color: #6c757d;
-        ">
-            <i class="fas fa-clock"></i> This message will close automatically in <span id="countdown">3</span> seconds
+        <div style="text-align: center; margin-top: 1rem; padding: 0.75rem; background: rgba(59, 130, 246, 0.1); border-radius: 8px;">
+            <i class="fas fa-clock" style="color: #3b82f6; margin-right: 0.5rem;"></i>
+            <span style="color: #1e40af; font-size: 0.8125rem;">Auto-closing in <span id="countdown">3</span> seconds</span>
         </div>
     `;
 
     const result = Swal.fire({
-        html: createSemiMinimalDialog({
+        html: createModernSuccessModal({
             title: 'Document Submitted Successfully',
             subtitle: 'Your document has been successfully submitted to LHDN',
             content: content
         }),
-        confirmButtonText: 'Close',
-        width: 480,
-        padding: '1.5rem',
+        showConfirmButton: false,
+        showCancelButton: false,
+        width: 520, // Reduced from 600 for better proportions
+        padding: 0,
+        background: 'transparent',
         customClass: {
-            confirmButton: 'btn btn-primary',
-            popup: 'semi-minimal-popup'
+            popup: 'modern-submission-popup enhanced-success-modal'
         },
         timer: 3000, // Auto close after 3 seconds
         timerProgressBar: true,
@@ -5210,50 +5797,58 @@ async function submitToLHDN(fileName, type, company, date) {
         });
     }
 }
-// Function to get step HTML
+// Function to get modern step HTML
 function getStepHtml(stepNumber, title) {
-    console.log(`🔨 [Step ${stepNumber}] Creating HTML for step: ${title}`);
+    console.log(`🔨 [Step ${stepNumber}] Creating modern HTML for step: ${title}`);
 
-    const stepId = `step${stepNumber}`;
-    console.log(`🏷️ [Step ${stepNumber}] Step ID created: ${stepId}`);
+    const stepId = `modernStep${stepNumber}`;
+    console.log(`🏷️ [Step ${stepNumber}] Modern Step ID created: ${stepId}`);
 
     return `
-        <style>
-            .step-badge.spinning::after {
-                content: '';
-                width: 12px;
-                height: 12px;
-                border: 2px solid var(--primary);
-                border-right-color: transparent;
-                border-radius: 50%;
-                animation: spin 0.8s linear infinite;
-                display: block;
-            }
-
-            @keyframes spin {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
-            }
-        </style>
-        <div class="content-card step-card" id="${stepId}">
-            <div class="content-header">
-                <span class="content-badge step-badge">
-                    <i class="fas fa-circle"></i>
-                </span>
-                <span class="">${title}</span>
+        <div class="modern-step" id="${stepId}">
+            <div class="modern-step-circle">
+                <i class="fas fa-circle"></i>
             </div>
-            <div class="content-desc step-status">Waiting...</div>
+            <div class="modern-step-content">
+                <div class="modern-step-title">${title}</div>
+                <div class="modern-step-status">WAITING</div>
+            </div>
         </div>
     `;
 }
 
-// Helper function to update step status with animation
-async function updateStepStatus(stepNumber, status, message) {
-    console.log(`🔄 [Step ${stepNumber}] Updating status:`, { status, message });
+// Function to get submission step HTML with unique IDs - Consistent Design
+function getSubmissionStepHtml(stepNumber, title) {
+    console.log(`🔨 [Submission Step ${stepNumber}] Creating modern HTML for step: ${title}`);
 
-    const step = document.getElementById(`step${stepNumber}`);
+    const stepId = `modernSubmissionStep${stepNumber}`;
+    console.log(`🏷️ [Submission Step ${stepNumber}] Modern Step ID created: ${stepId}`);
+
+    return `
+        <div class="modern-step" id="${stepId}">
+            <div class="modern-step-circle">
+                <i class="fas fa-circle"></i>
+            </div>
+            <div class="modern-step-content">
+                <div class="modern-step-title">${title}</div>
+                <div class="modern-step-status">WAITING</div>
+            </div>
+        </div>
+    `;
+}
+
+// Helper function to update modern step status with animation
+async function updateStepStatus(stepNumber, status, message) {
+    console.log(`🔄 [Step ${stepNumber}] Updating modern status:`, { status, message });
+
+    // Try both regular step and submission step IDs
+    let step = document.getElementById(`modernStep${stepNumber}`);
     if (!step) {
-        console.error(`❌ [Step ${stepNumber}] Step element not found`);
+        step = document.getElementById(`modernSubmissionStep${stepNumber}`);
+    }
+
+    if (!step) {
+        console.error(`❌ [Step ${stepNumber}] Modern step element not found`);
         return;
     }
 
@@ -5266,46 +5861,36 @@ async function updateStepStatus(stepNumber, status, message) {
     console.log(`🎨 [Step ${stepNumber}] Added new class:`, status);
 
     // Update status message with fade effect
-    const statusEl = step.querySelector('.step-status');
+    const statusEl = step.querySelector('.modern-step-status');
     if (statusEl && message) {
         console.log(`✍️ [Step ${stepNumber}] Updating message to:`, message);
         statusEl.style.opacity = '0';
         await new Promise(resolve => setTimeout(resolve, 300));
-        statusEl.textContent = message;
+        statusEl.textContent = message.toUpperCase();
         statusEl.style.opacity = '1';
     }
 
-    // Update spinner visibility and icon
-    const badge = step.querySelector('.step-badge');
-    if (badge) {
-        const icon = badge.querySelector('.fas');
-        if (icon) {
-            switch (status) {
-                case 'processing':
-                    icon.style.display = 'none';
-                    badge.classList.add('spinning');
-                    break;
-                case 'completed':
-                    icon.style.display = 'block';
-                    badge.classList.remove('spinning');
-                    icon.className = 'fas fa-check';
-                    break;
-                case 'error':
-                    icon.style.display = 'block';
-                    badge.classList.remove('spinning');
-                    icon.className = 'fas fa-times';
-                    break;
-                default:
-                    icon.style.display = 'block';
-                    badge.classList.remove('spinning');
-                    icon.className = 'fas fa-circle';
-            }
+    // Update circle icon based on status
+    const circle = step.querySelector('.modern-step-circle');
+    if (circle) {
+        switch (status) {
+            case 'processing':
+                circle.innerHTML = '<div class="modern-spinner"></div>';
+                break;
+            case 'completed':
+                circle.innerHTML = '<i class="fas fa-check"></i>';
+                break;
+            case 'error':
+                circle.innerHTML = '<i class="fas fa-times"></i>';
+                break;
+            default:
+                circle.innerHTML = '<i class="fas fa-circle"></i>';
         }
     }
 
     // Add delay for visual feedback
     await new Promise(resolve => setTimeout(resolve, 500));
-    console.log(`✅ [Step ${stepNumber}] Status update completed`);
+    console.log(`✅ [Step ${stepNumber}] Modern status update completed`);
 }
 
 /**
@@ -5382,138 +5967,89 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
     console.log('🚀 Starting submission status process:', { fileName, type, company, date, version });
     window.currentFileName = fileName;
 
-    let modal = null;
+    let submissionModal = null;
     try {
-        // Create steps HTML
-        console.log('📋 Creating steps container');
-        const stepsHtml = `
-           <style>
-                .step-card {
-                    transform: translateY(10px);
-                    opacity: 0.6;
-                    transition: all 0.3s ease;
-                    margin-bottom: 1rem;
-                    padding: 1rem;
-                    border-radius: 8px;
-                    border: 1px solid #e9ecef;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    text-align: center;
-                    flex-direction: column;
-                }
+        // Create enhanced modern steps HTML with useful information
+        console.log('📋 Creating enhanced modern submission steps container');
+        const modernSubmissionStepsHtml = `
+            <div class="modern-modal-content">
+                <div class="modal-header-section">
+                    <div class="modal-brand">
+                        <div class="brand-icon">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <div>
+                            <h1 class="modal-title">Submitting to LHDN</h1>
+                            <p class="modal-subtitle">Please wait while we process your document</p>
+                        </div>
+                    </div>
+                    <div class="modal-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Process</span>
+                            <span class="meta-value">LHDN</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Status</span>
+                            <span class="meta-value">Processing</span>
+                        </div>
+                    </div>
+                </div>
 
-                .step-card.processing {
-                    transform: translateY(0);
-                    opacity: 1;
-                    border-color: var(--primary);
-                    background: var(--primary-light);
-                }
+                <div class="modal-content-section" style="padding: 0;">
+                    <div class="progress-container">
+                        <div class="progress-steps">
+                            ${getSubmissionStepHtml(1, 'Validating Document')}
+                            ${getSubmissionStepHtml(2, 'Submit to LHDN')}
+                            ${getSubmissionStepHtml(3, 'Processing')}
+                        </div>
+                    </div>
 
-                .step-card.completed {
-                    opacity: 1;
-                    border-color: var(--success);
-                    background: var(--success-light);
-                }
+                    <!-- Messages below the steps -->
+                    <div class="submission-messages">
+                        <!-- Estimated Time Display -->
+                        <div class="estimated-time">
+                            <div class="estimated-time-label">Estimated Time</div>
+                            <div class="estimated-time-value">2-3 minutes</div>
+                        </div>
 
-                .step-card.error {
-                    opacity: 1;
-                    border-color: var(--error);
-                    background: var(--error-light);
-                }
-
-                .step-badge {
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 0.5rem;
-                }
-
-                .step-card.processing .step-badge {
-                    background: var(--primary-light);
-                    color: var(--primary);
-                }
-
-                .step-card.completed .step-badge {
-                    background: var(--success-light);
-                    color: var(--success);
-                }
-
-                .step-card.error .step-badge {
-                    background: var(--error-light);
-                    color: var(--error);
-                }
-
-                .step-badge.spinning::after {
-                    content: '';
-                    width: 20px;
-                    height: 20px;
-                    border: 2px solid var(--primary);
-                    border-right-color: transparent;
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
-                    display: block;
-                }
-
-                @keyframes spin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                }
-
-                .step-content {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    gap: 0.25rem;
-                }
-
-                .step-title {
-                    font-weight: 500;
-                    font-size: 1rem;
-                    color: var(--text-main);
-                }
-
-                .step-status {
-                    font-size: 0.875rem;
-                    color: var(--text-muted);
-                }
-            </style>
-            <div class="steps-container">
-                ${getStepHtml(1, 'Validating Document')}
-                ${getStepHtml(2, 'Submit to LHDN')}
-                ${getStepHtml(3, 'Processing')}
+                        <!-- Helpful Tips -->
+                        <div class="submission-tips">
+                            <div class="submission-tips-title">
+                                <i class="fas fa-lightbulb"></i>
+                                Did you know?
+                            </div>
+                            <div class="submission-tips-content">
+                                LHDN processes e-invoices within 72 hours. You'll receive real-time status updates in your dashboard.
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
 
-        // Create and show modal
-        console.log('📦 Creating submission modal');
-        modal = await Swal.fire({
-            html: createSemiMinimalDialog({
-                title: 'Submitting Document to LHDN',
-                subtitle: 'Please wait while we process your request',
-                content: stepsHtml
-            }),
+        // Create and show enhanced modern submission modal
+        console.log('📦 Creating enhanced modern submission modal');
+        submissionModal = await Swal.fire({
+            html: modernSubmissionStepsHtml,
             showConfirmButton: false,
             allowOutsideClick: false,
             allowEscapeKey: false,
-            width: 480,
-            padding: '1.5rem',
+            width: 580, // Reduced from 800 for better proportions
+            padding: '0',
+            background: 'transparent',
             customClass: {
-                popup: 'semi-minimal-popup'
+                popup: 'modern-modal modern-submission-container'
             },
             didOpen: async () => {
                 try {
-                    // Verify steps were created
-                    console.log('🔍 Verifying step elements:');
+                    // Verify modern submission steps were created
+                    console.log('🔍 Verifying modern submission step elements:');
                     for (let i = 1; i <= 3; i++) {
-                        const step = document.getElementById(`step${i}`);
+                        const step = document.getElementById(`modernSubmissionStep${i}`);
                         if (step) {
-                            console.log(`✅ Step ${i} element found`);
+                            console.log(`✅ Modern Submission Step ${i} element found`);
                         } else {
-                            console.error(`❌ Step ${i} element not found`);
+                            console.error(`❌ Modern Submission Step ${i} element not found`);
                         }
                     }
 
@@ -5561,8 +6097,8 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     console.log('🎉 All steps completed successfully');
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
-                    if (modal) {
-                        modal.close();
+                    if (submissionModal) {
+                        submissionModal.close();
                     }
 
                     await showSuccessMessage(fileName, version);
@@ -5583,8 +6119,8 @@ async function showSubmissionStatus(fileName, type, company, date, version) {
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
                     // Close the current modal
-                    if (modal) {
-                        modal.close();
+                    if (submissionModal) {
+                        submissionModal.close();
                     }
 
                     // Show appropriate error modal based on error type
@@ -5687,7 +6223,7 @@ async function performStep2(data, version) {
             await updateStepStatus(2, 'completed', 'Submission completed');
 
             // Show notification about logging
-            showLoggingNotification();
+           // showLoggingNotification();
 
             return result;
 
@@ -6269,79 +6805,124 @@ async function showExcelValidationError(error) {
     // Add delay before showing the validation error modal
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Format validation errors for display
+    // Format validation errors for display with user-friendly messages
     let errorContent = '';
     if (error.validationErrors && error.validationErrors.length > 0) {
-        const groupedErrors = error.validationErrors.reduce((acc, err) => {
-            const errors = Array.isArray(err.errors) ? err.errors : [err.errors];
-            acc[err.row] = acc[err.row] || [];
-            acc[err.row].push(...errors);
-            return acc;
-        }, {});
+        // Process and make validation errors more user-friendly
+        const processedErrors = error.validationErrors.map(err => {
+            if (typeof err === 'object' && err.errors) {
+                const errors = Array.isArray(err.errors) ? err.errors : [err.errors];
+                return {
+                    row: err.row || 'Unknown Row',
+                    errors: errors.map(e => {
+                        const errorText = typeof e === 'object' ? e.message : e;
+                        // Convert technical error messages to user-friendly ones
+                        if (errorText.includes('invoiceCodeNumber')) {
+                            return 'Invoice number is missing or invalid. Please ensure each invoice has a unique invoice number.';
+                        }
+                        if (errorText.includes('Validation Error')) {
+                            return errorText.replace('Validation Error', 'Data validation issue');
+                        }
+                        if (errorText.includes('TIN')) {
+                            return 'Tax Identification Number (TIN) is missing or invalid. Please verify the TIN format.';
+                        }
+                        if (errorText.includes('required')) {
+                            return errorText.replace('is required', 'must be provided');
+                        }
+                        return errorText;
+                    })
+                };
+            }
+            return { row: 'General', errors: [err] };
+        });
 
-        errorContent = Object.entries(groupedErrors).map(([row, errors]) => `
-            <div class="content-card">
-                <div class="content-header">
-                    <span class="content-badge error">
-                        <i class="fas fa-exclamation-circle"></i>
-                    </span>
-                    <span class="content-title" style="text-align: center;">${row}</span>
-                </div>
-                ${errors.map(e => `
-                    <div class="content-desc">
-                        ${typeof e === 'object' ? e.message : e}
-                    </div>
-                `).join('')}
-            </div>
-        `).join('');
-    } else {
         errorContent = `
-            <div class="content-card">
-                <div class="content-header">
-                    <span class="content-badge error">
-                        <i class="fas fa-exclamation-circle"></i>
-                    </span>
-                    <span class="content-title" style="text-align: center;">Validation Error</span>
+            <div class="error-code-badge">
+                <i class="fas fa-file-excel"></i>
+                EXCEL_VALIDATION_ERROR
+            </div>
+            <div class="error-message">
+                <h6><i class="fas fa-exclamation-triangle"></i> Validation Issues Found</h6>
+                <p>Your Excel file contains the following issues that must be resolved before submission:</p>
+                <div class="error-list-container">
+                    ${processedErrors.map(errorGroup => `
+                        <div class="error-group">
+                            <div class="error-group-header">
+                                <i class="fas fa-table"></i>
+                                <span>${errorGroup.row}</span>
+                            </div>
+                            <ul class="error-list">
+                                ${errorGroup.errors.map((err, index) => `
+                                    <li class="error-item">
+                                        <span class="error-number">${index + 1}</span>
+                                        <span class="error-text">${err}</span>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `).join('')}
                 </div>
-                <div class="content-desc">
-                    ${error.message || 'Unknown validation error'}
-                </div>
+            </div>
+        `;
+    } else {
+        // Handle generic validation error
+        const friendlyMessage = error.message
+            ? error.message.replace('Validation Error', 'Data validation issue')
+            : 'Your Excel file contains validation errors that prevent submission to LHDN.';
+
+        errorContent = `
+            <div class="error-code-badge">
+                <i class="fas fa-file-excel"></i>
+                EXCEL_VALIDATION_ERROR
+            </div>
+            <div class="error-message">
+                <h6><i class="fas fa-exclamation-triangle"></i> Validation Error</h6>
+                <p>${friendlyMessage}</p>
             </div>
         `;
     }
 
-    // Add user guidance
+    // Add helpful guidance section
     const guidance = `
-        <div class="content-card">
-            <div class="content-header">
-                <span class="content-title" style="text-align: center;">Next Steps</span>
+        <div class="error-suggestion">
+            <h6><i class="fas fa-lightbulb"></i> How to Fix This</h6>
+            <p>Please correct the validation errors in your Excel file and try uploading again.</p>
+            <div class="suggestion-steps">
+                <div class="suggestion-step">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Ensure all required fields are properly filled</span>
+                </div>
+                <div class="suggestion-step">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Verify data formats match LHDN requirements</span>
+                </div>
+                <div class="suggestion-step">
+                    <i class="fas fa-check-circle"></i>
+                    <span>Check for duplicate or missing invoice numbers</span>
+                </div>
             </div>
-            <div class="content-desc">
-                <ul>
-                    <li>Review the errors listed above carefully.</li>
-                    <li>Ensure all mandatory fields are filled out correctly.</li>
-                    <li>Check the format of the data (e.g., dates, numbers).</li>
-                    <li>Try submitting the document again after corrections.</li>
-                </ul>
-            </div>
+        </div>
+
+        <div class="error-information">
+            <h6><i class="fas fa-info-circle"></i> Need Help?</h6>
+            <p>If you continue to experience validation errors, please refer to the LHDN Excel template guidelines or contact support for assistance.</p>
         </div>
     `;
 
+    // Use the modern error modal template for consistency
     return Swal.fire({
-        html: createSemiMinimalDialog({
+        html: createModernErrorModal({
             title: 'Excel Validation Failed',
-            subtitle: 'Correct the issues listed and proceed with creating a new document using the EXCEL Template',
+            subtitle: 'Please correct the issues below and try again',
             content: errorContent + guidance
         }),
-        icon: 'error',
+        showConfirmButton: false,
         showCancelButton: false,
-        confirmButtonText: 'I Understand',
-        confirmButtonColor: '#405189',
-        width: 480,
-        padding: '1.5rem',
+        width: 600,
+        padding: 0,
+        background: 'transparent',
         customClass: {
-            confirmButton: 'btn btn-primary',
-            popup: 'semi-minimal-popup'
+            popup: 'modern-error-popup'
         }
     }).then((result) => {
         if (result.isConfirmed && error.fileName) {
@@ -6558,35 +7139,95 @@ async function showLHDNErrorModal(error) {
     } catch (helperError) {
         console.error('Error using LHDN UI Helper:', helperError);
 
-        // Fallback to basic error display if helper fails
-        // Create a more detailed error message with the available information
-        let errorMessage = '';
+        // Fallback to modern error display if helper fails
+        const errorCode = formattedError.code || 'VALIDATIONERROR';
+        const errorMessage = formattedError.message || 'Invalid document data provided.';
 
-        if (typeof formattedError === 'object') {
-            errorMessage = formattedError.message || 'An unknown error occurred';
+        // Create error details list
+        let errorDetailsHtml = '';
+        if (formattedError.details && formattedError.details.length > 0) {
+            errorDetailsHtml = `
+                <div class="error-list-container">
+                    <div class="error-group">
+                        <div class="error-group-header">
+                            <i class="fas fa-list"></i>
+                            <span>Error Details</span>
+                        </div>
+                        <ul class="error-list">
+            `;
 
-            // Add details if available
-            if (formattedError.details && formattedError.details.length > 0) {
-                errorMessage += '<br><br><strong>Details:</strong><ul>';
-                formattedError.details.forEach(detail => {
-                    if (typeof detail === 'string') {
-                        errorMessage += `<li>${detail}</li>`;
-                    } else if (typeof detail === 'object') {
-                        const detailText = detail.message || detail.code || JSON.stringify(detail);
-                        errorMessage += `<li>${detailText}</li>`;
-                    }
-                });
-                errorMessage += '</ul>';
-            }
-        } else {
-            errorMessage = typeof formattedError === 'string' ? formattedError : 'An unknown error occurred';
+            formattedError.details.forEach((detail, index) => {
+                const detailMessage = typeof detail === 'string' ? detail :
+                                    (detail.message || detail.code || JSON.stringify(detail));
+                errorDetailsHtml += `
+                    <li class="error-item">
+                        <span class="error-number">${index + 1}</span>
+                        <span class="error-text">${detailMessage}</span>
+                    </li>
+                `;
+            });
+
+            errorDetailsHtml += `
+                        </ul>
+                    </div>
+                </div>
+            `;
         }
 
+        const modernErrorHtml = `
+            <div class="modern-modal-content">
+                    <div class="modal-brand">
+                        <div class="brand-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <h1 class="modal-title">LHDN Submission Error</h1>
+                            <p class="modal-subtitle">Please review the details below</p>
+                        </div>
+                    </div>
+                    <div class="modal-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Error Code</span>
+                            <span class="meta-value">${errorCode}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Status</span>
+                            <span class="meta-value">Failed</span>
+                        </div>
+                    </div>
+
+                <div class="modal-content-section" style="padding: 2rem;">
+                    <div class="error-code-badge">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        ${errorCode}
+                    </div>
+
+                    <div class="error-message">
+                        <h6><i class="fas fa-exclamation-circle"></i> LHDN Submission Error</h6>
+                        <p>${errorMessage}</p>
+                    </div>
+
+                    ${errorDetailsHtml}
+
+                    <div class="error-suggestion">
+                        <h6><i class="fas fa-lightbulb"></i> Suggestion</h6>
+                        <p>Please check the document and try again</p>
+                    </div>
+                </div>
+            </div>
+        `;
+
         Swal.fire({
-            title: 'LHDN Submission Error',
-            html: errorMessage,
-            icon: 'error',
-            confirmButtonText: 'OK'
+            html: modernErrorHtml,
+            showConfirmButton: true,
+            confirmButtonText: 'I Understand',
+            width: 800,
+            padding: '0',
+            background: 'transparent',
+            customClass: {
+                popup: 'modern-modal large-modal',
+                confirmButton: 'modern-btn modern-btn-primary'
+            }
         });
 
         // Still try to refresh the table if needed

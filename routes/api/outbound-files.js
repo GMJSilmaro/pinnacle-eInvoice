@@ -33,7 +33,7 @@ const CACHE_KEY_PREFIX = 'outbound_files';
  * @param {Object} req - The request object for session access
  * @returns {Promise<Object>} - The polling result
  */
-async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req) {
+async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req, type = null, company = null, date = null) {
     try {
         console.log(`Starting polling for submission ${submissionUid}`);
 
@@ -96,7 +96,10 @@ async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req
                 status: normalizedStatus === 'valid' ? 'Completed' :
                         normalizedStatus === 'invalid' ? 'Invalid' :
                         normalizedStatus === 'partially valid' ? 'Partially Valid' : 'Processing',
-                longId: result.longId
+                longId: result.longId,
+                type,
+                company,
+                date
             });
 
             // If the status is valid/invalid/partially valid, we're done polling
@@ -118,7 +121,10 @@ async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req
                     submissionUid,
                     fileName,
                     status: 'Completed',
-                    longId: 'NA'
+                    longId: 'NA',
+                    type,
+                    company,
+                    date
                 });
 
                 return {
@@ -147,7 +153,10 @@ async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req
                 submissionUid,
                 fileName,
                 status: 'Completed',
-                longId: 'NA'
+                longId: 'NA',
+                type,
+                company,
+                date
             });
 
             return {
@@ -918,6 +927,343 @@ router.get('/check-submission/:docNum', async (req, res) => {
 
     } catch (error) {
         console.error('Error checking submission:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Sync amount data from WP_INBOUND_STATUS to WP_OUTBOUND_STATUS
+ * Updates records where UUID matches between the two tables
+ */
+router.post('/sync-amounts', async (req, res) => {
+    try {
+        console.log('Starting amount sync from WP_INBOUND_STATUS to WP_OUTBOUND_STATUS');
+
+        // Get all records from WP_INBOUND_STATUS that have amount data
+        const inboundRecords = await prisma.wP_INBOUND_STATUS.findMany({
+            where: {
+                AND: [
+                    {
+                        uuid: { not: null }
+                    },
+                    {
+                        OR: [
+                            { totalSales: { not: null } },
+                            { totalExcludingTax: { not: null } },
+                            { totalNetAmount: { not: null } },
+                            { totalPayableAmount: { not: null } }
+                        ]
+                    }
+                ]
+            },
+            select: {
+                uuid: true,
+                internalId: true,
+                totalSales: true,
+                totalExcludingTax: true,
+                totalNetAmount: true,
+                totalPayableAmount: true,
+                issuerName: true,
+                receiverName: true
+            }
+        });
+
+        console.log(`Found ${inboundRecords.length} inbound records with amount data`);
+
+        let updatedCount = 0;
+        let matchedCount = 0;
+
+        // Process each inbound record
+        for (const inboundRecord of inboundRecords) {
+            try {
+                // Find matching outbound record by UUID or invoice_number (internalId)
+                const outboundRecord = await prisma.wP_OUTBOUND_STATUS.findFirst({
+                    where: {
+                        OR: [
+                            { UUID: inboundRecord.uuid },
+                            { invoice_number: inboundRecord.internalId }
+                        ]
+                    }
+                });
+
+                if (outboundRecord) {
+                    matchedCount++;
+
+                    // Determine the best amount to use (prioritize totalPayableAmount)
+                    const amount = inboundRecord.totalPayableAmount ||
+                                 inboundRecord.totalNetAmount ||
+                                 inboundRecord.totalSales ||
+                                 inboundRecord.totalExcludingTax;
+
+                    // Update the outbound record with amount and other data
+                    const updateData = {};
+
+                    if (amount) {
+                        updateData.amount = amount.toString();
+                    }
+
+                    if (inboundRecord.issuerName && !outboundRecord.supplier) {
+                        updateData.supplier = inboundRecord.issuerName;
+                    }
+
+                    if (inboundRecord.receiverName && !outboundRecord.receiver) {
+                        updateData.receiver = inboundRecord.receiverName;
+                    }
+
+                    // Only update if we have data to update
+                    if (Object.keys(updateData).length > 0) {
+                        await prisma.wP_OUTBOUND_STATUS.update({
+                            where: { id: outboundRecord.id },
+                            data: {
+                                ...updateData,
+                                updated_at: new Date()
+                            }
+                        });
+
+                        updatedCount++;
+                        console.log(`Updated outbound record ${outboundRecord.id} with amount: ${amount}`);
+                    }
+                }
+            } catch (error) {
+                console.error(`Error processing record ${inboundRecord.uuid}:`, error);
+            }
+        }
+
+        console.log(`Sync completed: ${matchedCount} matches found, ${updatedCount} records updated`);
+
+        res.json({
+            success: true,
+            message: 'Amount sync completed successfully',
+            stats: {
+                inboundRecordsProcessed: inboundRecords.length,
+                matchesFound: matchedCount,
+                recordsUpdated: updatedCount
+            }
+        });
+
+    } catch (error) {
+        console.error('Error syncing amounts:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to sync amounts',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * Get staging data from WP_OUTBOUND_STATUS table
+ */
+router.get('/staging-data', async (req, res) => {
+    try {
+        console.log('Fetching staging data from WP_OUTBOUND_STATUS');
+
+        // Get all records from WP_OUTBOUND_STATUS
+        const stagingRecords = await prisma.wP_OUTBOUND_STATUS.findMany({
+            select: {
+                id: true,
+                UUID: true,
+                submissionUid: true,
+                fileName: true,
+                filePath: true,
+                invoice_number: true,
+                status: true,
+                date_submitted: true,
+                date_cancelled: true,
+                cancellation_reason: true,
+                cancelled_by: true,
+                updated_at: true,
+                created_at: true,
+                amount: true,
+                supplier: true,
+                receiver: true
+            },
+            orderBy: {
+                updated_at: 'desc'
+            }
+        });
+
+        // Transform the data to match the expected format
+        const transformedFiles = stagingRecords.map(record => ({
+            id: record.id,
+            fileName: record.fileName || 'N/A',
+            source: 'Staging',
+            company: extractCompanyFromPath(record.filePath) || 'Unknown',
+            uploadedDate: record.created_at || record.updated_at,
+            modifiedTime: record.updated_at,
+            status: record.status || 'Unknown',
+            uuid: record.UUID,
+            submissionUid: record.submissionUid,
+            invoiceNumber: record.invoice_number || extractInvoiceFromFileName(record.fileName),
+            date_submitted: record.date_submitted,
+            date_cancelled: record.date_cancelled,
+            cancellation_reason: record.cancellation_reason,
+            cancelled_by: record.cancelled_by,
+            statusUpdateTime: record.updated_at,
+            // Use synced data if available
+            typeName: 'Database Record',
+            supplierName: record.supplier || 'N/A',
+            buyerName: record.receiver || 'N/A',
+            issueDate: record.date_submitted || record.created_at,
+            issueTime: null,
+            totalAmount: record.amount || '0.00',
+            submittedDate: record.date_submitted,
+            // Additional fields for amount tracking
+            amount: record.amount,
+            supplier: record.supplier,
+            receiver: record.receiver
+        }));
+
+        console.log(`Found ${transformedFiles.length} staging records`);
+
+        res.json({
+            success: true,
+            files: transformedFiles,
+            fromStaging: true,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error fetching staging data:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Helper function to extract company from file path
+ */
+function extractCompanyFromPath(filePath) {
+    if (!filePath) return null;
+
+    try {
+        // Expected path format: /type/company/date/filename
+        const pathParts = filePath.split('/').filter(part => part.length > 0);
+        if (pathParts.length >= 2) {
+            return pathParts[1]; // Company is the second part
+        }
+    } catch (error) {
+        console.error('Error extracting company from path:', error);
+    }
+
+    return null;
+}
+
+/**
+ * Helper function to extract invoice number from filename
+ */
+function extractInvoiceFromFileName(fileName) {
+    if (!fileName) return null;
+
+    try {
+        // Expected format: XX_InvoiceNumber_eInvoice_YYYYMMDDHHMMSS.xls
+        const baseName = path.parse(fileName).name;
+        const parts = baseName.split('_');
+        if (parts.length >= 2) {
+            return parts[1]; // Invoice number is the second part
+        }
+    } catch (error) {
+        console.error('Error extracting invoice from filename:', error);
+    }
+
+    return null;
+}
+
+/**
+ * Cleanup old files (older than 3 months)
+ */
+router.post('/cleanup-old', async (req, res) => {
+    try {
+        console.log('Starting cleanup of old files...');
+
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+        let filesDeleted = 0;
+        let recordsDeleted = 0;
+        const errors = [];
+
+        // 1. Delete old database records
+        try {
+            const deleteResult = await prisma.wP_OUTBOUND_STATUS.deleteMany({
+                where: {
+                    created_at: {
+                        lt: threeMonthsAgo
+                    }
+                }
+            });
+            recordsDeleted = deleteResult.count;
+            console.log(`Deleted ${recordsDeleted} old database records`);
+        } catch (dbError) {
+            console.error('Error deleting database records:', dbError);
+            errors.push(`Database cleanup failed: ${dbError.message}`);
+        }
+
+        // 2. Delete old files from network storage
+        try {
+            const networkPath = process.env.NETWORK_STORAGE_PATH || 'C:/inetpub/wwwroot/eInvoice/storage/outbound';
+
+            if (fs.existsSync(networkPath)) {
+                const companies = fs.readdirSync(networkPath, { withFileTypes: true })
+                    .filter(dirent => dirent.isDirectory())
+                    .map(dirent => dirent.name);
+
+                for (const company of companies) {
+                    const companyPath = path.join(networkPath, company);
+
+                    if (fs.existsSync(companyPath)) {
+                        const dateFolders = fs.readdirSync(companyPath, { withFileTypes: true })
+                            .filter(dirent => dirent.isDirectory())
+                            .map(dirent => dirent.name);
+
+                        for (const dateFolder of dateFolders) {
+                            try {
+                                // Parse date folder (expected format: YYYY-MM-DD)
+                                const folderDate = new Date(dateFolder);
+
+                                if (folderDate < threeMonthsAgo) {
+                                    const folderPath = path.join(companyPath, dateFolder);
+
+                                    // Count files before deletion
+                                    const files = fs.readdirSync(folderPath);
+                                    filesDeleted += files.length;
+
+                                    // Delete the entire folder
+                                    fs.rmSync(folderPath, { recursive: true, force: true });
+                                    console.log(`Deleted folder: ${folderPath} (${files.length} files)`);
+                                }
+                            } catch (folderError) {
+                                console.error(`Error processing folder ${dateFolder}:`, folderError);
+                                errors.push(`Failed to delete folder ${dateFolder}: ${folderError.message}`);
+                            }
+                        }
+                    }
+                }
+            } else {
+                errors.push(`Network storage path not found: ${networkPath}`);
+            }
+        } catch (fileError) {
+            console.error('Error cleaning up files:', fileError);
+            errors.push(`File cleanup failed: ${fileError.message}`);
+        }
+
+        console.log(`Cleanup completed. Files deleted: ${filesDeleted}, Records deleted: ${recordsDeleted}`);
+
+        res.json({
+            success: true,
+            filesDeleted,
+            recordsDeleted,
+            errors: errors.length > 0 ? errors : null,
+            cutoffDate: threeMonthsAgo.toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error during cleanup:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -1788,7 +2134,10 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
                         fileName,
                         filePath: processedData.filePath || fileName,
                         status: 'Failed',
-                        error: 'TIN mismatch between authenticated user and document'
+                        error: 'TIN mismatch between authenticated user and document',
+                        type,
+                        company,
+                        date
                     });
 
                     return res.status(400).json({
@@ -1818,7 +2167,10 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
                         fileName,
                         filePath: processedData.filePath || fileName,
                         status: 'Failed',
-                        error: JSON.stringify(errorDetails)
+                        error: JSON.stringify(errorDetails),
+                        type,
+                        company,
+                        date
                     });
 
                     return res.status(400).json({
@@ -1844,7 +2196,10 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
                             message: errorMessage,
                             activityId,
                             type: 'SERVER_ERROR'
-                        })
+                        }),
+                        type,
+                        company,
+                        date
                     });
 
                     return res.status(500).json({
@@ -1916,7 +2271,10 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
                     submissionUid: submissionUid,
                     fileName,
                     filePath: processedData.filePath || fileName,
-                    status: 'Submitted'
+                    status: 'Submitted',
+                    type,
+                    company,
+                    date
                 };
 
                 // First update the submission status in database
@@ -1950,7 +2308,7 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
 
                 // Initial delay of 5 seconds before first poll as recommended by LHDN
                 setTimeout(() => {
-                    pollSubmissionStatus(submissionUid, fileName, invoice_number, req)
+                    pollSubmissionStatus(submissionUid, fileName, invoice_number, req, type, company, date)
                         .then(pollResult => {
                             console.log(`Polling completed for ${submissionUid}:`, pollResult);
                         })
@@ -2005,7 +2363,10 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
                     fileName,
                     filePath: processedData.filePath || fileName,
                     status: 'Rejected',
-                    error: JSON.stringify(rejectedDoc.error || rejectedDoc)
+                    error: JSON.stringify(rejectedDoc.error || rejectedDoc),
+                    type,
+                    company,
+                    date
                 });
 
                 return res.status(400).json({
@@ -2088,7 +2449,10 @@ router.post('/:fileName/submit-to-lhdn', auth.isApiAuthenticated, async (req, re
                     fileName,
                     filePath: error.filePath || fileName,
                     status: 'Failed',
-                    error: error.message
+                    error: error.message,
+                    type,
+                    company,
+                    date
                 };
 
                 await submitter.updateSubmissionStatus(statusData);
@@ -2899,6 +3263,9 @@ router.post('/:fileName/submit-to-lhdn-consolidated', auth.isApiAuthenticated, a
                     fileName,
                     filePath: processedData.filePath || fileName,
                     status: 'Submitted',
+                    type,
+                    company,
+                    date
                 });
 
                 // Then update the Excel file
@@ -2918,7 +3285,7 @@ router.post('/:fileName/submit-to-lhdn-consolidated', auth.isApiAuthenticated, a
 
                 // Initial delay of 5 seconds before first poll as recommended by LHDN
                 setTimeout(() => {
-                    pollSubmissionStatus(submissionUid, fileName, invoice_number, req)
+                    pollSubmissionStatus(submissionUid, fileName, invoice_number, req, type, company, date)
                         .then(pollResult => {
                             console.log(`Polling completed for ${submissionUid}:`, pollResult);
                         })
@@ -2973,7 +3340,10 @@ router.post('/:fileName/submit-to-lhdn-consolidated', auth.isApiAuthenticated, a
                     fileName,
                     filePath: processedData.filePath || fileName,
                     status: 'Rejected',
-                    error: JSON.stringify(rejectedDoc.error || rejectedDoc)
+                    error: JSON.stringify(rejectedDoc.error || rejectedDoc),
+                    type,
+                    company,
+                    date
                 });
 
                 return res.status(400).json({
@@ -3014,7 +3384,10 @@ router.post('/:fileName/submit-to-lhdn-consolidated', auth.isApiAuthenticated, a
                     fileName,
                     filePath: error.filePath || fileName,
                     status: 'Failed',
-                    error: error.message
+                    error: error.message,
+                    type,
+                    company,
+                    date
                 });
             } catch (statusError) {
                 console.error('Failed to update status:', statusError);

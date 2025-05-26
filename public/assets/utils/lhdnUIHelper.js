@@ -190,64 +190,97 @@ const lhdnUIHelper = (function() {
         // Merge options
         const mergedOptions = { ...defaultOptions, ...options };
 
-        // Create modal HTML
-        const modalId = 'lhdnErrorModal';
+        // Create modern modal HTML - Consistent design with version modal
+        const modalId = 'modernLhdnErrorModal';
         let modalHTML = `
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">
-                    <i class="fas fa-exclamation-triangle me-2"></i>${mergedOptions.title}
-                </h5>
-            </div>
-            <div class="modal-body">
-                <div class="error-code mb-2">
-                    <span class="badge bg-danger">${formattedError.code}</span>
+            <div class="modern-modal-content">
+                <div class="modal-header-section">
+                    <div class="modal-brand">
+                        <div class="brand-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <h1 class="modal-title">${mergedOptions.title}</h1>
+                            <p class="modal-subtitle">Please review the details below</p>
+                        </div>
+                    </div>
+                    <div class="modal-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Error Code</span>
+                            <span class="meta-value">${formattedError.code}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Status</span>
+                            <span class="meta-value">Failed</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="error-message mb-3">
-                    <p class="mb-0">${formattedError.message}</p>
-                </div>
+
+                <div class="modal-content-section" style="padding: 2rem;">
+                    <div class="error-code-badge">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        ${formattedError.code}
+                    </div>
+
+                    <div class="error-message">
+                        <h6><i class="fas fa-exclamation-circle"></i> LHDN Submission Error</h6>
+                        <p>${formattedError.message}</p>
+                    </div>
         `;
 
         // Add details if available and showDetails is true
         if (mergedOptions.showDetails && formattedError.details && formattedError.details.length > 0) {
             modalHTML += `
-                <div class="error-details mb-3">
-                    <h6 class="fw-bold">Details:</h6>
-                    <ul class="mb-0 text-start">
+                <div class="error-list-container">
+                    <div class="error-group">
+                        <div class="error-group-header">
+                            <i class="fas fa-list"></i>
+                            <span>Error Details</span>
+                        </div>
+                        <ul class="error-list">
             `;
 
             // Add each detail as a list item with improved formatting
-            formattedError.details.forEach(detail => {
+            formattedError.details.forEach((detail, index) => {
+                let errorText = '';
                 if (typeof detail === 'string') {
-                    modalHTML += `<li>${detail}</li>`;
+                    errorText = detail;
                 } else if (typeof detail === 'object') {
                     // Format object details more clearly
                     if (detail.code && detail.message) {
                         // If it has code and message, format as code: message
-                        modalHTML += `<li><strong>${detail.code}</strong>: ${detail.message}</li>`;
+                        errorText = `<strong>${detail.code}</strong>: ${detail.message}`;
                     } else if (detail.message) {
                         // If it only has message
-                        modalHTML += `<li>${detail.message}</li>`;
+                        errorText = detail.message;
                     } else if (detail.propertyPath) {
                         // If it has a propertyPath, show that
-                        modalHTML += `<li>Field: <code>${detail.propertyPath}</code> - ${detail.message || 'Invalid value'}</li>`;
+                        errorText = `Field: <code>${detail.propertyPath}</code> - ${detail.message || 'Invalid value'}`;
                     } else {
                         // Fallback to JSON string for other objects
                         try {
                             // Try to format the object nicely
-                            const detailText = Object.entries(detail)
+                            errorText = Object.entries(detail)
                                 .map(([key, value]) => `<strong>${key}</strong>: ${value}`)
                                 .join(', ');
-                            modalHTML += `<li>${detailText}</li>`;
                         } catch (e) {
                             // Fallback to simple JSON
-                            modalHTML += `<li>${JSON.stringify(detail)}</li>`;
+                            errorText = JSON.stringify(detail);
                         }
                     }
                 }
+
+                modalHTML += `
+                    <li class="error-item">
+                        <span class="error-number">${index + 1}</span>
+                        <span class="error-text">${errorText}</span>
+                    </li>
+                `;
             });
 
             modalHTML += `
-                    </ul>
+                        </ul>
+                    </div>
                 </div>
             `;
         }
@@ -255,45 +288,50 @@ const lhdnUIHelper = (function() {
         // Add suggestion if showSuggestion is true
         if (mergedOptions.showSuggestion && formattedError.suggestion) {
             modalHTML += `
-                <div class="error-suggestion p-3 bg-light rounded">
-                    <h6 class="fw-bold"><i class="fas fa-lightbulb text-warning me-2"></i>Suggestion:</h6>
-                    <p class="mb-0">${formattedError.suggestion}</p>
-                </div>
+                    <div class="error-suggestion">
+                        <h6><i class="fas fa-lightbulb"></i> Suggestion</h6>
+                        <p>${formattedError.suggestion}</p>
+                    </div>
             `;
         }
 
         // Add technical details section for CF414 phone number error
         if (formattedError.code === 'CF414') {
             modalHTML += `
-                <div class="technical-details mt-3 p-3 bg-light rounded">
-                    <h6 class="fw-bold"><i class="fas fa-info-circle text-info me-2"></i>How to Fix:</h6>
-                    <p>The supplier's phone number must be at least 8 characters long. Please update the phone number in your Excel file and try again.</p>
-                    <p class="mb-0 text-muted small">Field path: <code>Invoice.AccountingSupplierParty.Party.Contact.Telephone</code></p>
-                </div>
+                    <div class="error-information">
+                        <h6><i class="fas fa-info-circle"></i> How to Fix</h6>
+                        <p>The supplier's phone number must be at least 8 characters long. Please update the phone number in your Excel file and try again.</p>
+                    </div>
             `;
         }
 
         // Add technical details section for DS302 duplicate submission
         if (formattedError.code === 'DS302' || formattedError.code === 'DUPLICATE_SUBMISSION') {
             modalHTML += `
-                <div class="technical-details mt-3 p-3 bg-light rounded">
-                    <h6 class="fw-bold"><i class="fas fa-info-circle text-info me-2"></i>Information:</h6>
-                    <p class="mb-0">This document has already been submitted to LHDN. You can check its status in the table below.</p>
-                </div>
+                    <div class="error-information">
+                        <h6><i class="fas fa-info-circle"></i> Information</h6>
+                        <p>This document has already been submitted to LHDN. You can check its status in the table below.</p>
+                    </div>
             `;
         }
 
-        // Show the modal using SweetAlert2
+        // Close the error content
+        modalHTML += `
+                </div>
+            </div>
+        `;
+
+        // Show the modern modal using SweetAlert2
         Swal.fire({
-            title: mergedOptions.title,
             html: modalHTML,
-            icon: 'error',
+            showConfirmButton: true,
             confirmButtonText: 'I Understand',
-            confirmButtonColor: '#3085d6',
-            width: 600,
+            width: 580, // Reduced from 800 for better proportions
+            padding: '0',
+            background: 'transparent',
             customClass: {
-                confirmButton: 'btn btn-primary',
-                htmlContainer: 'text-start' // Left-align all content
+                popup: 'modern-modal enhanced-error-modal',
+                confirmButton: 'modern-btn modern-btn-primary'
             }
         }).then(() => {
             // Call onClose callback if provided

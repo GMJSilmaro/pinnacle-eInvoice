@@ -684,6 +684,134 @@
     text-decoration: underline;
 }
 
+/* Already Logged In Modal specific styles */
+.modal-header.already-logged-in {
+    text-align: center !important;
+    margin-bottom: 2rem !important;
+    display: block !important;
+    padding-top: 1rem !important;
+}
+
+.modal-header.already-logged-in::before {
+    content: '';
+    position: absolute;
+    top: -2rem;
+    left: -2rem;
+    right: -2rem;
+    height: 7rem;
+    background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
+    border-radius: 24px 24px 50% 50%;
+    z-index: -1;
+}
+
+.already-logged-in .info-icon {
+    width: 48px;
+    height: 48px;
+    background: #F0FDF4;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+}
+
+.already-logged-in .info-icon i {
+    font-size: 24px;
+    color: #16A34A;
+}
+
+.already-logged-in .modal-title {
+    color: #1F2937;
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.already-logged-in-body {
+    text-align: left;
+    color: #6B7280;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+}
+
+.already-logged-in-body .options-list {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+}
+
+.already-logged-in-body .options-list li {
+    margin-bottom: 0.5rem;
+    color: #374151;
+}
+
+.already-logged-in-body .options-list li strong {
+    color: #1F2937;
+}
+
+.already-logged-in-footer {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+}
+
+.already-logged-in-footer .btn {
+    flex: 1;
+    min-width: 120px;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.already-logged-in-footer .btn-outline-secondary {
+    background: #F3F4F6;
+    color: #374151;
+    border: 1px solid #D1D5DB;
+}
+
+.already-logged-in-footer .btn-outline-secondary:hover {
+    background: #E5E7EB;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.already-logged-in-footer .btn-success {
+    background: #16A34A;
+    color: white;
+}
+
+.already-logged-in-footer .btn-success:hover {
+    background: #15803D;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
+}
+
+.already-logged-in-footer .btn-primary {
+    background: #4F46E5;
+    color: white;
+}
+
+.already-logged-in-footer .btn-primary:hover {
+    background: #4338CA;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+}
+
+@media (max-width: 480px) {
+    .already-logged-in-footer {
+        flex-direction: column;
+    }
+
+    .already-logged-in-footer .btn {
+        flex: none;
+        width: 100%;
+    }
+}
+
 @keyframes shimmer {
     0% {
         background-position: -1000px 0;

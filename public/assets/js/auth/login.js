@@ -410,6 +410,10 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (error.status === 404) {
                 showLoginError('Login service not available. Please try again or contact support.');
                 console.error('Login endpoint not found. Check server configuration.');
+            } else if (error.status === 409) {
+                // Handle 409 Conflict - User already logged in
+                console.log('User already logged in (409 Conflict)');
+                showAlreadyLoggedInModal();
             } else if (error.status === 429) {
                 showLoginError('Too many login attempts. Please try again later.');
             } else if (error.status === 500) {
@@ -639,5 +643,125 @@ document.addEventListener('DOMContentLoaded', function() {
             modal.classList.remove('modal-closing');
             modal.style.display = 'none';
         }, 150);
+    }
+
+    // Function to show "Already Logged In" modal for 409 Conflict errors
+    function showAlreadyLoggedInModal() {
+        const modalHTML = `
+            <div class="modal-overlay" id="alreadyLoggedInModal">
+                <div class="modal-container">
+                    <div class="modal-header already-logged-in">
+                        <div class="info-icon">
+                            <i class="bi bi-person-check-fill"></i>
+                        </div>
+                        <h4 class="modal-title">Already Logged In</h4>
+                        <p>You are already logged into your account.</p>
+                    </div>
+                    <div class="modal-body already-logged-in-body">
+                        <p>It looks like you're already signed in to your account. You can:</p>
+                        <ul class="options-list">
+                            <li><strong>Continue to Dashboard</strong> - Access your account normally</li>
+                            <li><strong>Force New Login</strong> - End all other sessions and start fresh</li>
+                        </ul>
+                        <p class="text-muted small">If you're having trouble accessing your account, try forcing a new login.</p>
+                    </div>
+                    <div class="already-logged-in-footer">
+                        <button class="btn btn-outline-secondary" data-action="cancel">Cancel</button>
+                        <button class="btn btn-success" data-action="dashboard">Go to Dashboard</button>
+                        <button class="btn btn-primary" data-action="force-login">Force New Login</button>
+                    </div>
+                    <div class="modal-help">
+                        <a href="/help/login-issues">Having login issues?</a>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        const modal = document.getElementById('alreadyLoggedInModal');
+
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+
+        // Force reflow
+        modal.offsetHeight;
+
+        // Add visible class after a frame
+        requestAnimationFrame(() => {
+            modal.classList.add('visible');
+        });
+
+        // Add event listeners
+        setupAlreadyLoggedInModalListeners(modal);
+    }
+
+    // Function to setup "Already Logged In" modal listeners
+    function setupAlreadyLoggedInModalListeners(modal) {
+        if (!modal) return;
+
+        const dashboardBtn = modal.querySelector('[data-action="dashboard"]');
+        const forceLoginBtn = modal.querySelector('[data-action="force-login"]');
+        const cancelBtn = modal.querySelector('[data-action="cancel"]');
+
+        dashboardBtn?.addEventListener('click', () => {
+            closeAlreadyLoggedInModalWithAnimation(() => {
+                // Show success message and redirect to dashboard
+                showLoginSuccess();
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1000);
+            });
+        });
+
+        forceLoginBtn?.addEventListener('click', () => {
+            closeAlreadyLoggedInModalWithAnimation(() => {
+                // Set the reconnect field to 'force' and submit the form
+                if (reconnectField) {
+                    reconnectField.value = 'force';
+                }
+                loginForm.submit();
+            });
+        });
+
+        cancelBtn?.addEventListener('click', () => {
+            closeAlreadyLoggedInModalWithAnimation();
+        });
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeAlreadyLoggedInModalWithAnimation();
+            }
+        });
+
+        // Add keyboard listeners
+        document.addEventListener('keydown', function modalKeyHandler(e) {
+            if (!modal) {
+                document.removeEventListener('keydown', modalKeyHandler);
+                return;
+            }
+
+            if (e.key === 'Escape') {
+                closeAlreadyLoggedInModalWithAnimation();
+            } else if (e.key === 'Enter' && document.activeElement.tagName !== 'BUTTON') {
+                dashboardBtn?.click();
+            }
+        });
+    }
+
+    // Function to handle "Already Logged In" modal closing animation
+    function closeAlreadyLoggedInModalWithAnimation(callback) {
+        const modal = document.getElementById('alreadyLoggedInModal');
+        if (!modal) return;
+
+        modal.classList.remove('visible');
+        modal.classList.add('modal-closing');
+
+        setTimeout(() => {
+            if (callback) {
+                callback();
+            }
+            modal.remove();
+            document.body.style.overflow = '';
+        }, 150); // Match the transition duration
     }
 });

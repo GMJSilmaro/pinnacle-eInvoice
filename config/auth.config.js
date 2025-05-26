@@ -29,7 +29,7 @@ module.exports = {
     passwordField: 'password',
     sessionFields: [
       'ID', 'Username', 'Email', 'Admin', 'ValidStatus',
-      'LastLoginTime', 'TIN', 'IDType', 'IDValue', 'FullName', 
+      'LastLoginTime', 'TIN', 'IDType', 'IDValue', 'FullName',
     ]
   },
 
@@ -47,7 +47,6 @@ module.exports = {
     '/public',
     '/uploads',
     '/vendor',
-    '/api/health',
-    '/'
+    '/api/health'
   ]
-}; 
+};

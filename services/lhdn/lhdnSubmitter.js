@@ -604,6 +604,45 @@ class LHDNSubmitter {
   async updateSubmissionStatus(data, transaction = null) {
     try {
       const now = new Date();
+
+      // Extract additional data from processed data if available
+      let additionalData = {};
+
+      // Try to get processed data to extract supplier, receiver, amount, etc.
+      if (data.fileName && data.type && data.company && data.date) {
+        try {
+          const processedData = await this.getProcessedData(data.fileName, data.type, data.company, data.date);
+          if (processedData && Array.isArray(processedData) && processedData.length > 0) {
+            const firstDoc = processedData[0];
+
+            additionalData = {
+              company: data.company || null,
+              supplier: firstDoc.supplier?.name || null,
+              receiver: firstDoc.buyer?.name || null,
+              source: 'Excel',
+              amount: firstDoc.summary?.amounts?.payableAmount?.toString() || null,
+              document_type: firstDoc.header?.invoiceType || null,
+              submitted_by: this.req?.session?.user?.username || null
+            };
+          }
+        } catch (processError) {
+          console.warn('Could not extract additional data from processed file:', processError.message);
+          // Set basic additional data
+          additionalData = {
+            company: data.company || null,
+            source: 'Excel',
+            submitted_by: this.req?.session?.user?.username || null
+          };
+        }
+      } else {
+        // Set basic additional data when file processing is not available
+        additionalData = {
+          company: data.company || null,
+          source: 'Excel',
+          submitted_by: this.req?.session?.user?.username || null
+        };
+      }
+
       const submissionData = {
         invoice_number: data.invoice_number,
         UUID: data.uuid || 'NA',
@@ -613,8 +652,14 @@ class LHDNSubmitter {
         status: data.status,
         date_submitted: now,
         created_at: now,
-        updated_at: now
+        updated_at: now,
+        ...additionalData
       };
+
+      // Set date_sync when status indicates completion
+      if (data.status && ['Completed', 'Valid', 'Synced'].includes(data.status)) {
+        submissionData.date_sync = now;
+      }
 
       // Check if record exists
       const existing = await prisma.wP_OUTBOUND_STATUS.findFirst({

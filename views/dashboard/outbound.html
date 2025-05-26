@@ -20,6 +20,8 @@
 <link href="/assets/css/pages/outbound/outbound-table.css" rel="stylesheet">
 <!-- Excel Loading Animation CSS -->
 <link href="/assets/css/pages/outbound/excel-loading.css" rel="stylesheet">
+<!-- Invoice Preview Modal Enhancements -->
+<link href="/assets/css/components/invoice-preview-modal.css" rel="stylesheet">
 
 <script src="/assets/js/config/validation-translations.js"></script>
 
@@ -193,16 +195,16 @@
      .tutorial-content {
         position: relative;
     }
-    
+
     .tutorial-progress {
         padding: 15px 15px 5px;
         background-color: #f8f9fa;
     }
-    
+
     .step-indicators {
         margin-top: 10px;
     }
-    
+
     .step-dot {
         width: 12px;
         height: 12px;
@@ -212,32 +214,32 @@
         cursor: pointer;
         transition: all 0.3s ease;
     }
-    
+
     .step-dot.active {
         background-color: #0d6efd;
         transform: scale(1.2);
     }
-    
+
     .tutorial-step {
         display: none;
     }
-    
+
     .tutorial-step.active {
         display: block;
     }
-    
+
     .step-content {
         min-height: 300px;
         max-height: 60vh;
         overflow-y: auto;
     }
-    
+
     .step-image img {
         max-height: 200px;
         object-fit: contain;
         border: 1px solid #dee2e6;
     }
-    
+
     /* Highlight elements during tutorial */
     .tutorial-highlight {
         position: relative;
@@ -246,7 +248,7 @@
         border-radius: 4px;
         transition: box-shadow 0.3s ease;
     }
-    
+
     /* Tutorial tip styles */
     .tutorial-tip {
         background-color: #e7f5ff;
@@ -255,7 +257,7 @@
         margin: 15px 0;
         border-radius: 4px;
     }
-    
+
     .tutorial-note {
         background-color: #fff3cd;
         border-left: 4px solid #ffc107;
@@ -263,19 +265,19 @@
         margin: 15px 0;
         border-radius: 4px;
     }
-    
+
     /* Modal header styling */
     #tutorialModal .modal-header {
         background: linear-gradient(135deg, #0d6efd, #0a58ca);
     }
-    
+
     /* Progress bar styling */
     #tutorialModal .progress {
         height: 8px;
         border-radius: 4px;
         background-color: #e9ecef;
     }
-    
+
     #tutorialModal .progress-bar {
         background: linear-gradient(90deg, #0d6efd, #0a58ca);
         transition: width 0.5s ease;
@@ -293,7 +295,7 @@
         z-index: 1050;
         display: none;
     }
-    
+
     /* Prevent scrolling during tutorial */
     body.tour-active {
         overflow: hidden !important;
@@ -301,7 +303,7 @@
         width: 100%;
         height: 100%;
     }
-    
+
     .guided-tour-tooltip {
         position: fixed;
         width: min(360px, 90vw);
@@ -317,7 +319,7 @@
         display: flex;
         flex-direction: column;
     }
-    
+
     /* Header styling */
     .tooltip-header {
         display: flex;
@@ -331,7 +333,7 @@
         z-index: 3;
         flex-shrink: 0;
     }
-    
+
     .tooltip-step-indicator {
         font-size: 14px;
         font-weight: 600;
@@ -340,7 +342,7 @@
         padding: 4px 12px;
         border-radius: 20px;
     }
-    
+
     .tooltip-close-btn {
         background: none;
         border: none;
@@ -356,12 +358,12 @@
         border-radius: 50%;
         transition: all 0.2s;
     }
-    
+
     .tooltip-close-btn:hover {
         background-color: rgba(108, 117, 125, 0.1);
         color: #495057;
     }
-    
+
     /* Body styling */
     .tooltip-body {
         padding: 20px;
@@ -370,33 +372,33 @@
         min-height: 100px;
         max-height: calc(90vh - 180px);
     }
-    
+
     .tooltip-title {
         font-size: clamp(16px, 4vw, 18px);
         font-weight: 600;
         color: #212529;
         margin-bottom: 16px;
     }
-    
+
     .tooltip-content {
         font-size: clamp(13px, 3.5vw, 14px);
         line-height: 1.6;
         color: #495057;
     }
-    
+
     .tooltip-content p {
         margin-bottom: 12px;
     }
-    
+
     .tooltip-content ul, .tooltip-content ol {
         padding-left: 20px;
         margin-bottom: 12px;
     }
-    
+
     .tooltip-content li {
         margin-bottom: 6px;
     }
-    
+
     /* Progress styling */
     .tooltip-progress {
         padding: 12px 20px;
@@ -407,7 +409,7 @@
         z-index: 3;
         flex-shrink: 0;
     }
-    
+
     .tooltip-progress .progress {
         height: 4px;
         border-radius: 2px;
@@ -415,12 +417,12 @@
         margin-bottom: 12px;
         overflow: hidden;
     }
-    
+
     .tooltip-progress .progress-bar {
         background: linear-gradient(90deg, #0d6efd, #6610f2);
         transition: width 0.5s ease;
     }
-    
+
     .step-dot {
         width: 8px;
         height: 8px;
@@ -430,12 +432,12 @@
         cursor: pointer;
         transition: all 0.3s ease;
     }
-    
+
     .step-dot.active {
         background-color: #0d6efd;
         transform: scale(1.3);
     }
-    
+
     /* Footer styling */
     .tooltip-footer {
         display: flex;
@@ -450,7 +452,7 @@
         flex-shrink: 0;
         height: 56px;
     }
-    
+
     .tooltip-btn {
         border: none;
         background: none;
@@ -467,32 +469,32 @@
         justify-content: center;
         gap: 4px;
     }
-    
+
     .tooltip-btn-prev {
         color: #6c757d;
         background-color: #f8f9fa;
     }
-    
+
     .tooltip-btn-prev:hover:not(:disabled) {
         background-color: #e9ecef;
     }
-    
+
     .tooltip-btn-prev:disabled {
         opacity: 0.5;
         cursor: not-allowed;
     }
-    
+
     .tooltip-btn-skip {
         color: #dc3545;
         background-color: #fff;
         border: 1px solid #dc3545;
     }
-    
+
     .tooltip-btn-skip:hover {
         background-color: #dc3545;
         color: #fff;
     }
-    
+
     .tooltip-btn-next {
         color: #fff;
         background-color: #0d6efd;
@@ -500,11 +502,11 @@
         padding: 8px 20px;
         min-width: 80px;
     }
-    
+
     .tooltip-btn-next:hover {
         background-color: #0b5ed7;
     }
-    
+
     /* Highlight elements during tutorial */
     .tour-highlight {
         position: relative !important;
@@ -516,14 +518,14 @@
         animation: glow-highlight 2s infinite !important;
         isolation: isolate;
     }
-    
+
     /* Row highlighting for table rows */
     .tour-highlight-row {
         position: relative !important;
         z-index: 1054 !important;
         background-color: rgba(13, 110, 253, 0.04) !important;
     }
-    
+
     /* Special handling for table cells */
     .outbound-table td.tour-highlight,
     .outbound-table th.tour-highlight {
@@ -532,21 +534,21 @@
         background-color: rgba(255, 255, 255, 0.98) !important;
         animation: glow-highlight 2s infinite;
     }
-    
+
     /* Special handling for action buttons */
     .tour-highlight .outbound-action-btn {
         position: relative !important;
         z-index: 1057 !important;
         animation: glow-highlight 2s infinite;
     }
-    
+
     /* Special handling for checkboxes */
     .tour-highlight .outbound-checkbox {
         position: relative !important;
         z-index: 1057 !important;
         animation: glow-highlight 2s infinite;
     }
-    
+
 /* Enhanced UI Styles */
 .statistics-section .card,
 .quick-actions-section .card,
@@ -660,12 +662,12 @@
     .statistics-section .card {
         margin-bottom: 1rem;
     }
-    
+
     .quick-actions-section .btn {
         width: 100%;
         margin-bottom: 0.5rem;
     }
-    
+
     .enhanced-filter-section .form-floating {
         margin-bottom: 1rem;
     }
@@ -791,13 +793,13 @@
     .quick-filters {
         flex-wrap: wrap;
     }
-    
+
     .quick-filters .btn {
         flex: 1 1 auto;
         min-width: calc(33.333% - 8px);
         margin-bottom: 8px;
     }
-    
+
     .quick-filters .ms-auto {
         width: 100%;
         margin-top: 0.5rem;
@@ -929,13 +931,13 @@
     .consolidation-section {
         padding: 1rem;
     }
-    
+
     .detail-item {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.25rem;
     }
-    
+
     .detail-item .label {
         min-width: auto;
     }
@@ -1464,7 +1466,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Welcome Card - Full width -->
     <div class="profile-welcome-section mb-4">
         <!-- Welcome Card content -->
@@ -1476,7 +1478,7 @@
                 </div>
                 <div class="welcome-content">
                     <h3 class="text-xl font-semibold text-white-800 md:text-2xl tracking-tight">Outbound</h3>
-                            <p class="mb-0 cursor-pointer" data-bs-placement="bottom" data-bs-html="true" 
+                            <p class="mb-0 cursor-pointer" data-bs-placement="bottom" data-bs-html="true"
                             title="">
                     Manage and track your outbound document submissions, including validation and submission status.
                 </p>
@@ -1500,7 +1502,7 @@
             </div>
         </div>
         </div>
-  
+
         <!-- Content Section - With margins -->
         <div class="content-section">
       <!-- Cards Section -->
@@ -1556,7 +1558,7 @@
             </div>
             <span class="card-title-new">INVALID</span>
         </div>
-         
+
         <!-- PENDING Card -->
         <div class="info-card pending-card">
             <div class="card-info">
@@ -1590,10 +1592,10 @@
         </div>
         <span class="card-title-new">CANCELLED</span>
     </div>
-     
+
     </div>
 
- 
+
 
     <!-- Statistics Section -->
     <div class="statistics-section mb-4">
@@ -1612,7 +1614,7 @@
             </div>
           </div>
         </div>
-        
+
         <!-- Validate TIN -->
         <div class="col-md-5">
             <div class="card shadow-sm h-100">
@@ -1620,7 +1622,7 @@
                     <h6 class="card-title d-flex align-items-center mb-2">
                         <i class="bi bi-shield-check me-2"></i>
                         TIN Validation
-                        <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
+                        <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true"
                            title="<div class='p-2'><strong>TIN Validation:</strong><br><small>Validate Tax Identification Numbers (TIN) before adding to invoice</small></div>"></i>
                     </h6>
 
@@ -1641,9 +1643,9 @@
                             <div class="d-flex align-items-center">
                                 <i class="bi bi-clock-history me-2"></i>
                                 <small class="fw-medium">Recent Validations</small>
-                                <i class="bi bi-info-circle ms-2 text-primary" style="font-size: 12px; cursor: pointer;" 
-                                   data-bs-toggle="tooltip" 
-                                   data-bs-html="true" 
+                                <i class="bi bi-info-circle ms-2 text-primary" style="font-size: 12px; cursor: pointer;"
+                                   data-bs-toggle="tooltip"
+                                   data-bs-html="true"
                                    title="<div class='p-2 text-start'>
                                            <strong>Validation Limits:</strong><br>
                                            • 30-second cooldown between identical validations<br>
@@ -1695,7 +1697,7 @@
               <h6 class="card-title d-flex align-items-center mb-3">
                 <i class="bi bi-bar-chart-fill me-2"></i>
                 Submission Success Rate
-                <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true" 
+                <i class="bi bi-info-circle ms-2" data-bs-toggle="tooltip" data-bs-html="true"
                    title="<div class='p-2'>
                            <strong>How Success Rate is Calculated:</strong><br>
                            <small>Success Rate = (Submitted Documents / Total Documents) × 100<br>
@@ -1713,7 +1715,7 @@
                                 </div>">0%</span>
                   </div>
                   <div class="progress" style="height: 25px;">
-                    <div class="progress-bar bg-success" role="progressbar" style="width: 0%;" 
+                    <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"
                          aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                   </div>
                 </div>
@@ -1733,7 +1735,7 @@
                       <span class="text-success small">0%</span>
                     </div>
                     <div class="progress" style="height: 10px;">
-                      <div class="progress-bar bg-success" role="progressbar" style="width: 0%;" 
+                      <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"
                            aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                   </div>
@@ -1752,7 +1754,7 @@
                       <span class="text-danger small">0%</span>
                     </div>
                     <div class="progress" style="height: 10px;">
-                      <div class="progress-bar bg-danger" role="progressbar" style="width: 0%;" 
+                      <div class="progress-bar bg-danger" role="progressbar" style="width: 0%;"
                            aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                   </div>
@@ -1771,7 +1773,7 @@
                       <span class="text-warning small">0%</span>
                     </div>
                     <div class="progress" style="height: 10px;">
-                      <div class="progress-bar bg-warning" role="progressbar" style="width: 0%;" 
+                      <div class="progress-bar bg-warning" role="progressbar" style="width: 0%;"
                            aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                   </div>
@@ -1788,7 +1790,7 @@
           </div>
         </div>
 
-   
+
     </div>
             <!-- Table Section -->
             <div class="table-container-wrapper">
@@ -1797,10 +1799,14 @@
                         <div class="table-header-content">
                             <h2 class="table-title">Outbound Document List</h2>
                             <div class="table-actions">
+                                <button id="syncAmountsBtn" class="btn btn-outline-primary btn-sm" title="Sync amount data from inbound records">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                    Sync Amounts
+                                </button>
                             </div>
                         </div>
-                       
-                        
+
+
                     </div>
                     <div class="table-controls">
                         <div class="d-flex align-items-center gap-1">
@@ -1816,7 +1822,7 @@
                         <div class="responsive-table-container">
                             <div class="table-section">
                                 <div class="outbound-table-container">
-               
+
                                     <div>
                                         <!-- Primary Filters Row -->
                                         <div class="row g-3 mb-3">
@@ -1824,11 +1830,11 @@
                                             <div class="col-md-4">
                                                 <div class="search-wrapper position-relative">
                                                     <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-                                                    <input type="text" class="form-control form-control-lg ps-5" id="globalSearch" 
+                                                    <input type="text" class="form-control form-control-lg ps-5" id="globalSearch"
                                                         placeholder="Search documents...">
                                                 </div>
                                             </div>
-                                            
+
                                             <!-- Quick Filters -->
                                             <div class="col-md-8">
                                                 <div class="quick-filters d-flex gap-2">
@@ -1838,19 +1844,29 @@
                                                     <button class="btn outbound-action-btn submit active" data-filter="pending">
                                                         <i class="bi bi-clock-history me-1"></i>Pending
                                                     </button>
-                                                    <!-- <div class="ms-auto">
-                                                        <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
+                                                    <button class="btn outbound-action-btn submit" data-filter="staging"
+                                                            data-bs-toggle="tooltip"
+                                                            title="View staging database records (WP_OUTBOUND_STATUS)">
+                                                        <i class="bi bi-database me-1"></i>Staging
+                                                    </button>
+                                                    <div class="ms-auto">
+                                                        <button class="btn outbound-action-btn cancel" id="cleanupOldFiles"
+                                                                data-bs-toggle="tooltip"
+                                                                title="Delete files older than 3 months">
+                                                            <i class="bi bi-trash3 me-1"></i>Cleanup
+                                                        </button>
+                                                        <!-- <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
                                                             <i class="bi bi-eraser me-1"></i>Clear
                                                         </button>
                                                         <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
                                                             <i class="bi bi-sliders me-1"></i>Advanced
-                                                        </button>
-                                                    </div> -->
+                                                        </button> -->
+                                                    </div>
                                                 </div>
-                                                
+
                                             </div>
                                         </div>
-                    
+
                                         <!-- Advanced Filters (Collapsible) -->
                                         <div class="collapse" id="advancedFilters">
                                             <div class="advanced-filters-content border-top pt-3">
@@ -1870,12 +1886,12 @@
                                                             Filter documents by their upload date
                                                         </small>
                                                     </div>
-                    
-                                                        
+
+
                                                     </div>
                                                 </div>
-                    
-                                            
+
+
                                                 <!-- Filter Note -->
                                                 <div class="filter-note alert alert-info mt-3" role="alert">
                                                     <i class="bi bi-info-circle me-2"></i>
@@ -1883,7 +1899,7 @@
                                                         Use the filters above to narrow down your results. Active filters will appear below as tags that you can easily remove. Click the 'x' on any tag to remove that filter, or use 'Clear all filters' to reset.
                                                     </small>
                                                 </div>
-                    
+
                                                 <!-- Active Filters Display -->
                                                 <div class="active-filters mt-3 pt-3 border-top">
                                                     <div class="d-flex align-items-center">
@@ -1895,11 +1911,11 @@
                                                 </div>
                                             </div>
                                         </div>
-                      
+
                                     </div>
                                     <!-- End of new filter section -->
-                                  
-                    
+
+
                                         <table id="invoiceTable" class="outbound-table-responsive">
                                             <thead>
                                                 <tr>
@@ -1922,13 +1938,13 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                             
+
                                             </tbody>
                                         </table>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Loading Overlay -->
                         <div id="tableLoadingOverlay" class="table-loading-overlay d-none">
                             <div class="spinner-border text-primary" role="status">
@@ -1937,9 +1953,9 @@
                             <p class="mt-2">Fetching documents...</p>
                         </div>
                     </div>
-                    
-                    
-       
+
+
+
                     <div class="table-footer">
                         <div class="disclaimer-note mt-2">
                             <i class="bi bi-exclamation-circle"></i>
@@ -1952,7 +1968,7 @@
                         <div class="disclaimer-note mt-2" style="background: rgba(220, 53, 69, 0.1); color: #842029;">
                             <i class="bi bi-exclamation-triangle"></i>
                             <span><strong>Important Disclaimer:</strong> <br>
-                            Our platform provides validation services, but the ultimate responsibility for data accuracy lies with the user. 
+                            Our platform provides validation services, but the ultimate responsibility for data accuracy lies with the user.
                             <br>
                             We are not liable for any consequences, penalties, or issues arising from submission of incomplete, inaccurate or non-compliant data to LHDN.</span>
                         </div>
@@ -1969,13 +1985,13 @@
                                 </div>
                             </div>
 
-                            <div class="d-flex align-items-center justify-content-between mb-3" 
+                            <div class="d-flex align-items-center justify-content-between mb-3"
                                  id="consolidationHeader">
                                 <div class="d-flex align-items-center">
                                     <span class="badge rounded-pill bg-primary me-2" style="padding: 8px;" data-bs-toggle="tooltip" title="Consolidation allows grouping multiple invoices into a single submission">
                                         <i class="bi bi-boxes"></i>
                                     </span>
-                                    <h6 class="mb-0 text-primary fw-bold">LHDN e-Invoice Consolidation Requirements <i class="bi bi-info-circle-fill ms-1 small" data-bs-toggle="tooltip" data-bs-html="true" 
+                                    <h6 class="mb-0 text-primary fw-bold">LHDN e-Invoice Consolidation Requirements <i class="bi bi-info-circle-fill ms-1 small" data-bs-toggle="tooltip" data-bs-html="true"
                                         title="<div class='p-2'>
                                             <strong>Before Submitting a Consolidation:</strong><br>
                                             • Must Group multiple invoices together<br>
@@ -1985,8 +2001,8 @@
                                         </h6>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
-                                    <a href="https://www.hasil.gov.my/media/uwwehxwq/irbm-e-invoice-specific-guideline.pdf" 
-                                       target="_blank" 
+                                    <a href="https://www.hasil.gov.my/media/uwwehxwq/irbm-e-invoice-specific-guideline.pdf"
+                                       target="_blank"
                                        class="btn btn-sm btn-link text-primary p-0 d-flex align-items-center hover-effect"
                                        data-bs-toggle="tooltip"
                                        data-bs-html="true"
@@ -1999,12 +2015,12 @@
                                         <i class="bi bi-file-pdf fs-5"></i>
                                         <span class="ms-1 small">LHDN Guidelines</span>
                                     </a>
-                                    <button class="btn btn-sm btn-link text-primary p-0 d-flex align-items-center" 
-                                            type="button" 
+                                    <button class="btn btn-sm btn-link text-primary p-0 d-flex align-items-center"
+                                            type="button"
                                             id="toggleConsolidation"
-                                            data-bs-toggle="collapse" 
-                                            data-bs-target="#consolidationDetails" 
-                                            aria-expanded="false" 
+                                            data-bs-toggle="collapse"
+                                            data-bs-target="#consolidationDetails"
+                                            aria-expanded="false"
                                             aria-controls="consolidationDetails">
                                         <i class="bi bi-chevron-down toggle-icon fs-5"></i>
                                     </button>
@@ -2080,19 +2096,19 @@
                                 const toggleBtn = document.getElementById('toggleConsolidation');
                                 const consolidationHeader = document.getElementById('consolidationHeader');
                                 const consolidationDetails = document.getElementById('consolidationDetails');
-                                
+
                                 if (toggleBtn && consolidationDetails && consolidationHeader) {
                                     // Initialize collapse with Bootstrap
                                     const bsCollapse = new bootstrap.Collapse(consolidationDetails, {
                                         toggle: false
                                     });
-                                    
+
                                     // Add hover effects to header
                                     consolidationHeader.addEventListener('mouseenter', function() {
                                         this.style.transform = 'translateY(-2px)';
                                         this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
                                     });
-                                    
+
                                     consolidationHeader.addEventListener('mouseleave', function() {
                                         this.style.transform = 'translateY(0)';
                                         this.style.boxShadow = 'none';
@@ -2126,7 +2142,7 @@
                                         toggleBtn.setAttribute('aria-expanded', 'false');
                                         const icon = toggleBtn.querySelector('.toggle-icon');
                                         if (icon) {
-                                            icon.style.transform = 'rotate(0deg)'; 
+                                            icon.style.transform = 'rotate(0deg)';
                                         }
                                     });
 
@@ -2144,8 +2160,8 @@
                     </div>
                 </div>
             </div>
-        
-        
+
+
     </div>
     </div>
 </div>
@@ -2156,10 +2172,10 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div class="float-end">
-                    <a href="https://www.newpages.net/validate-tax-payer" 
-                       target="_blank" 
-                       class="btn btn-outline-secondary btn-sm" 
-                       data-bs-toggle="tooltip" 
+                    <a href="https://www.newpages.net/validate-tax-payer"
+                       target="_blank"
+                       class="btn btn-outline-secondary btn-sm"
+                       data-bs-toggle="tooltip"
                        title="Alternative TIN validation via NewPages">
                         <i class="bi bi-box-arrow-up-right me-1"></i>
                         Alternative Validator
@@ -2170,7 +2186,7 @@
                     TIN Validation Results
                 </h5>
                 <button type="button" class="btn-lhdn d-flex align-items-center justify-content-center" data-bs-dismiss="modal"></button>
-               
+
             </div>
             <div class="modal-body">
                 <div id="validationResults">
@@ -2405,7 +2421,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-{% endblock %} 
+{% endblock %}
 {% block scripts %}
 <script src="/assets/js/modules/excel/outbound-excel.js"></script>
 <script src="/assets/js/modules/tutorial/guided-tour.js"></script>
@@ -2452,7 +2468,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <!-- TIN Validation Form -->
                             <form id="tinValidationForm" class="needs-validation" novalidate>
                                 <div class="mb-1">
@@ -2460,7 +2476,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <input type="text" class="form-control" id="tinNumber" placeholder="Enter Tax Identification Number" required>
                                     <div class="invalid-feedback">Please enter a valid TIN number.</div>
                                 </div>
-                                
+
                                 <div class="mb-3">
                                     <label for="idType" class="form-label fw-medium">ID Type <span class="text-danger">*</span></label>
                                     <select class="form-select" id="idType" required>
@@ -2472,7 +2488,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     </select>
                                     <div class="invalid-feedback">Please select an ID type.</div>
                                 </div>
-                                
+
                                 <div class="mb-3">
                                     <label for="idValue" class="form-label fw-medium">ID Value <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control" id="idValue" placeholder="Enter ID value" required>
@@ -2482,7 +2498,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         For BRN, use your 12-digit business registration number
                                     </small>
                                 </div>
-                                
+
 
                                 <div class="d-grid mt-4">
                                     <button type="button" class="btn btn-lhdn" id="validateSingleTin">
@@ -2493,7 +2509,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             </form>
                         </div>
                     </div>
-                    
+
                     <!-- Right Column - Validation Results -->
                     <div class="col-md-7 bg-light" id="validationResultSection">
                         <div class="p-4">
@@ -2512,4 +2528,4 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}
