@@ -51,3 +51,4 @@ eInvoice_backup.rar
 .env copy
 .gitignore
 eInvoice_OLD_VERSION_SKP_GTES.rar
+config/AuthorizeToken.ini
