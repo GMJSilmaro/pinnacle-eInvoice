@@ -26,6 +26,7 @@
   "dependencies": {
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@google/generative-ai": "^0.23.0",
+    "@neondatabase/serverless": "^1.0.0",
     "@prisma/client": "^6.7.0",
     "axios": "^1.7.9",
     "axios-retry": "^4.5.0",

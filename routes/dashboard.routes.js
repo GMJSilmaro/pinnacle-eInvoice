@@ -85,4 +85,22 @@ router.get('/tin-validator', auth.middleware, (req, res) => {
   });
 });
 
+// Notifications page
+router.get('/notifications', auth.middleware, (req, res) => {
+  res.render('dashboard/notifications.html', {
+    title: 'Notifications',
+    user: req.session.user || null,
+    layout: 'layout'
+  });
+});
+
+// Developer Settings page (admin only)
+router.get('/developer-settings', auth.isAdmin, (req, res) => {
+  res.render('dashboard/developer-settings.html', {
+    title: 'Developer Settings',
+    user: req.session.user || null,
+    layout: 'layout'
+  });
+});
+
 module.exports = router;

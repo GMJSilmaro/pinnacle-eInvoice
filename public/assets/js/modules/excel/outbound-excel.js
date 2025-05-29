@@ -80,25 +80,58 @@ class InvoiceTableManager {
         this.table = null;
         this.selectedRows = new Set();
 
+        // Request management properties
+        this.currentRequest = null;
+        this.requestQueue = [];
+        this.isRequestInProgress = false;
+        this.requestTimeout = 60000; // 60 seconds timeout
+        this.maxRetries = 3;
+        this.retryDelay = 2000; // 2 seconds
+        this.lastRequestTime = 0;
+        this.requestDebounceDelay = 200; // 200ms debounce
+        this.isDataSourceSwitching = false; // Flag to track data source switching
+
         // Reset DataTables request flags to ensure they're in a clean state
         window._dataTablesRequestInProgress = false;
         window._dataTablesRequestStartTime = null;
 
-        // Add a prefilter for all AJAX requests
+        // Add a prefilter for all AJAX requests with enhanced error handling
         $.ajaxPrefilter((options, originalOptions, jqXHR) => {
+            // Add timeout to all requests
+            if (!options.timeout) {
+                options.timeout = this.requestTimeout;
+            }
+
+            // Add abort controller for better request management
+            if (options.url && options.url.includes('/api/outbound-files/')) {
+                // Cancel any existing request for the same endpoint
+                if (this.currentRequest && this.currentRequest.readyState !== 4) {
+                    console.log('Aborting previous request to prevent conflicts');
+                    this.currentRequest.abort();
+                }
+                this.currentRequest = jqXHR;
+            }
+
             if (!options.beforeSend) {
                 options.beforeSend = () => {
                     this.showLoadingBackdrop();
                 };
             }
+
             let oldComplete = options.complete;
             options.complete = (jqXHR, textStatus) => {
                 this.hideLoadingBackdrop();
+
+                // Clear current request reference
+                if (this.currentRequest === jqXHR) {
+                    this.currentRequest = null;
+                }
 
                 // Ensure DataTables request flags are cleared
                 if (options.url && options.url.includes('/api/outbound-files/')) {
                     window._dataTablesRequestInProgress = false;
                     window._dataTablesRequestStartTime = null;
+                    this.isRequestInProgress = false;
                 }
 
                 if (oldComplete) {
@@ -109,7 +142,7 @@ class InvoiceTableManager {
 
         this.initializeTable();
         this.initializeCharts();
-        this.initializeEventListeners();
+        this.setupPageUnloadHandler();
     }
 
     showLoadingBackdrop(message = 'Loading and Preparing Your Excel Files') {
@@ -351,9 +384,118 @@ class InvoiceTableManager {
         // Ensure DataTables request flags are cleared
         window._dataTablesRequestInProgress = false;
         window._dataTablesRequestStartTime = null;
+        this.isRequestInProgress = false;
 
         $('#loadingBackdrop').fadeOut(300, function() {
             $(this).remove();
+        });
+    }
+
+    // Handle timeout errors with retry logic
+    handleTimeoutError() {
+        console.log('Request timed out, implementing retry logic');
+
+        Swal.fire({
+            title: 'Request Timeout',
+            text: 'The request is taking longer than expected. Would you like to retry?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Retry',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                confirmButton: 'btn btn-primary',
+                cancelButton: 'btn btn-secondary'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                this.retryDataLoad();
+            }
+        });
+    }
+
+    // Retry data loading with exponential backoff
+    async retryDataLoad(retryCount = 0) {
+        if (retryCount >= this.maxRetries) {
+            console.error('Max retries reached, giving up');
+            Swal.fire({
+                title: 'Failed to Load Data',
+                text: 'Unable to load data after multiple attempts. Please check your connection and try again.',
+                icon: 'error',
+                confirmButtonText: 'OK',
+                customClass: {
+                    confirmButton: 'btn btn-primary'
+                }
+            });
+            return;
+        }
+
+        try {
+            console.log(`Retry attempt ${retryCount + 1}/${this.maxRetries}`);
+
+            // Show loading with retry message
+            this.showLoadingBackdrop(`Retrying... (Attempt ${retryCount + 1}/${this.maxRetries})`);
+
+            // Wait before retrying (exponential backoff)
+            if (retryCount > 0) {
+                const delay = this.retryDelay * Math.pow(2, retryCount - 1);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+
+            // Force refresh the table
+            sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+            dataCache.invalidateCache();
+
+            if (this.table) {
+                this.table.ajax.reload((json) => {
+                    if (json && json.success !== false) {
+                        console.log('Retry successful');
+                        this.hideLoadingBackdrop();
+                    } else {
+                        throw new Error('Invalid response received');
+                    }
+                }, false);
+            }
+        } catch (error) {
+            console.error(`Retry attempt ${retryCount + 1} failed:`, error);
+            this.hideLoadingBackdrop();
+
+            // Try again with increased retry count
+            setTimeout(() => {
+                this.retryDataLoad(retryCount + 1);
+            }, 1000);
+        }
+    }
+
+    // Setup page unload handler to cleanup requests
+    setupPageUnloadHandler() {
+        // Handle page unload to prevent abort errors
+        window.addEventListener('beforeunload', () => {
+            console.log('Page unloading, cleaning up requests...');
+
+            // Cancel any ongoing requests
+            if (this.currentRequest && this.currentRequest.readyState !== 4) {
+                this.currentRequest.abort();
+            }
+
+            // Clear flags
+            this.isRequestInProgress = false;
+            window._dataTablesRequestInProgress = false;
+            window._dataTablesRequestStartTime = null;
+
+            // Clear any intervals
+            if (this.factInterval) {
+                clearInterval(this.factInterval);
+            }
+        });
+
+        // Handle visibility change (tab switching)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('Page hidden, pausing requests...');
+                // Don't cancel requests when tab is hidden, just log
+            } else {
+                console.log('Page visible again');
+            }
         });
     }
 
@@ -367,6 +509,11 @@ class InvoiceTableManager {
 
             const self = this; // Store reference to this
             this.currentDataSource = 'list-all'; // Track current data source
+            // Show sync status button when switching to live data
+                const syncStatusBtn = document.getElementById('syncStatusBtn');
+                if (syncStatusBtn) {
+                    syncStatusBtn.style.display = 'none';
+                }
 
             // Initialize DataTable with minimal styling configuration
             this.table = $('#invoiceTable').DataTable({
@@ -409,14 +556,32 @@ class InvoiceTableManager {
                         render: (data, type, row) => this.renderCompanyInfo(data, type, row)
                     },
                     {
-                        data: 'supplierInfo',
+                        data: null,
                         title: 'SUPPLIER',
-                        render: (data, type, row) => this.renderSupplierInfo(data, type, row)
+                        render: (data, type, row) => {
+                            // Handle both live data (supplierInfo object) and staging data (supplierName string)
+                            if (row.fromStaging || row.dataSource === 'WP_OUTBOUND_STATUS') {
+                                // For staging data, use the supplierName directly
+                                return this.renderSupplierInfo({ name: row.supplierName || row.supplier });
+                            } else {
+                                // For live data, use the supplierInfo object
+                                return this.renderSupplierInfo(row.supplierInfo);
+                            }
+                        }
                     },
                     {
-                        data: 'buyerInfo',
+                        data: null,
                         title: 'RECEIVER',
-                        render: (data, type, row) => this.renderBuyerInfo(data, type, row)
+                        render: (data, type, row) => {
+                            // Handle both live data (buyerInfo object) and staging data (buyerName string)
+                            if (row.fromStaging || row.dataSource === 'WP_OUTBOUND_STATUS') {
+                                // For staging data, use the buyerName directly
+                                return this.renderBuyerInfo({ name: row.buyerName || row.receiver });
+                            } else {
+                                // For live data, use the buyerInfo object
+                                return this.renderBuyerInfo(row.buyerInfo);
+                            }
+                        }
                     },
                     {
                         data: 'uploadedDate',
@@ -457,26 +622,9 @@ class InvoiceTableManager {
                 pageLength: 10,
                 dom: '<"outbound-controls"<"outbound-length-control"l>><"outbound-table-responsive"t><"outbound-bottom"<"outbound-info"i><"outbound-pagination"p>>',
                 initComplete: function() {
-                    // Add filter button handlers with proper data source switching
-                    $('.quick-filters .btn[data-filter]').off('click').on('click', function() {
-                        $('.quick-filters .btn').removeClass('active');
-                        $(this).addClass('active');
-
-                        const filter = $(this).data('filter');
-
-                        if (filter === 'staging') {
-                            // Switch to staging data source
-                            self.switchToStagingData();
-                        } else {
-                            // Switch back to list-all data source
-                            self.switchToListAllData(filter);
-                        }
-                    });
-
                     // Set initial filter to Pending
                     self.table.column(8).search('Pending').draw();
                     $('.quick-filters .btn[data-filter="pending"]').addClass('active');
-                    $('.quick-filters .btn[data-filter="all"]').removeClass('active');
                 },
                 language: {
                     search: '',
@@ -501,9 +649,12 @@ class InvoiceTableManager {
                 processing: true,
                 serverSide: false,
                 ajax: {
-                    //url: '/api/outbound-files/list-all',
-                    url: '/api/outbound-files/list-all',
+                    url: '/api/outbound-files/list-all', // Default URL
                     method: 'GET',
+                    timeout: self.requestTimeout, // Use instance timeout
+                    xhrFields: {
+                        withCredentials: true
+                    },
                     data: function(d) {
                         // Add cache control parameters
                         d.forceRefresh = sessionStorage.getItem('forceRefreshOutboundTable') === 'true';
@@ -524,6 +675,8 @@ class InvoiceTableManager {
                         return d;
                     },
                     dataSrc: (json) => {
+                        console.log('DataSrc received response:', json);
+
                         // If we're using the cache, bypass processing
                         if (json.fromCache && json.cachedData) {
                             return json.cachedData;
@@ -531,38 +684,76 @@ class InvoiceTableManager {
 
                         if (!json.success) {
                             console.error('Error:', json.error);
-                            self.showEmptyState(json.error?.message || 'Failed to load data');
-                            // Don't refresh the page
+
+                            // Check if it's an authentication error
+                            if (json.needsLogin || json.redirect) {
+                                console.log('Authentication required, redirecting to login');
+                                window.location.href = json.redirect || '/auth/login';
+                                return [];
+                            }
+
+
                             return [];
                         }
 
-                        if (!json.files || json.files.length === 0) {
-                            self.showEmptyState('No EXCEL files found');
-                            // Don't refresh the page
+                        // Handle both response formats: json.files (list-all) and json.data (staging)
+                        const filesData = json.files || json.data || [];
+
+                        if (!filesData || filesData.length === 0) {
+                            // Check if we're in staging mode
+                            const isStagingMode = self.currentDataSource === 'staging';
+
+                            const message = isStagingMode ?
+                                'No archive staging data found' :
+                                'No EXCEL files found';
+
+                            // Show empty state message in table
+                            $('#invoiceTable tbody').html(`
+                                <tr>
+                                    <td colspan="10" class="text-center p-4">
+                                        <div class="empty-state-container">
+                                            <div class="empty-state-icon mb-3">
+                                                <i class="fas fa-file-excel fa-3x text-muted"></i>
+                                            </div>
+                                            <h5>${message}</h5>
+                                            <p class="text-muted">Try refreshing the page or check your data source settings.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `);
                             return [];
                         }
 
-                        // Process the files data
-                        const processedData = json.files.map(file => ({
+                        // Process the files data - handle both live and staging data
+                        const processedData = filesData.map(file => ({
                             ...file,
                             DT_RowId: file.fileName,
-                            invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
+                            invoiceNumber: file.invoiceNumber || file.invoice_number || file.fileName.replace(/\.xml$/i, ''),
                             fileName: file.fileName,
-                            documentType: file.documentType || 'Invoice',
+                            documentType: file.documentType || file.document_type || 'Invoice',
                             company: file.company,
-                            buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
-                            supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
+                            // Handle staging data supplier/buyer info
+                            buyerInfo: file.buyerInfo || { registrationName: file.buyerName || file.receiver || 'N/A' },
+                            supplierInfo: file.supplierInfo || { registrationName: file.supplierName || file.supplier || 'N/A' },
+                            // Keep original staging field names for the render functions
+                            supplierName: file.supplierName || file.supplier,
+                            buyerName: file.buyerName || file.receiver,
+                            supplier: file.supplier,
+                            receiver: file.receiver,
                             uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
                             issueDate: file.issueDate,
                             issueTime: file.issueTime,
-                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : null,
+                            date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : file.date_submitted,
                             date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
                             cancelled_by: file.cancelled_by || null,
-                            cancel_reason: file.cancel_reason || null,
+                            cancel_reason: file.cancel_reason || file.cancellation_reason || null,
                             status: file.status || 'Pending',
                             source: file.source,
-                            uuid: file.uuid || null,
-                            totalAmount: file.totalAmount || null
+                            uuid: file.uuid || file.UUID || null,
+                            totalAmount: file.totalAmount || file.amount || null,
+                            // Staging metadata
+                            fromStaging: file.fromStaging || false,
+                            dataSource: file.dataSource || null
                         }));
 
                         console.log('Current Processed Data: ', processedData);
@@ -577,12 +768,27 @@ class InvoiceTableManager {
 
                         return processedData;
                     },
-                    beforeSend: function() {
-                        // Set global flag to indicate DataTables request is in progress
-                        window._dataTablesRequestInProgress = true;
+                    beforeSend: function(jqXHR) {
+                        // Implement request debouncing (but skip during data source switching)
+                        const currentTime = Date.now();
+                        if (!self.isDataSourceSwitching && currentTime - self.lastRequestTime < self.requestDebounceDelay) {
+                            console.log('Request debounced - too soon after last request');
+                            jqXHR.abort();
+                            return false;
+                        }
+                        self.lastRequestTime = currentTime;
 
-                        // Store the timestamp when the request started
-                        window._dataTablesRequestStartTime = Date.now();
+                        // Check if another request is already in progress
+                        if (self.isRequestInProgress) {
+                            console.log('Request blocked - another request is already in progress');
+                            jqXHR.abort();
+                            return false;
+                        }
+
+                        // Set flags to indicate request is in progress
+                        self.isRequestInProgress = true;
+                        window._dataTablesRequestInProgress = true;
+                        window._dataTablesRequestStartTime = currentTime;
 
                         // Show loading for initial load, forced refreshes, or manual refreshes
                         if (!dataCache.isCacheValid() ||
@@ -590,11 +796,16 @@ class InvoiceTableManager {
                             sessionStorage.getItem('manualRefreshOutboundTable') === 'true') {
                             self.showLoadingBackdrop('Loading and Preparing Your Excel Files');
                         }
+
+                        return true;
                     },
                     complete: function() {
                         // Clear the DataTables request flag
                         window._dataTablesRequestInProgress = false;
                         window._dataTablesRequestStartTime = null;
+
+                        // Reset data source switching flag
+                        self.isDataSourceSwitching = false;
 
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
@@ -603,13 +814,90 @@ class InvoiceTableManager {
                         // Clear the DataTables request flag on error
                         window._dataTablesRequestInProgress = false;
                         window._dataTablesRequestStartTime = null;
-                        console.error('DataTables AJAX error:', error, thrown);
+                        self.isRequestInProgress = false;
+
+                        console.error('DataTables AJAX error:', {
+                            error: error,
+                            thrown: thrown,
+                            status: xhr.status,
+                            statusText: xhr.statusText,
+                            readyState: xhr.readyState,
+                            responseText: xhr.responseText
+                        });
 
                         // Hide loading backdrop
                         self.hideLoadingBackdrop();
 
-                        // Show error message
-                        self.showEmptyState('Error loading data. Please try refreshing the page.');
+                        // Handle specific error types
+                        if (error === 'abort') {
+                            console.log('Request was aborted - this is usually due to a new request being made', {
+                                isDataSourceSwitching: self.isDataSourceSwitching,
+                                currentDataSource: self.currentDataSource,
+                                readyState: xhr.readyState
+                            });
+
+                            // If we're switching data sources, this is expected behavior
+                            if (self.isDataSourceSwitching) {
+                                console.log('✅ Abort during data source switching - this is expected and handled gracefully');
+                                self.isDataSourceSwitching = false; // Reset the flag
+                                return;
+                            }
+
+                            // Don't show error for other intentional aborts
+                            console.log('✅ Intentional abort - no error display needed');
+                            return;
+                        }
+
+                        // Check for authentication errors
+                        if (xhr.status === 401) {
+                            console.log('Authentication error, redirecting to login');
+                            window.location.href = '/auth/login?expired=true';
+                            return;
+                        }
+
+                        // Handle timeout errors
+                        if (error === 'timeout' || xhr.status === 0) {
+                            self.handleTimeoutError();
+                            return;
+                        }
+
+                        // Show appropriate error message
+                        let errorMessage = 'Error loading data. Please try refreshing the page.';
+                        let errorTitle = 'Error Loading Data';
+
+                        if (xhr.status === 403) {
+                            errorMessage = 'Access denied. Please check your permissions.';
+                            errorTitle = 'Access Denied';
+                        } else if (xhr.status === 500) {
+                            errorMessage = 'Server error. Please try again later.';
+                            errorTitle = 'Server Error';
+                        } else if (xhr.status === 0 && error !== 'abort') {
+                            errorMessage = 'Network connection error. Please check your internet connection.';
+                            errorTitle = 'Connection Error';
+                        }
+
+                        // Show error message in table
+                        $('#invoiceTable tbody').html(`
+                            <tr>
+                                <td colspan="12" class="text-center p-4">
+                                    <div class="empty-state-container">
+                                        <div class="empty-state-icon mb-3">
+                                            <i class="fas fa-exclamation-triangle fa-3x text-danger"></i>
+                                        </div>
+                                        <h5>${errorTitle}</h5>
+                                        <p class="text-muted">${errorMessage}</p>
+                                        <div class="mt-3">
+                                            <button class="btn btn-primary btn-sm me-2" onclick="window.location.reload()">
+                                                <i class="bi bi-arrow-clockwise"></i> Retry
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm" onclick="InvoiceTableManager.getInstance().retryDataLoad()">
+                                                <i class="bi bi-arrow-repeat"></i> Reload Data
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        `);
                     }
                 },
                 order: [
@@ -650,158 +938,26 @@ class InvoiceTableManager {
 
         } catch (error) {
             console.error('Error initializing DataTable:', error);
-            this.showEmptyState('Error initializing table. Please try refreshing the page if this persists.');
+            // Show error message in table
+            $('#invoiceTable tbody').html(`
+                <tr>
+                    <td colspan="10" class="text-center p-4">
+                        <div class="empty-state-container">
+                            <div class="empty-state-icon mb-3">
+                                <i class="fas fa-exclamation-triangle fa-3x text-danger"></i>
+                            </div>
+                            <h5>Error Initializing Table</h5>
+                            <p class="text-muted">Please try refreshing the page if this persists.</p>
+                            <button class="btn btn-primary btn-sm" onclick="window.location.reload()">Refresh Page</button>
+                        </div>
+                    </td>
+                </tr>
+            `);
             // Remove the page reload to prevent refresh
         }
     }
 
-    initializeFilters() {
-        // Quick Filters
-        document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
-            button.addEventListener('click', (e) => {
-                document.querySelectorAll('.quick-filters .btn').forEach(btn =>
-                    btn.classList.remove('active'));
-                e.target.closest('.btn').classList.add('active');
-                this.applyFilters();
-            });
-        });
 
-        // Global Search
-        const globalSearch = document.getElementById('globalSearch');
-        if (globalSearch) {
-            globalSearch.addEventListener('input', (e) => {
-                this.table.search(e.target.value).draw();
-            });
-        }
-
-        // Advanced Filters
-        const advancedFilterInputs = [
-            'input[placeholder="mm/dd/yyyy"]',
-            '#minAmount',
-            '#maxAmount',
-            'input[placeholder="Filter by company name"]',
-            '#documentTypeFilter'
-        ].join(',');
-
-        document.querySelectorAll(advancedFilterInputs).forEach(input => {
-            input.addEventListener(input.type === 'select-one' ? 'change' : 'input',
-                () => this.applyFilters());
-        });
-
-        // Clear Filters
-        document.getElementById('clearFilters')?.addEventListener('click',
-            () => this.clearAllFilters());
-    }
-
-    applyFilters() {
-        if (!this.table) return;
-
-        // Store current filter values
-        const filters = this.getActiveFilters();
-
-        // Apply filters to DataTable
-        this.table.draw();
-
-        // Update filter tags
-        this.updateFilterTags(filters);
-    }
-
-    getActiveFilters() {
-        return {
-            quickFilter: document.querySelector('.quick-filters .btn.active')?.dataset.filter,
-            dateStart: document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value,
-            dateEnd: document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value,
-            minAmount: document.getElementById('minAmount').value,
-            maxAmount: document.getElementById('maxAmount').value,
-            company: document.querySelector('input[placeholder="Filter by company name"]').value,
-            documentType: document.getElementById('documentTypeFilter').value
-        };
-    }
-
-    updateFilterTags(filters) {
-        const container = document.getElementById('activeFilterTags');
-        if (!container) return;
-
-        container.innerHTML = '';
-
-        const createTag = (label, value, type) => {
-            if (!value) return;
-
-            const tag = document.createElement('div');
-            tag.className = 'filter-tag';
-            tag.innerHTML = `
-                ${label}: ${value}
-                <button class="close-btn" data-filter-type="${type}">×</button>
-            `;
-            tag.querySelector('.close-btn').addEventListener('click',
-                () => this.removeFilter(type));
-            container.appendChild(tag);
-        };
-
-        // Create tags for active filters
-        if (filters.quickFilter && filters.quickFilter !== 'all') {
-            createTag('Status', filters.quickFilter, 'quickFilter');
-        }
-        if (filters.dateStart && filters.dateEnd) {
-            createTag('Date', `${filters.dateStart} - ${filters.dateEnd}`, 'date');
-        }
-        if (filters.minAmount || filters.maxAmount) {
-            createTag('Amount', `${filters.minAmount || '0'} - ${filters.maxAmount || '∞'}`, 'amount');
-        }
-        if (filters.company) {
-            createTag('Company', filters.company, 'company');
-        }
-        if (filters.documentType) {
-            createTag('Type', filters.documentType, 'documentType');
-        }
-    }
-
-    clearAllFilters() {
-        // Reset form inputs
-        document.querySelectorAll([
-            'input[placeholder="mm/dd/yyyy"]',
-            '#minAmount',
-            '#maxAmount',
-            'input[placeholder="Filter by company name"]',
-            '#documentTypeFilter',
-            '#globalSearch'
-        ].join(',')).forEach(input => input.value = '');
-
-        // Reset quick filters
-        document.querySelectorAll('.quick-filters .btn').forEach(btn =>
-            btn.classList.remove('active'));
-        document.querySelector('.quick-filters .btn[data-filter="all"]')
-            .classList.add('active');
-
-        // Clear DataTable filters
-        this.table.search('').columns().search('').draw();
-
-        // Clear filter tags
-        document.getElementById('activeFilterTags').innerHTML = '';
-    }
-
-    removeFilter(filterType) {
-        switch (filterType) {
-            case 'quickFilter':
-                document.querySelector('.quick-filters .btn[data-filter="all"]').click();
-                break;
-            case 'date':
-                document.querySelectorAll('input[placeholder="mm/dd/yyyy"]')
-                    .forEach(input => input.value = '');
-                break;
-            case 'amount':
-                document.getElementById('minAmount').value = '';
-                document.getElementById('maxAmount').value = '';
-                break;
-            case 'company':
-                document.querySelector('input[placeholder="Filter by company name"]').value = '';
-                break;
-            case 'documentType':
-                document.getElementById('documentTypeFilter').value = '';
-                break;
-        }
-        this.applyFilters();
-    }
 
     initializeCharts() {
         // Initialize Document Status Distribution Chart
@@ -1292,7 +1448,8 @@ class InvoiceTableManager {
                 </div>`;
         }
 
-        if (row.status === 'Submitted') {
+        // Show cancel button for both Submitted and Valid status within 72 hours
+        if (row.status === 'Submitted' || row.status === 'Valid') {
             const timeInfo = this.calculateRemainingTime(row.date_submitted);
             if (timeInfo && !timeInfo.expired) {
                 return `
@@ -1351,72 +1508,6 @@ class InvoiceTableManager {
         return { hours, minutes, badgeClass, expired: false };
     }
 
-    initializeEventListeners() {
-        // Quick Filter buttons
-        document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
-            button.addEventListener('click', (e) => {
-                // Remove active class from all buttons
-                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
-                // Add active class to clicked button
-                e.target.closest('.btn').classList.add('active');
-
-                const filterValue = e.target.closest('.btn').dataset.filter;
-                this.applyQuickFilter(filterValue);
-            });
-        });
-
-        // Global Search
-        const globalSearch = document.getElementById('globalSearch');
-        if (globalSearch) {
-            globalSearch.addEventListener('input', (e) => {
-                this.table.search(e.target.value).draw();
-            });
-        }
-
-        // Sync amounts button
-        const syncAmountsBtn = document.getElementById('syncAmountsBtn');
-        if (syncAmountsBtn) {
-            syncAmountsBtn.addEventListener('click', () => {
-                this.handleSyncAmounts();
-            });
-        }
-
-        // Advanced Filters
-        // Date Range
-        const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type');
-        const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type');
-        if (startDate && endDate) {
-            [startDate, endDate].forEach(input => {
-                input.addEventListener('change', () => this.applyAdvancedFilters());
-            });
-        }
-
-        // Amount Range
-        const minAmount = document.getElementById('minAmount');
-        const maxAmount = document.getElementById('maxAmount');
-        if (minAmount && maxAmount) {
-            [minAmount, maxAmount].forEach(input => {
-                input.addEventListener('input', () => this.applyAdvancedFilters());
-            });
-        }
-
-        // Company Filter
-        const companyFilter = document.querySelector('input[placeholder="Filter by company name"]');
-        if (companyFilter) {
-            companyFilter.addEventListener('input', () => this.applyAdvancedFilters());
-        }
-
-        // Document Type Filter
-        const documentTypeFilter = document.getElementById('documentTypeFilter');
-        if (documentTypeFilter) {
-            documentTypeFilter.addEventListener('change', () => this.applyAdvancedFilters());
-        }
-        // Clear Filters
-        const clearFiltersBtn = document.getElementById('clearFilters');
-        if (clearFiltersBtn) {
-            clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
-        }
-    }
 
     applyQuickFilter(filterValue) {
         if (!this.table) return;
@@ -1442,178 +1533,6 @@ class InvoiceTableManager {
         this.updateActiveFilterTags();
     }
 
-    applyAdvancedFilters() {
-        if (!this.table) return;
-
-        // Create a custom filter function
-        $.fn.dataTable.ext.search.push((settings, data, dataIndex) => {
-            const row = this.table.row(dataIndex).data();
-            let passFilter = true;
-
-            // Date Range Filter
-            const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value;
-            const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value;
-            if (startDate && endDate) {
-                const rowDate = new Date(data.uploadedDate);
-                const filterStart = new Date(startDate);
-                const filterEnd = new Date(endDate);
-
-                if (rowDate < filterStart || rowDate > filterEnd) {
-                    passFilter = false;
-                }
-            }
-
-            // Amount Range Filter
-            const minAmount = parseFloat(document.getElementById('minAmount').value) || 0;
-            const maxAmount = parseFloat(document.getElementById('maxAmount').value) || Infinity;
-            const rowAmount = parseFloat(row.total_amount?.replace(/[^0-9.-]+/g, '') || 0);
-
-            if (rowAmount < minAmount || rowAmount > maxAmount) {
-                passFilter = false;
-            }
-
-            // Company Filter
-            const companyFilter = document.querySelector('input[placeholder="Filter by company name"]').value.toLowerCase();
-            if (companyFilter && !row.company?.toLowerCase().includes(companyFilter)) {
-                passFilter = false;
-            }
-
-            // Document Type Filter
-            const documentType = document.getElementById('documentTypeFilter').value;
-            if (documentType && row.document_type !== documentType) {
-                passFilter = false;
-            }
-
-            return passFilter;
-        });
-
-        // Redraw the table
-        this.table.draw();
-
-        // Remove the custom filter
-        $.fn.dataTable.ext.search.pop();
-
-        // Update active filter tags
-        this.updateActiveFilterTags();
-    }
-
-    clearAllFilters() {
-        // Reset all form inputs
-        document.getElementById('globalSearch').value = '';
-        document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value = '';
-        document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value = '';
-        document.getElementById('minAmount').value = '';
-        document.getElementById('maxAmount').value = '';
-        document.querySelector('input[placeholder="Filter by company name"]').value = '';
-        document.getElementById('documentTypeFilter').value = '';
-
-        // Reset quick filter buttons
-        document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelector('.quick-filters .btn[data-filter="all"]').classList.add('active');
-
-        // Clear DataTable filters
-        this.table.search('').columns().search('').draw();
-
-        // Clear active filter tags
-        this.updateActiveFilterTags();
-    }
-
-    updateActiveFilterTags() {
-        const activeFiltersContainer = document.getElementById('activeFilterTags');
-        if (!activeFiltersContainer) return;
-
-        // Clear existing tags
-        activeFiltersContainer.innerHTML = '';
-
-        // Helper function to create a filter tag
-        const createFilterTag = (label, value, type) => {
-            const tag = document.createElement('div');
-            tag.className = 'filter-tag';
-            tag.innerHTML = `
-                ${label}: ${value}
-                <button class="close-btn" data-filter-type="${type}">×</button>
-            `;
-            tag.querySelector('.close-btn').addEventListener('click',
-                () => this.removeFilter(type));
-            container.appendChild(tag);
-        };
-
-        // Add tags for active filters
-        const activeFilters = this.getActiveFilters();
-        Object.entries(activeFilters).forEach(([type, value]) => {
-            if (value) {
-                activeFiltersContainer.appendChild(
-                    createFilterTag(type.charAt(0).toUpperCase() + type.slice(1), value, type)
-                );
-            }
-        });
-    }
-
-    getActiveFilters() {
-        const filters = {};
-
-        // Quick filter
-        const activeQuickFilter = document.querySelector('.quick-filters .btn.active');
-        if (activeQuickFilter && activeQuickFilter.dataset.filter !== 'all') {
-            filters.status = activeQuickFilter.textContent.trim();
-        }
-
-        // Date range
-        const startDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value;
-        const endDate = document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value;
-        if (startDate && endDate) {
-            filters.dateRange = `${startDate} to ${endDate}`;
-        }
-
-        // Amount range
-        const minAmount = document.getElementById('minAmount').value;
-        const maxAmount = document.getElementById('maxAmount').value;
-        if (minAmount || maxAmount) {
-            filters.amountRange = `${minAmount || '0'} to ${maxAmount || '∞'}`;
-        }
-
-        // Company
-        const company = document.querySelector('input[placeholder="Filter by company name"]').value;
-        if (company) {
-            filters.company = company;
-        }
-
-        // Document type
-        const documentType = document.getElementById('documentTypeFilter').value;
-        if (documentType) {
-            filters.documentType = documentType;
-        }
-
-        return filters;
-    }
-
-    removeFilter(filterType) {
-        switch (filterType) {
-            case 'status':
-                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
-                document.querySelector('.quick-filters .btn[data-filter="all"]').classList.add('active');
-                this.applyQuickFilter('all');
-                break;
-            case 'dateRange':
-                document.querySelector('input[placeholder="mm/dd/yyyy"]:first-of-type').value = '';
-                document.querySelector('input[placeholder="mm/dd/yyyy"]:last-of-type').value = '';
-                this.applyAdvancedFilters();
-                break;
-            case 'amountRange':
-                document.getElementById('minAmount').value = '';
-                document.getElementById('maxAmount').value = '';
-                this.applyAdvancedFilters();
-                break;
-            case 'company':
-                document.querySelector('input[placeholder="Filter by company name"]').value = '';
-                this.applyAdvancedFilters();
-                break;
-            case 'documentType':
-                document.getElementById('documentTypeFilter').value = '';
-                this.applyAdvancedFilters();
-                break;
-        }
-    }
 
     formatDate(date) {
         if (!date) return '-';
@@ -1815,18 +1734,115 @@ class InvoiceTableManager {
     // Switch to staging data source
     async switchToStagingData() {
         try {
+            console.log('🔄 Switching to staging data source...');
+
+            // Set the switching flag to handle abort errors gracefully
+            this.isDataSourceSwitching = true;
+
+            // Auto-reset the flag after 10 seconds as a safety measure
+            setTimeout(() => {
+                if (this.isDataSourceSwitching) {
+                    console.log('Auto-resetting data source switching flag');
+                    this.isDataSourceSwitching = false;
+                }
+            }, 10000);
+
+            // Cancel any existing request before switching
+            if (this.currentRequest && this.currentRequest.readyState !== 4) {
+                console.log('Cancelling existing request before switching to staging');
+                this.currentRequest.abort();
+            }
+
             this.currentDataSource = 'staging';
 
             // Show loading state
-            this.showLoadingBackdrop('Loading Staging Data from Database');
+            this.showLoadingBackdrop('Loading Staging Data from Database (Auto-syncing with Inbound Status)');
 
-            // Update the table's AJAX URL to staging endpoint
-            this.table.ajax.url('/api/outbound-files/staging-data').load(() => {
-                // Clear any column filters when switching to staging
-                this.table.columns().search('').draw();
-                this.hideLoadingBackdrop();
-                this.updateCardTotals();
+            // Clear any existing data first to prevent mixing
+            if (this.table) {
+                this.table.clear().draw();
+            }
+
+            // Fetch staging data directly instead of using DataTable's ajax.load
+            const response = await fetch('/api/outbound-files/staging-data', {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const json = await response.json();
+            console.log('📊 Staging data loaded:', json);
+            console.log('📊 Number of records:', json?.files?.length || 0);
+
+            if (!json.success) {
+                throw new Error(json.error || 'Failed to load staging data');
+            }
+
+            // Process the staging data using the same logic as dataSrc
+            const filesData = json.files || [];
+
+            if (!filesData || filesData.length === 0) {
+                this.showEmptyState('No archive staging data found');
+                this.hideLoadingBackdrop();
+                return;
+            }
+
+            // Process the files data - handle staging data format
+            const processedData = filesData.map(file => ({
+                ...file,
+                DT_RowId: file.fileName,
+                invoiceNumber: file.invoiceNumber || file.invoice_number || file.fileName.replace(/\.xml$/i, ''),
+                fileName: file.fileName,
+                documentType: file.documentType || file.document_type || 'Invoice',
+                company: file.company,
+                // Handle staging data supplier/buyer info
+                buyerInfo: file.buyerInfo || { registrationName: file.buyerName || file.receiver || 'N/A' },
+                supplierInfo: file.supplierInfo || { registrationName: file.supplierName || file.supplier || 'N/A' },
+                // Keep original staging field names for the render functions
+                supplierName: file.supplierName || file.supplier,
+                buyerName: file.buyerName || file.receiver,
+                supplier: file.supplier,
+                receiver: file.receiver,
+                uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
+                issueDate: file.issueDate,
+                issueTime: file.issueTime,
+                date_submitted: file.submissionDate ? new Date(file.submissionDate).toISOString() : file.date_submitted,
+                date_cancelled: file.date_cancelled ? new Date(file.date_cancelled).toISOString() : null,
+                cancelled_by: file.cancelled_by || null,
+                cancel_reason: file.cancel_reason || file.cancellation_reason || null,
+                status: file.status || 'Pending',
+                source: file.source,
+                uuid: file.uuid || file.UUID || null,
+                totalAmount: file.totalAmount || file.amount || null,
+                // Staging metadata
+                fromStaging: file.fromStaging || true,
+                dataSource: file.dataSource || 'WP_OUTBOUND_STATUS'
+            }));
+
+            console.log('📊 Processed staging data:', processedData);
+
+            // Clear the table and add the new data
+            this.table.clear();
+            this.table.rows.add(processedData);
+            this.table.draw();
+
+            // Clear any column filters when switching to staging
+            this.table.columns().search('').draw();
+
+            // Show sync status button when switching to staging data
+            const syncStatusBtn = document.getElementById('syncStatusBtn');
+            if (syncStatusBtn) {
+                syncStatusBtn.style.display = 'block';
+            }
+
+            this.hideLoadingBackdrop();
+            this.updateCardTotals();
 
         } catch (error) {
             console.error('Error switching to staging data:', error);
@@ -1838,21 +1854,79 @@ class InvoiceTableManager {
     // Switch back to list-all data source
     async switchToListAllData(filter = 'pending') {
         try {
-            this.currentDataSource = 'list-all';
+            console.log('🔄 Switching to list-all data source...');
+
+            // Set the switching flag to handle abort errors gracefully
+            this.isDataSourceSwitching = true;
+
+            // Auto-reset the flag after 10 seconds as a safety measure
+            setTimeout(() => {
+                if (this.isDataSourceSwitching) {
+                    console.log('Auto-resetting data source switching flag');
+                    this.isDataSourceSwitching = false;
+                }
+            }, 10000);
+
+            // Cancel any existing request before switching
+            if (this.currentRequest && this.currentRequest.readyState !== 4) {
+                console.log('Cancelling existing request before switching data source');
+                this.currentRequest.abort();
+            }
+
+            this.currentDataSource = 'live';
 
             // Show loading state
             this.showLoadingBackdrop('Loading Excel Files from Network');
 
-            // Update the table's AJAX URL back to list-all endpoint
-            this.table.ajax.url('/api/outbound-files/list-all').load(() => {
-                // Apply the appropriate filter
-                if (filter === 'all') {
-                    this.table.column(8).search('').draw();
+            // Clear any existing data first to prevent mixing
+            if (this.table) {
+                this.table.clear().draw();
+            }
+
+            // Update the table's AJAX URL back to list-all endpoint and reload
+            this.table.ajax.url('/api/outbound-files/list-all').load((json) => {
+                console.log('📊 Live data loaded:', json);
+                console.log('📊 Number of records:', json?.files?.length || 0);
+
+                // Check if we have data
+                if (!json || !json.files || json.files.length === 0) {
+                    console.log('No live data available');
+                    // Show empty state for live data - use jQuery to update the table container
+                    $('#invoiceTable tbody').html(`
+                        <tr>
+                            <td colspan="10" class="text-center p-4">
+                                <div class="empty-state-container">
+                                    <div class="empty-state-icon mb-3">
+                                        <i class="fas fa-file-excel fa-3x text-muted"></i>
+                                    </div>
+                                    <h5>No Documents Available</h5>
+                                    <p class="text-muted">Upload an Excel file to start processing your invoices</p>
+                                    <small class="text-muted">Supported formats: .xlsx, .xls</small>
+                                </div>
+                            </td>
+                        </tr>
+                    `);
                 } else {
-                    this.table.column(8).search('Pending').draw();
+                    // Apply the appropriate filter
+                    if (filter === 'all') {
+                        this.table.column(8).search('').draw();
+                    } else {
+                        this.table.column(8).search('pending').draw();
+                    }
+                }
+
+
+                // Hide sync status button when switching to live data
+                const syncStatusBtn = document.getElementById('syncStatusBtn');
+                if (syncStatusBtn) {
+                    syncStatusBtn.style.display = 'none';
                 }
                 this.hideLoadingBackdrop();
                 this.updateCardTotals();
+            }, (xhr, error, thrown) => {
+                console.error('❌ Error loading live data:', { xhr, error, thrown });
+                this.hideLoadingBackdrop();
+                this.showErrorMessage('Failed to load excel files: ' + error);
             });
 
         } catch (error) {
@@ -1864,6 +1938,7 @@ class InvoiceTableManager {
 
     // Load staging data from WP_OUTBOUND_STATUS table (legacy method - kept for compatibility)
     async loadStagingData() {
+
         try {
             // Show loading state
             const loadingHtml = `
@@ -1956,23 +2031,23 @@ class InvoiceTableManager {
         this.animateNumber(document.querySelector('.total-queue-value'), totals.pending);
     }
 
-    // Handle sync amounts functionality
-    async handleSyncAmounts() {
+    // Handle sync status functionality
+    async handleSyncStatus() {
         try {
             // Show confirmation dialog
             const result = await Swal.fire({
-                title: 'Sync Amount Data',
+                title: 'Sync Status Data',
                 html: `
                     <div class="text-start">
-                        <p>This will sync amount data from inbound records to outbound records where UUIDs match.</p>
+                        <p>This will synchronize status data from inbound records to outbound records where UUIDs match.</p>
                         <div class="alert alert-info">
                             <i class="bi bi-info-circle me-2"></i>
                             <strong>What this does:</strong>
                             <ul class="mb-0 mt-2">
-                                <li>Matches records by UUID or invoice number</li>
-                                <li>Updates amount fields in outbound records</li>
-                                <li>Adds supplier/receiver names if missing</li>
-                                <li>Does not overwrite existing data</li>
+                                <li>Matches records by UUID</li>
+                                <li>Updates status fields in outbound records</li>
+                                <li>Syncs Valid, Invalid, Failed, and Cancelled statuses</li>
+                                <li>Updates date_sync timestamp</li>
                             </ul>
                         </div>
                     </div>
@@ -1981,21 +2056,18 @@ class InvoiceTableManager {
                 showCancelButton: true,
                 confirmButtonText: '<i class="bi bi-arrow-repeat"></i> Start Sync',
                 cancelButtonText: 'Cancel',
+                confirmButtonColor: '#0d6efd',
                 customClass: {
-                    confirmButton: 'btn btn-primary',
-                    cancelButton: 'btn btn-secondary'
+                    popup: 'semi-minimal-popup'
                 }
             });
 
-            if (!result.isConfirmed) {
-                return;
-            }
+            if (!result.isConfirmed) return;
 
-            // Show loading
-            this.showLoadingBackdrop('Syncing amount data...');
+            // Show loading backdrop
+            this.showLoadingBackdrop('Synchronizing status data...');
 
-            // Call the sync API
-            const response = await fetch('/api/outbound-files/sync-amounts', {
+            const response = await fetch('/api/outbound-files/sync-status', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -2003,56 +2075,44 @@ class InvoiceTableManager {
             });
 
             const data = await response.json();
-
-            // Hide loading
             this.hideLoadingBackdrop();
 
             if (data.success) {
-                // Show success message with stats
+                // Show success message with details
                 await Swal.fire({
-                    title: 'Sync Completed',
+                    title: 'Status Sync Complete!',
                     html: `
                         <div class="text-start">
-                            <p class="text-success mb-3">
-                                <i class="bi bi-check-circle me-2"></i>
-                                Amount data sync completed successfully!
-                            </p>
+                            <p class="mb-3">Status synchronization completed successfully:</p>
                             <div class="sync-stats">
-                                <div class="row">
-                                    <div class="col-6">
-                                        <div class="stat-item">
-                                            <div class="stat-value">${data.stats.inboundRecordsProcessed}</div>
-                                            <div class="stat-label">Records Processed</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6">
-                                        <div class="stat-item">
-                                            <div class="stat-value">${data.stats.matchesFound}</div>
-                                            <div class="stat-label">Matches Found</div>
-                                        </div>
-                                    </div>
+                                <div class="stat-item">
+                                    <div class="stat-value text-success">${data.syncCount}</div>
+                                    <div class="stat-label">Records Synchronized</div>
                                 </div>
-                                <div class="row mt-2">
-                                    <div class="col-12">
-                                        <div class="stat-item">
-                                            <div class="stat-value text-primary">${data.stats.recordsUpdated}</div>
-                                            <div class="stat-label">Records Updated</div>
-                                        </div>
-                                    </div>
+                                <div class="stat-item">
+                                    <div class="stat-value text-primary">${data.totalProcessed}</div>
+                                    <div class="stat-label">Total Processed</div>
                                 </div>
+                                ${data.errorCount > 0 ? `
+                                    <div class="stat-item">
+                                        <div class="stat-value text-warning">${data.errorCount}</div>
+                                        <div class="stat-label">Errors</div>
+                                    </div>
+                                ` : ''}
                             </div>
                         </div>
                         <style>
+                            .sync-stats {
+                                display: flex;
+                                justify-content: space-around;
+                                margin: 1rem 0;
+                            }
                             .sync-stats .stat-item {
                                 text-align: center;
-                                padding: 1rem;
-                                background: #f8f9fa;
-                                border-radius: 8px;
-                                margin-bottom: 0.5rem;
                             }
                             .sync-stats .stat-value {
-                                font-size: 1.5rem;
-                                font-weight: 600;
+                                font-size: 2rem;
+                                font-weight: bold;
                                 color: #495057;
                             }
                             .sync-stats .stat-label {
@@ -2075,7 +2135,7 @@ class InvoiceTableManager {
                 // Show error message
                 await Swal.fire({
                     title: 'Sync Failed',
-                    text: data.message || 'Failed to sync amount data',
+                    text: data.message || 'Failed to sync status data',
                     icon: 'error',
                     confirmButtonText: 'OK',
                     customClass: {
@@ -2085,12 +2145,12 @@ class InvoiceTableManager {
             }
 
         } catch (error) {
-            console.error('Error syncing amounts:', error);
+            console.error('Error syncing status:', error);
             this.hideLoadingBackdrop();
 
             await Swal.fire({
                 title: 'Sync Error',
-                text: 'An error occurred while syncing amount data. Please try again.',
+                text: 'An error occurred while syncing status data. Please try again.',
                 icon: 'error',
                 confirmButtonText: 'OK',
                 customClass: {
@@ -2422,7 +2482,6 @@ class InvoiceTableManager {
         console.log('Initializing features');
         this.initializeTableStyles();
         this.initializeTooltips();
-        this.initializeEventListeners();
         this.initializeSelectAll();
         this.initializeTINValidation(); // Add TIN validation initialization
     }
@@ -2539,6 +2598,12 @@ class InvoiceTableManager {
         const cleanupButton = document.getElementById('cleanupOldFiles');
         if (cleanupButton) {
             cleanupButton.addEventListener('click', () => this.handleCleanupOldFiles());
+        }
+
+        // Add handleSyncStatus
+        const syncStatusBtn = document.getElementById('syncStatusBtn');
+        if (syncStatusBtn) {
+            syncStatusBtn.addEventListener('click', () => this.handleSyncStatus());
         }
     }
 
@@ -3338,27 +3403,35 @@ class InvoiceTableManager {
     }
 
     refresh(forceRefresh = false) {
-        if (forceRefresh) {
-            // Force a refresh from the server
-            sessionStorage.setItem('forceRefreshOutboundTable', 'true');
-            this.table?.ajax.reload(null, false);
-        } else if (dataCache.isCacheValid()) {
-            // Use cached data if it's valid
-            console.log('Using cached data for table refresh');
-            if (this.table) {
-                const currentData = this.table.data().toArray();
-                // Only update if there's a difference in the data (like status changes)
-                if (JSON.stringify(currentData) !== JSON.stringify(dataCache.tableData)) {
-                    this.table.clear();
-                    this.table.rows.add(dataCache.tableData);
-                    this.table.draw(false); // false to keep current paging
-                }
-                // Update card totals regardless
-                this.updateCardTotals();
-            }
+        console.log('🔄 Refresh called, current data source:', this.currentDataSource);
+
+        if (this.currentDataSource === 'staging') {
+            // If we're in staging mode, refresh staging data
+            this.switchToStagingData();
         } else {
-            // No valid cache, get from server
-            this.table?.ajax.reload(null, false);
+            // If we're in live mode, refresh live data
+            if (forceRefresh) {
+                // Force a refresh from the server
+                sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+                this.table?.ajax.reload(null, false);
+            } else if (dataCache.isCacheValid()) {
+                // Use cached data if it's valid
+                console.log('Using cached data for table refresh');
+                if (this.table) {
+                    const currentData = this.table.data().toArray();
+                    // Only update if there's a difference in the data (like status changes)
+                    if (JSON.stringify(currentData) !== JSON.stringify(dataCache.tableData)) {
+                        this.table.clear();
+                        this.table.rows.add(dataCache.tableData);
+                        this.table.draw(false); // false to keep current paging
+                    }
+                    // Update card totals regardless
+                    this.updateCardTotals();
+                }
+            } else {
+                // Refresh live data
+                this.table?.ajax.reload(null, false);
+            }
         }
     }
 
@@ -3556,251 +3629,6 @@ class InvoiceTableManager {
     `;
     }
 
-    showEmptyState(message = 'No EXCEL files found') {
-        const emptyState = `
-  <div class="empty-state">
-  <div class="empty-state-content">
-    <div class="icon-wrapper">
-      <div class="ring"></div>
-      <div class="ring-2 "></div>
-      <div class="icon bounce">
-        <i class="fas fa-file-excel"></i>
-      </div>
-    </div>
-
-    <div class="text-content">
-      <h3 class="title">No Documents Available</h3>
-      <p class="description">Upload an Excel file to start processing your invoices</p>
-      <p class="sub-description">Supported formats: .xlsx, .xls</p>
-    </div>
-
-    <div class="button-group">
-      <button class="btn-primary" onclick="window.location.reload()">
-        <i class="fas fa-sync-alt"></i>
-        Refresh
-      </button>
-      <button class="btn-secondary" onclick="this.dispatchEvent(new CustomEvent('show-help'))">
-        <i class="fas fa-question-circle"></i>
-        Help
-      </button>
-    </div>
-  </div>
-</div>
-
-<style>
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-}
-
-.empty-state-content {
-  text-align: center;
-}
-
-.icon-wrapper {
-  position: relative;
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 24px;
-}
-
-/* Animated rings */
-.ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 2px solid #1e40af;
-  opacity: 0;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.ring-1 {
-  width: 100%;
-  height: 100%;
-  animation: ripple 2s infinite ease-out;
-}
-
-.ring-2 {
-  width: 90%;
-  height: 90%;
-  animation: ripple 2s infinite ease-out 0.5s;
-}
-
-/* Icon bounce animation */
-.icon {
-  position: relative;
-  color: #1e40af;
-  font-size: 48px;
-  animation: bounce 2s infinite;
-}
-
-.text-content {
-  margin-bottom: 24px;
-}
-
-.title {
-  color: #1f2937;
-  font-size: 18px;
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-
-.description {
-  color: #6b7280;
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.sub-description {
-  color: #9ca3af;
-  font-size: 13px;
-}
-
-.button-group {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
-.btn-primary, .btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: #1e40af;
-  color: white;
-  border: none;
-}
-
-.btn-primary:hover {
-  background: #1e3a8a;
-}
-
-.btn-primary:hover i {
-  animation: spin 1s linear infinite;
-}
-
-.btn-secondary {
-  background: white;
-  color: #374151;
-  border: 1px solid #d1d5db;
-}
-
-.btn-secondary:hover {
-  background: #f3f4f6;
-}
-
-.btn-primary i, .btn-secondary i {
-  margin-right: 8px;
-}
-
-/* Animations */
-@keyframes ripple {
-  0% {
-    transform: translate(-50%, -50%) scale(0.8);
-    opacity: 0.5;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1.2);
-    opacity: 0;
-  }
-}
-
-@keyframes bounce {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-@keyframes spin {
-  100% {
-    transform: rotate(360deg);
-  }
-}
-</style>
-        `;
-
-        const tableContainer = document.querySelector('.outbound-table-container');
-        if (tableContainer) {
-            tableContainer.innerHTML = emptyState;
-
-            const helpButton = tableContainer.querySelector('button[onclick*="show-help"]');
-            if (helpButton) {
-                helpButton.addEventListener('click', () => {
-                    Swal.fire({
-                        title: '<div class="text-xl font-semibold mb-2">Excel Files Guide</div>',
-                        html: `
-                <div class="text-left px-2">
-                    <div class="mb-4">
-                        <p class="text-gray-600 mb-3">Not seeing your Excel files? Here's a comprehensive checklist to help you:</p>
-                    </div>
-
-                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
-                        <h3 class="font-medium text-blue-800 mb-2">File Requirements:</h3>
-                        <ul class="list-disc pl-4 text-blue-700">
-                            <li>Accepted formats: .xls, .xlsx</li>
-                            <li>Maximum file size: 10MB</li>
-                            <li>File naming format: {fileName}.xls</li>
-                </ul>
-                    </div>
-
-                    <div class="space-y-3">
-                        <h3 class="font-medium text-gray-700 mb-2">Troubleshooting Steps:</h3>
-                        <div class="flex items-start mb-2">
-                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
-                            <p>Verify Excel files are in the correct upload directory</p>
-                        </div>
-                        <div class="flex items-start mb-2">
-                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
-                            <p>Check if files follow the required naming convention</p>
-                        </div>
-                        <div class="flex items-start mb-2">
-                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
-                            <p>Confirm you have proper file access permissions</p>
-                        </div>
-                        <div class="flex items-start">
-                            <div class="flex-shrink-0 w-5 h-5 text-green-500 mr-2">✓</div>
-                            <p>Ensure files are not corrupted or password-protected</p>
-                        </div>
-                    </div>
-
-                    <div class="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <h3 class="font-medium text-gray-700 mb-2">Still having issues?</h3>
-                        <p class="text-gray-600">Contact your system administrator or reach out to support at
-                            <a href="mailto:ask@pixelcareconsulting.com" class="text-blue-600 hover:text-blue-800">ask@pixelcareconsulting.com</a>
-                        </p>
-                    </div>
-                </div>
-            `,
-                        icon: 'info',
-                        confirmButtonText: 'Got it',
-                        confirmButtonColor: '#1e40af',
-                        customClass: {
-                            container: 'help-modal-container',
-                            popup: 'help-modal-popup',
-                            content: 'help-modal-content',
-                            confirmButton: 'help-modal-confirm'
-                        },
-                        showCloseButton: true,
-                        width: '600px'
-                    });
-                });
-            }
-        }
-    }
-
     getEmptyStateHtml(message = 'No EXCEL files found') {
         return `
             <div class="empty-state-container text-center p-4">
@@ -3810,6 +3638,23 @@ class InvoiceTableManager {
                 <p class="empty-state-description text-muted">${message}</p>
             </div>
         `;
+    }
+
+    showEmptyState(message = 'No EXCEL files found') {
+        // Show empty state message in table
+        $('#invoiceTable tbody').html(`
+            <tr>
+                <td colspan="10" class="text-center p-4">
+                    <div class="empty-state-container">
+                        <div class="empty-state-icon mb-3">
+                            <i class="fas fa-file-excel fa-3x text-muted"></i>
+                        </div>
+                        <h5>${message}</h5>
+                        <p class="text-muted">Try refreshing the page or check your data source settings.</p>
+                    </div>
+                </td>
+            </tr>
+        `);
     }
 
     // Initialize session counter for validation limits
@@ -4432,6 +4277,103 @@ async function showConfirmationDialog(fileName, type, company, date, version) {
         }
     }).then((result) => result.isConfirmed);
 }
+
+// Initialize data source toggle functionality
+function initializeDataSourceToggle() {
+    const liveDataSource = document.getElementById('liveDataSource');
+    const archiveDataSource = document.getElementById('archiveDataSource');
+    const refreshButton = document.getElementById('refreshDataSource');
+
+    if (!liveDataSource || !archiveDataSource || !refreshButton) {
+        console.warn('Data source toggle elements not found');
+        return;
+    }
+
+    // Debouncing variables
+    let lastToggleTime = 0;
+    let currentDataSource = 'live'; // Track current state
+    const toggleDebounceDelay = 300; // 300ms debounce
+
+    // Handle data source toggle with better event handling
+    function handleDataSourceChange(event) {
+        // Only process if the radio button is being checked (not unchecked)
+        if (!event.target.checked) {
+            return;
+        }
+
+        const currentTime = Date.now();
+
+        // Debounce rapid successive calls
+        if (currentTime - lastToggleTime < toggleDebounceDelay) {
+            console.log('Data source toggle debounced - too rapid');
+            return;
+        }
+        lastToggleTime = currentTime;
+
+        const tableManager = InvoiceTableManager.getInstance();
+        if (!tableManager) return;
+
+        const isArchiveMode = archiveDataSource.checked;
+        const newDataSource = isArchiveMode ? 'staging' : 'live';
+
+        // Prevent duplicate switches to the same data source
+        if (newDataSource === currentDataSource) {
+            console.log('Already on', newDataSource, 'data source - skipping switch');
+            return;
+        }
+
+        console.log('🔄 Data source toggle:', isArchiveMode ? 'Archive Staging' : 'Live Excel Files');
+        currentDataSource = newDataSource;
+
+        // Set the data source mode
+        tableManager.isArchiveMode = isArchiveMode;
+
+        if (isArchiveMode) {
+            // Switch to staging data
+            tableManager.switchToStagingData();
+        } else {
+            // Switch to live data
+            tableManager.switchToListAllData('pending');
+        }
+    }
+
+    // Add event listeners - only listen to the checked state
+    liveDataSource.addEventListener('change', handleDataSourceChange);
+    archiveDataSource.addEventListener('change', handleDataSourceChange);
+
+    // Handle refresh button with debouncing
+    let lastRefreshTime = 0;
+    const refreshDebounceDelay = 1000; // 1 second debounce for refresh
+
+    refreshButton.addEventListener('click', function() {
+        const currentTime = Date.now();
+
+        // Debounce rapid refresh clicks
+        if (currentTime - lastRefreshTime < refreshDebounceDelay) {
+            console.log('Refresh button debounced - too rapid');
+            return;
+        }
+        lastRefreshTime = currentTime;
+
+        const tableManager = InvoiceTableManager.getInstance();
+        if (!tableManager) return;
+
+        console.log('🔄 Refresh button clicked');
+
+        // Check current data source and refresh accordingly
+        if (tableManager.currentDataSource === 'staging') {
+            console.log('🔄 Refreshing staging data...');
+            tableManager.switchToStagingData();
+        } else {
+            console.log('🔄 Refreshing live data...');
+            // Force refresh by setting session storage flags and trigger reload
+            sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+            dataCache.invalidateCache();
+            tableManager.table?.ajax.reload(null, false);
+        }
+    });
+}
+
 
 // Helper function to format address for display
 function formatAddress(address) {
@@ -7313,6 +7255,9 @@ document.addEventListener('DOMContentLoaded', () => {
     InvoiceTableManager.getInstance();
     DateTimeManager.updateDateTime();
 
+    // Initialize data source toggle functionality
+    initializeDataSourceToggle();
+
     // Check for any pending submissions that might have been interrupted by a server restart
     checkPendingSubmissions();
 });
@@ -7382,382 +7327,3 @@ async function checkPendingSubmissions() {
     }
 }
 
-class ConsolidatedSubmissionManager {
-    constructor() {
-        this.selectedDocs = new Set();
-        this.initializeEventListeners();
-    }
-
-    initializeEventListeners() {
-        // Handle consolidated submit button click
-        document.getElementById('submitConsolidatedBtn').addEventListener('click', () => {
-            this.handleConsolidatedSubmit();
-        });
-
-        // Update selected docs list when checkboxes change
-        // Only listen to enabled checkboxes (Pending status)
-        document.addEventListener('change', (e) => {
-            if (e.target.matches('.row-checkbox:not([disabled])') || e.target.id === 'selectAll') {
-                this.updateSelectedDocs();
-            }
-        });
-    }
-
-    updateSelectedDocs() {
-        // Only get rows with enabled checkboxes (Pending status)
-        const checkboxes = document.querySelectorAll('.row-checkbox:not([disabled]):checked:not(#selectAll)');
-        this.selectedDocs.clear();
-
-        checkboxes.forEach(checkbox => {
-            const row = checkbox.closest('tr');
-            const rowData = InvoiceTableManager.getInstance().table.row(row).data();
-            if (rowData) {
-                // Double-check that the status is Pending
-                if (rowData.status && rowData.status.toLowerCase() === 'pending') {
-                    this.selectedDocs.add({
-                        fileName: rowData.fileName,
-                        type: rowData.type,
-                        company: rowData.company,
-                        date: rowData.date
-                    });
-                }
-            }
-        });
-
-        this.updateSelectedDocsList();
-        this.updateSubmitButton();
-    }
-
-    updateSelectedDocsList() {
-        const listContainer = $('#selectedDocsList');
-        listContainer.empty();
-
-        if (this.selectedDocs.size === 0) {
-            return; // Empty state is handled by CSS
-        }
-
-        this.selectedDocs.forEach(doc => {
-            const docItem = $(`
-                <div class="doc-item">
-                    <i class="bi bi-file-earmark-text text-primary"></i>
-                    <span class="flex-grow-1">${doc.fileName}</span>
-                    <span class="company-badge">${doc.company || 'PXC Branch'}</span>
-            </div>
-        `);
-            listContainer.append(docItem);
-        });
-    }
-
-    updateSubmitButton() {
-        const submitBtn = document.getElementById('submitConsolidatedBtn');
-        submitBtn.disabled = this.selectedDocs.size === 0;
-    }
-
-    async handleConsolidatedSubmit() {
-        const version = document.getElementById('lhdnVersion').value;
-        const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
-        const submissionProgress = document.getElementById('submissionProgress');
-
-        try {
-            progressModal.show();
-            submissionProgress.innerHTML = '<div class="alert alert-info">Starting consolidated submission...</div>';
-
-            let successCount = 0;
-            let failureCount = 0;
-            const results = [];
-
-            for (const doc of this.selectedDocs) {
-                try {
-                    submissionProgress.innerHTML += `
-                        <div class="alert alert-info">
-                            Processing ${doc.fileName}...
-                        </div>
-                    `;
-
-                    // First validate the document
-                    const validationResult = await validateExcelFile(doc.fileName, doc.type, doc.company, doc.date);
-
-                    if (validationResult.success) {
-                        // If validation successful, submit to LHDN
-                        try {
-                            // Show a progress message
-                            submissionProgress.innerHTML += `
-                                <div class="alert alert-info">
-                                    Submitting ${doc.fileName} to LHDN...
-                                </div>
-                            `;
-
-                            await submitToLHDN(doc.fileName, doc.type, doc.company, doc.date, version);
-                            successCount++;
-                            results.push({
-                                fileName: doc.fileName,
-                                status: 'success',
-                                message: 'Successfully submitted'
-                            });
-                        } catch (error) {
-                            failureCount++;
-                            results.push({
-                                fileName: doc.fileName,
-                                status: 'error',
-                                message: error.message || 'Submission failed'
-                            });
-                        }
-                    } else {
-                        failureCount++;
-                        results.push({
-                            fileName: doc.fileName,
-                            status: 'error',
-                            message: 'Validation failed'
-                        });
-                    }
-                } catch (error) {
-                    failureCount++;
-                    results.push({
-                        fileName: doc.fileName,
-                        status: 'error',
-                        message: error.message
-                    });
-                }
-            }
-
-            // Show final results
-            submissionProgress.innerHTML = `
-                <div class="alert ${successCount === this.selectedDocs.size ? 'alert-success' : 'alert-warning'}">
-                    <h6>Submission Complete</h6>
-                    <p>Successfully submitted: ${successCount}</p>
-                    <p>Failed: ${failureCount}</p>
-                </div>
-                <div class="results-list">
-                    ${results.map(result => `
-                        <div class="alert alert-${result.status === 'success' ? 'success' : 'danger'}">
-                            <strong>${result.fileName}</strong>: ${result.message}
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-
-            // Refresh the table after submission
-            InvoiceTableManager.getInstance().refresh();
-
-        } catch (error) {
-            submissionProgress.innerHTML = `
-                <div class="alert alert-danger">
-                    <h6>Submission Failed</h6>
-                    <p>${error.message}</p>
-                </div>
-            `;
-        }
-    }
-}
-
-// Initialize the consolidated submission manager when the document is ready
-document.addEventListener('DOMContentLoaded', () => {
-    new ConsolidatedSubmissionManager();
-});
-
-// Handle bulk document submission
-async function handleBulkSubmission(selectedDocs) {
-    const progressModal = new bootstrap.Modal(document.getElementById('submissionProgressModal'));
-    const progressDiv = document.getElementById('submissionProgress');
-    const tableManager = InvoiceTableManager.getInstance();
-
-    try {
-        // Show loading backdrop with specific message
-        tableManager.showLoadingBackdrop('Submitting Documents to LHDN');
-
-        // Initialize progress UI
-        if (!progressDiv) {
-            throw new Error('Progress container not found');
-        }
-
-        progressDiv.innerHTML = `
-            <div class="progress mb-3">
-                <div class="progress-bar progress-bar-striped progress-bar-animated"
-                     role="progressbar"
-                     style="width: 0%"
-                     aria-valuenow="0"
-                     aria-valuemin="0"
-                     aria-valuemax="100">
-                </div>
-            </div>
-            <div class="submission-status mb-3">Preparing documents for submission...</div>
-            <div class="documents-status"></div>
-        `;
-
-        progressModal.show();
-
-        const version = document.getElementById('lhdnVersion')?.value || '1.0';
-        const progressBar = progressDiv.querySelector('.progress-bar');
-        const statusText = progressDiv.querySelector('.submission-status');
-        const documentsStatus = progressDiv.querySelector('.documents-status');
-
-        if (!progressBar || !statusText || !documentsStatus) {
-            throw new Error('Required progress elements not found');
-        }
-
-        // Submit documents
-        const response = await fetch('/api/outbound-files/bulk-submit', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest', // Add AJAX header to prevent full page reload
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0'
-            },
-            credentials: 'same-origin', // Include credentials to send cookies with the request
-            body: JSON.stringify({ documents: selectedDocs, version })
-        });
-
-        const result = await response.json();
-        if (!response.ok) {
-            throw new Error(result.error?.message || 'Failed to submit documents');
-        }
-
-        // Update progress for each document
-        result.results.forEach((docResult, index) => {
-            const progress = ((index + 1) / result.results.length) * 100;
-            progressBar.style.width = `${progress}%`;
-            progressBar.setAttribute('aria-valuenow', progress);
-
-            const statusClass = docResult.success ? 'text-success' : 'text-danger';
-            const statusIcon = docResult.success ? 'check-circle-fill' : 'x-circle-fill';
-            documentsStatus.insertAdjacentHTML('beforeend', `
-                <div class="doc-status mb-2 ${statusClass}">
-                    <i class="bi bi-${statusIcon}"></i>
-                    ${docResult.fileName}: ${docResult.success ? 'Submitted successfully' : docResult.error.message}
-                </div>
-            `);
-        });
-
-        statusText.textContent = 'Submission complete';
-        progressBar.style.width = '100%';
-        progressBar.setAttribute('aria-valuenow', 100);
-        progressBar.classList.remove('progress-bar-animated');
-
-        // Hide loading backdrop before updating the table
-        tableManager.hideLoadingBackdrop();
-
-        // Update table data in-place without AJAX refresh
-        tableManager.updateTableAfterSubmission(result.results);
-
-        const successCount = result.results.filter(r => r.success).length;
-        const failureCount = result.results.filter(r => !r.success).length;
-
-        // Close consolidated modal if open
-        const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
-        if (consolidatedModal) {
-            consolidatedModal.hide();
-        }
-
-        await Swal.fire({
-            icon: successCount > 0 ? 'success' : 'warning',
-            title: 'Submission Complete',
-            html: `
-                <div class="submission-summary">
-                    <p>Successfully submitted: ${successCount} document(s)</p>
-                    <p>Failed submissions: ${failureCount} document(s)</p>
-                    ${failureCount > 0 ? '<p>Check the progress modal for details on failed submissions.</p>' : ''}
-                </div>
-            `,
-            confirmButtonText: 'OK',
-            customClass: { confirmButton: 'outbound-action-btn submit' }
-        });
-
-    } catch (error) {
-        console.error('Bulk submission error:', error);
-
-        // Hide loading backdrop
-        tableManager.hideLoadingBackdrop();
-
-        if (progressDiv) {
-            progressDiv.innerHTML = `
-                <div class="alert alert-danger">
-                    <h6>Submission Failed</h6>
-                    <p>${error.message}</p>
-                </div>
-            `;
-        }
-
-        await Swal.fire({
-            icon: 'error',
-            title: 'Submission Failed',
-            text: error.message || 'An error occurred during bulk submission',
-            confirmButtonText: 'OK',
-            customClass: { confirmButton: 'btn btn-primary' }
-        });
-    }
-}
-
-// Reset DataTables request flag on page load to prevent conflicts
-window.addEventListener('load', function() {
-    window._dataTablesRequestInProgress = false;
-    window._dataTablesRequestStartTime = null;
-    console.log('DataTables request flags reset on page load');
-});
-
-// Reset DataTables request flag on page unload to prevent conflicts on next page load
-window.addEventListener('beforeunload', function() {
-    window._dataTablesRequestInProgress = false;
-    window._dataTablesRequestStartTime = null;
-});
-
-// Add event listener for bulk submit button
-document.addEventListener('DOMContentLoaded', function() {
-    // Reset DataTables request flag on DOM content loaded
-    window._dataTablesRequestInProgress = false;
-    window._dataTablesRequestStartTime = null;
-
-    const submitConsolidatedBtn = document.getElementById('submitConsolidatedBtn');
-    if (submitConsolidatedBtn) {
-        submitConsolidatedBtn.addEventListener('click', async function() {
-            const tableManager = InvoiceTableManager.getInstance();
-
-            // Show loading backdrop during validation
-            tableManager.showLoadingBackdrop();
-
-            const selectedRows = Array.from(document.querySelectorAll('input.outbound-checkbox:checked'))
-                .map(checkbox => {
-                    const row = checkbox.closest('tr');
-                    return {
-                        fileName: row.getAttribute('data-file-name'),
-                        type: row.getAttribute('data-type'),
-                        company: row.getAttribute('data-company'),
-                        date: row.getAttribute('data-date')
-                    };
-                });
-
-            if (selectedRows.length === 0) {
-                tableManager.hideLoadingBackdrop();
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'No Documents Selected',
-                    text: 'Please select at least one document to submit.'
-                });
-                return;
-            }
-
-            const confirmResult = await Swal.fire({
-                icon: 'question',
-                title: 'Confirm Bulk Submission',
-                html: `Are you sure you want to submit ${selectedRows.length} document(s)?`,
-                showCancelButton: true,
-                confirmButtonText: 'Yes, Submit',
-                cancelButtonText: 'Cancel',
-                customClass: {
-                    confirmButton: 'btn btn-primary',
-                    cancelButton: 'btn btn-secondary'
-                }
-            });
-
-            if (confirmResult.isConfirmed) {
-                const consolidatedModal = bootstrap.Modal.getInstance(document.getElementById('consolidatedSubmitModal'));
-                consolidatedModal.hide();
-                await handleBulkSubmission(selectedRows);
-            } else {
-                // Hide loading backdrop if cancelled
-                tableManager.hideLoadingBackdrop();
-            }
-        });
-    }
-});

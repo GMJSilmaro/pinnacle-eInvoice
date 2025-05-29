@@ -243,3 +243,69 @@ model LHDN_TOKENS {
 
   @@index([expiry_time], map: "idx_lhdn_tokens_expiry")
 }
+
+model WP_NOTIFICATIONS {
+  id              Int       @id @default(autoincrement())
+  title           String    @db.VarChar(255)
+  message         String    @db.Text
+  type            String    @db.VarChar(50) // 'system', 'lhdn', 'announcement', 'alert'
+  priority        String    @default("normal") @db.VarChar(20) // 'low', 'normal', 'high', 'urgent'
+  target_user_id  Int?      // null for all users, specific ID for targeted notifications
+  target_role     String?   @db.VarChar(50) // 'admin', 'user', null for all
+  is_read         Boolean   @default(false)
+  is_global       Boolean   @default(false) // true for announcements visible to all
+  source_type     String?   @db.VarChar(50) // 'internal', 'lhdn_api', 'system'
+  source_id       String?   @db.VarChar(255) // reference to source record
+  metadata        String?   @db.Text // JSON metadata
+  expires_at      DateTime? @db.DateTime
+  created_by      Int?
+  created_at      DateTime  @default(now()) @db.DateTime
+  updated_at      DateTime  @default(now()) @updatedAt @db.DateTime
+
+  @@index([target_user_id], map: "idx_notifications_user")
+  @@index([type], map: "idx_notifications_type")
+  @@index([is_read], map: "idx_notifications_read")
+  @@index([created_at], map: "idx_notifications_created")
+  @@index([expires_at], map: "idx_notifications_expires")
+}
+
+model WP_ANNOUNCEMENTS {
+  id              Int       @id @default(autoincrement())
+  title           String    @db.VarChar(255)
+  content         String    @db.Text
+  summary         String?   @db.VarChar(500)
+  type            String    @default("general") @db.VarChar(50) // 'general', 'maintenance', 'feature', 'security'
+  priority        String    @default("normal") @db.VarChar(20) // 'low', 'normal', 'high', 'urgent'
+  status          String    @default("draft") @db.VarChar(20) // 'draft', 'published', 'archived'
+  target_audience String    @default("all") @db.VarChar(50) // 'all', 'admin', 'users'
+  is_pinned       Boolean   @default(false)
+  is_popup        Boolean   @default(false) // show as popup on login
+  publish_at      DateTime? @db.DateTime
+  expires_at      DateTime? @db.DateTime
+  created_by      Int
+  updated_by      Int?
+  created_at      DateTime  @default(now()) @db.DateTime
+  updated_at      DateTime  @default(now()) @updatedAt @db.DateTime
+
+  @@index([status], map: "idx_announcements_status")
+  @@index([type], map: "idx_announcements_type")
+  @@index([publish_at], map: "idx_announcements_publish")
+  @@index([created_at], map: "idx_announcements_created")
+}
+
+model WP_USER_NOTIFICATION_SETTINGS {
+  id                    Int     @id @default(autoincrement())
+  user_id               Int     @unique
+  email_notifications   Boolean @default(true)
+  browser_notifications Boolean @default(true)
+  system_alerts         Boolean @default(true)
+  lhdn_notifications    Boolean @default(true)
+  announcement_popup    Boolean @default(true)
+  digest_frequency      String  @default("daily") @db.VarChar(20) // 'none', 'daily', 'weekly'
+  quiet_hours_start     String? @db.VarChar(5) // HH:MM format
+  quiet_hours_end       String? @db.VarChar(5) // HH:MM format
+  created_at            DateTime @default(now()) @db.DateTime
+  updated_at            DateTime @default(now()) @updatedAt @db.DateTime
+
+  @@index([user_id], map: "idx_user_notification_settings_user")
+}

@@ -373,11 +373,437 @@
       // Setup dropdown functionality
       setupDropdown();
 
+      // Load notification count
+      loadNotificationCount();
+
       console.log('UI update complete');
     } catch (error) {
       console.error('Error updating UI:', error);
     }
   }
+
+  // Function to load notification count
+  async function loadNotificationCount() {
+    try {
+      const response = await fetch('/api/notifications/unread-count', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.count > 0) {
+          const badge = document.getElementById('notificationBadge');
+          if (badge) {
+            badge.textContent = data.count > 99 ? '99+' : data.count;
+            badge.style.display = 'flex';
+          }
+        } else {
+          const badge = document.getElementById('notificationBadge');
+          if (badge) {
+            badge.style.display = 'none';
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading notification count:', error);
+    }
+  }
+
+  // Navbar notification dropdown functionality
+  let navbarNotificationDropdownOpen = false;
+  let navbarNotificationDropdownData = [];
+
+  // Initialize navbar notification dropdown on hover
+  function initializeNotificationDropdown() {
+    const navbarNotificationContainer = document.querySelector('.notification-dropdown-container');
+    const navbarNotificationDropdown = document.getElementById('notificationDropdown');
+
+    if (navbarNotificationContainer && navbarNotificationDropdown) {
+      let navbarHoverTimeout;
+      let navbarIsHovering = false;
+
+      // Mouse enter on container
+      navbarNotificationContainer.addEventListener('mouseenter', () => {
+        clearTimeout(navbarHoverTimeout);
+        navbarIsHovering = true;
+        navbarNotificationDropdown.classList.remove('hidden');
+        navbarNotificationDropdown.style.display = 'block';
+        navbarNotificationDropdown.style.opacity = '1';
+        navbarNotificationDropdown.style.transform = 'scale(1) translateY(0)';
+        navbarNotificationDropdown.style.pointerEvents = 'auto';
+        navbarNotificationDropdown.style.zIndex = '99999';
+        navbarNotificationDropdownOpen = true;
+        loadNavbarNotificationDropdown();
+      });
+
+      // Mouse leave on container
+      navbarNotificationContainer.addEventListener('mouseleave', () => {
+        navbarIsHovering = false;
+        navbarHoverTimeout = setTimeout(() => {
+          if (!navbarIsHovering) {
+            navbarNotificationDropdown.classList.add('hidden');
+            navbarNotificationDropdown.style.display = 'none';
+            navbarNotificationDropdown.style.opacity = '0';
+            navbarNotificationDropdown.style.transform = 'scale(0.95) translateY(-10px)';
+            navbarNotificationDropdown.style.pointerEvents = 'none';
+            navbarNotificationDropdownOpen = false;
+          }
+        }, 300); // Increased delay to prevent flickering
+      });
+
+      // Mouse enter on dropdown itself
+      navbarNotificationDropdown.addEventListener('mouseenter', () => {
+        clearTimeout(navbarHoverTimeout);
+        navbarIsHovering = true;
+      });
+
+      // Mouse leave on dropdown
+      navbarNotificationDropdown.addEventListener('mouseleave', () => {
+        navbarIsHovering = false;
+        navbarHoverTimeout = setTimeout(() => {
+          if (!navbarIsHovering) {
+            navbarNotificationDropdown.classList.add('hidden');
+            navbarNotificationDropdown.style.display = 'none';
+            navbarNotificationDropdown.style.opacity = '0';
+            navbarNotificationDropdown.style.transform = 'scale(0.95) translateY(-10px)';
+            navbarNotificationDropdown.style.pointerEvents = 'none';
+            navbarNotificationDropdownOpen = false;
+          }
+        }, 300);
+      });
+    }
+  }
+
+  // Call initialization when DOM is loaded
+  document.addEventListener('DOMContentLoaded', initializeNotificationDropdown);
+
+  // Disable right-click context menu
+  document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    return false;
+  });
+
+  // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
+  document.addEventListener('keydown', function(e) {
+    // F12
+    if (e.keyCode === 123) {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+I (Developer Tools)
+    if (e.ctrlKey && e.shiftKey && e.keyCode === 73) {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+Shift+J (Console)
+    if (e.ctrlKey && e.shiftKey && e.keyCode === 74) {
+      e.preventDefault();
+      return false;
+    }
+    // Ctrl+U (View Source)
+    if (e.ctrlKey && e.keyCode === 85) {
+      e.preventDefault();
+      return false;
+    }
+  });
+
+  // Load navbar notifications for dropdown
+  async function loadNavbarNotificationDropdown() {
+    console.log('Loading navbar notification dropdown...');
+    const navbarLoadingEl = document.getElementById('notificationDropdownLoading');
+    const navbarEmptyEl = document.getElementById('notificationDropdownEmpty');
+    const navbarListEl = document.getElementById('notificationDropdownList');
+
+    console.log('Elements found:', { navbarLoadingEl, navbarEmptyEl, navbarListEl });
+
+    if (navbarLoadingEl) navbarLoadingEl.classList.remove('hidden');
+    if (navbarEmptyEl) navbarEmptyEl.classList.add('hidden');
+
+    try {
+      // Fetch both notifications and announcements
+      const [notificationsResponse, announcementsResponse] = await Promise.all([
+        fetch('/api/notifications?limit=3', {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }),
+        fetch('/api/announcements?status=published&limit=2', {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+      ]);
+
+      let navbarCombinedData = [];
+
+      // Process notifications
+      if (notificationsResponse.ok) {
+        const notificationsData = await notificationsResponse.json();
+        if (notificationsData.success && notificationsData.data) {
+          navbarCombinedData = [...navbarCombinedData, ...notificationsData.data.map(item => ({
+            ...item,
+            source: 'notification'
+          }))];
+        }
+      }
+
+      // Process announcements
+      if (announcementsResponse.ok) {
+        const announcementsData = await announcementsResponse.json();
+        if (announcementsData.success && announcementsData.data) {
+          navbarCombinedData = [...navbarCombinedData, ...announcementsData.data.map(item => ({
+            id: item.id,
+            title: item.title,
+            message: item.summary || item.content.substring(0, 100) + '...',
+            type: 'announcement',
+            priority: item.priority,
+            created_at: item.created_at,
+            is_read: false, // Announcements are always shown as new
+            source: 'announcement'
+          }))];
+        }
+      }
+
+      // Sort by creation date (newest first)
+      navbarCombinedData.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      navbarNotificationDropdownData = navbarCombinedData.slice(0, 5); // Limit to 5 items
+      console.log('Navbar notification data:', navbarNotificationDropdownData);
+      renderNavbarNotificationDropdown();
+
+    } catch (error) {
+      console.error('Error loading navbar notifications:', error);
+      showEmptyNavbarNotificationDropdown();
+    } finally {
+      if (navbarLoadingEl) navbarLoadingEl.classList.add('hidden');
+    }
+  }
+
+  // Show empty navbar notification dropdown
+  function showEmptyNavbarNotificationDropdown() {
+    const navbarEmptyEl = document.getElementById('notificationDropdownEmpty');
+    const navbarListEl = document.getElementById('notificationDropdownList');
+
+    if (navbarListEl) {
+      const existingNavbarNotifications = navbarListEl.querySelectorAll('.navbar-notification-dropdown-item');
+      existingNavbarNotifications.forEach(item => item.remove());
+    }
+
+    if (navbarEmptyEl) navbarEmptyEl.classList.remove('hidden');
+    navbarNotificationDropdownData = [];
+  }
+
+  // Render navbar notifications in dropdown
+  function renderNavbarNotificationDropdown() {
+    console.log('Rendering navbar notification dropdown...');
+    const navbarListEl = document.getElementById('notificationDropdownList');
+    const navbarEmptyEl = document.getElementById('notificationDropdownEmpty');
+
+    console.log('Render elements:', { navbarListEl, navbarEmptyEl });
+    if (!navbarListEl) {
+      console.error('navbarListEl not found!');
+      return;
+    }
+
+    // Clear existing notifications (except loading and empty states)
+    const existingNavbarNotifications = navbarListEl.querySelectorAll('.navbar-notification-dropdown-item');
+    existingNavbarNotifications.forEach(item => item.remove());
+
+    if (navbarNotificationDropdownData.length === 0) {
+      if (navbarEmptyEl) navbarEmptyEl.classList.remove('hidden');
+      return;
+    }
+
+    if (navbarEmptyEl) navbarEmptyEl.classList.add('hidden');
+
+    // Render notifications
+    console.log('Rendering', navbarNotificationDropdownData.length, 'notifications');
+    navbarNotificationDropdownData.slice(0, 5).forEach((notification, index) => {
+      console.log(`Creating notification ${index}:`, notification);
+      const navbarNotificationEl = createNavbarNotificationDropdownItem(notification);
+      console.log('Created element:', navbarNotificationEl);
+      navbarListEl.appendChild(navbarNotificationEl);
+    });
+    console.log('Finished rendering notifications');
+  }
+
+  // Create navbar notification dropdown item
+  function createNavbarNotificationDropdownItem(notification) {
+    const navbarDiv = document.createElement('div');
+    navbarDiv.className = `navbar-notification-dropdown-item ${!notification.is_read ? 'bg-blue-50' : ''}`;
+
+    const timeAgo = formatTimeAgo(notification.created_at);
+    const iconClass = getNavbarNotificationIcon(notification.type);
+    const iconBgColor = getNavbarNotificationIconBg(notification.type);
+
+    navbarDiv.innerHTML = `
+      <div class="flex items-start gap-3 p-4">
+        <div class="flex-shrink-0">
+          <div class="w-8 h-8 rounded-full ${iconBgColor} flex items-center justify-center">
+            <span class="material-symbols-outlined text-white text-sm">${iconClass}</span>
+          </div>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between">
+            <div class="flex-1">
+              <p class="text-sm font-medium text-gray-900 mb-1 line-clamp-1">${escapeHtml(notification.title)}</p>
+              <p class="text-xs text-gray-600 leading-relaxed line-clamp-2 mb-2">${escapeHtml(notification.message)}</p>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-gray-500">${timeAgo}</span>
+                ${getNavbarNotificationTypeBadge(notification.type)}
+              </div>
+            </div>
+            ${!notification.is_read ? '<div class="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full ml-2 mt-1"></div>' : ''}
+          </div>
+        </div>
+      </div>
+    `;
+
+    navbarDiv.addEventListener('click', () => {
+      // Mark as read and navigate
+      if (!notification.is_read && notification.source === 'notification') {
+        markNavbarNotificationAsRead(notification.id);
+      }
+      // Close dropdown and navigate
+      const navbarDropdown = document.getElementById('notificationDropdown');
+      if (navbarDropdown) {
+        navbarDropdown.classList.add('hidden');
+        navbarDropdown.style.display = 'none';
+      }
+      navbarNotificationDropdownOpen = false;
+      window.location.href = '/dashboard/notifications';
+    });
+
+    return navbarDiv;
+  }
+
+  // Get navbar notification icon
+  function getNavbarNotificationIcon(type) {
+    const navbarIcons = {
+      system: 'settings',
+      lhdn: 'public',
+      announcement: 'campaign',
+      alert: 'warning'
+    };
+    return navbarIcons[type] || 'notifications';
+  }
+
+  // Get navbar notification icon background color
+  function getNavbarNotificationIconBg(type) {
+    const navbarColors = {
+      system: 'bg-blue-500',
+      lhdn: 'bg-green-500',
+      announcement: 'bg-orange-500',
+      alert: 'bg-red-500'
+    };
+    return navbarColors[type] || 'bg-gray-500';
+  }
+
+  // Get navbar notification type badge
+  function getNavbarNotificationTypeBadge(type) {
+    const navbarBadges = {
+      system: '<span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded font-medium">System</span>',
+      lhdn: '<span class="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded font-medium">LHDN</span>',
+      announcement: '<span class="px-1.5 py-0.5 text-xs bg-orange-100 text-orange-700 rounded font-medium">News</span>',
+      alert: '<span class="px-1.5 py-0.5 text-xs bg-red-100 text-red-700 rounded font-medium">Alert</span>'
+    };
+    return navbarBadges[type] || '<span class="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-700 rounded font-medium">Info</span>';
+  }
+
+  // Format time ago
+  function formatTimeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  // Escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Mark navbar notification as read
+  async function markNavbarNotificationAsRead(notificationId) {
+    try {
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        // Update the notification in local data
+        const navbarNotification = navbarNotificationDropdownData.find(n => n.id === notificationId);
+        if (navbarNotification) {
+          navbarNotification.is_read = true;
+        }
+        // Refresh notification count
+        loadNotificationCount();
+        renderNavbarNotificationDropdown();
+      }
+    } catch (error) {
+      console.error('Error marking navbar notification as read:', error);
+    }
+  }
+
+  // Mark all navbar notifications as read
+  window.markAllNotificationsRead = async function() {
+    try {
+      const response = await fetch('/api/notifications/mark-all-read', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        // Update all notifications in local data
+        navbarNotificationDropdownData.forEach(navbarNotification => {
+          if (navbarNotification.source === 'notification') {
+            navbarNotification.is_read = true;
+          }
+        });
+        // Refresh notification count and dropdown
+        loadNotificationCount();
+        renderNavbarNotificationDropdown();
+      }
+    } catch (error) {
+      console.error('Error marking all navbar notifications as read:', error);
+    }
+  };
+
+  // Close navbar dropdown when clicking outside (keep for fallback)
+  document.addEventListener('click', function(event) {
+    const navbarContainer = document.querySelector('.notification-dropdown-container');
+    const navbarDropdown = document.getElementById('notificationDropdown');
+
+    if (navbarDropdown && navbarContainer && navbarNotificationDropdownOpen) {
+      if (!navbarContainer.contains(event.target)) {
+        navbarDropdown.classList.add('hidden');
+        navbarDropdown.style.display = 'none';
+        navbarNotificationDropdownOpen = false;
+      }
+    }
+  });
 
   // Enhanced navbar refresh function - no session check
   async function refreshNavbar() {

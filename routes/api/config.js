@@ -409,12 +409,20 @@ router.post('/lhdn/test-connection', async (req, res) => {
 // Add this new route for getting access token
 router.get('/lhdn/access-token', async (req, res) => {
     try {
-        const accessToken = await tokenService.getAccessToken(req);
+        // Read token directly from AuthorizeToken.ini file
+        const accessToken = tokenService.readTokenFromFile();
+
+        if (!accessToken) {
+            return res.status(404).json({
+                success: false,
+                error: 'No access token found in AuthorizeToken.ini file'
+            });
+        }
 
         res.json({
             success: true,
             accessToken,
-            expiryTime: req.session.tokenExpiryTime
+            expiryTime: null // We don't track expiry time from file in this simple approach
         });
     } catch (error) {
         console.error('Error getting access token:', error);

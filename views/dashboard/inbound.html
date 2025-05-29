@@ -331,6 +331,47 @@
         flex: 1;
     }
 }
+
+/* Loading backdrop styles */
+.loading-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.loading-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.loading-message {
+    margin-top: 1rem;
+    font-weight: 500;
+    color: #495057;
+}
+
+/* Data source toggle styles */
+.btn-group .btn-check:checked + .btn {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+}
+
+.btn-group .btn-check:not(:checked) + .btn {
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+    color: #6c757d;
+}
 </style>
 
 {% endblock %}
@@ -531,13 +572,20 @@
             <div class="table-header-content">
                 <h2 class="table-title">Inbound Document List</h2>
                 <div class="table-actions">
-                    <!-- <button id="exportSelected" class="btn outbound-action-btn submit btn-sm ms-1" disabled>
-                        <i class="bi bi-download me-2"></i>Export Selected
-                    </button> -->
-                    <!-- <button id="submitConsolidated" class="btn outbound-action-btn submit btn-sm ms-1" disabled data-bs-toggle="modal" data-bs-target="#consolidatedSubmitModal">
-                        <i class="bi bi-file-earmark-arrow-up"></i> Bulk Submission
-                        <span class="selected-count-bulk ms-1">(0)</span>
-                    </button> -->
+                    <!-- Data Source Toggle -->
+                    <div class="btn-group me-2" role="group" aria-label="Data source toggle">
+                        <input type="radio" class="btn-check" name="dataSource" id="liveDataSource" autocomplete="off">
+                        <label class="btn outbound-action-btn submit btn-sm" for="liveDataSource">
+                            <i class="bi bi-cloud-arrow-down me-1"></i>Live LHDN Data
+                        </label>
+
+                        <input type="radio" class="btn-check" name="dataSource" id="archiveDataSource" autocomplete="off" checked>
+                        <label class="btn outbound-action-btn cancel btn-sm" for="archiveDataSource">
+                            <i class="bi bi-archive me-1"></i>Archive Staging
+                        </label>
+                    </div>
+
+
                 </div>
             </div>
               <!-- LHDN Validation Note -->
@@ -925,7 +973,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-             
+
             </div>
             <div class="modal-body">
                 <div class="connection-status-content">

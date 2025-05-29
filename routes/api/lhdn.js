@@ -1166,7 +1166,7 @@ const saveInboundStatus = async (data, req = null) => {
                         responseFileResults.push(responseResult);
                     }
 
-                    // If the inbound document status is "Failed"
+                    // Synchronize status between inbound and outbound tables
                     if (item.status === 'Failed') {
                         // Update the corresponding outbound status record using Prisma
                         // Note: UUID is not a unique field, so we need to use updateMany instead of update
@@ -1176,6 +1176,38 @@ const saveInboundStatus = async (data, req = null) => {
                                 status: 'Failed',
                                 updated_at: new Date().toISOString(),
                                 submitted_by: req?.session?.user?.username || 'System' // Add username from session
+                            }
+                        });
+                    } else if (item.status === 'Valid') {
+                        // Update the corresponding outbound status record for Valid documents
+                        await prisma.wP_OUTBOUND_STATUS.updateMany({
+                            where: { UUID: item.uuid },
+                            data: {
+                                status: 'Valid',
+                                date_sync: new Date().toISOString(),
+                                updated_at: new Date().toISOString(),
+                                submitted_by: req?.session?.user?.username || 'System'
+                            }
+                        });
+                    } else if (item.status === 'Invalid') {
+                        // Update the corresponding outbound status record for Invalid documents
+                        await prisma.wP_OUTBOUND_STATUS.updateMany({
+                            where: { UUID: item.uuid },
+                            data: {
+                                status: 'Invalid',
+                                updated_at: new Date().toISOString(),
+                                submitted_by: req?.session?.user?.username || 'System'
+                            }
+                        });
+                    } else if (item.status === 'Cancelled') {
+                        // Update the corresponding outbound status record for Cancelled documents
+                        await prisma.wP_OUTBOUND_STATUS.updateMany({
+                            where: { UUID: item.uuid },
+                            data: {
+                                status: 'Cancelled',
+                                date_cancelled: new Date().toISOString(),
+                                updated_at: new Date().toISOString(),
+                                submitted_by: req?.session?.user?.username || 'System'
                             }
                         });
                     }
@@ -1584,6 +1616,7 @@ router.get('/documents/recent', async (req, res) => {
         // Check if we should use database only (for fallback)
         const useDatabase = req.query.useDatabase === 'true';
         const fallbackOnly = req.query.fallbackOnly === 'true';
+        const useCache = req.query.useCache === 'true';
 
         // If fallbackOnly is true, skip token check and API call
         if (fallbackOnly) {
@@ -1698,6 +1731,21 @@ router.get('/documents/recent', async (req, res) => {
         console.log('Updated session with token');
 
         try {
+            // If useCache is true, return a signal to use cached data
+            if (useCache) {
+                console.log('Client requested to use cached data');
+                return res.json({
+                    success: true,
+                    useCache: true,
+                    result: [], // Empty result, client will use its cached data
+                    metadata: {
+                        cached: true,
+                        fromCache: true,
+                        timestamp: new Date().toISOString()
+                    }
+                });
+            }
+
             // Get documents using enhanced caching function
             const fetchResult = await getCachedDocuments(req);
 
@@ -1875,6 +1923,72 @@ router.get('/documents/recent-total', async (_req, res) => {
             totalCount: 0,
             success: false,
             message: 'Failed to fetch recent documents'
+        });
+    }
+});
+
+// Archive staging endpoint - Get all documents from WP_INBOUND_STATUS table
+router.get('/documents/archive-staging', async (req, res) => {
+    try {
+        console.log('Fetching archive staging data from WP_INBOUND_STATUS');
+
+        // Get all records from WP_INBOUND_STATUS table
+        const archiveRecords = await prisma.wP_INBOUND_STATUS.findMany({
+            orderBy: {
+                dateTimeReceived: 'desc'
+            }
+        });
+
+        console.log(`Found ${archiveRecords.length} archive staging records`);
+
+        // Map the data to match the expected format
+        const mappedRecords = archiveRecords.map(record => ({
+            uuid: record.uuid,
+            submissionUid: record.submissionUid,
+            longId: record.longId,
+            internalId: record.internalId,
+            typeName: record.typeName,
+            typeVersionName: record.typeVersionName,
+            issuerTin: record.issuerTin,
+            issuerName: record.issuerName || record.supplierName,
+            receiverId: record.receiverId,
+            receiverName: record.receiverName,
+            receiverTIN: record.receiverTIN,
+            receiverRegistrationNo: record.receiverRegistrationNo,
+            receiverAddress: record.receiverAddress,
+            receiverPostcode: record.receiverPostcode,
+            receiverCity: record.receiverCity,
+            receiverState: record.receiverState,
+            receiverCountry: record.receiverCountry,
+            receiverPhone: record.receiverPhone,
+            dateTimeReceived: record.dateTimeReceived,
+            dateTimeIssued: record.dateTimeIssued,
+            dateTimeValidated: record.dateTimeValidated,
+            status: record.status,
+            documentStatusReason: record.documentStatusReason,
+            totalSales: record.totalSales,
+            totalExcludingTax: record.totalExcludingTax,
+            totalDiscount: record.totalDiscount,
+            totalNetAmount: record.totalNetAmount,
+            totalPayableAmount: record.totalPayableAmount,
+            source: 'Archive Staging', // Mark as archive staging
+            last_sync_date: record.last_sync_date
+        }));
+
+        res.json({
+            success: true,
+            result: mappedRecords,
+            count: mappedRecords.length,
+            fromArchive: true,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error fetching archive staging data:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to fetch archive staging data',
+            result: []
         });
     }
 });
@@ -2309,66 +2423,15 @@ router.get('/auth-status', async (req, res) => {
             }
         }
 
-        // Get LHDN configuration
-        const lhdnConfig = await getLHDNConfig();
-
-        try {
-            // Verify token with LHDN API
-            const response = await axios.get(`${lhdnConfig.baseUrl}/api/v1.0/auth/verify`, {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 5000 // Short timeout for quick response
-            });
-
-            // If verification succeeds, token is valid
-            console.log('LHDN auth-status: Token verification successful');
-            return res.status(200).json({
-                authenticated: true,
-                success: true,
-                message: 'Authentication valid',
-                expiresIn: response.data?.expiresIn || null
-            });
-        } catch (apiError) {
-            // If verification fails with 401/403, token is invalid
-            if (apiError.response?.status === 401 || apiError.response?.status === 403) {
-                console.log('LHDN auth-status: Token verification failed with 401/403');
-                // Try to get a fresh token
-                try {
-                    const newToken = await getTokenSession();
-                    if (newToken) {
-                        req.session.accessToken = newToken;
-                        req.session.tokenExpiryTime = now + (3600 * 1000); // Assume 1 hour validity
-                        console.log('LHDN auth-status: Successfully generated new token after 401/403');
-                        return res.status(200).json({
-                            authenticated: true,
-                            success: true,
-                            message: 'Authentication renewed successfully',
-                            tokenRefreshed: true
-                        });
-                    }
-                } catch (refreshError) {
-                    console.warn('LHDN auth-status: Failed to generate new token after 401/403:', refreshError);
-                }
-
-                return res.status(200).json({
-                    authenticated: false,
-                    success: true, // Changed to true to avoid frontend errors
-                    message: 'Authentication token is invalid or expired',
-                    code: 'TOKEN_INVALID'
-                });
-            }
-
-            // For other errors, assume token might still be valid
-            console.warn('LHDN auth-status: Error verifying token but assuming still valid:', apiError.message);
-            return res.status(200).json({
-                authenticated: true,
-                success: true,
-                message: 'Authentication assumed valid (verification error)',
-                warning: apiError.message
-            });
-        }
+        // Since LHDN API doesn't have a dedicated token verification endpoint,
+        // we'll assume the token is valid if it exists and hasn't expired
+        console.log('LHDN auth-status: Token exists and appears valid');
+        return res.status(200).json({
+            authenticated: true,
+            success: true,
+            message: 'Authentication valid',
+            expiresIn: tokenExpiry ? Math.floor((tokenExpiry - now) / 1000) : null
+        });
     } catch (error) {
         console.error('LHDN auth-status: Error checking auth status:', error);
         return res.status(200).json({

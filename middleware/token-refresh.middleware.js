@@ -12,7 +12,7 @@ const { LoggingService, LOG_TYPES, MODULES, ACTIONS, STATUS } = require('../serv
 // Helper function to get LHDN config
 async function getLHDNConfig() {
     const prisma = require('../src/lib/prisma');
-    
+
     const config = await prisma.wP_CONFIGURATION.findFirst({
         where: {
             Type: 'LHDN',
@@ -83,7 +83,7 @@ function writeTokenToFile(token) {
 async function refreshToken(config, currentToken) {
     try {
         logger.info('Refreshing LHDN access token...');
-        
+
         // Log the token refresh attempt
         await LoggingService.log({
             description: 'Attempting to refresh LHDN access token',
@@ -92,28 +92,32 @@ async function refreshToken(config, currentToken) {
             action: ACTIONS.UPDATE,
             status: STATUS.PENDING
         });
-        
+
+        // Use URLSearchParams for form-encoded data as required by LHDN API
+        const httpOptions = new URLSearchParams({
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+            grant_type: 'client_credentials',
+            scope: 'InvoicingAPI'
+        });
+
         const response = await axios.post(
-            `${config.baseUrl}/api/v1.0/auth/token`,
-            {
-                grant_type: 'client_credentials',
-                client_id: config.clientId,
-                client_secret: config.clientSecret
-            },
+            `${config.baseUrl}/connect/token`,
+            httpOptions,
             {
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/x-www-form-urlencoded'
                 }
             }
         );
-        
+
         if (response.data && response.data.access_token) {
             const newToken = response.data.access_token;
             const expiresIn = response.data.expires_in || 3600; // Default to 1 hour if not provided
-            
+
             // Write token to file
             writeTokenToFile(newToken);
-            
+
             // Log successful token refresh
             await LoggingService.log({
                 description: 'Successfully refreshed LHDN access token',
@@ -123,7 +127,7 @@ async function refreshToken(config, currentToken) {
                 status: STATUS.SUCCESS,
                 details: { expiresIn }
             });
-            
+
             return {
                 token: newToken,
                 expiresIn: expiresIn
@@ -141,7 +145,7 @@ async function refreshToken(config, currentToken) {
             status: STATUS.FAILED,
             details: { error: error.message }
         });
-        
+
         throw error;
     }
 }
@@ -153,46 +157,46 @@ const tokenRefreshMiddleware = async (req, res, next) => {
         if (!req.session || !req.session.user) {
             return next();
         }
-        
+
         // Get current token and expiry time
         const currentToken = req.session.accessToken || readTokenFromFile();
         const tokenExpiryTime = req.session.tokenExpiryTime || 0;
-        
+
         // Skip if no token
         if (!currentToken) {
             return next();
         }
-        
+
         // Get LHDN config
         const config = await getLHDNConfig();
-        
+
         // Skip if refresh is disabled
         if (!config.refreshTokenEnabled) {
             return next();
         }
-        
+
         // Check if token is about to expire
         const now = Date.now();
         const timeUntilExpiry = tokenExpiryTime - now;
-        
+
         // If token is about to expire, refresh it
         if (timeUntilExpiry < config.refreshThreshold) {
             logger.info(`Token will expire in ${Math.floor(timeUntilExpiry / 1000)} seconds, refreshing...`);
-            
+
             try {
                 const { token, expiresIn } = await refreshToken(config, currentToken);
-                
+
                 // Update session with new token
                 req.session.accessToken = token;
                 req.session.tokenExpiryTime = now + (expiresIn * 1000);
-                
+
                 logger.info('Token refreshed successfully');
             } catch (refreshError) {
                 logger.error('Error refreshing token:', refreshError);
                 // Continue with current token if refresh fails
             }
         }
-        
+
         next();
     } catch (error) {
         logger.error('Error in token refresh middleware:', error);

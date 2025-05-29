@@ -13,7 +13,6 @@
 <link href="/assets/css/pages/inbound/card.css" rel="stylesheet">
 <link href="/assets/css/pages/inbound/notice.css" rel="stylesheet">
 
-
 <link href="/assets/css/pages/inbound/validation-modal.css" rel="stylesheet">
 <link href="/assets/css/pages/inbound/inbound-modal.css" rel="stylesheet">
 <!-- Template Main CSS Files -->
@@ -786,6 +785,47 @@
 
 .filter-loading.active {
     display: flex;
+}
+
+/* Data Source Toggle Styles */
+.btn-group .btn-check:checked + .btn {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+}
+
+.btn-group .btn-check:not(:checked) + .btn {
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+    color: #6c757d;
+}
+
+/* Loading backdrop styles */
+.loading-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.loading-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.loading-message {
+    margin-top: 1rem;
+    font-weight: 500;
+    color: #495057;
 }
 
 /* Responsive Adjustments */
@@ -1799,9 +1839,27 @@
                         <div class="table-header-content">
                             <h2 class="table-title">Outbound Document List</h2>
                             <div class="table-actions">
-                                <button id="syncAmountsBtn" class="btn btn-outline-primary btn-sm" title="Sync amount data from inbound records">
-                                    <i class="bi bi-arrow-repeat"></i>
-                                    Sync Amounts
+                                <!-- Data Source Toggle -->
+                                <div class="btn-group me-2" role="group" aria-label="Data source toggle">
+                                    <input type="radio" class="btn-check" name="dataSource" id="liveDataSource" autocomplete="off" checked>
+                                    <label class="btn outbound-action-btn submit btn-sm" for="liveDataSource">
+                                        <i class="bi bi-cloud-arrow-down me-1"></i>Live Excel Files
+                                    </label>
+
+                                    <input type="radio" class="btn-check" name="dataSource" id="archiveDataSource" autocomplete="off">
+                                    <label class="btn outbound-action-btn cancel btn-sm" for="archiveDataSource">
+                                        <i class="bi bi-archive me-1"></i>Archive Staging
+                                    </label>
+
+                                    <input type="radio" class="btn-check" name="dataSource" id="CNDNSB" autocomplete="off">
+                                    <label class="btn outbound-action-btn cancel btn-sm" for="CNDNSB">
+                                        <i class="bi bi-archive me-1"></i>CN/DB & Self Billed
+                                    </label>
+                                </div>
+
+                                <!-- Refresh Button -->
+                                <button id="refreshDataSource" class="btn outbound-action-btn submit btn-sm">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
                                 </button>
                             </div>
                         </div>
@@ -1838,29 +1896,21 @@
                                             <!-- Quick Filters -->
                                             <div class="col-md-8">
                                                 <div class="quick-filters d-flex gap-2">
-                                                    <button class="btn outbound-action-btn submit" data-filter="all">
-                                                        <i class="bi bi-grid-3x3-gap-fill me-1"></i>All
-                                                    </button>
                                                     <button class="btn outbound-action-btn submit active" data-filter="pending">
-                                                        <i class="bi bi-clock-history me-1"></i>Pending
-                                                    </button>
-                                                    <button class="btn outbound-action-btn submit" data-filter="staging"
-                                                            data-bs-toggle="tooltip"
-                                                            title="View staging database records (WP_OUTBOUND_STATUS)">
-                                                        <i class="bi bi-database me-1"></i>Archived
+                                                        <i class="bi bi-clock-history me-1"></i>All List
                                                     </button>
                                                     <div class="ms-auto">
+                                                        <button class="btn outbound-action-btn submit" id="syncStatusBtn"
+                                                                data-bs-toggle="tooltip"
+                                                                title="Synchronize status between inbound and outbound records">
+                                                            <i class="bi bi-arrow-repeat me-1"></i>Sync Status
+                                                        </button>
                                                         <button class="btn outbound-action-btn cancel" id="cleanupOldFiles"
                                                                 data-bs-toggle="tooltip"
                                                                 title="Delete files older than 3 months">
                                                             <i class="bi bi-trash3 me-1"></i>Cleanup
                                                         </button>
-                                                        <!-- <button class="btn outbound-action-btn cancel" id="clearFilters" data-bs-toggle="tooltip" title="Clear all filters">
-                                                            <i class="bi bi-eraser me-1"></i>Clear
-                                                        </button>
-                                                        <button class="btn outbound-action-btn submit" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
-                                                            <i class="bi bi-sliders me-1"></i>Advanced
-                                                        </button> -->
+                                                      
                                                     </div>
                                                 </div>
 

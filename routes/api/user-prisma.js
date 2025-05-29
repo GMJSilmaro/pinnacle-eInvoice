@@ -633,13 +633,13 @@ router.post('/update-avatar', avatarUpload.single('avatar'), async (req, res) =>
         await prisma.wP_LOGS.create({
             data: {
                 Description: `User ${req.session.user.username} updated their avatar`,
-                CreateTS: new Date(),
+                CreateTS: new Date().toISOString(),
                 LoggedUser: req.session.user.username,
-                Action: ACTIONS.UPDATE_PROFILE,
+                Action: 'UPDATE_PROFILE',
                 IPAddress: req.ip,
-                LogType: LOG_TYPES.INFO,
-                Module: MODULES.USER,
-                Status: STATUS.SUCCESS,
+                LogType: 'INFO',
+                Module: 'USER',
+                Status: 'SUCCESS',
                 UserID: userId
             }
         });

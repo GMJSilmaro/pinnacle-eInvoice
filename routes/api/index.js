@@ -24,6 +24,10 @@ const consolidationRoutes = require('./consolidation.routes');
 // Import utils routes
 const utilsRoutes = require('./utils');
 
+// Import notification and announcement routes
+const notificationsRoutes = require('./notifications');
+const announcementsRoutes = require('./announcements');
+
 // Add admin settings routes
 router.use('/admin', auth.isAdmin, adminSettingsRoutes);
 // Use route modules
@@ -42,6 +46,10 @@ router.use('/consolidation', consolidationRoutes);
 
 // Register utils routes
 router.use('/utils', utilsRoutes);
+
+// Register notification and announcement routes
+router.use('/notifications', notificationsRoutes);
+router.use('/announcements', announcementsRoutes);
 
 // User details
 router.get('/user-details', async (req, res) => {

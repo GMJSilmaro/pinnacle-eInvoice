@@ -93,7 +93,7 @@ async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req
                 uuid: result.documentDetails?.uuid || 'NA',
                 submissionUid,
                 fileName,
-                status: normalizedStatus === 'valid' ? 'Completed' :
+                status: normalizedStatus === 'valid' ? 'Valid' :
                         normalizedStatus === 'invalid' ? 'Invalid' :
                         normalizedStatus === 'partially valid' ? 'Partially Valid' : 'Processing',
                 longId: result.longId,
@@ -114,13 +114,13 @@ async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req
             if (result.error && result.error.includes('Invalid response format for status: 200')) {
                 console.log(`Received 200 status for ${submissionUid} but with unexpected format, assuming valid`);
 
-                // Update the status to Completed
+                // Update the status to Valid
                 await submitter.updateSubmissionStatus({
                     invoice_number,
                     uuid: 'NA',
                     submissionUid,
                     fileName,
-                    status: 'Completed',
+                    status: 'Valid',
                     longId: 'NA',
                     type,
                     company,
@@ -146,13 +146,13 @@ async function pollSubmissionStatus(submissionUid, fileName, invoice_number, req
         if (error.message && error.message.includes('Invalid response format for status: 200')) {
             console.log(`Received 200 status for ${submissionUid} but with error, assuming valid`);
 
-            // Update the status to Completed
+            // Update the status to Valid (not Completed)
             await submitter.updateSubmissionStatus({
                 invoice_number,
                 uuid: 'NA',
                 submissionUid,
                 fileName,
-                status: 'Completed',
+                status: 'Valid',
                 longId: 'NA',
                 type,
                 company,
@@ -513,7 +513,7 @@ async function logError(description, error, options = {}) {
  * List all files from network directories with caching and duplicate filtering
  * Optimized to fetch only the latest timestamp files and handle duplicates
  */
-router.get('/list-all', async (req, res) => {
+router.get('/list-all', auth.isApiAuthenticated, async (req, res) => {
     ////console.log('Starting list-all endpoint');
 
     const processLog = {
@@ -1054,70 +1054,198 @@ router.post('/sync-amounts', async (req, res) => {
     }
 });
 
+
+/**
+ * Auto-sync function to sync with WP_INBOUND_STATUS
+ */
+async function autoSyncWithInbound() {
+    try {
+        console.log('Starting auto-sync with WP_INBOUND_STATUS...');
+
+        // Get all records from WP_OUTBOUND_STATUS that need syncing
+        const outboundRecords = await prisma.wP_OUTBOUND_STATUS.findMany({
+            where: {
+                status: {
+                    in: ['Submitted', 'Valid']
+                }
+            }
+        });
+
+        console.log(`Found ${outboundRecords.length} outbound records to sync`);
+
+        for (const outboundRecord of outboundRecords) {
+            try {
+                // Try to find matching record in WP_INBOUND_STATUS by uuid or invoice_number
+                // Note: WP_INBOUND_STATUS uses 'uuid' (lowercase) while WP_OUTBOUND_STATUS uses 'UUID' (uppercase)
+                const inboundRecord = await prisma.wP_INBOUND_STATUS.findFirst({
+                    where: {
+                        OR: [
+                            { uuid: outboundRecord.UUID },
+                            // WP_INBOUND_STATUS doesn't have invoice_number field, so we'll match by uuid only
+                            // If needed, we can add more matching criteria based on other fields
+                        ]
+                    }
+                });
+
+                if (inboundRecord) {
+                    // Update outbound record with inbound status
+                    await prisma.wP_OUTBOUND_STATUS.update({
+                        where: { id: outboundRecord.id },
+                        data: {
+                            status: inboundRecord.status,
+                            date_sync: new Date(),
+                            updated_at: new Date()
+                        }
+                    });
+                    console.log(`Synced record ${outboundRecord.invoice_number}: ${outboundRecord.status} -> ${inboundRecord.status}`);
+                }
+            } catch (syncError) {
+                console.error(`Error syncing record ${outboundRecord.id}:`, syncError);
+            }
+        }
+
+        console.log('Auto-sync completed');
+    } catch (error) {
+        console.error('Error during auto-sync:', error);
+    }
+}
+
 /**
  * Get staging data from WP_OUTBOUND_STATUS table
  */
-router.get('/staging-data', async (req, res) => {
+router.get('/staging-data', auth.isApiAuthenticated, async (req, res) => {
     try {
-        console.log('Fetching staging data from WP_OUTBOUND_STATUS');
+        console.log('Fetching staging data from WP_OUTBOUND_STATUS with auto-sync');
 
-        // Get all records from WP_OUTBOUND_STATUS
+        // Auto-sync with inbound status before fetching data
+        await autoSyncWithInbound();
+
+        // First, let's try to get a count to see if there are any records
+        const recordCount = await prisma.wP_OUTBOUND_STATUS.count();
+        console.log(`Total records in WP_OUTBOUND_STATUS: ${recordCount}`);
+
+        // Get all records from WP_OUTBOUND_STATUS with all available fields
         const stagingRecords = await prisma.wP_OUTBOUND_STATUS.findMany({
             select: {
                 id: true,
                 UUID: true,
                 submissionUid: true,
+                company: true,
+                supplier: true,
+                receiver: true,
                 fileName: true,
                 filePath: true,
                 invoice_number: true,
+                source: true,
+                amount: true,
+                document_type: true,
                 status: true,
                 date_submitted: true,
+                date_sync: true,
                 date_cancelled: true,
-                cancellation_reason: true,
                 cancelled_by: true,
-                updated_at: true,
+                cancellation_reason: true,
                 created_at: true,
-                amount: true,
-                supplier: true,
-                receiver: true
+                updated_at: true,
+                submitted_by: true
             },
             orderBy: {
                 updated_at: 'desc'
             }
         });
 
-        // Transform the data to match the expected format
-        const transformedFiles = stagingRecords.map(record => ({
+        // Update status based on 72-hour rule before transforming
+        const now = new Date();
+        const updatedRecords = await Promise.all(stagingRecords.map(async (record) => {
+            // Check if status should be updated from Valid to Completed based on 72-hour rule
+            if (record.status === 'Valid' && record.date_submitted) {
+                const submittedDate = new Date(record.date_submitted);
+                const hoursDiff = (now - submittedDate) / (1000 * 60 * 60);
+
+                if (hoursDiff > 72) {
+                    // Update status to Completed
+                    try {
+                        await prisma.wP_OUTBOUND_STATUS.update({
+                            where: { id: record.id },
+                            data: {
+                                status: 'Completed',
+                                updated_at: now
+                            }
+                        });
+                        record.status = 'Completed';
+                        record.updated_at = now;
+                        console.log(`Updated status to Completed for record ${record.id} (${record.invoice_number}) - 72 hours passed`);
+                    } catch (updateError) {
+                        console.error(`Error updating status for record ${record.id}:`, updateError);
+                    }
+                }
+            }
+            return record;
+        }));
+
+        // Transform the data to match the expected format with all database fields
+        const transformedFiles = updatedRecords.map(record => ({
+            // Core identification fields
             id: record.id,
-            fileName: record.fileName || 'N/A',
-            source: 'Staging',
-            company: extractCompanyFromPath(record.filePath) || 'Unknown',
-            uploadedDate: record.created_at || record.updated_at,
-            modifiedTime: record.updated_at,
-            status: record.status || 'Unknown',
             uuid: record.UUID,
             submissionUid: record.submissionUid,
-            invoiceNumber: record.invoice_number || extractInvoiceFromFileName(record.fileName),
-            date_submitted: record.date_submitted,
-            date_cancelled: record.date_cancelled,
-            cancellation_reason: record.cancellation_reason,
-            cancelled_by: record.cancelled_by,
-            statusUpdateTime: record.updated_at,
-            // Use synced data if available
-            typeName: 'Database Record',
+
+            // File information
+            fileName: record.fileName || 'N/A',
+            filePath: record.filePath,
+
+            // Company and parties
+            company: record.company || extractCompanyFromPath(record.filePath) || 'Unknown',
             supplierName: record.supplier || 'N/A',
             buyerName: record.receiver || 'N/A',
+            supplier: record.supplier,
+            receiver: record.receiver,
+
+            // Document details
+            invoiceNumber: record.invoice_number || extractInvoiceFromFileName(record.fileName),
+            invoice_number: record.invoice_number,
+            document_type: record.document_type || 'Invoice',
+            typeName: record.document_type || 'Database Record',
+
+            // Financial information
+            totalAmount: record.amount || '0.00',
+            amount: record.amount,
+
+            // Status and source
+            status: record.status || 'Unknown',
+            source: record.source || 'Archive Staging',
+
+            // Date information
+            uploadedDate: record.created_at || record.updated_at,
+            modifiedTime: record.updated_at,
             issueDate: record.date_submitted || record.created_at,
             issueTime: null,
-            totalAmount: record.amount || '0.00',
             submittedDate: record.date_submitted,
-            // Additional fields for amount tracking
-            amount: record.amount,
-            supplier: record.supplier,
-            receiver: record.receiver
+            date_submitted: record.date_submitted,
+            date_sync: record.date_sync,
+            date_cancelled: record.date_cancelled,
+            statusUpdateTime: record.updated_at,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+
+            // Cancellation information
+            cancelled_by: record.cancelled_by,
+            cancellation_reason: record.cancellation_reason,
+
+            // User information
+            submitted_by: record.submitted_by,
+
+            // Additional metadata for table display
+            fromStaging: true,
+            dataSource: 'WP_OUTBOUND_STATUS'
         }));
 
         console.log(`Found ${transformedFiles.length} staging records`);
+
+        // Log first record for debugging
+        if (transformedFiles.length > 0) {
+            console.log('Sample transformed record:', JSON.stringify(transformedFiles[0], null, 2));
+        }
 
         res.json({
             success: true,
@@ -3045,6 +3173,218 @@ router.post('/:fileName/content', auth.isApiAuthenticated, async (req, res) => {
 });
 
 /**
+ * List all files with fixed paths (optimized version using hardcoded paths)
+ */
+router.get('/list-fixed-paths', auth.isApiAuthenticated, async (req, res) => {
+    console.log('Starting list-fixed-paths endpoint');
+    const processLog = {
+        details: [],
+        summary: { total: 0, valid: 0, invalid: 0, errors: 0 }
+    };
+
+    try {
+        // Use fixed paths instead of getting from configuration
+        const incomingPath = 'C:\\SFTPRoot_Consolidation\\Incoming\\PXC Branch';
+        const outgoingPath = 'C:\\SFTPRoot_Consolidation\\Outgoing\\LHDN\\PXC';
+
+        console.log('Using fixed paths:');
+        console.log('- Incoming:', incomingPath);
+        console.log('- Outgoing:', outgoingPath);
+
+        // Get the latest status update timestamp
+        console.log('Fetching latest status update');
+        const latestStatusUpdate = await prisma.wP_OUTBOUND_STATUS.findFirst({
+            select: {
+                updated_at: true
+            },
+            orderBy: {
+                updated_at: 'desc'
+            }
+        });
+        console.log('Latest status update:', latestStatusUpdate);
+
+        // Get existing submission statuses
+        console.log('Fetching submission statuses');
+        const submissionStatuses = await prisma.wP_OUTBOUND_STATUS.findMany({
+            select: {
+                id: true,
+                UUID: true,
+                submissionUid: true,
+                fileName: true,
+                filePath: true,
+                invoice_number: true,
+                status: true,
+                date_submitted: true,
+                date_cancelled: true,
+                cancellation_reason: true,
+                cancelled_by: true,
+                updated_at: true
+            },
+            orderBy: {
+                updated_at: 'desc'
+            }
+        });
+
+        // Create status lookup map
+        const statusMap = new Map();
+        submissionStatuses.forEach(status => {
+            const statusObj = {
+                UUID: status.UUID,
+                SubmissionUID: status.submissionUid,
+                SubmissionStatus: status.status,
+                DateTimeSent: status.date_submitted,
+                DateTimeUpdated: status.updated_at,
+                DateTimeCancelled: status.date_cancelled,
+                CancelledReason: status.cancellation_reason,
+                CancelledBy: status.cancelled_by,
+                FileName: status.fileName,
+                DocNum: status.invoice_number
+            };
+
+            if (status.fileName) statusMap.set(status.fileName, statusObj);
+            if (status.invoice_number) statusMap.set(status.invoice_number, statusObj);
+        });
+
+        const files = [];
+
+        // Process incoming directory directly
+        console.log('Processing incoming directory');
+        try {
+            // For consolidated view, we don't need to process by type/company/date
+            // Since files are directly in the Incoming directory
+            await processDirectoryFlat(incomingPath, 'Incoming', files, processLog, statusMap);
+        } catch (dirError) {
+            console.error(`Error processing incoming directory:`, dirError);
+            // Continue with partial data if there's an error
+        }
+
+        // Create a map for latest documents
+        console.log('Processing latest documents');
+        const latestDocuments = new Map();
+
+        files.forEach(file => {
+            const documentKey = file.invoiceNumber || file.fileName;
+            const existingDoc = latestDocuments.get(documentKey);
+
+            if (!existingDoc || new Date(file.modifiedTime) > new Date(existingDoc.modifiedTime)) {
+                latestDocuments.set(documentKey, file);
+            }
+        });
+
+        // Convert map to array and merge with status
+        const mergedFiles = Array.from(latestDocuments.values()).map(file => {
+            const status = statusMap.get(file.fileName) || statusMap.get(file.invoiceNumber);
+            const fileStatus = status?.SubmissionStatus || 'Pending';
+
+            return {
+                ...file,
+                status: fileStatus,
+                statusUpdateTime: status?.DateTimeUpdated || null,
+                date_submitted: status?.DateTimeSent || null,
+                date_cancelled: status?.DateTimeCancelled || null,
+                cancellation_reason: status?.CancelledReason || null,
+                cancelled_by: status?.CancelledBy || null,
+                uuid: status?.UUID || null,
+                submissionUid: status?.SubmissionUID || null
+            };
+        });
+
+        // Sort by modified time
+        mergedFiles.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+
+        console.log(`Found ${mergedFiles.length} files`);
+        console.log('Sending response');
+        res.json({
+            success: true,
+            files: mergedFiles,
+            processLog,
+            fromCache: false,
+            paths: {
+                incoming: incomingPath,
+                outgoing: outgoingPath
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in list-fixed-paths:', error);
+        await logError('Error listing outbound files with fixed paths', error, {
+            action: 'LIST_FIXED_PATHS',
+            userId: req.user?.id
+        });
+
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            processLog,
+            stack: error.stack // Include stack trace for debugging
+        });
+    }
+});
+
+/**
+ * Process a flat directory structure (no type/company/date hierarchy)
+ */
+async function processDirectoryFlat(directory, type, files, processLog, statusMap) {
+    try {
+        // Check if directory exists
+        try {
+            await fsPromises.access(directory, fs.constants.R_OK);
+        } catch (accessError) {
+            console.error(`Cannot access directory ${directory}:`, accessError);
+            throw new Error(`Cannot access directory: ${directory}. Please check if the directory exists and you have proper permissions.`);
+        }
+
+        // Read all files in the directory
+        let dirContents;
+        try {
+            dirContents = await fsPromises.readdir(directory);
+        } catch (readError) {
+            console.error(`Error reading directory ${directory}:`, readError);
+            throw new Error(`Failed to read directory contents: ${directory}`);
+        }
+
+        // Process each item
+        for (const item of dirContents) {
+            const itemPath = path.join(directory, item);
+
+            try {
+                const stats = await fsPromises.stat(itemPath);
+
+                // If it's a directory, process recursively
+                if (stats.isDirectory()) {
+                    await processDirectoryFlat(itemPath, type, files, processLog, statusMap);
+                    continue;
+                }
+
+                // If it's a file and Excel file, process it
+                if (stats.isFile() && item.match(/\.(xls|xlsx)$/i)) {
+                    await processFile(item, directory, 'N/A', 'PXC Branch', type, files, processLog, statusMap);
+                }
+            } catch (itemError) {
+                console.error(`Error processing ${itemPath}:`, itemError);
+                processLog.details.push({
+                    file: item,
+                    path: itemPath,
+                    error: itemError.message,
+                    type: 'ITEM_PROCESSING_ERROR'
+                });
+                processLog.summary.errors++;
+            }
+        }
+
+    } catch (error) {
+        console.error(`Error processing directory ${directory}:`, error);
+        processLog.details.push({
+            directory,
+            error: error.message,
+            type: 'DIRECTORY_PROCESSING_ERROR'
+        });
+        processLog.summary.errors++;
+        throw error;
+    }
+}
+
+/**
  * Submit document to LHDN
  */
 router.post('/:fileName/submit-to-lhdn-consolidated', auth.isApiAuthenticated, async (req, res) => {
@@ -4484,5 +4824,80 @@ async function findConsolidatedFile(fileName) {
     //console.log('Could not find consolidated file:', fileName);
     return null;
 }
+
+// Manual status synchronization endpoint
+router.post('/sync-status', async (req, res) => {
+    try {
+        console.log('Manual status synchronization requested');
+
+        // Check if user is logged in
+        if (!req.session?.user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required'
+            });
+        }
+
+        // Get all inbound documents with their current status
+        const inboundDocuments = await prisma.wP_INBOUND_STATUS.findMany({
+            select: {
+                uuid: true,
+                status: true,
+                dateTimeValidated: true,
+                dateTimeReceived: true
+            }
+        });
+
+        let syncCount = 0;
+        let errorCount = 0;
+
+        // Process each inbound document
+        for (const inboundDoc of inboundDocuments) {
+            try {
+                // Find corresponding outbound record(s)
+                const outboundRecords = await prisma.wP_OUTBOUND_STATUS.findMany({
+                    where: { UUID: inboundDoc.uuid }
+                });
+
+                if (outboundRecords.length > 0) {
+                    // Update outbound status to match inbound status
+                    await prisma.wP_OUTBOUND_STATUS.updateMany({
+                        where: { UUID: inboundDoc.uuid },
+                        data: {
+                            status: inboundDoc.status,
+                            date_sync: new Date().toISOString(),
+                            updated_at: new Date().toISOString(),
+                            submitted_by: req.session.user.username || 'System'
+                        }
+                    });
+
+                    syncCount++;
+                    console.log(`Synced status for UUID ${inboundDoc.uuid}: ${inboundDoc.status}`);
+                }
+            } catch (error) {
+                console.error(`Error syncing status for UUID ${inboundDoc.uuid}:`, error);
+                errorCount++;
+            }
+        }
+
+        console.log(`Status synchronization completed: ${syncCount} synced, ${errorCount} errors`);
+
+        res.json({
+            success: true,
+            message: 'Status synchronization completed',
+            syncCount,
+            errorCount,
+            totalProcessed: inboundDocuments.length
+        });
+
+    } catch (error) {
+        console.error('Error in manual status synchronization:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to synchronize status',
+            error: error.message
+        });
+    }
+});
 
 module.exports = router;

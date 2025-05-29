@@ -522,7 +522,7 @@ class InvoiceTableManager {
                             invoiceNumber: file.invoiceNumber || file.fileName.replace(/\.xml$/i, ''),
                             fileName: file.fileName,
                             documentType: file.documentType || 'Invoice',
-                            company: file.company || 'PXC Branch',
+                            company: file.company,
                             buyerInfo: file.buyerInfo || { registrationName: 'N/A' },
                             supplierInfo: file.supplierInfo || { registrationName: 'N/A' },
                             uploadedDate: file.uploadedDate ? new Date(file.uploadedDate).toISOString() : new Date().toISOString(),
@@ -533,7 +533,7 @@ class InvoiceTableManager {
                             cancelled_by: file.cancelled_by || null,
                             cancel_reason: file.cancel_reason || null,
                             status: file.status || 'Pending',
-                            source: self.convertSource(file.source),
+                            source: file.source,
                             uuid: file.uuid || null,
                             totalAmount: file.totalAmount || null
                         }));
@@ -542,8 +542,6 @@ class InvoiceTableManager {
 
                         // Update the cache with the processed data
                         dataCache.updateCache(processedData);
-
-                        //console.log("Current Process Data", processedData);
 
                         // Update card totals after data is loaded
                         setTimeout(() => this.updateCardTotals(), 0);
@@ -1233,7 +1231,7 @@ class InvoiceTableManager {
                     </button>
                     <button
                         class="outbound-action-btn cancel delete-btn"
-                        onclick="deleteDocument('${row.fileName}', '${row.source || 'Incoming'}', '${row.company || 'PXC Branch'}', '${row.uploadedDate}')"
+                        onclick="deleteDocument('${row.fileName}', '${row.source}', '${row.company}', '${row.uploadedDate}')"
                         data-id="${row.id}">
                         <i class="bi bi-trash"></i>
                     </button>
@@ -5710,7 +5708,7 @@ class ConsolidatedSubmissionManager {
                 <div class="doc-item">
                     <i class="bi bi-file-earmark-text text-primary"></i>
                     <span class="flex-grow-1">${doc.fileName}</span>
-                    <span class="company-badge">${doc.company || 'PXC Branch'}</span>
+                    <span class="company-badge">${doc.company || 'PXC'}</span>
             </div>
         `);
             listContainer.append(docItem);
@@ -6397,8 +6395,11 @@ class FileUploadManager {
             // Show success message
             this.showSuccess('File uploaded successfully');
 
-            // Refresh the file list
+            // Refresh the file list with force refresh
             try {
+                // Force refresh to bypass cache
+                sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+                dataCache.invalidateCache();
                 await refreshFileList();
             } catch (refreshError) {
                 console.warn('Failed to refresh file list:', refreshError);
@@ -6542,6 +6543,9 @@ class FileUploadManager {
             didClose: () => {
                 // Refresh the file list once more when the success dialog is closed
                 try {
+                    // Force refresh to ensure latest data
+                    sessionStorage.setItem('forceRefreshOutboundTable', 'true');
+                    dataCache.invalidateCache();
                     refreshFileList();
                 } catch (e) {
                     console.warn('Error refreshing file list on dialog close:', e);
