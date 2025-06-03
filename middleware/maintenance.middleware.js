@@ -30,7 +30,7 @@ module.exports = async (req, res, next) => {
         });
       } else {
         // For web requests
-        return res.render('maintenance.html', {
+        return res.render('/', {
           title: 'System Maintenance',
           message: 'System is currently under maintenance. Please try again later.'
         });

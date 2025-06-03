@@ -1429,6 +1429,20 @@ class InvoiceTableManager {
     }
 
     renderActions(row) {
+        // Check if item is from archived table (staging) - hide submit and delete buttons
+        if (row.fromStaging === true || row.dataSource === 'WP_OUTBOUND_STATUS') {
+            return `
+                <button
+                    class="outbound-action-btn"
+                    disabled
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    title="This item is from the archived database and cannot be modified">
+                    <i class="bi bi-archive"></i>
+                    Archived
+                </button>`;
+        }
+
         if (!row.status || row.status === 'Pending') {
             return `
                 <div class="d-flex gap-2">
