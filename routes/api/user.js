@@ -412,7 +412,7 @@ router.get('/profile', async (req, res) => {
 });
 
 // Update user profile (for current user)
-router.put('/update-profile', async (req, res) => {
+router.post('/update-profile', async (req, res) => {
     try {
         if (!req.session?.user) {
             return res.status(401).json({
@@ -492,9 +492,9 @@ router.put('/update-profile', async (req, res) => {
         await prisma.wP_LOGS.create({
             data: {
                 Description: `User ${user.Username} updated their profile`,
-                CreateTS: new Date(),
+                CreateTS: new Date().toISOString(),
                 LoggedUser: user.Username,
-                Action: ACTIONS.UPDATE_PROFILE,
+                Action: ACTIONS.PROFILE_UPDATE,
                 IPAddress: req.ip,
                 LogType: LOG_TYPES.INFO,
                 Module: MODULES.USER,

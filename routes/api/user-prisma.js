@@ -437,7 +437,7 @@ router.get('/profile', auth.isApiAuthenticated, async (req, res) => {
 });
 
 // Update user profile (for current user)
-router.put('/update-profile', auth.isApiAuthenticated, async (req, res) => {
+router.post('/update-profile', auth.isApiAuthenticated, async (req, res) => {
     try {
         // Authentication is handled by auth.isApiAuthenticated middleware
 
@@ -512,9 +512,9 @@ router.put('/update-profile', auth.isApiAuthenticated, async (req, res) => {
         await prisma.wP_LOGS.create({
             data: {
                 Description: `User ${user.Username} updated their profile`,
-                CreateTS: new Date(),
+                CreateTS: new Date().toISOString(),
                 LoggedUser: user.Username,
-                Action: ACTIONS.UPDATE_PROFILE,
+                Action: ACTIONS.PROFILE_UPDATE,
                 IPAddress: req.ip,
                 LogType: LOG_TYPES.INFO,
                 Module: MODULES.USER,
