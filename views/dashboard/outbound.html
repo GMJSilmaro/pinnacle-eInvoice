@@ -1892,8 +1892,17 @@
                                             <!-- Quick Filters -->
                                             <div class="col-md-8">
                                                 <div class="quick-filters d-flex gap-2">
-                                                    <button class="btn outbound-action-btn submit active" data-filter="pending">
-                                                        <i class="bi bi-clock-history me-1"></i>All List
+                                                    <button class="btn outbound-action-btn submit active" data-filter="all">
+                                                        <i class="bi bi-list me-1"></i>All List
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="pending">
+                                                        <i class="bi bi-clock-history me-1"></i>Pending
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="submitted">
+                                                        <i class="bi bi-check-circle me-1"></i>Submitted
+                                                    </button>
+                                                    <button class="btn outbound-action-btn submit" data-filter="cancelled">
+                                                        <i class="bi bi-x-circle me-1"></i>Cancelled
                                                     </button>
                                                     <div class="ms-auto">
                                                         <button class="btn outbound-action-btn submit" id="syncStatusBtn"
@@ -1903,10 +1912,11 @@
                                                         </button>
                                                         <button class="btn outbound-action-btn cancel" id="cleanupOldFiles"
                                                                 data-bs-toggle="tooltip"
-                                                                title="Delete files older than 3 months">
+                                                                title="Delete files older than 3 months"
+                                                                style="display: none;">
                                                             <i class="bi bi-trash3 me-1"></i>Cleanup
                                                         </button>
-                                                      
+
                                                     </div>
                                                 </div>
 

@@ -2140,6 +2140,56 @@ router.post('/:fileName/generate-preview', async (req, res) => {
 
     } catch (error) {
         console.error('Error generating preview:', error);
+
+        // Handle specific data processing errors
+        if (error.message && error.message.includes('trim is not a function')) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'DATA_PROCESSING_ERROR',
+                    message: 'Error processing Excel data - invalid data format detected',
+                    details: 'Some address fields contain invalid data types. Please ensure all address fields contain text values.'
+                }
+            });
+        }
+
+        // Handle file not found errors specifically
+        if (error.message && error.message.includes('File not found')) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'FILE_NOT_FOUND',
+                    message: error.message,
+                    details: 'The requested file could not be found. Please verify the file exists and try again.'
+                }
+            });
+        }
+
+        // Handle network path errors
+        if (error.message && error.message.includes('Network path is not accessible')) {
+            return res.status(503).json({
+                success: false,
+                error: {
+                    code: 'NETWORK_PATH_ERROR',
+                    message: error.message,
+                    details: 'The network path is not accessible. Please check your network configuration and connectivity.'
+                }
+            });
+        }
+
+        // Handle directory not found errors
+        if (error.message && (error.message.includes('directory not found') || error.message.includes('does not exist'))) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'DIRECTORY_NOT_FOUND',
+                    message: error.message,
+                    details: 'The required directory structure was not found. Please verify the file organization.'
+                }
+            });
+        }
+
+        // Handle other errors
         return res.status(500).json({
             success: false,
             error: {

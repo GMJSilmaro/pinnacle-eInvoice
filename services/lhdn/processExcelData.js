@@ -499,16 +499,24 @@ const processExcelData = (rawData) => {
 
         // Get address from header row
         const headerAddress = getField(headerRow, baseField);
-        if (headerAddress && headerAddress !== 'NA' && headerAddress.trim() !== '') {
-          addressLines.push(headerAddress);
+        if (headerAddress && headerAddress !== 'NA') {
+          // Convert to string and check if it's not empty after trimming
+          const headerAddressStr = String(headerAddress);
+          if (headerAddressStr.trim() !== '') {
+            addressLines.push(headerAddressStr);
+          }
         }
 
         // Get addresses from subsequent rows (typically 3 more rows for additional address lines)
         for (let i = 1; i <= 3; i++) {
           if (dataRows[currentIndex + i]) {
             const additionalAddress = getField(dataRows[currentIndex + i], baseField);
-            if (additionalAddress && additionalAddress !== 'NA' && additionalAddress.trim() !== '') {
-              addressLines.push(additionalAddress);
+            if (additionalAddress && additionalAddress !== 'NA') {
+              // Convert to string and check if it's not empty after trimming
+              const additionalAddressStr = String(additionalAddress);
+              if (additionalAddressStr.trim() !== '') {
+                addressLines.push(additionalAddressStr);
+              }
             }
           }
         }

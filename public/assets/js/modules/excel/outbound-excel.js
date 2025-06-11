@@ -1526,6 +1526,8 @@ class InvoiceTableManager {
     applyQuickFilter(filterValue) {
         if (!this.table) return;
 
+        console.log('Applying quick filter:', filterValue);
+
         // Clear the global search
         const globalSearch = document.getElementById('globalSearch');
         if (globalSearch) globalSearch.value = '';
@@ -1536,15 +1538,21 @@ class InvoiceTableManager {
             return;
         }
 
-        // Apply filter based on value
-        this.table.column('status:name').search(
-            filterValue === 'all' ? '' : filterValue,
-            false,
-            false
-        ).draw();
+        // Apply filter based on value - use column index 8 for STATUS column
+        if (filterValue === 'all') {
+            // Clear all filters to show all records
+            this.table.column(8).search('').draw();
+        } else {
+            // Filter by specific status
+            this.table.column(8).search(filterValue, false, false).draw();
+        }
 
-        // Update active filter tags
-        this.updateActiveFilterTags();
+        console.log('Filter applied successfully');
+
+        // Update active filter tags if the method exists
+        if (typeof this.updateActiveFilterTags === 'function') {
+            this.updateActiveFilterTags();
+        }
     }
 
 
@@ -2497,7 +2505,48 @@ class InvoiceTableManager {
         this.initializeTableStyles();
         this.initializeTooltips();
         this.initializeSelectAll();
+        this.initializeFilters(); // Add filter initialization
         this.initializeTINValidation(); // Add TIN validation initialization
+    }
+
+    // Initialize filters and search functionality
+    initializeFilters() {
+        console.log('Initializing filters and search');
+
+        // Global Search functionality
+        const globalSearch = document.getElementById('globalSearch');
+        if (globalSearch) {
+            globalSearch.addEventListener('input', (e) => {
+                if (this.table) {
+                    this.table.search(e.target.value).draw();
+                }
+            });
+            console.log('Global search initialized');
+        } else {
+            console.warn('Global search element not found');
+        }
+
+        // Quick Filter buttons
+        document.querySelectorAll('.quick-filters .btn[data-filter]').forEach(button => {
+            button.addEventListener('click', (e) => {
+                // Remove active class from all buttons
+                document.querySelectorAll('.quick-filters .btn').forEach(btn => btn.classList.remove('active'));
+                // Add active class to clicked button
+                e.target.closest('.btn').classList.add('active');
+
+                const filterValue = e.target.closest('.btn').dataset.filter;
+                this.applyQuickFilter(filterValue);
+            });
+        });
+
+        // Hide cleanup button (as requested)
+        const cleanupButton = document.getElementById('cleanupOldFiles');
+        if (cleanupButton) {
+            cleanupButton.style.display = 'none';
+            console.log('Cleanup button hidden');
+        }
+
+        console.log('Filters initialized');
     }
 
     // New method to initialize TIN validation
@@ -2607,12 +2656,6 @@ class InvoiceTableManager {
 
         // Add event listeners to validate TIN buttons in table rows
         this.addTableTinValidationListeners();
-
-        // Add cleanup button listener
-        const cleanupButton = document.getElementById('cleanupOldFiles');
-        if (cleanupButton) {
-            cleanupButton.addEventListener('click', () => this.handleCleanupOldFiles());
-        }
 
         // Add handleSyncStatus
         const syncStatusBtn = document.getElementById('syncStatusBtn');
@@ -4591,10 +4634,15 @@ async function showJsonPreview(fileName, type, company, date, version) {
         if (!response.ok) {
             const errorData = await response.json();
             const errorMessage = errorData.error?.message || 'Failed to generate preview';
+            const errorCode = errorData.error?.code || 'UNKNOWN_ERROR';
 
-            // Check if this is a file not found error
-            if (errorMessage.includes('File not found')) {
+            // Handle different types of errors with more specific messages
+            if (errorCode === 'FILE_NOT_FOUND' || errorMessage.includes('File not found')) {
                 throw new Error(`${errorMessage}\n\nPlease verify that the file exists in the correct location: ${type}/${company}/${moment(date).format('YYYY-MM-DD')}`);
+            } else if (errorCode === 'NETWORK_PATH_ERROR' || errorMessage.includes('Network path is not accessible')) {
+                throw new Error(`Network Configuration Error\n\n${errorMessage}\n\nPlease contact your system administrator to verify the network path configuration.`);
+            } else if (errorCode === 'DIRECTORY_NOT_FOUND' || errorMessage.includes('directory not found')) {
+                throw new Error(`Directory Structure Error\n\n${errorMessage}\n\nThe required folder structure may be missing. Please check the file organization.`);
             } else {
                 throw new Error(errorMessage);
             }
@@ -4604,10 +4652,15 @@ async function showJsonPreview(fileName, type, company, date, version) {
 
         if (!data.success) {
             const errorMessage = data.error?.message || 'Failed to generate preview';
+            const errorCode = data.error?.code || 'UNKNOWN_ERROR';
 
-            // Check if this is a file not found error
-            if (errorMessage.includes('File not found')) {
+            // Handle different types of errors with more specific messages
+            if (errorCode === 'FILE_NOT_FOUND' || errorMessage.includes('File not found')) {
                 throw new Error(`${errorMessage}\n\nPlease verify that the file exists in the correct location: ${type}/${company}/${moment(date).format('YYYY-MM-DD')}`);
+            } else if (errorCode === 'NETWORK_PATH_ERROR' || errorMessage.includes('Network path is not accessible')) {
+                throw new Error(`Network Configuration Error\n\n${errorMessage}\n\nPlease contact your system administrator to verify the network path configuration.`);
+            } else if (errorCode === 'DIRECTORY_NOT_FOUND' || errorMessage.includes('directory not found')) {
+                throw new Error(`Directory Structure Error\n\n${errorMessage}\n\nThe required folder structure may be missing. Please check the file organization.`);
             } else {
                 throw new Error(errorMessage);
             }

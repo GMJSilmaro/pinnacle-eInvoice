@@ -468,7 +468,7 @@ class LHDNSubmitter {
       const filePath = path.join(networkPath, type, company, formattedDate, fileName);
      // console.log('Constructed file path:', filePath);
 
-      // Verify the file exists
+      // Verify the file exists with enhanced error handling
       if (!fs.existsSync(filePath)) {
         console.error(`File not found at path: ${filePath}`);
         console.error('Path components:', {
@@ -478,7 +478,60 @@ class LHDNSubmitter {
           formattedDate,
           fileName
         });
-        throw new Error(`File not found: ${fileName}`);
+
+        // Check if the directory exists to provide more specific error information
+        const directoryPath = path.join(networkPath, type, company, formattedDate);
+        const directoryExists = fs.existsSync(directoryPath);
+        const networkPathExists = fs.existsSync(networkPath);
+        const typePathExists = fs.existsSync(path.join(networkPath, type));
+        const companyPathExists = fs.existsSync(path.join(networkPath, type, company));
+
+        console.error('Directory existence check:', {
+          networkPath: networkPathExists,
+          typePath: typePathExists,
+          companyPath: companyPathExists,
+          fullDirectory: directoryExists,
+          directoryPath
+        });
+
+        // Provide more detailed error message based on what exists
+        let errorMessage = `File not found: ${fileName}`;
+        let errorDetails = [];
+
+        if (!networkPathExists) {
+          errorMessage = `Network path is not accessible: ${networkPath}`;
+          errorDetails.push('The configured network path cannot be accessed. Please check your SAP configuration and network connectivity.');
+        } else if (!typePathExists) {
+          errorMessage = `Document type directory not found: ${type}`;
+          errorDetails.push(`The document type directory "${type}" does not exist in the network path.`);
+        } else if (!companyPathExists) {
+          errorMessage = `Company directory not found: ${company}`;
+          errorDetails.push(`The company directory "${company}" does not exist under document type "${type}".`);
+        } else if (!directoryExists) {
+          errorMessage = `Date directory not found: ${formattedDate}`;
+          errorDetails.push(`The date directory "${formattedDate}" does not exist under company "${company}".`);
+        } else {
+          errorMessage = `File not found in directory: ${fileName}`;
+          errorDetails.push(`The file "${fileName}" does not exist in the expected directory.`);
+
+          // Try to list files in the directory to help with debugging
+          try {
+            const filesInDirectory = fs.readdirSync(directoryPath);
+            console.log('Files in directory:', filesInDirectory);
+            if (filesInDirectory.length > 0) {
+              errorDetails.push(`Available files in directory: ${filesInDirectory.slice(0, 10).join(', ')}${filesInDirectory.length > 10 ? '...' : ''}`);
+            } else {
+              errorDetails.push('The directory is empty.');
+            }
+          } catch (readDirError) {
+            console.error('Error reading directory:', readDirError);
+            errorDetails.push('Unable to read directory contents.');
+          }
+        }
+
+        const fullErrorMessage = `${errorMessage}\n\nPath Details:\n- Full Path: ${filePath}\n- Network Path: ${networkPath}\n- Type: ${type}\n- Company: ${company}\n- Date: ${formattedDate}\n- File: ${fileName}\n\nTroubleshooting:\n${errorDetails.join('\n')}`;
+
+        throw new Error(fullErrorMessage);
       }
 
       //console.log('File found at path:', filePath);
